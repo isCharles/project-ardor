@@ -1,0 +1,48 @@
+.briefing { max-width: 64rem; }
+.briefingHeader { display: flex; align-items: end; justify-content: space-between; gap: 3rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--ardor-rule-strong); }
+.briefingHeader p, .systemCount span, .signalMeta, .signalState, .nextActions > p { font-family: var(--ardor-font-mono); font-size: 0.58rem; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; }
+.briefingHeader p { margin-bottom: 0.8rem; color: var(--ardor-accent); }
+.briefingHeader h2 { font-size: clamp(2rem, 4.2vw, 4.2rem); line-height: 0.95; letter-spacing: -0.05em; font-weight: 620; }
+.systemCount { display: flex; align-items: baseline; gap: 0.45rem; white-space: nowrap; }
+.systemCount strong { font-size: 3.4rem; line-height: 0.8; letter-spacing: -0.06em; }
+.systemCount span { color: var(--ardor-ink-3); }
+
+.signalGrid { margin-top: 1rem; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.signalGrid > li { min-width: 0; }
+.signalGrid > li:nth-child(5), .signalGrid > li:nth-child(6) { grid-column: span 2; }
+.signalModule { position: relative; min-height: 10.5rem; width: 100%; padding: 1rem; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; overflow: hidden; text-align: left; transition: transform 220ms var(--ardor-ease), filter 220ms var(--ardor-ease); }
+.signalModule:hover { z-index: 2; transform: translateY(-3px); filter: saturate(1.08); }
+.signalGrid > li:nth-child(1) .signalModule { background: #0c0c0c; color: #ff5e3a; }
+.signalGrid > li:nth-child(2) .signalModule { background: #2d464a; color: #96f254; }
+.signalGrid > li:nth-child(3) .signalModule { background: #ff5e3a; color: #0c0c0c; }
+.signalGrid > li:nth-child(4) .signalModule { background: #a6a07e; color: #0c0c0c; }
+.signalGrid > li:nth-child(5) .signalModule { background: #f2f1ec; color: #0c0c0c; border: 1px solid var(--ardor-rule-strong); }
+.signalGrid > li:nth-child(6) .signalModule { background: #96f254; color: #0c0c0c; }
+.signalMeta { display: inline-flex; align-items: center; gap: 0.45rem; opacity: 0.82; }
+.signalMeta i { width: 0.4rem; height: 0.4rem; border: 1px solid currentColor; border-radius: 50%; }
+.signalMeta i.online { background: currentColor; }
+.signalModule strong { max-width: 100%; font-size: 1rem; line-height: 1.4; font-weight: 650; overflow-wrap: anywhere; }
+.signalState { opacity: 0.58; }
+.signalArrow { position: absolute; right: 1rem; bottom: 1rem; width: 1rem; height: 1rem; transition: transform 220ms var(--ardor-ease); }
+.signalModule:hover .signalArrow { transform: translate(0.2rem, -0.2rem); }
+.signalEmpty strong { opacity: 0.55; }
+
+.nextActions { margin-top: 2.25rem; display: grid; grid-template-columns: 10rem 1fr; gap: 2rem; align-items: start; }
+.nextActions > p { padding-top: 0.75rem; color: var(--ardor-ink-3); }
+.nextActions ul { border-top: 1px solid var(--ardor-rule-strong); }
+.suggestion { width: 100%; padding: 0.8rem 0; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--ardor-rule-strong); color: var(--ardor-ink-2); text-align: left; font-size: 0.9rem; transition: padding 180ms var(--ardor-ease), color 180ms var(--ardor-ease); }
+.suggestion:hover { padding-left: 0.65rem; color: var(--ardor-accent); }
+.suggestion:disabled { pointer-events: none; opacity: 0.4; }
+.suggestion svg { width: 0.9rem; height: 0.9rem; flex: 0 0 auto; }
+
+@media (max-width: 900px) {
+  .signalGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .signalGrid > li:nth-child(5), .signalGrid > li:nth-child(6) { grid-column: span 1; }
+}
+
+@media (max-width: 640px) {
+  .briefingHeader { align-items: flex-start; flex-direction: column; gap: 1.5rem; }
+  .signalGrid { grid-template-columns: 1fr; }
+  .signalModule { min-height: 8.5rem; }
+  .nextActions { grid-template-columns: 1fr; gap: 0.5rem; }
+}

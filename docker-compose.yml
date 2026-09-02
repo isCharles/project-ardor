@@ -1,0 +1,85 @@
+name: project-ardor
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ardor}
+      POSTGRES_USER: ${POSTGRES_USER:-ardor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ardor_local_password}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - ardor-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ardor-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      network: host
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ardor}
+      DATABASE_USER: ${POSTGRES_USER:-ardor}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-ardor_local_password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ARDOR_ENCRYPTION_KEY: ${ARDOR_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      ARDOR_RESUME_STORAGE: /app/data/resumes
+      ARDOR_HTTP_PROXY_HOST: ${ARDOR_HTTP_PROXY_HOST:-}
+      ARDOR_HTTP_PROXY_PORT: ${ARDOR_HTTP_PROXY_PORT:-0}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ardor-resume-data:/app/data/resumes
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      network: host
+      args:
+        ARDOR_BACKEND_URL: http://backend:8080
+    environment:
+      ARDOR_BACKEND_URL: http://backend:8080
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  ardor-postgres-data:
+  ardor-redis-data:
+  ardor-resume-data:

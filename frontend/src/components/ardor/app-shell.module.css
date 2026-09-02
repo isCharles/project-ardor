@@ -1,0 +1,66 @@
+.shell {
+  color-scheme: light;
+  --ardor-rail: #0c0c0c;
+  --ardor-rail-ink: #e2e2e2;
+  --ardor-rail-ink-2: #aaa79d;
+  --ardor-rail-ink-3: #6e6c66;
+  --ardor-rail-rule: rgb(226 226 226 / 14%);
+  --ardor-rail-hover: rgb(150 242 84 / 8%);
+  --ardor-rail-active: rgb(150 242 84 / 12%);
+  --ardor-rail-accent: #96f254;
+  --ardor-ground: #d3d3d0;
+  --ardor-surface: #e2e2e2;
+  --ardor-raised: #f2f1ec;
+  --ardor-sunken: #ccccca;
+  --ardor-ink: #0c0c0c;
+  --ardor-ink-2: #41413e;
+  --ardor-ink-3: #65655f;
+  --ardor-ink-4: #92918a;
+  --ardor-rule: rgb(12 12 12 / 13%);
+  --ardor-rule-strong: rgb(12 12 12 / 25%);
+  --ardor-accent: #ff5e3a;
+  --ardor-accent-hover: #e44e2b;
+  --ardor-accent-ink: #0c0c0c;
+  --ardor-accent-soft: rgb(255 94 58 / 12%);
+  --ardor-accent-line: rgb(255 94 58 / 48%);
+  --ardor-ok: #417428;
+  --ardor-ok-soft: rgb(150 242 84 / 18%);
+  --ardor-focus: #ff5e3a;
+  background: #e2e2e2;
+}
+
+.sidebar { border-right: 1px solid #0c0c0c; }
+.sidebarHeader { border-bottom: 1px solid var(--ardor-rail-rule); }
+
+.workspaceBrand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--ardor-rail-ink);
+}
+
+.workspaceBrand > span:last-child { display: grid; gap: 0.08rem; }
+.workspaceBrand strong { font-family: var(--ardor-font-mono); font-size: 0.72rem; letter-spacing: 0.16em; }
+.workspaceBrand small { color: var(--ardor-rail-ink-3); font-family: var(--ardor-font-mono); font-size: 0.5rem; letter-spacing: 0.1em; }
+
+.protocolMark { display: inline-flex; align-items: center; width: 1.75rem; height: 1.75rem; padding-left: 0.38rem; border: 1px solid var(--ardor-rail-rule); border-radius: 50%; }
+.protocolMark span { width: 0.65rem; height: 0.65rem; border: 1px solid #96f254; border-radius: 50%; }
+.protocolMark span:first-child { background: #96f254; }
+.protocolMark span + span { margin-left: -0.28rem; }
+
+.protocolNav :global(a[aria-current="page"]) { color: #96f254; }
+.protocolNav :global(a[aria-current="page"] svg) { color: #96f254; }
+
+.topbar {
+  background: rgb(226 226 226 / 92%);
+  backdrop-filter: blur(14px);
+}
+
+.topbarSignal { width: 0.46rem; height: 0.46rem; flex: 0 0 auto; border-radius: 50%; background: #ff5e3a; box-shadow: 0 0 0 4px rgb(255 94 58 / 12%); }
+.workspace { background-color: #e2e2e2; background-image: linear-gradient(rgb(12 12 12 / 3.5%) 1px, transparent 1px), linear-gradient(90deg, rgb(12 12 12 / 3.5%) 1px, transparent 1px); background-size: 32px 32px; }
+.pageBody { background: rgb(226 226 226 / 92%); }
+
+@media (max-width: 767px) {
+  .sidebar { width: min(19rem, 88vw); }
+  .workspace { background-size: 24px 24px; }
+}

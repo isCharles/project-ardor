@@ -1,0 +1,181 @@
+/* Ardor design tokens.
+   One source of truth for color, type, space, radius, motion.
+   Light is the base; dark redefines only the values, never the roles. */
+
+:root {
+  color-scheme: light;
+
+  /* --- Ground. The app is not one flat plane: a dark rail holds the
+         navigation, the content sits on warm paper beside it. --- */
+  /* Three colours, and only three: charcoal, warm white, Ardor red.
+     The red is reserved for one meaning — happening now, connected,
+     next — so it never becomes wallpaper. */
+  --ardor-rail: #131110;          /* charcoal: the landing, the left rail */
+  --ardor-rail-ink: #f2ede4;      /* warm white */
+  --ardor-rail-ink-2: #9c948a;
+  --ardor-rail-ink-3: #6b645d;
+  --ardor-rail-rule: rgba(242, 237, 228, 0.10);
+  --ardor-rail-hover: rgba(242, 237, 228, 0.06);
+  --ardor-rail-active: rgba(242, 237, 228, 0.10);
+  --ardor-rail-accent: #ff5a2d;   /* the thread */
+
+  --ardor-ground: #f2f0ec;        /* secondary panels on the light side */
+  --ardor-surface: #fbfaf8;       /* the page itself */
+  --ardor-raised: #ffffff;        /* composer, menus, dialogs */
+  --ardor-sunken: #edebe6;        /* inset wells, code, quoted text */
+
+  /* --- Ink. Four steps, each with a job. --- */
+  --ardor-ink: #1a1917;           /* primary text, headings */
+  --ardor-ink-2: #55524c;         /* secondary text, body at rest */
+  --ardor-ink-3: #6e6a64;         /* metadata — still AA on surface */
+  --ardor-ink-4: #a5a099;         /* non-essential glyphs, disabled */
+
+  /* --- Rules. Structure comes from these, not from boxes. --- */
+  --ardor-rule: rgba(26, 25, 23, 0.10);
+  --ardor-rule-strong: rgba(26, 25, 23, 0.20);
+
+  /* --- Accent: ember. The product is named for heat; one warm mark. --- */
+  --ardor-accent: #b4441c;
+  --ardor-accent-hover: #9b3a17;
+  --ardor-accent-ink: #ffffff;
+  --ardor-accent-soft: rgba(180, 68, 28, 0.09);
+  --ardor-accent-line: rgba(180, 68, 28, 0.38);
+
+  /* --- Semantic. Matched chroma so nothing shouts. --- */
+  --ardor-ok: #3f6b45;
+  --ardor-ok-soft: rgba(63, 107, 69, 0.10);
+  --ardor-warn: #8a6516;
+  --ardor-warn-soft: rgba(138, 101, 22, 0.11);
+  --ardor-bad: #a33a32;
+  --ardor-bad-soft: rgba(163, 58, 50, 0.09);
+
+  --ardor-focus: #b4441c;
+
+  /* --- Type. System stacks: the product is Chinese-first and ships
+         offline in Docker, so a Latin webfont would only mismatch the
+         CJK face beside it. Identity comes from the scale, not the file. --- */
+  --ardor-font-sans: "Segoe UI Variable Text", "Segoe UI", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", Arial, "PingFang SC",
+    "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --ardor-font-display: "Segoe UI Variable Display", "Segoe UI", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", Arial, "PingFang SC",
+    "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --ardor-font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
+    "Roboto Mono", Consolas, "Liberation Mono", monospace;
+
+  /* --- Radius. Exactly three. Everything else is a mistake. --- */
+  --ardor-radius-sm: 3px;
+  --ardor-radius: 6px;
+  --ardor-radius-lg: 10px;
+
+  /* --- Elevation. Two steps: a resting surface and a floating one. --- */
+  --ardor-shadow-rest:
+    0 1px 1px rgba(26, 25, 23, 0.04),
+    0 2px 6px -2px rgba(26, 25, 23, 0.06);
+  --ardor-shadow-overlay:
+    0 1px 2px rgba(26, 25, 23, 0.06),
+    0 16px 48px -12px rgba(26, 25, 23, 0.22);
+
+  /* --- Motion. One easing family, three durations. --- */
+  --ardor-ease: cubic-bezier(0.2, 0, 0, 1);       /* enter: fast out, settles */
+  --ardor-ease-out: cubic-bezier(0.4, 0, 1, 1);   /* exit */
+  --ardor-fast: 130ms;
+  --ardor-base: 220ms;
+  --ardor-slow: 380ms;
+  --ardor-stagger: 34ms;
+
+  /* --- Measure. --- */
+  --ardor-reading: 32rem;   /* ~35 CJK / ~72 Latin characters */
+  --ardor-thread: 45rem;
+  --ardor-shell: 82rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --ardor-rail: #0e0d0c;
+    --ardor-rail-ink: #eae6de;
+    --ardor-rail-ink-2: #9b958b;
+    --ardor-rail-ink-3: #6f6a62;
+    --ardor-rail-rule: rgba(234, 230, 222, 0.09);
+    --ardor-rail-hover: rgba(234, 230, 222, 0.05);
+    --ardor-rail-active: rgba(234, 230, 222, 0.09);
+    --ardor-rail-accent: #ef7b48;
+
+    --ardor-ground: #121110;
+    --ardor-surface: #171615;
+    --ardor-raised: #201e1c;
+    --ardor-sunken: #0e0d0c;
+
+    --ardor-ink: #f0ede8;
+    --ardor-ink-2: #a8a29a;
+    --ardor-ink-3: #928c84;
+    --ardor-ink-4: #5e5a54;
+
+    --ardor-rule: rgba(240, 237, 232, 0.11);
+    --ardor-rule-strong: rgba(240, 237, 232, 0.22);
+
+    --ardor-accent: #e8703f;
+    --ardor-accent-hover: #f4855a;
+    --ardor-accent-ink: #1a0f09;
+    --ardor-accent-soft: rgba(232, 112, 63, 0.13);
+    --ardor-accent-line: rgba(232, 112, 63, 0.42);
+
+    --ardor-ok: #7bae7f;
+    --ardor-ok-soft: rgba(123, 174, 127, 0.13);
+    --ardor-warn: #d2a44a;
+    --ardor-warn-soft: rgba(210, 164, 74, 0.13);
+    --ardor-bad: #e08078;
+    --ardor-bad-soft: rgba(224, 128, 120, 0.13);
+
+    --ardor-focus: #e8703f;
+
+    --ardor-shadow-rest: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --ardor-shadow-overlay:
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 16px 48px -12px rgba(0, 0, 0, 0.65);
+  }
+}
+
+@theme inline {
+  --color-rail: var(--ardor-rail);
+  --color-ground: var(--ardor-ground);
+  --color-surface: var(--ardor-surface);
+  --color-raised: var(--ardor-raised);
+  --color-sunken: var(--ardor-sunken);
+
+  --color-ink: var(--ardor-ink);
+  --color-ink-2: var(--ardor-ink-2);
+  --color-ink-3: var(--ardor-ink-3);
+  --color-ink-4: var(--ardor-ink-4);
+
+  --color-rule: var(--ardor-rule);
+  --color-rule-strong: var(--ardor-rule-strong);
+
+  --color-accent: var(--ardor-accent);
+  --color-accent-hover: var(--ardor-accent-hover);
+  --color-accent-ink: var(--ardor-accent-ink);
+  --color-accent-soft: var(--ardor-accent-soft);
+  --color-accent-line: var(--ardor-accent-line);
+
+  --color-ok: var(--ardor-ok);
+  --color-ok-soft: var(--ardor-ok-soft);
+  --color-warn: var(--ardor-warn);
+  --color-warn-soft: var(--ardor-warn-soft);
+  --color-bad: var(--ardor-bad);
+  --color-bad-soft: var(--ardor-bad-soft);
+
+  --font-sans: var(--ardor-font-sans);
+  --font-display: var(--ardor-font-display);
+  --font-mono: var(--ardor-font-mono);
+
+  --radius-sm: var(--ardor-radius-sm);
+  --radius: var(--ardor-radius);
+  --radius-lg: var(--ardor-radius-lg);
+
+  --shadow-rest: var(--ardor-shadow-rest);
+  --shadow-overlay: var(--ardor-shadow-overlay);
+
+  --ease-ardor: var(--ardor-ease);
+}

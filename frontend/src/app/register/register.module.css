@@ -1,0 +1,205 @@
+.page {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(30rem, 0.92fr);
+  background: var(--ardor-surface);
+}
+
+.story {
+  --ardor-ink: #f2ede4;
+  --ardor-ink-2: #c3bbb0;
+  --ardor-ink-3: #8d857b;
+  --ardor-ink-4: #635c55;
+  --ardor-accent: #ff5a2d;
+  --ardor-accent-line: rgba(255, 90, 45, 0.48);
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+  overflow: hidden;
+  padding: clamp(2rem, 4vw, 4.5rem);
+  color: var(--ardor-ink);
+  background:
+    radial-gradient(circle at 76% 28%, rgba(255, 90, 45, 0.12), transparent 22rem),
+    #131110;
+}
+
+.story::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: "";
+  opacity: 0.22;
+  background-image: linear-gradient(rgba(242, 237, 228, 0.08) 1px, transparent 1px);
+  background-size: 100% 5rem;
+  mask-image: linear-gradient(to bottom, transparent, black 22%, black 78%, transparent);
+}
+
+.brand {
+  width: fit-content;
+}
+
+.storyBody {
+  width: min(100%, 43rem);
+  margin: auto 0;
+  padding: 4rem 0;
+}
+
+.eyebrow,
+.step {
+  font-family: var(--ardor-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+}
+
+.eyebrow {
+  color: var(--ardor-accent);
+}
+
+.story h1 {
+  max-width: 42rem;
+  margin-top: 1.5rem;
+  font-family: var(--ardor-font-display);
+  font-size: clamp(4rem, 7vw, 7.6rem);
+  font-weight: 560;
+  line-height: 0.88;
+  letter-spacing: -0.07em;
+}
+
+.story h1 span {
+  display: block;
+  margin-top: 0.18em;
+  color: var(--ardor-ink-2);
+}
+
+.lede {
+  max-width: 35rem;
+  margin-top: 2rem;
+  color: var(--ardor-ink-2);
+  font-size: clamp(0.95rem, 1.2vw, 1.08rem);
+  line-height: 1.8;
+}
+
+.formSide {
+  position: relative;
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 6.5rem clamp(2rem, 6vw, 6rem) 4rem;
+  background: var(--ardor-surface);
+}
+
+.loginPrompt {
+  position: absolute;
+  top: 2.25rem;
+  right: clamp(2rem, 4vw, 4rem);
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  color: var(--ardor-ink-3);
+  font-size: 0.78rem;
+}
+
+.loginPrompt a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ardor-ink);
+  font-weight: 600;
+}
+
+.loginPrompt svg {
+  width: 0.85rem;
+}
+
+.formWrap {
+  width: min(100%, 25rem);
+}
+
+.mobileBrand {
+  display: none;
+}
+
+.step {
+  color: var(--ardor-accent);
+}
+
+.formWrap h2 {
+  margin-top: 1rem;
+  color: var(--ardor-ink);
+  font-family: var(--ardor-font-display);
+  font-size: clamp(2.25rem, 4vw, 3.4rem);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.045em;
+}
+
+.description {
+  margin-top: 1rem;
+  color: var(--ardor-ink-3);
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+
+.form {
+  display: grid;
+  gap: 1.15rem;
+  margin-top: 2.5rem;
+}
+
+.input {
+  height: 2.9rem;
+  padding-inline: 0.9rem;
+  background: var(--ardor-raised);
+}
+
+.submit {
+  width: 100%;
+  height: 3rem;
+  margin-top: 0.35rem;
+}
+
+@media (max-width: 900px) {
+  .page {
+    grid-template-columns: 1fr;
+  }
+
+  .story {
+    display: none;
+  }
+
+  .formSide {
+    padding: 2rem 1.4rem 3rem;
+  }
+
+  .loginPrompt {
+    top: 2.2rem;
+    right: 1.4rem;
+  }
+
+  .loginPrompt span {
+    display: none;
+  }
+
+  .formWrap {
+    margin-top: 4.5rem;
+  }
+
+  .mobileBrand {
+    display: block;
+    margin-bottom: 4rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .formWrap {
+    animation: enter 420ms var(--ardor-ease) both;
+  }
+
+  @keyframes enter {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
