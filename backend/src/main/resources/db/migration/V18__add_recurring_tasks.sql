@@ -37,7 +37,6 @@ CREATE INDEX ix_task_series_user_status ON task_series (user_id, status);
 
 ALTER TABLE tasks ADD COLUMN series_id UUID;
 ALTER TABLE tasks ADD COLUMN occurrence_date DATE;
-ALTER TABLE tasks ADD COLUMN user_modified BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Dropping a series must never take completed history with it: the occurrence
 -- rows survive as ordinary tasks with the link cleared.
