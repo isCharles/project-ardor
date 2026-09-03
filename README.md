@@ -129,6 +129,7 @@ Docker 内嵌解析器会转发给宿主机配置的上游,在部分 Windows / D
 - 知识库使用 pgvector 做混合检索：稠密向量（用户自备 Embedding 服务）+ 关键词词频，按 RRF 融合。检索一律先按 `user_id` 过滤再算相似度。
 - Agent 的永久删除采用两轮确认；第一轮只定位对象，用户明确回复“确认删除 + 对象名称”后才执行。
 - 个人资料保存 IANA 时区，Agent 的相对日期与记忆卡日程按用户时区计算；默认 `Asia/Shanghai`。
+- 重复日程（每天、每周、每月）由 `task_series` 保存规则，并按用户时区提前展开成日历上真实的待办，因此单次可以独立完成、修改或删除。后台任务持续把展开窗口推到约 120 天以后；取消规则只撤回尚未开始、用户也没动过的后续日程。
 - 当前不包含语音、多 Agent 或 LangGraph。Redis 目前只负责登录会话；简历任务队列使用 PostgreSQL 保证持久化。
 
 详细设计见 [项目范围](docs/PROJECT.md)、[架构说明](docs/ARCHITECTURE.md)、[数据库设计](docs/DATABASE.md)、[路线图](docs/ROADMAP.md) 与 [AI 开发指南](docs/AI_GUIDE.md)。

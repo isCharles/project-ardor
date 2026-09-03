@@ -1,7 +1,12 @@
 package com.projectardor.agent.tools;
 
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -14,8 +19,11 @@ import org.springframework.stereotype.Component;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.calendar.domain.CalendarTaskPriority;
 import com.projectardor.calendar.domain.CalendarTaskSource;
+import com.projectardor.calendar.domain.RecurrenceFrequency;
 import com.projectardor.calendar.service.CalendarTaskService;
+import com.projectardor.calendar.service.TaskSeriesService;
 import com.projectardor.calendar.web.CalendarTaskResponse;
+import com.projectardor.calendar.web.TaskSeriesResponse;
 import com.projectardor.agent.service.AgentMemoryService;
 import com.projectardor.agent.web.AgentMemoryResponse;
 import com.projectardor.agent.web.AgentMemoryItemResponse;
@@ -55,6 +63,7 @@ public class CareerAgentTools {
     private final ProfileService profileService;
     private final AgentMemoryService memoryService;
     private final CalendarTaskService calendarTaskService;
+    private final TaskSeriesService taskSeriesService;
     private final InterviewRecapService interviewRecapService;
     private final InterviewRecapQueueService interviewRecapQueueService;
     private final TavilySearchService tavilySearchService;
@@ -67,6 +76,7 @@ public class CareerAgentTools {
             ProfileService profileService,
             AgentMemoryService memoryService,
             CalendarTaskService calendarTaskService,
+            TaskSeriesService taskSeriesService,
             InterviewRecapService interviewRecapService,
             InterviewRecapQueueService interviewRecapQueueService,
             TavilySearchService tavilySearchService,
@@ -77,6 +87,7 @@ public class CareerAgentTools {
         this.profileService = profileService;
         this.memoryService = memoryService;
         this.calendarTaskService = calendarTaskService;
+        this.taskSeriesService = taskSeriesService;
         this.interviewRecapService = interviewRecapService;
         this.interviewRecapQueueService = interviewRecapQueueService;
         this.tavilySearchService = tavilySearchService;
@@ -211,6 +222,57 @@ public class CareerAgentTools {
             UUID id = uuid(taskId, "日历待办 ID");
             calendarTaskService.delete(userId, id);
             return Map.of("deleted", true, "taskId", id);
+        }
+
+        @Tool(name = "list_recurring_tasks", value = "读取当前用户的重复安排（每天、每周、每月循环的日程规则）及其接下来几次的日期。用户问“我有哪些固定安排”，或需要修改、取消某条重复安排前定位对象时使用")
+        public List<TaskSeriesResponse> listRecurringTasks() {
+            return taskSeriesService.list(userId).stream()
+                    .map(series -> TaskSeriesResponse.from(
+                            series, taskSeriesService.upcoming(userId, series.getId(), 4)))
+                    .toList();
+        }
+
+        @Tool(name = "create_recurring_task", value = """
+                创建一条按天、按周或按月循环的日程规则，并把接下来一个季度的每一次都写进日历。
+                用户说“每周四晚上组会”“每天早上读书半小时”“每月 15 号复盘”这类固定安排时使用，不要改用 create_calendar_task 逐条创建。
+                只发生一次的事情必须用 create_calendar_task。频率、星期几或时间不明确时先追问，不得猜测。
+                """)
+        public TaskSeriesResponse createRecurringTask(
+                @P("日历格中的极短标题，通常 2 到 8 个中文字符，例如‘组会’‘读书’‘周报’；完整说明写进 description") String title,
+                @P(value = "完整说明：地点、会议方式、要准备什么。没有时传空字符串", required = false) String description,
+                @P("重复频率：DAILY 表示按天，WEEKLY 表示按周，MONTHLY 表示按月") String frequency,
+                @P(value = "间隔几个周期，默认 1。例如每两周一次传 2", required = false) Integer interval,
+                @P(value = "按周重复时的星期几，逗号分隔，例如 THU 或 MON,WED,FRI；其他频率必须传空字符串", required = false) String weekdays,
+                @P(value = "按月重复时的日期（1-31）；其他频率传空", required = false) Integer monthDay,
+                @P(value = "每次发生的本地时间，24 小时制 HH:mm，例如 19:00；不传默认 09:00", required = false) String timeOfDay,
+                @P(value = "从哪一天开始，格式 YYYY-MM-DD；不传表示从今天开始", required = false) String startDate,
+                @P(value = "重复到哪一天为止，格式 YYYY-MM-DD；长期有效时传空字符串", required = false) String untilDate,
+                @P(value = "总共重复多少次；与结束日期只能二选一，长期有效时传空", required = false) Integer occurrenceLimit,
+                @P(value = "优先级：LOW、MEDIUM 或 HIGH", required = false) String priority) {
+            var creation = taskSeriesService.create(
+                    userId,
+                    title,
+                    blankToNull(description),
+                    parsePriority(priority),
+                    CalendarTaskSource.AGENT,
+                    parseFrequency(frequency),
+                    interval,
+                    parseWeekdays(weekdays),
+                    monthDay,
+                    parseLocalTime(timeOfDay),
+                    parseLocalDate(startDate, "开始日期"),
+                    parseLocalDate(untilDate, "结束日期"),
+                    occurrenceLimit);
+            return TaskSeriesResponse.from(
+                    creation.series(), taskSeriesService.upcoming(userId, creation.series().getId(), 4));
+        }
+
+        @Tool(name = "delete_recurring_task", value = "停止一条重复安排，并撤回它尚未开始、也没被用户动过的后续日程；已经发生或已完成的记录会保留。必须先调用 list_recurring_tasks 获取真实 UUID；只有用户明确要求取消该固定安排时使用，目标不唯一时必须先追问")
+        public Map<String, Object> deleteRecurringTask(@P("重复安排 UUID") String seriesId) {
+            requireExplicitDeletion(false, "重复", "循环", "固定", "每天", "每周", "每月", "日历", "日程", "recurring", "series");
+            UUID id = uuid(seriesId, "重复安排 ID");
+            int withdrawn = taskSeriesService.cancel(userId, id);
+            return Map.of("cancelled", true, "seriesId", id, "withdrawnOccurrences", withdrawn);
         }
 
         @Tool(name = "list_resumes", value = "列出当前用户的简历、解析状态、分析任务状态和可用分析 ID")
@@ -451,6 +513,46 @@ public class CareerAgentTools {
                 } catch (RuntimeException exception) {
                     throw new IllegalArgumentException("时间必须使用带时区的 ISO-8601 格式，例如 2026-09-10T14:00:00+08:00");
                 }
+            }
+        }
+
+        private RecurrenceFrequency parseFrequency(String value) {
+            if (value == null || value.isBlank()) throw new IllegalArgumentException("重复频率必须是 DAILY、WEEKLY 或 MONTHLY");
+            String token = value.strip().toUpperCase(Locale.ROOT);
+            return switch (token) {
+                case "DAILY", "DAY", "每天", "每日" -> RecurrenceFrequency.DAILY;
+                case "WEEKLY", "WEEK", "每周" -> RecurrenceFrequency.WEEKLY;
+                case "MONTHLY", "MONTH", "每月" -> RecurrenceFrequency.MONTHLY;
+                default -> throw new IllegalArgumentException("重复频率必须是 DAILY、WEEKLY 或 MONTHLY");
+            };
+        }
+
+        private Set<DayOfWeek> parseWeekdays(String value) {
+            if (value == null || value.isBlank()) return Set.of();
+            Set<DayOfWeek> days = new LinkedHashSet<>();
+            for (String token : value.split("[,，、\\s]+")) {
+                if (!token.isBlank()) days.add(TaskSeriesService.parseWeekday(token));
+            }
+            return days;
+        }
+
+        private LocalTime parseLocalTime(String value) {
+            if (value == null || value.isBlank()) return null;
+            String text = value.strip();
+            if (text.matches("\\d:\\d{2}")) text = "0" + text;
+            try {
+                return LocalTime.parse(text);
+            } catch (RuntimeException exception) {
+                throw new IllegalArgumentException("时间必须是 24 小时制的 HH:mm，例如 19:00");
+            }
+        }
+
+        private LocalDate parseLocalDate(String value, String label) {
+            if (value == null || value.isBlank()) return null;
+            try {
+                return LocalDate.parse(value.strip());
+            } catch (RuntimeException exception) {
+                throw new IllegalArgumentException(label + "必须是 YYYY-MM-DD 格式");
             }
         }
 

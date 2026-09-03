@@ -26,7 +26,8 @@
 | `interview_questions` | `user_id` | 有序问题和评价标准 | session 内序号唯一 |
 | `interview_answers` | `user_id` | 用户答案 | 每题最多一个答案 |
 | `interview_evaluations` | `user_id` | 总分和结构化反馈 | 每场面试最多一个评价 |
-| `tasks` | `user_id` | 后续行动及状态 | 可追溯来源面试 |
+| `tasks` | `user_id` | 后续行动及状态 | 可追溯来源面试；重复安排的每一次也是这里的一行 |
+| `task_series` | `user_id` | 重复日程的规则（按天、按周、按月） | 每条规则提前展开约 120 天的 `tasks`；`(series_id, occurrence_date)` 唯一 |
 | `events` | `user_id` | 有明确时间段的计划 | 结束时间必须晚于开始时间 |
 
 ## JSONB 结构契约

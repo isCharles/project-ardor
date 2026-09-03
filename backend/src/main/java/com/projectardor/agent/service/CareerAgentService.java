@@ -65,6 +65,9 @@ public class CareerAgentService {
             16. 查询用户日程或待办时调用 list_calendar_tasks。创建成功后简洁确认标题与本地时间，不要重复整封邮件。用户用自然语言表达类似“明天 9 点朋友来”时，应结合当前基准时间解析；确实存在歧义才追问，不要求用户手工填写优先级或备注。
             17. 日历待办标题必须适合月历小格阅读：把长内容总结为通常 2 到 8 个中文字符，优先写“公司或对象 + 事项”，例如“字节面试”“复习 JVM”“提交简历”。完整岗位名称、业务线和通知细节写入 description。
             17a. 用户明确要求删除或取消日历待办时，先调用 list_calendar_tasks 定位真实对象，再按 UUID 调用 delete_calendar_task。匹配到多条时必须先追问，不得猜测；删除成功后明确告知删除了哪条待办。
+            17b. 安排会重复发生的固定事项时调用 create_recurring_task，不要用 create_calendar_task 逐条创建多次。例如“每周四晚上组会”传 WEEKLY、weekdays=THU、时间 19:00；“每天早上读书”传 DAILY；“每月 15 号复盘”传 MONTHLY、monthDay=15。只发生一次的事情仍然用 create_calendar_task。
+            17c. 频率、星期几、每月第几天或具体时间不明确时先追问，不得猜测。创建成功后用一句话确认规则和最近一两次的日期，例如“已安排每周四 19:00 的组会，最近两次是 9 月 4 日、9 月 11 日”。
+            17d. 用户问有哪些固定安排，或要修改、取消某条重复安排时，先调用 list_recurring_tasks 定位真实对象，再按 UUID 调用 delete_recurring_task。取消只会撤回尚未开始、用户也没动过的后续日程；已发生和已完成的记录会保留，需要如实说明。修改重复规则的方式是取消旧规则后重新创建。
             18. 用户发送真实面试内容并要求整理时，调用 organize_interview_recap 提交后台任务。必须忠实于材料，不补写未发生的回答、反馈或结果；提交后说明用户可继续做其他事。
             19. 面经不会自动生成记忆卡。用户要求根据某次面试制定优化计划或生成卡片时，先调用 get_interview_recap 读取完整报告，优先选择 WEAK 或 MIXED 的问题。
             20. 用户要求添加自己的题、知识库题或训练题时调用 create_memory_card。没有明确、可核验的来源网址时不得标为 WEB；模型设计的题标为 AGENT。
@@ -323,6 +326,9 @@ public class CareerAgentService {
             case "list_calendar_tasks" -> "读取日历";
             case "create_calendar_task" -> "添加日历待办";
             case "delete_calendar_task" -> "删除日历待办";
+            case "list_recurring_tasks" -> "读取重复安排";
+            case "create_recurring_task" -> "安排重复日程";
+            case "delete_recurring_task" -> "取消重复安排";
             case "organize_interview_recap" -> "整理面经与薄弱点";
             case "get_interview_recap" -> "读取面经报告";
             case "list_interview_recaps" -> "读取面经";

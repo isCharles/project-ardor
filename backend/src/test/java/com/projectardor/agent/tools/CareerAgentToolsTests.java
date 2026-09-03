@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import com.projectardor.agent.service.AgentMemoryService;
 import com.projectardor.calendar.service.CalendarTaskService;
+import com.projectardor.calendar.service.TaskSeriesService;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.knowledge.service.KnowledgeService;
 import com.projectardor.profile.service.ProfileService;
@@ -36,6 +37,7 @@ class CareerAgentToolsTests {
                 mock(ProfileService.class),
                 mock(AgentMemoryService.class),
                 calendarTaskService,
+                mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class),
                 mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class),
@@ -59,6 +61,7 @@ class CareerAgentToolsTests {
                 mock(ProfileService.class),
                 mock(AgentMemoryService.class),
                 mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class),
                 mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class),
@@ -78,6 +81,7 @@ class CareerAgentToolsTests {
         CareerAgentTools tools = new CareerAgentTools(
                 mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), interviewService,
                 mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class), mock(KnowledgeService.class));
 
@@ -93,6 +97,7 @@ class CareerAgentToolsTests {
         CareerAgentTools tools = new CareerAgentTools(
                 mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
                 mock(ProfileService.class), mock(AgentMemoryService.class), calendarTaskService,
+                mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class), mock(KnowledgeService.class));
 
@@ -115,6 +120,7 @@ class CareerAgentToolsTests {
         CareerAgentTools tools = new CareerAgentTools(
                 mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
                 mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 searchService, mock(KnowledgeService.class));
 
