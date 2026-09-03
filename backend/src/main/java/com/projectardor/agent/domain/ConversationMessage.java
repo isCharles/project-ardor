@@ -8,6 +8,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "messages")
@@ -27,6 +29,10 @@ public class ConversationMessage {
 
     @Column(nullable = false, columnDefinition = "text")
     private String content;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "tool_calls", columnDefinition = "jsonb")
+    private String runTrace;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -53,6 +59,12 @@ public class ConversationMessage {
         return new ConversationMessage(userId, conversationId, "ASSISTANT", content);
     }
 
+    public static ConversationMessage assistant(UUID userId, UUID conversationId, String content, String runTrace) {
+        ConversationMessage message = assistant(userId, conversationId, content);
+        message.runTrace = runTrace;
+        return message;
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
@@ -65,5 +77,6 @@ public class ConversationMessage {
     public UUID getConversationId() { return conversationId; }
     public String getRole() { return role; }
     public String getContent() { return content; }
+    public String getRunTrace() { return runTrace; }
     public Instant getCreatedAt() { return createdAt; }
 }

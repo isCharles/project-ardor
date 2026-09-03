@@ -10,10 +10,11 @@ public record AgentMessageResponse(
         UUID conversationId,
         String role,
         String content,
+        String runTrace,
         Instant createdAt) {
     public static AgentMessageResponse from(ConversationMessage message) {
         return new AgentMessageResponse(
                 message.getId(), message.getConversationId(), message.getRole(),
-                message.getContent(), message.getCreatedAt());
+                message.getContent(), message.getRunTrace(), message.getCreatedAt());
     }
 }

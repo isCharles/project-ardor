@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ApiError, api, streamApi } from "@/lib/api";
 import { useTypewriter } from "@/lib/use-typewriter";
 
-type AgentMessage = { id: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; createdAt: string };
+type AgentMessage = { id: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; runTrace?: string | null; createdAt: string };
 type Conversation = { id: string; title: string; pinned: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
 type RetryFailure = { label: string; detail: string };
@@ -41,6 +41,12 @@ function formatElapsed(milliseconds: number) {
   if (milliseconds <= 0) return "即时";
   if (milliseconds < 1000) return `${Math.max(1, Math.round(milliseconds))} ms`;
   return `${(milliseconds / 1000).toFixed(1)} 秒`;
+}
+
+function savedRunTrace(raw?: string | null) {
+  if (!raw) return null;
+  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<{ label: string; elapsedMs: number; status: string }> }; }
+  catch { return null; }
 }
 
 const typewriterExamples = [
@@ -313,6 +319,9 @@ export default function AgentHomePage() {
       window.sessionStorage.removeItem(savedDraftKey);
       setSelectedContext(null);
       await load(completedAssistant.conversationId);
+      setRunSteps([]);
+      setRetryFailures([]);
+      setRunElapsed(0);
     } catch (reason) {
       if (conversationCreatedForThisMessage) {
         try {
@@ -544,8 +553,9 @@ export default function AgentHomePage() {
                     {message.role === "USER" ? (
                       <div className="max-w-[86%] whitespace-pre-wrap rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7">{message.content}</div>
                     ) : (
-                      <div className="ardor-markdown max-w-full py-0.5 text-sm leading-7 text-stone-800">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                      <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
+                        <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
+                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <details className="mt-3 max-w-xl rounded-2xl border border-white/70 bg-white/45 px-4 py-3 text-stone-600 shadow-sm"><summary className="cursor-pointer list-none text-xs font-medium">Ardor 已完成 <span className="float-right font-normal tabular-nums text-stone-400">{formatElapsed(trace.elapsedMs)}</span></summary><div className="mt-3 space-y-2 border-l border-stone-200 pl-4">{trace.steps.map((step, index) => <div key={`${step.label}-${index}`} className="flex items-center gap-2 text-xs"><CheckCircle2 className={`size-3.5 ${step.status === "FAILED" ? "text-rose-500" : "text-emerald-500"}`} /><span>{step.label}</span><span className="ml-auto tabular-nums text-stone-400">{formatElapsed(step.elapsedMs)}</span></div>)}</div></details>; })()}
                       </div>
                     )}
                   </article>
