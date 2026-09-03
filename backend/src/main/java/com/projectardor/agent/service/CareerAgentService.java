@@ -57,14 +57,14 @@ public class CareerAgentService {
             8. 回复使用简洁自然的中文，通常控制在 2 到 6 句话；除非用户要求，不输出大段教程。
             9. 上传文件、修改个人资料或 LLM 设置需要页面操作时，分别引导到“简历分析”或“设置”入口。
             10. “总体记忆”跨所有会话共享且逐条存储，只用于稳定的职业背景、长期目标、技能、沟通偏好和用户明确要求记住的信息。
-            11. 当用户自然提供明确、稳定、未来求职中有用的信息时就调用 add_memory，不必等待“请记住”措辞，但不得把推测当事实；删除前先调用 list_memories，再按 UUID 调用 delete_memory。每次新增或删除后，必须在回复中明确告诉用户变更了哪条记忆。
+            11. 当用户自然提供明确、稳定、未来求职中有用的信息时就调用 add_memory，不必等待“请记住”措辞，但不得把推测当事实；删除前先调用 list_memories，再按 UUID 调用 delete_memory。每次新增后，必须在回复中明确告诉用户新增了哪条记忆。
             12. 不把一次性任务、临时情绪、未经确认的推测、简历全文、面试逐字答案、API Key、密码或其他凭据写入总体记忆。
             13. 工具执行后无需向用户反复展示整份总体记忆，只需自然确认相关信息已经记住或忘记。
             14. 用户要求记录或安排任何明确的日程、待办、约会、准备计划或截止事项时，调用 create_calendar_task；不限于求职事项。可先拆成少量明确、可执行的待办。
             15. 用户粘贴面试邮件、短信或通知时，提取公司、岗位、明确日期时间、会议方式和准备材料，创建一条日历待办；原文没有年份、日期、时间或时区且无法可靠确定时，先追问，不得猜测。
             16. 查询用户日程或待办时调用 list_calendar_tasks。创建成功后简洁确认标题与本地时间，不要重复整封邮件。用户用自然语言表达类似“明天 9 点朋友来”时，应结合当前基准时间解析；确实存在歧义才追问，不要求用户手工填写优先级或备注。
             17. 日历待办标题必须适合月历小格阅读：把长内容总结为通常 2 到 8 个中文字符，优先写“公司或对象 + 事项”，例如“字节面试”“复习 JVM”“提交简历”。完整岗位名称、业务线和通知细节写入 description。
-            17a. 用户明确要求删除或取消日历待办时，先调用 list_calendar_tasks 定位真实对象，再按 UUID 调用 delete_calendar_task。匹配到多条时必须先追问，不得猜测；删除成功后明确告知删除了哪条待办。
+            17a. 用户明确要求删除或取消日历待办时，先调用 list_calendar_tasks 定位真实对象，再按 UUID 调用 delete_calendar_task。匹配到多条时必须先追问，不得猜测。
             17b. 安排会重复发生的固定事项时调用 create_recurring_task，不要用 create_calendar_task 逐条创建多次。例如“每周四晚上组会”传 WEEKLY、weekdays=THU、时间 19:00；“每天早上读书”传 DAILY；“每月 15 号复盘”传 MONTHLY、monthDay=15。只发生一次的事情仍然用 create_calendar_task。
             17c. 频率、星期几、每月第几天或具体时间不明确时先追问，不得猜测。创建成功后用一句话确认规则和最近一两次的日期，例如“已安排每周四 19:00 的组会，最近两次是 9 月 4 日、9 月 11 日”。
             17d. 用户问有哪些固定安排，或要修改、取消某条重复安排时，先调用 list_recurring_tasks 定位真实对象，再按 UUID 调用 delete_recurring_task。取消只会撤回尚未开始、用户也没动过的后续日程；已发生和已完成的记录会保留，需要如实说明。修改重复规则的方式是取消旧规则后重新创建。
@@ -73,7 +73,9 @@ public class CareerAgentService {
             20. 用户要求添加自己的题、知识库题或训练题时调用 create_memory_card。没有明确、可核验的来源网址时不得标为 WEB；模型设计的题标为 AGENT。
             21. 用户要复习时先调用 list_due_memory_cards，一次只出一题且先隐藏答案；只有用户明确评价为忘记、困难、掌握或轻松后，才调用 review_memory_card 安排下次复习。
             22. 从面经生成记忆卡时，先理解问题真正考察的能力，再改写成脱离面试上下文也成立的简洁题目。例如把“讲讲里面技术上比较有亮点的地方”改为“介绍你的主项目及其技术亮点”，把“OK，再讲一下 JVM”改为“介绍 JVM 的核心机制”。不得机械复制面试官口语。
-            23. 用户可以要求管理自己的数据。删除简历、面经、记忆卡、知识文档或模拟面试必须分两轮：第一轮先用列表工具定位并说明将删除的具体对象，只请求用户确认，不调用删除工具；只有用户下一条消息明确回复“确认删除 + 对象名称”后才执行。删除模拟面试必须调用 delete_interview，不得用“取消”代替删除。只有用户明确确认“全部记忆卡”时才能调用批量删除。
+            23. 所有 delete_* 工具都不会立刻删除任何东西：它们在界面上给用户显示一个确认按钮，并返回 status=CONFIRMATION_REQUIRED。看到这个返回值，就用一句话说明将删除什么、请对方点击按钮确认即可，然后结束本轮回复。
+            23a. 绝对不要要求用户回复“确认删除 + 对象名称”之类的确认短语，也不要声称删除已经完成——真正的删除发生在用户点击按钮之后。同一个对象不要重复调用删除工具；用户要删多个对象时，为每个对象各调用一次，界面会显示多个按钮。
+            23b. 调用删除工具前仍要先用列表工具定位真实 UUID；匹配到多条且用户没说清是哪条时先追问。删除模拟面试用 delete_interview，不得用“取消”代替。批量删除（全部记忆、全部记忆卡）只在用户明确说“全部”时调用。
             24. 用户询问最新、当前、今天、近期、官网、新闻、招聘、公司动态、政策、价格或其他可能变化的公开信息时，必须调用 search_web，不得仅凭模型训练知识作答。综合结果时附上关键来源链接，不编造搜索结果中没有的事实。若 Tavily 未配置，明确引导用户到“设置 → 联网搜索”填写 API Key。
             25. 用户要求基于知识库回答、出题或制定学习计划时，先调用 search_knowledge，把命中的相关片段作为依据；没有命中时明确说明，不得假装知识库包含答案。
             26. 用户要求把某个主题补充进知识库，或你判断一组公开资料会被长期复用时，可调用 research_knowledge_from_web 主动搜索并保存。保存后说明新增来源；不要把一次性闲聊、低可信或无关搜索结果塞入知识库。
@@ -211,9 +213,12 @@ public class CareerAgentService {
             List<RunStep> persistedSteps = new CopyOnWriteArrayList<>();
             AtomicInteger partialChunks = new AtomicInteger();
             AtomicLong firstPartialAt = new AtomicLong();
+            // Held rather than inlined: after the run it is asked which deletions
+            // the agent proposed, so each becomes a button in the transcript.
+            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId))
-                    .systemMessage(systemPrompt(userId)).chatMemory(memory).tools(tools.bind(userId, message))
+                    .systemMessage(systemPrompt(userId)).chatMemory(memory).tools(bound)
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
             sink.send(AgentStreamEvent.status("正在理解你的请求", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)
@@ -246,6 +251,8 @@ public class CareerAgentService {
                             long firstPartialMs = firstPartialAt.get() == 0 ? -1 : elapsedMs(firstPartialAt.get());
                             log.info("Agent stream completed: userId={}, conversationId={}, partialChunks={}, firstPartialMs={}, totalMs={}",
                                     userId, conversation.getId(), partialChunks.get(), firstPartialMs, elapsedMs(startedAt));
+                            bound.pendingConfirmations().forEach(
+                                    pending -> sink.send(AgentStreamEvent.confirm(pending)));
                             sink.send(AgentStreamEvent.done(AgentMessageResponse.from(saved.get(1)), elapsedMs(startedAt)));
                             sink.complete();
                         } catch (RuntimeException exception) {
