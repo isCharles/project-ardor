@@ -6,11 +6,16 @@ import { cn } from "@/lib/utils";
 
 /* The Ardor Thread.
 
-   One line, drawn forward, with the product's state hanging off it. It is
-   the whole identity: past → memory → what is happening now → what is
-   next. Nothing here is invented decoration — every node on the thread is
-   a real record the agent keeps, and the red only ever marks the point the
-   thread has reached.
+   One line, drawn forward, with the product's state hanging off it: past →
+   memory → what is happening now → what is next. It is one way of showing
+   career continuity, not the product's only motif and not something every
+   page owes an appearance — DESIGN.md §11 retired both of those rules, and
+   continuity may equally be carried by scrolling, background takeover, a
+   continued conversation or real data changing.
+
+   Nothing here is invented decoration — every node on the thread is a real
+   record the agent keeps, and the red only ever marks the point the thread
+   has reached.
 
    Drawn as one SVG path with pathLength="1", so the draw is a plain CSS
    dashoffset animation and the nodes fade in on delays matched to it. No

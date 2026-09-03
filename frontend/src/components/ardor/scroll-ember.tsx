@@ -4,9 +4,9 @@ import * as React from "react";
 
 /* The ember, burning down the edge of the page as you scroll.
 
-   The same object as the mark, the run trail and the active rail row —
-   which is what makes it an identity rather than an accent colour. It is
-   also honest progress: it is exactly how far down the page you are. */
+   The same object as the mark, the run trail and the active rail row, so
+   the ember keeps one meaning wherever it turns up. It is also honest
+   progress: it is exactly how far down the page you are. */
 export function ScrollEmber() {
   const fill = React.useRef<HTMLSpanElement>(null);
 

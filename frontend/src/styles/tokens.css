@@ -1,5 +1,7 @@
 /* Ardor design tokens.
-   One source of truth for color, type, space, radius, motion.
+   The single place that holds color, type, space, radius and motion values.
+   The principles these serve live in docs/DESIGN.md, and that document wins
+   whenever a comment here disagrees with it.
    Light is the base; dark redefines only the values, never the roles. */
 
 :root {
@@ -7,10 +9,13 @@
 
   /* --- Ground. The app is not one flat plane: a dark rail holds the
          navigation, the content sits on warm paper beside it. --- */
-  /* Three colours, and only three: charcoal, warm white, Ardor red.
-     The red is reserved for one meaning — happening now, connected,
+  /* These are the grounds the workspace currently uses, not a limit on the
+     product's palette: DESIGN.md §11 retired both "only charcoal, warm
+     white and ember" and the fixed dark-landing / light-workspace split,
+     and §4 allows ambient colour and gradient beyond these tokens.
+     The ember is the one value with a fixed job — happening now, connected,
      next — so it never becomes wallpaper. */
-  --ardor-rail: #131110;          /* charcoal: the landing, the left rail */
+  --ardor-rail: #131110;          /* charcoal: the left rail and dark surfaces */
   --ardor-rail-ink: #f2ede4;      /* warm white */
   --ardor-rail-ink-2: #9c948a;
   --ardor-rail-ink-3: #6b645d;
@@ -30,7 +35,7 @@
   --ardor-ink-3: #6e6a64;         /* metadata — still AA on surface */
   --ardor-ink-4: #a5a099;         /* non-essential glyphs, disabled */
 
-  /* --- Rules. Structure comes from these, not from boxes. --- */
+  /* --- Rules. Hairlines, for structure carried by lines and space. --- */
   --ardor-rule: rgba(26, 25, 23, 0.10);
   --ardor-rule-strong: rgba(26, 25, 23, 0.20);
 
