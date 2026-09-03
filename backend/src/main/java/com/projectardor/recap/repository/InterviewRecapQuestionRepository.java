@@ -5,4 +5,5 @@ import com.projectardor.recap.domain.InterviewRecapQuestion;
 public interface InterviewRecapQuestionRepository extends JpaRepository<InterviewRecapQuestion, UUID> {
     Optional<InterviewRecapQuestion> findByIdAndUserId(UUID id, UUID userId);
     List<InterviewRecapQuestion> findAllByUserIdAndRecapIdOrderBySequenceNumber(UUID userId, UUID recapId);
+    List<InterviewRecapQuestion> findAllByUserIdOrderByRecapIdAscSequenceNumberAsc(UUID userId);
 }

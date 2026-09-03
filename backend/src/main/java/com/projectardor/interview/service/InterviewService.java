@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
@@ -51,6 +52,7 @@ public class InterviewService {
     private final LlmGateway llmGateway;
     private final LlmJsonParser jsonParser;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactions;
 
     public InterviewService(
             InterviewSessionRepository sessionRepository,
@@ -61,7 +63,8 @@ public class InterviewService {
             ResumeService resumeService,
             LlmGateway llmGateway,
             LlmJsonParser jsonParser,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.sessionRepository = sessionRepository;
         this.questionRepository = questionRepository;
         this.answerRepository = answerRepository;
@@ -71,9 +74,9 @@ public class InterviewService {
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
         this.objectMapper = objectMapper;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
     public InterviewSession create(
             UUID userId,
             UUID resumeAnalysisId,
@@ -108,20 +111,19 @@ public class InterviewService {
                 "请生成模拟面试题：\n" + context);
         List<QuestionDraft> drafts = parseQuestions(jsonParser.parseObject(result.content()), questionCount);
 
-        InterviewSession session = sessionRepository.save(InterviewSession.create(
-                userId,
-                resumeAnalysisId,
-                normalizedCompany,
-                normalizedRole));
-        List<InterviewQuestion> questions = new ArrayList<>();
-        for (int index = 0; index < drafts.size(); index++) {
-            QuestionDraft draft = drafts.get(index);
-            questions.add(InterviewQuestion.create(
-                    userId, session.getId(), index + 1,
-                    draft.questionText(), draft.questionType(), draft.evaluationCriteria()));
-        }
-        questionRepository.saveAll(questions);
-        return session;
+        return transactions.execute(status -> {
+            InterviewSession session = sessionRepository.save(InterviewSession.create(
+                    userId, resumeAnalysisId, normalizedCompany, normalizedRole));
+            List<InterviewQuestion> questions = new ArrayList<>();
+            for (int index = 0; index < drafts.size(); index++) {
+                QuestionDraft draft = drafts.get(index);
+                questions.add(InterviewQuestion.create(
+                        userId, session.getId(), index + 1,
+                        draft.questionText(), draft.questionType(), draft.evaluationCriteria()));
+            }
+            questionRepository.saveAll(questions);
+            return session;
+        });
     }
 
     @Transactional(readOnly = true)
@@ -178,7 +180,6 @@ public class InterviewService {
         return getNextQuestion(userId, sessionId);
     }
 
-    @Transactional
     public InterviewEvaluation finish(UUID userId, UUID sessionId) {
         InterviewSession session = get(userId, sessionId);
         var existing = evaluationRepository.findByInterviewSessionIdAndUserId(sessionId, userId);
@@ -220,11 +221,13 @@ public class InterviewService {
             throw new IllegalStateException("LLM 返回的面试总分不在 0 到 100 之间");
         }
         Map<String, Object> evaluation = normalizedEvaluation(root);
-        InterviewEvaluation saved = evaluationRepository.save(
-                InterviewEvaluation.create(userId, sessionId, score, evaluation, result.model()));
-        session.complete();
-        sessionRepository.save(session);
-        return saved;
+        return transactions.execute(status -> {
+            InterviewEvaluation saved = evaluationRepository.save(
+                    InterviewEvaluation.create(userId, sessionId, score, evaluation, result.model()));
+            session.complete();
+            sessionRepository.save(session);
+            return saved;
+        });
     }
 
     @Transactional(readOnly = true)

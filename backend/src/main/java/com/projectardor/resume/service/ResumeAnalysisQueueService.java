@@ -47,6 +47,7 @@ public class ResumeAnalysisQueueService {
         if (resume.getParseStatus() != ResumeParseStatus.PARSED || resume.getParsedText() == null) {
             throw new IllegalStateException("简历文本解析未成功，无法进行 AI 分析");
         }
+        jobRepository.lockRequestSlot(userId, resumeId);
         Optional<ResumeAnalysis> analysis = analysisRepository.findByResumeIdAndUserId(resumeId, userId);
         if (analysis.isPresent()) return TaskResult.completed(resumeId, analysis.get().getId());
         Optional<ResumeAnalysisJob> active = jobRepository
@@ -106,7 +107,9 @@ public class ResumeAnalysisQueueService {
 
     @Transactional
     public int recoverStaleJobs() {
-        return jobRepository.recoverStale(Instant.now().minus(Duration.ofMinutes(10)));
+        Instant staleBefore = Instant.now().minus(Duration.ofMinutes(10));
+        int failed = jobRepository.failExhaustedStale(staleBefore, MAX_ATTEMPTS);
+        return failed + jobRepository.recoverStale(staleBefore, MAX_ATTEMPTS);
     }
 
     private Resume ownedResume(UUID userId, UUID resumeId) {

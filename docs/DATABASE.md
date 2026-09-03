@@ -6,6 +6,7 @@
 - 主键使用应用生成的 UUID，避免暴露顺序 ID。
 - 所有核心业务表直接保存 `user_id`，方便授权查询、索引和未来向量过滤。
 - `created_at`、`updated_at` 使用带时区时间；应用统一按 UTC 写入。
+- `user_profiles.timezone` 保存 IANA 时区标识，用于把 UTC 时间转换成用户本地日期。
 - 灵活但需要持久化的 LLM 结构化输出使用 JSONB；稳定、常查的业务状态使用普通列。
 - 所有变更通过 Flyway migration 管理。
 

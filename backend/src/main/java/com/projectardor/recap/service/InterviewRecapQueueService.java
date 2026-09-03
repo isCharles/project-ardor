@@ -36,6 +36,7 @@ public class InterviewRecapQueueService {
     public TaskResult request(UUID userId, String rawContent) {
         String content = requiredContent(rawContent);
         String inputHash = inputHash(content);
+        jobRepository.lockRequestSlot(userId, inputHash);
         var completed = recapRepository.findByUserIdAndInputHash(userId, inputHash);
         if (completed.isPresent()) return TaskResult.completed(completed.get().getId(), completed.get().getCreatedAt());
         Optional<InterviewRecapJob> active = jobRepository
@@ -70,7 +71,11 @@ public class InterviewRecapQueueService {
     }
 
     @Transactional
-    public int recoverStaleJobs() { return jobRepository.recoverStale(Instant.now().minus(Duration.ofMinutes(10))); }
+    public int recoverStaleJobs() {
+        Instant staleBefore = Instant.now().minus(Duration.ofMinutes(10));
+        int failed = jobRepository.failExhaustedStale(staleBefore, MAX_ATTEMPTS);
+        return failed + jobRepository.recoverStale(staleBefore, MAX_ATTEMPTS);
+    }
 
     public static String requiredContent(String value) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException("面试内容不能为空");

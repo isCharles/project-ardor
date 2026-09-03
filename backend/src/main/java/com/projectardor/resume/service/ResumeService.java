@@ -127,7 +127,6 @@ public class ResumeService {
                 .orElseThrow(() -> new ResourceNotFoundException("简历分析不存在"));
     }
 
-    @Transactional
     public ResumeAnalysis analyze(UUID userId, UUID resumeId) {
         Resume resume = get(userId, resumeId);
         var existing = analysisRepository.findByResumeIdAndUserId(resumeId, userId);

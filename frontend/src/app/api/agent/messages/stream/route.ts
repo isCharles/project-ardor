@@ -15,6 +15,7 @@ export async function POST(request: Request) {
     headers,
     body: await request.text(),
     cache: "no-store",
+    signal: request.signal,
   });
 
   const responseHeaders = new Headers(upstream.headers);

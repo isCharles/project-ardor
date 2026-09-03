@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
 
 type CurrentUser = { id: string; email: string };
-type Profile = { displayName: string | null; headline: string | null; targetRoles: string[] };
+type Profile = { displayName: string | null; headline: string | null; targetRoles: string[]; timezone: string };
 type LlmConfig = {
   configured: boolean;
   provider: "OPENAI_COMPATIBLE" | "ANTHROPIC_COMPATIBLE";
@@ -91,6 +91,7 @@ export default function SettingsPage() {
           displayName: data.get("displayName"),
           headline: data.get("headline"),
           targetRoles: String(data.get("targetRoles") ?? "").split(/[，,]/).map((role) => role.trim()).filter(Boolean),
+          timezone: String(data.get("timezone") ?? "Asia/Shanghai"),
         }),
       });
       setProfile(updated);
@@ -237,6 +238,7 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium">称呼<input className="field mt-2" name="displayName" defaultValue={profile.displayName ?? ""} maxLength={120} /></label>
             <label className="block text-sm font-medium">当前定位<input className="field mt-2" name="headline" defaultValue={profile.headline ?? ""} maxLength={240} placeholder="例如：3 年经验 Java 后端工程师" /></label>
             <label className="block text-sm font-medium">目标岗位<input className="field mt-2" name="targetRoles" defaultValue={profile.targetRoles.join("，")} placeholder="Java 后端，AI 应用工程师" /><span className="mt-2 block text-xs font-normal text-muted-foreground">多个岗位用逗号分隔</span></label>
+            <label className="block text-sm font-medium">时区<select className="field mt-2" name="timezone" defaultValue={profile.timezone}><option value="Asia/Shanghai">中国标准时间</option><option value="Asia/Tokyo">日本标准时间</option><option value="Europe/London">英国时间</option><option value="America/New_York">美国东部时间</option><option value="America/Los_Angeles">美国西部时间</option><option value="UTC">UTC</option></select></label>
             <Button><Save className="mr-2 size-4" />保存资料</Button>
           </form>
         </section>

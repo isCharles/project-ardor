@@ -22,10 +22,15 @@ export default function RecapsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const load = useCallback(async () => { try { const [items, tasks] = await Promise.all([api<Recap[]>("/api/interview-recaps"), api<RecapTask[]>("/api/interview-recaps/jobs")]); setRecaps(items); setJobs(tasks); const requested = new URLSearchParams(window.location.search).get("selected"); setSelectedId((id) => requested && items.some((x) => x.id === requested) ? requested : id && items.some((x) => x.id === id) ? id : items[0]?.id ?? null); } catch (reason) { if (reason instanceof ApiError && reason.status === 401) router.replace("/login"); else setError(reason instanceof Error ? reason.message : "无法加载面经"); } }, [router]);
-  useEffect(() => { const first = window.setTimeout(() => void load(), 0); const timer = window.setInterval(() => void load(), 4000); return () => { window.clearTimeout(first); window.clearInterval(timer); }; }, [load]);
+  useEffect(() => { const first = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(first); }, [load]);
   const selected = recaps.find((item) => item.id === selectedId) ?? null;
   const activeJobs = jobs.filter((job) => job.status === "QUEUED" || job.status === "RUNNING");
   const failedJobs = jobs.filter((job) => job.status === "FAILED");
+  useEffect(() => {
+    if (activeJobs.length === 0) return;
+    const timer = window.setTimeout(() => void load(), 4000);
+    return () => window.clearTimeout(timer);
+  }, [activeJobs.length, load]);
   async function organize(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError(""); try { const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content") }) }); setShowForm(false); if (task.status === "COMPLETED" && task.recapId) router.push(`/app/recaps?selected=${task.recapId}`); else router.push("/app?notice=recap-queued"); } catch (reason) { setError(reason instanceof Error ? reason.message : "提交失败"); } finally { setBusy(false); } }
   async function remove(recap: Recap) { if (!window.confirm(`删除“${recap.title}”？`)) return; try { await api<void>(`/api/interview-recaps/${recap.id}`, { method: "DELETE" }); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "删除失败"); } }
 

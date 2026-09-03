@@ -1,12 +1,15 @@
 package com.projectardor.knowledge.repository;
 
 import java.sql.Timestamp;
+import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+
+import com.projectardor.knowledge.domain.KnowledgeSourceType;
 
 /**
  * pgvector access for knowledge chunks.
@@ -63,6 +66,43 @@ public class KnowledgeVectorStore {
                 queryVectorLiteral, userId, dimension, queryVectorLiteral, limit);
     }
 
+    /** Scores lexical candidates in PostgreSQL so the application never loads every chunk. */
+    public List<LexicalHit> lexicalSearch(UUID userId, List<String> terms, int limit) {
+        if (terms.isEmpty()) return List.of();
+        String sql = """
+                WITH terms AS (SELECT term FROM unnest(?::text[]) AS term)
+                SELECT c.document_id, d.title, d.source_type, d.source_url, c.content,
+                       SUM(
+                         ((length(lower(c.content)) - length(replace(lower(c.content), term, '')))
+                           / greatest(length(term), 1))
+                           * least(4.0, greatest(1.0, length(term) / 2.0))
+                         + CASE WHEN lower(d.title) LIKE ('%' || term || '%') THEN 5.0 ELSE 0.0 END
+                       ) AS score
+                FROM knowledge_chunks c
+                JOIN knowledge_documents d ON d.id = c.document_id AND d.user_id = c.user_id
+                CROSS JOIN terms
+                WHERE c.user_id = ?
+                  AND (lower(c.content) LIKE ('%' || term || '%')
+                       OR lower(d.title) LIKE ('%' || term || '%'))
+                GROUP BY c.id, c.document_id, d.title, d.source_type, d.source_url, c.content
+                ORDER BY score DESC, c.created_at DESC
+                LIMIT ?
+                """;
+        return jdbcTemplate.query(connection -> {
+            PreparedStatement statement = connection.prepareStatement(sql);
+            statement.setArray(1, connection.createArrayOf("text", terms.toArray()));
+            statement.setObject(2, userId);
+            statement.setInt(3, limit);
+            return statement;
+        }, (rs, rowNum) -> new LexicalHit(
+                rs.getObject("document_id", UUID.class),
+                rs.getString("title"),
+                KnowledgeSourceType.valueOf(rs.getString("source_type")),
+                rs.getString("source_url"),
+                rs.getString("content"),
+                rs.getDouble("score")));
+    }
+
     /** Chunks belonging to this user that still have no embedding, oldest first. */
     public List<PendingChunk> findPending(UUID userId, int limit) {
         return jdbcTemplate.query("""
@@ -115,6 +155,10 @@ public class KnowledgeVectorStore {
     }
 
     public record VectorHit(UUID chunkId, UUID documentId, String content, double similarity) {
+    }
+
+    public record LexicalHit(UUID documentId, String title, KnowledgeSourceType sourceType,
+            String sourceUrl, String content, double score) {
     }
 
     public record PendingChunk(UUID chunkId, String content) {

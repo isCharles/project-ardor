@@ -33,6 +33,9 @@ public class UserProfile {
     @Column(length = 240)
     private String headline;
 
+    @Column(nullable = false, length = 80)
+    private String timezone = "Asia/Shanghai";
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "target_roles", nullable = false, columnDefinition = "jsonb")
     private List<String> targetRoles = new ArrayList<>();
@@ -60,10 +63,11 @@ public class UserProfile {
         return new UserProfile(UUID.randomUUID(), userId, displayName);
     }
 
-    public void update(String displayName, String headline, List<String> targetRoles) {
+    public void update(String displayName, String headline, List<String> targetRoles, String timezone) {
         this.displayName = displayName;
         this.headline = headline;
         this.targetRoles = new ArrayList<>(targetRoles);
+        this.timezone = timezone;
     }
 
     @PrePersist
@@ -93,5 +97,6 @@ public class UserProfile {
     public List<String> getTargetRoles() {
         return List.copyOf(targetRoles);
     }
-}
 
+    public String getTimezone() { return timezone; }
+}

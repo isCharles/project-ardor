@@ -43,7 +43,7 @@ class CareerAgentToolsTests {
         UUID userId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
 
-        Map<String, Object> result = tools.bind(userId, "删除这个日历待办").deleteCalendarTask(taskId.toString());
+        Map<String, Object> result = tools.bind(userId, "确认删除这个日历待办").deleteCalendarTask(taskId.toString());
 
         verify(calendarTaskService).delete(userId, taskId);
         assertThat(result).containsEntry("deleted", true).containsEntry("taskId", taskId);
@@ -66,7 +66,7 @@ class CareerAgentToolsTests {
         UUID userId = UUID.randomUUID();
         UUID interviewId = UUID.randomUUID();
 
-        Map<String, Object> result = tools.bind(userId, "删除最近这场模拟面试").deleteInterview(interviewId.toString());
+        Map<String, Object> result = tools.bind(userId, "确认删除最近这场模拟面试").deleteInterview(interviewId.toString());
 
         verify(interviewService).delete(userId, interviewId);
         assertThat(result).containsEntry("deleted", true).containsEntry("interviewId", interviewId);
@@ -84,7 +84,22 @@ class CareerAgentToolsTests {
         assertThatThrownBy(() -> tools.bind(UUID.randomUUID(), "搜索一下最近的招聘信息")
                 .deleteInterview(UUID.randomUUID().toString()))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("安全拦截");
+                .hasMessageContaining("二次确认");
+    }
+
+    @Test
+    void firstDeletionRequestCannotExecuteBeforeASecondExplicitConfirmation() {
+        CalendarTaskService calendarTaskService = mock(CalendarTaskService.class);
+        CareerAgentTools tools = new CareerAgentTools(
+                mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
+                mock(ProfileService.class), mock(AgentMemoryService.class), calendarTaskService,
+                mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class), mock(KnowledgeService.class));
+
+        assertThatThrownBy(() -> tools.bind(UUID.randomUUID(), "删除这个日历待办")
+                .deleteCalendarTask(UUID.randomUUID().toString()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("确认删除");
     }
 
     @Test

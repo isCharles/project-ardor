@@ -7,14 +7,17 @@ import java.time.OffsetDateTime;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.projectardor.calendar.service.CalendarTaskService;
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.llm.service.LlmGateway;
+import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.domain.*;
 import com.projectardor.recap.repository.*;
 import com.projectardor.recap.web.InterviewRecapResponse;
@@ -23,7 +26,6 @@ import tools.jackson.databind.JsonNode;
 
 @Service
 public class InterviewRecapService {
-    private static final ZoneId APP_ZONE = ZoneId.of("Asia/Shanghai");
     private static final String PROMPT = """
             你是严谨的中文技术面试复盘编辑。根据用户提供的原始转录、回忆或笔记，按真实发生顺序整理。
             只输出 JSON 对象，不要 Markdown：
@@ -39,17 +41,22 @@ public class InterviewRecapService {
     private final LlmGateway llmGateway;
     private final LlmJsonParser jsonParser;
     private final CalendarTaskService calendarTaskService;
+    private final TransactionTemplate transactions;
+    private final ProfileService profileService;
 
     public InterviewRecapService(InterviewRecapRepository recapRepository,
             InterviewRecapQuestionRepository questionRepository, MemoryCardRepository cardRepository,
             MemoryCardReviewRepository reviewRepository, LlmGateway llmGateway,
-            LlmJsonParser jsonParser, CalendarTaskService calendarTaskService) {
+            LlmJsonParser jsonParser, CalendarTaskService calendarTaskService,
+            org.springframework.transaction.PlatformTransactionManager transactionManager,
+            ProfileService profileService) {
         this.recapRepository = recapRepository; this.questionRepository = questionRepository;
         this.cardRepository = cardRepository; this.reviewRepository = reviewRepository;
         this.llmGateway = llmGateway; this.jsonParser = jsonParser; this.calendarTaskService = calendarTaskService;
+        this.transactions = new TransactionTemplate(transactionManager);
+        this.profileService = profileService;
     }
 
-    @Transactional
     public InterviewRecapResponse organize(UUID userId, String rawContent, InterviewRecapSource sourceType) {
         String content = required(rawContent, "面试内容不能为空", 50000);
         if (content.length() < 30) throw new IllegalArgumentException("面试内容太短，请至少提供一段问题或回忆");
@@ -63,34 +70,37 @@ public class InterviewRecapService {
         List<QuestionDraft> drafts = parseQuestions(root.path("questions"));
         if (drafts.isEmpty()) throw new IllegalStateException("没有从材料中识别出可复盘的问题");
 
-        InterviewRecap recap = recapRepository.save(InterviewRecap.create(userId,
-                text(root, "title", "面试复盘", 240), nullable(root, "company", 160),
-                nullable(root, "targetRole", 160), parseInstant(nullable(root, "occurredAt", 80)),
-                sourceType == null ? InterviewRecapSource.NOTES : sourceType, content, inputHash,
-                text(root, "overview", "已按原始材料整理逐题复盘。", 12000),
-                stringList(root.path("strengths"), 20, 1000), stringList(root.path("weaknesses"), 20, 1000), result.model()));
-
-        List<InterviewRecapQuestion> questions = new ArrayList<>();
-        for (int i = 0; i < drafts.size(); i++) {
-            QuestionDraft draft = drafts.get(i);
-            questions.add(InterviewRecapQuestion.create(userId, recap.getId(), i + 1,
-                    draft.questionText(), draft.candidateAnswer(), draft.followUps(), draft.assessment(),
-                    draft.performance(), draft.weaknessReason(), draft.betterAnswer(), draft.tags()));
-        }
-        questionRepository.saveAll(questions);
-        return detail(userId, recap.getId());
+        return transactions.execute(status -> {
+            InterviewRecap recap = recapRepository.save(InterviewRecap.create(userId,
+                    text(root, "title", "面试复盘", 240), nullable(root, "company", 160),
+                    nullable(root, "targetRole", 160), parseInstant(nullable(root, "occurredAt", 80)),
+                    sourceType == null ? InterviewRecapSource.NOTES : sourceType, content, inputHash,
+                    text(root, "overview", "已按原始材料整理逐题复盘。", 12000),
+                    stringList(root.path("strengths"), 20, 1000), stringList(root.path("weaknesses"), 20, 1000), result.model()));
+            List<InterviewRecapQuestion> questions = new ArrayList<>();
+            for (int i = 0; i < drafts.size(); i++) {
+                QuestionDraft draft = drafts.get(i);
+                questions.add(InterviewRecapQuestion.create(userId, recap.getId(), i + 1,
+                        draft.questionText(), draft.candidateAnswer(), draft.followUps(), draft.assessment(),
+                        draft.performance(), draft.weaknessReason(), draft.betterAnswer(), draft.tags()));
+            }
+            questionRepository.saveAll(questions);
+            return InterviewRecapResponse.from(recap, questions);
+        });
     }
 
-    @Transactional
     public InterviewRecapResponse organize(UUID userId, String rawContent) {
         return organize(userId, rawContent, InterviewRecapSource.NOTES);
     }
 
     @Transactional(readOnly = true)
     public List<InterviewRecapResponse> list(UUID userId) {
+        Map<UUID, List<InterviewRecapQuestion>> questionsByRecap = questionRepository
+                .findAllByUserIdOrderByRecapIdAscSequenceNumberAsc(userId).stream()
+                .collect(Collectors.groupingBy(InterviewRecapQuestion::getRecapId));
         return recapRepository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
-                .map(recap -> InterviewRecapResponse.from(recap,
-                        questionRepository.findAllByUserIdAndRecapIdOrderBySequenceNumber(userId, recap.getId())))
+                .map(recap -> InterviewRecapResponse.from(
+                        recap, questionsByRecap.getOrDefault(recap.getId(), List.of())))
                 .toList();
     }
 
@@ -121,7 +131,7 @@ public class InterviewRecapService {
                 nullable(sourceLabel, 240), url, required(front, "卡片问题不能为空", 12000),
                 required(back, "卡片答案不能为空", 20000), normalizeTags(tags),
                 nextReviewAt == null ? Instant.now() : nextReviewAt));
-        refreshDate(userId, localDate(card.getNextReviewAt()));
+        refreshDate(userId, localDate(userId, card.getNextReviewAt()));
         return card;
     }
 
@@ -137,11 +147,11 @@ public class InterviewRecapService {
         MemoryCard card = getCard(userId, cardId);
         if (card.getStatus() == MemoryCardStatus.SUSPENDED) throw new IllegalStateException("已暂停的卡片不能复习");
         if (rating == null) throw new IllegalArgumentException("复习结果不能为空");
-        LocalDate previousDate = localDate(card.getNextReviewAt());
+        LocalDate previousDate = localDate(userId, card.getNextReviewAt());
         MemoryCard.ReviewResult result = card.review(rating, Instant.now());
         reviewRepository.save(MemoryCardReview.create(userId, cardId, rating,
                 result.previousIntervalDays(), result.nextIntervalDays()));
-        LocalDate nextDate = localDate(card.getNextReviewAt());
+        LocalDate nextDate = localDate(userId, card.getNextReviewAt());
         refreshDate(userId, previousDate);
         if (!nextDate.equals(previousDate)) refreshDate(userId, nextDate);
         return card;
@@ -150,9 +160,9 @@ public class InterviewRecapService {
     @Transactional
     public MemoryCard suspend(UUID userId, UUID cardId, boolean suspended) {
         MemoryCard card = getCard(userId, cardId);
-        LocalDate previousDate = localDate(card.getNextReviewAt());
+        LocalDate previousDate = localDate(userId, card.getNextReviewAt());
         card.suspend(suspended);
-        LocalDate nextDate = localDate(card.getNextReviewAt());
+        LocalDate nextDate = localDate(userId, card.getNextReviewAt());
         refreshDate(userId, previousDate);
         if (!nextDate.equals(previousDate)) refreshDate(userId, nextDate);
         return card;
@@ -161,7 +171,7 @@ public class InterviewRecapService {
     @Transactional
     public void deleteCard(UUID userId, UUID cardId) {
         MemoryCard card = getCard(userId, cardId);
-        LocalDate date = localDate(card.getNextReviewAt());
+        LocalDate date = localDate(userId, card.getNextReviewAt());
         cardRepository.delete(card);
         cardRepository.flush();
         refreshDate(userId, date);
@@ -170,7 +180,7 @@ public class InterviewRecapService {
     @Transactional
     public void deleteAllCards(UUID userId) {
         List<MemoryCard> cards = cardRepository.findAllByUserIdOrderByNextReviewAtAscCreatedAtDesc(userId);
-        Set<LocalDate> dates = cards.stream().map(card -> localDate(card.getNextReviewAt()))
+        Set<LocalDate> dates = cards.stream().map(card -> localDate(userId, card.getNextReviewAt()))
                 .collect(java.util.stream.Collectors.toSet());
         cardRepository.deleteAll(cards);
         cardRepository.flush();
@@ -183,8 +193,9 @@ public class InterviewRecapService {
     }
 
     private void refreshDate(UUID userId, LocalDate date) {
-        Instant from = date.atStartOfDay(APP_ZONE).toInstant();
-        Instant to = date.plusDays(1).atStartOfDay(APP_ZONE).toInstant();
+        ZoneId userZone = userZone(userId);
+        Instant from = date.atStartOfDay(userZone).toInstant();
+        Instant to = date.plusDays(1).atStartOfDay(userZone).toInstant();
         long count = cardRepository.countByUserIdAndStatusNotAndNextReviewAtGreaterThanEqualAndNextReviewAtLessThan(
                 userId, MemoryCardStatus.SUSPENDED, from, to);
         Instant firstDue = cardRepository.findFirstByUserIdAndStatusNotAndNextReviewAtGreaterThanEqualAndNextReviewAtLessThanOrderByNextReviewAtAsc(
@@ -192,7 +203,9 @@ public class InterviewRecapService {
         calendarTaskService.refreshMemoryCardReview(userId, date, Math.toIntExact(count), firstDue);
     }
 
-    private LocalDate localDate(Instant value) { return value.atZone(APP_ZONE).toLocalDate(); }
+    private LocalDate localDate(UUID userId, Instant value) { return value.atZone(userZone(userId)).toLocalDate(); }
+
+    private ZoneId userZone(UUID userId) { return ZoneId.of(profileService.get(userId).getTimezone()); }
 
     private List<QuestionDraft> parseQuestions(JsonNode node) {
         if (!node.isArray()) return List.of();

@@ -15,6 +15,10 @@ import com.projectardor.resume.domain.ResumeAnalysisJobStatus;
 
 public interface ResumeAnalysisJobRepository extends JpaRepository<ResumeAnalysisJob, UUID> {
 
+    @Query(value = "SELECT pg_advisory_xact_lock(hashtextextended(CAST(:userId AS text) || ':' || CAST(:resumeId AS text), 0))",
+            nativeQuery = true)
+    void lockRequestSlot(@Param("userId") UUID userId, @Param("resumeId") UUID resumeId);
+
     Optional<ResumeAnalysisJob> findByIdAndUserId(UUID id, UUID userId);
 
     Optional<ResumeAnalysisJob> findFirstByUserIdAndResumeIdAndStatusInOrderByCreatedAtDesc(
@@ -54,6 +58,20 @@ public interface ResumeAnalysisJobRepository extends JpaRepository<ResumeAnalysi
                 job.errorMessage = '后台任务中断，已自动重新排队'
             where job.status = com.projectardor.resume.domain.ResumeAnalysisJobStatus.RUNNING
               and job.startedAt < :staleBefore
+              and job.attempts < :maxAttempts
             """)
-    int recoverStale(@Param("staleBefore") Instant staleBefore);
+    int recoverStale(@Param("staleBefore") Instant staleBefore, @Param("maxAttempts") int maxAttempts);
+
+    @Modifying
+    @Query("""
+            update ResumeAnalysisJob job
+            set job.status = com.projectardor.resume.domain.ResumeAnalysisJobStatus.FAILED,
+                job.finishedAt = CURRENT_TIMESTAMP,
+                job.errorCode = 'WORKER_RETRY_EXHAUSTED',
+                job.errorMessage = '后台任务中断且已达到最大重试次数'
+            where job.status = com.projectardor.resume.domain.ResumeAnalysisJobStatus.RUNNING
+              and job.startedAt < :staleBefore
+              and job.attempts >= :maxAttempts
+            """)
+    int failExhaustedStale(@Param("staleBefore") Instant staleBefore, @Param("maxAttempts") int maxAttempts);
 }

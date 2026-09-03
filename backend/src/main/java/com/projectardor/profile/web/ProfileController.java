@@ -35,7 +35,7 @@ public class ProfileController {
                 principal.userId(),
                 request.displayName(),
                 request.headline(),
-                request.targetRoles()));
+                request.targetRoles(),
+                request.timezone()));
     }
 }
-

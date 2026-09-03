@@ -15,6 +15,10 @@ import com.projectardor.recap.domain.InterviewRecapJob;
 import com.projectardor.recap.domain.InterviewRecapJobStatus;
 
 public interface InterviewRecapJobRepository extends JpaRepository<InterviewRecapJob, UUID> {
+    @Query(value = "SELECT pg_advisory_xact_lock(hashtextextended(CAST(:userId AS text) || ':' || :inputHash, 0))",
+            nativeQuery = true)
+    void lockRequestSlot(@Param("userId") UUID userId, @Param("inputHash") String inputHash);
+
     Optional<InterviewRecapJob> findFirstByUserIdAndInputHashAndStatusInOrderByCreatedAtDesc(
             UUID userId, String inputHash, Collection<InterviewRecapJobStatus> statuses);
     List<InterviewRecapJob> findTop20ByUserIdOrderByCreatedAtDesc(UUID userId);
@@ -41,6 +45,20 @@ public interface InterviewRecapJobRepository extends JpaRepository<InterviewReca
                 job.errorCode = 'WORKER_RECOVERED', job.errorMessage = '后台任务中断，已自动重新排队'
             where job.status = com.projectardor.recap.domain.InterviewRecapJobStatus.RUNNING
               and job.startedAt < :staleBefore
+              and job.attempts < :maxAttempts
             """)
-    int recoverStale(@Param("staleBefore") Instant staleBefore);
+    int recoverStale(@Param("staleBefore") Instant staleBefore, @Param("maxAttempts") int maxAttempts);
+
+    @Modifying
+    @Query("""
+            update InterviewRecapJob job
+            set job.status = com.projectardor.recap.domain.InterviewRecapJobStatus.FAILED,
+                job.finishedAt = CURRENT_TIMESTAMP,
+                job.errorCode = 'WORKER_RETRY_EXHAUSTED',
+                job.errorMessage = '后台任务中断且已达到最大重试次数'
+            where job.status = com.projectardor.recap.domain.InterviewRecapJobStatus.RUNNING
+              and job.startedAt < :staleBefore
+              and job.attempts >= :maxAttempts
+            """)
+    int failExhaustedStale(@Param("staleBefore") Instant staleBefore, @Param("maxAttempts") int maxAttempts);
 }

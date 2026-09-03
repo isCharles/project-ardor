@@ -1,7 +1,6 @@
 package com.projectardor.knowledge.service;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -13,6 +12,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.projectardor.common.web.ResourceNotFoundException;
@@ -47,6 +47,7 @@ public class KnowledgeService {
     private final KnowledgeVectorStore vectorStore;
     private final KnowledgeIndexer indexer;
     private final double minSimilarity;
+    private final TransactionTemplate transactions;
 
     public KnowledgeService(
             KnowledgeDocumentRepository documentRepository,
@@ -57,7 +58,8 @@ public class KnowledgeService {
             KnowledgeVectorStore vectorStore,
             KnowledgeIndexer indexer,
             @org.springframework.beans.factory.annotation.Value(
-                    "${app.knowledge.min-similarity:0.35}") double minSimilarity) {
+                    "${app.knowledge.min-similarity:0.35}") double minSimilarity,
+            org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.documentRepository = documentRepository;
         this.chunkRepository = chunkRepository;
         this.textExtractor = textExtractor;
@@ -66,6 +68,7 @@ public class KnowledgeService {
         this.vectorStore = vectorStore;
         this.indexer = indexer;
         this.minSimilarity = minSimilarity;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
     @Transactional
@@ -88,26 +91,27 @@ public class KnowledgeService {
         return KnowledgeDocumentResponse.from(document, chunkCount);
     }
 
-    @Transactional
     public KnowledgeResearchResponse researchFromWeb(UUID userId, String rawQuery) {
         String query = normalizeQuery(rawQuery);
         WebSearchResult search = tavilySearchService.search(userId, query);
-        List<KnowledgeDocumentResponse> imported = new ArrayList<>();
-        for (WebSearchResult.ResultItem result : search.results()) {
-            if (result.url() == null || result.url().isBlank() || result.content() == null || result.content().isBlank()) {
-                continue;
+        List<KnowledgeDocumentResponse> imported = transactions.execute(status -> {
+            List<KnowledgeDocumentResponse> saved = new ArrayList<>();
+            for (WebSearchResult.ResultItem result : search.results()) {
+                if (result.url() == null || result.url().isBlank()
+                        || result.content() == null || result.content().isBlank()) continue;
+                KnowledgeDocument document = documentRepository.findByUserIdAndSourceUrl(userId, result.url()).orElse(null);
+                if (document == null) {
+                    String title = normalizeTitle(result.title(), result.url());
+                    document = documentRepository.saveAndFlush(
+                            KnowledgeDocument.fromWeb(userId, title, result.url(), result.content().strip()));
+                    int chunkCount = storeChunks(document);
+                    saved.add(KnowledgeDocumentResponse.from(document, chunkCount));
+                } else {
+                    saved.add(toResponse(userId, document));
+                }
             }
-            KnowledgeDocument document = documentRepository.findByUserIdAndSourceUrl(userId, result.url()).orElse(null);
-            if (document == null) {
-                String title = normalizeTitle(result.title(), result.url());
-                document = documentRepository.saveAndFlush(
-                        KnowledgeDocument.fromWeb(userId, title, result.url(), result.content().strip()));
-                int chunkCount = storeChunks(document);
-                imported.add(KnowledgeDocumentResponse.from(document, chunkCount));
-            } else {
-                imported.add(toResponse(userId, document));
-            }
-        }
+            return saved;
+        });
         if (imported.isEmpty()) throw new IllegalStateException("联网搜索没有返回可保存的正文摘要");
         return new KnowledgeResearchResponse(query, imported);
     }
@@ -149,14 +153,10 @@ public class KnowledgeService {
     }
 
     private List<KnowledgeSearchResult> lexicalSearch(UUID userId, String query, int depth) {
-        Map<UUID, KnowledgeDocument> documents = documentRepository.findAllByUserIdOrderByCreatedAtDesc(userId)
-                .stream().collect(Collectors.toMap(KnowledgeDocument::getId, Function.identity()));
-        Set<String> terms = searchTerms(query);
-        return chunkRepository.findAllByUserId(userId).stream()
-                .map(chunk -> scored(documents.get(chunk.getDocumentId()), chunk, terms))
-                .filter(result -> result != null && result.score() > 0)
-                .sorted(Comparator.comparingDouble(KnowledgeSearchResult::score).reversed())
-                .limit(depth)
+        return vectorStore.lexicalSearch(userId, List.copyOf(searchTerms(query)), depth).stream()
+                .map(hit -> new KnowledgeSearchResult(
+                        hit.documentId(), hit.title(), hit.sourceType(), hit.sourceUrl(), hit.content(),
+                        Math.round(hit.score() * 100.0) / 100.0))
                 .toList();
     }
 
@@ -303,32 +303,6 @@ public class KnowledgeService {
             start = Math.max(start + 1, end - CHUNK_OVERLAP);
         }
         return chunks;
-    }
-
-    private KnowledgeSearchResult scored(
-            KnowledgeDocument document, KnowledgeChunk chunk, Set<String> terms) {
-        if (document == null) return null;
-        String content = chunk.getContent().toLowerCase(Locale.ROOT);
-        String title = document.getTitle().toLowerCase(Locale.ROOT);
-        double score = 0;
-        for (String term : terms) {
-            score += occurrences(content, term) * Math.min(4, Math.max(1, term.length() / 2.0));
-            if (title.contains(term)) score += 5;
-        }
-        if (score == 0) return null;
-        return new KnowledgeSearchResult(
-                document.getId(), document.getTitle(), document.getSourceType(), document.getSourceUrl(),
-                chunk.getContent(), Math.round(score * 100.0) / 100.0);
-    }
-
-    private int occurrences(String text, String term) {
-        int count = 0;
-        int from = 0;
-        while ((from = text.indexOf(term, from)) >= 0) {
-            count++;
-            from += Math.max(1, term.length());
-        }
-        return count;
     }
 
     private Set<String> searchTerms(String query) {

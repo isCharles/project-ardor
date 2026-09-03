@@ -415,8 +415,13 @@ public class CareerAgentTools {
                     || request.contains("所有")
                     || request.contains("清空")
                     || request.contains("all");
-            if (!hasDeleteVerb || !hasTarget || !hasAll) {
-                throw new IllegalStateException("安全拦截：当前用户原始消息没有明确授权这项删除操作");
+            boolean confirmed = request.contains("确认删除")
+                    || request.contains("确认清空")
+                    || request.contains("confirm delete")
+                    || request.contains("confirm clear");
+            if (!hasDeleteVerb || !hasTarget || !hasAll || !confirmed) {
+                throw new IllegalStateException(
+                        "需要用户二次确认：请说明将删除的具体对象，并让用户回复“确认删除 + 对象名称”后再调用删除工具");
             }
         }
 

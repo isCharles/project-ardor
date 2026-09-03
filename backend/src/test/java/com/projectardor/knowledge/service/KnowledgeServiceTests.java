@@ -2,6 +2,7 @@ package com.projectardor.knowledge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -14,7 +15,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
-import com.projectardor.knowledge.domain.KnowledgeChunk;
 import com.projectardor.knowledge.domain.KnowledgeDocument;
 import com.projectardor.knowledge.repository.KnowledgeChunkRepository;
 import com.projectardor.knowledge.repository.KnowledgeDocumentRepository;
@@ -39,10 +39,13 @@ class KnowledgeServiceTests {
         embeddingService = mock(KnowledgeEmbeddingService.class);
         vectorStore = mock(KnowledgeVectorStore.class);
         indexer = mock(KnowledgeIndexer.class);
+        var transactionManager = mock(org.springframework.transaction.PlatformTransactionManager.class);
+        when(transactionManager.getTransaction(any()))
+                .thenReturn(mock(org.springframework.transaction.TransactionStatus.class));
         when(documentRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         service = new KnowledgeService(
                 documentRepository, chunkRepository, new KnowledgeTextExtractor(), tavilySearchService,
-                embeddingService, vectorStore, indexer, 0.35);
+                embeddingService, vectorStore, indexer, 0.35, transactionManager);
     }
 
     @Test
@@ -63,12 +66,9 @@ class KnowledgeServiceTests {
         UUID userId = UUID.randomUUID();
         KnowledgeDocument java = KnowledgeDocument.fromWeb(
                 userId, "Java 虚拟线程", "https://example.com/java", "虚拟线程适合高并发 I/O");
-        KnowledgeDocument css = KnowledgeDocument.fromWeb(
-                userId, "CSS 布局", "https://example.com/css", "网格布局与响应式设计");
-        when(documentRepository.findAllByUserIdOrderByCreatedAtDesc(userId)).thenReturn(List.of(java, css));
-        when(chunkRepository.findAllByUserId(userId)).thenReturn(List.of(
-                KnowledgeChunk.create(userId, css.getId(), 1, "CSS 网格布局"),
-                KnowledgeChunk.create(userId, java.getId(), 1, "Java 虚拟线程可以降低阻塞 I/O 的线程成本")));
+        when(vectorStore.lexicalSearch(eq(userId), any(), eq(30))).thenReturn(List.of(
+                new KnowledgeVectorStore.LexicalHit(java.getId(), java.getTitle(), java.getSourceType(),
+                        java.getSourceUrl(), "Java 虚拟线程可以降低阻塞 I/O 的线程成本", 12.0)));
 
         var results = service.search(userId, "Java 虚拟线程", 5);
 
@@ -82,7 +82,6 @@ class KnowledgeServiceTests {
         KnowledgeDocument gc = KnowledgeDocument.fromWeb(
                 userId, "JVM 笔记", "https://example.com/gc", "对象优先在 Eden 区分配，晋升到老年代");
         when(documentRepository.findAllByUserIdOrderByCreatedAtDesc(userId)).thenReturn(List.of(gc));
-        when(chunkRepository.findAllByUserId(userId)).thenReturn(List.of());
         // "自动内存管理" shares no characters with the stored text, so the lexical
         // retriever returns nothing; only the dense retriever can find it.
         when(embeddingService.embedQuery(userId, "自动内存管理"))
@@ -104,8 +103,9 @@ class KnowledgeServiceTests {
         KnowledgeDocument java = KnowledgeDocument.fromWeb(
                 userId, "Java 虚拟线程", "https://example.com/java", "虚拟线程适合高并发 I/O");
         when(documentRepository.findAllByUserIdOrderByCreatedAtDesc(userId)).thenReturn(List.of(java));
-        when(chunkRepository.findAllByUserId(userId)).thenReturn(List.of(
-                KnowledgeChunk.create(userId, java.getId(), 1, "Java 虚拟线程降低阻塞 I/O 成本")));
+        when(vectorStore.lexicalSearch(eq(userId), any(), eq(30))).thenReturn(List.of(
+                new KnowledgeVectorStore.LexicalHit(java.getId(), java.getTitle(), java.getSourceType(),
+                        java.getSourceUrl(), "Java 虚拟线程降低阻塞 I/O 成本", 8.0)));
         // No embedding model configured: embedQuery returns null and dense recall is skipped.
         when(embeddingService.embedQuery(any(), any())).thenReturn(null);
 
@@ -124,8 +124,9 @@ class KnowledgeServiceTests {
                 userId, "只命中向量", "https://example.com/dense", "协程");
         when(documentRepository.findAllByUserIdOrderByCreatedAtDesc(userId))
                 .thenReturn(List.of(both, denseOnly));
-        when(chunkRepository.findAllByUserId(userId)).thenReturn(List.of(
-                KnowledgeChunk.create(userId, both.getId(), 1, "虚拟线程")));
+        when(vectorStore.lexicalSearch(eq(userId), any(), eq(30))).thenReturn(List.of(
+                new KnowledgeVectorStore.LexicalHit(both.getId(), both.getTitle(), both.getSourceType(),
+                        both.getSourceUrl(), "虚拟线程", 8.0)));
         when(embeddingService.embedQuery(any(), any()))
                 .thenReturn(new KnowledgeEmbeddingService.EmbeddingVector(new float[] {1f, 0f}, "stub"));
         // The dense retriever ranks the semantic-only document first; fusion must still
@@ -147,7 +148,6 @@ class KnowledgeServiceTests {
         KnowledgeDocument jvm = KnowledgeDocument.fromWeb(
                 userId, "JVM 笔记", "https://example.com/gc", "对象优先在 Eden 区分配");
         when(documentRepository.findAllByUserIdOrderByCreatedAtDesc(userId)).thenReturn(List.of(jvm));
-        when(chunkRepository.findAllByUserId(userId)).thenReturn(List.of());
         when(embeddingService.embedQuery(any(), any()))
                 .thenReturn(new KnowledgeEmbeddingService.EmbeddingVector(new float[] {1f, 0f}, "stub"));
         // The only document in the library is the nearest neighbour by definition, but it
