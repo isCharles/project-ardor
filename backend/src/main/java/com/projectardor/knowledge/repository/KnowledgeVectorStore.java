@@ -76,6 +76,18 @@ public class KnowledgeVectorStore {
                 userId, limit);
     }
 
+    /** Users that currently have chunks waiting for an embedding, oldest work first. */
+    public List<UUID> findUsersWithPendingChunks(int limit) {
+        return jdbcTemplate.queryForList("""
+                SELECT user_id
+                FROM knowledge_chunks
+                WHERE embedding IS NULL
+                GROUP BY user_id
+                ORDER BY min(created_at)
+                LIMIT ?
+                """, UUID.class, limit);
+    }
+
     public long countPending(UUID userId) {
         Long count = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM knowledge_chunks WHERE user_id = ? AND embedding IS NULL",
