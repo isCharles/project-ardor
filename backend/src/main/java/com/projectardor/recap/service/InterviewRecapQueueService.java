@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.llm.service.LlmCallException;
 import com.projectardor.recap.domain.InterviewRecapJob;
 import com.projectardor.recap.domain.InterviewRecapJobStatus;
@@ -48,6 +49,34 @@ public class InterviewRecapQueueService {
     @Transactional(readOnly = true)
     public List<TaskResult> list(UUID userId) {
         return jobRepository.findTop20ByUserIdOrderByCreatedAtDesc(userId).stream().map(TaskResult::from).toList();
+    }
+
+    /**
+     * Re-queues a failed job at the user's request. The raw material is still on the
+     * job row, so this replays the original submission without asking the user to paste
+     * it again — which matters because the common causes (LLM not configured, a Base URL
+     * that could not resolve) are fixed in settings, not in the content.
+     */
+    @Transactional
+    public TaskResult retryFailed(UUID userId, UUID jobId) {
+        InterviewRecapJob job = ownedJob(userId, jobId);
+        job.requeue();
+        return TaskResult.from(jobRepository.save(job));
+    }
+
+    /** Drops a failed job so it stops occupying the user's task list. */
+    @Transactional
+    public void dismissFailed(UUID userId, UUID jobId) {
+        InterviewRecapJob job = ownedJob(userId, jobId);
+        if (job.getStatus() != InterviewRecapJobStatus.FAILED) {
+            throw new IllegalStateException("只有失败的整理任务可以忽略");
+        }
+        jobRepository.delete(job);
+    }
+
+    private InterviewRecapJob ownedJob(UUID userId, UUID jobId) {
+        return jobRepository.findByIdAndUserId(jobId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("整理任务不存在"));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -93,13 +122,13 @@ public class InterviewRecapQueueService {
     }
 
     public record TaskResult(UUID jobId, UUID recapId, InterviewRecapJobStatus status, int attempts,
-            String errorCode, String errorMessage, Instant createdAt) {
+            String errorCode, String errorMessage, Instant createdAt, Instant finishedAt) {
         static TaskResult from(InterviewRecapJob job) {
             return new TaskResult(job.getId(), job.getRecapId(), job.getStatus(), job.getAttempts(),
-                    job.getErrorCode(), job.getErrorMessage(), job.getCreatedAt());
+                    job.getErrorCode(), job.getErrorMessage(), job.getCreatedAt(), job.getFinishedAt());
         }
         static TaskResult completed(UUID recapId, Instant createdAt) {
-            return new TaskResult(null, recapId, InterviewRecapJobStatus.COMPLETED, 0, null, null, createdAt);
+            return new TaskResult(null, recapId, InterviewRecapJobStatus.COMPLETED, 0, null, null, createdAt, null);
         }
     }
 }

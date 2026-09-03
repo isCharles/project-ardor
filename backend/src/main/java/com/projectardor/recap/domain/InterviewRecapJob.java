@@ -58,6 +58,26 @@ public class InterviewRecapJob {
         this.errorCode = truncate(code, 64); this.errorMessage = truncate(message, 1000);
     }
 
+    /**
+     * Puts a failed job back in the queue at the user's request.
+     *
+     * <p>Unlike the automatic {@link #retry}, this resets the attempt counter: the user
+     * has presumably fixed whatever caused the failure (a bad Base URL, a missing key),
+     * so the previous attempts should not count against the new run.
+     */
+    public void requeue() {
+        if (status != InterviewRecapJobStatus.FAILED) {
+            throw new IllegalStateException("只有失败的整理任务可以重试");
+        }
+        this.status = InterviewRecapJobStatus.QUEUED;
+        this.availableAt = Instant.now();
+        this.attempts = 0;
+        this.startedAt = null;
+        this.finishedAt = null;
+        this.errorCode = null;
+        this.errorMessage = null;
+    }
+
     @PreUpdate void onUpdate() { updatedAt = Instant.now(); }
     private String truncate(String value, int max) { return value == null || value.length() <= max ? value : value.substring(0, max); }
 
@@ -70,5 +90,6 @@ public class InterviewRecapJob {
     public int getAttempts() { return attempts; }
     public String getErrorCode() { return errorCode; }
     public String getErrorMessage() { return errorMessage; }
+    public Instant getFinishedAt() { return finishedAt; }
     public Instant getCreatedAt() { return createdAt; }
 }

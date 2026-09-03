@@ -1,0 +1,318 @@
+/* Interview recap stack — a scoped visual trial.
+   The source design drives its 3D stack with GSAP and paints the backdrop with a
+   Three.js noise shader. Neither library is in this project, and tokens.css rules
+   out Latin webfonts because the app ships offline in Docker and is Chinese-first.
+   So the stack is rebuilt with CSS 3D transforms and transitions, and the backdrop
+   with a gradient plus the same inline-SVG grain the source already used. Same
+   effect, no new dependency. */
+
+.shell {
+  color-scheme: light;
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: #ffffff;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Backdrop: soft slate wash with warm lift, standing in for the shader. --- */
+.ambient {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 780px;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 12%, rgba(228, 139, 89, 0.16) 0%, transparent 62%),
+    radial-gradient(ellipse 55% 45% at 82% 20%, rgba(83, 97, 122, 0.16) 0%, transparent 62%),
+    radial-gradient(ellipse 70% 60% at 50% 0%, rgba(216, 218, 223, 0.7) 0%, transparent 70%),
+    linear-gradient(180deg, #eef0f3 0%, rgba(248, 249, 250, 0.6) 55%, #ffffff 100%);
+}
+
+/* Lifted verbatim from the reference: fractal-noise grain, no image request. */
+.grain {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  mix-blend-mode: multiply;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+}
+
+.label {
+  font-family: var(--ardor-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.display {
+  font-size: clamp(2.25rem, 5vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+}
+
+/* --- The stack. --- */
+/* The stage is a full-bleed box at the perspective origin, so cards pushed behind it
+   on a negative translateZ lost the hit test to the stage itself — only the focused
+   card, which sits in front of that plane, was clickable. The stage and rail are both
+   transparent to pointers; the cards and the arrows opt back in. */
+.stage {
+  perspective: 1500px;
+  transform-style: preserve-3d;
+  position: relative;
+  height: 420px;
+  width: 100%;
+  pointer-events: none;
+}
+
+/* The rail is a full-bleed box, so it would win the hit test against any card sitting
+   behind its plane on a negative translateZ — which was every card except the focused
+   one. Making the rail itself transparent to pointers hands clicks to the cards, which
+   opt back in individually. */
+.rail {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+/* Each card is positioned from the centre; depth comes from the inline transform
+   the component computes per offset, so the stack re-fans whenever selection moves.
+
+   Paint order is driven by translateZ rather than z-index: inside a preserve-3d
+   context the browser sorts by real depth and ignores z-index, so the focused card
+   is pushed to a positive Z to guarantee it sits in front of its neighbours. */
+.card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 260px;
+  height: 340px;
+  margin-left: -130px;
+  margin-top: -170px;
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: left;
+  cursor: pointer;
+  color: #1f2937;
+  background: #ffffff;
+  border: 1px solid rgba(17, 24, 39, 0.09);
+  box-shadow: 0 14px 34px -18px rgba(17, 24, 39, 0.28);
+  transition:
+    transform var(--ardor-slow, 380ms) var(--ardor-ease, cubic-bezier(0.2, 0, 0, 1)),
+    opacity var(--ardor-slow, 380ms) var(--ardor-ease, cubic-bezier(0.2, 0, 0, 1)),
+    box-shadow var(--ardor-base, 220ms) var(--ardor-ease, ease);
+}
+
+.card:focus-visible {
+  outline: 2px solid #ed7b46;
+  outline-offset: 3px;
+}
+
+/* --- One card design.
+       Every recap uses the same layout and the same geometry; only the focused card
+       is filled, so the eye tracks a single moving highlight instead of re-reading a
+       different design each time the selection moves. --- */
+.cardActive {
+  background: linear-gradient(140deg, #ee9a63 0%, #e07a41 52%, #d1622c 100%);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 34px 64px -22px rgba(209, 98, 44, 0.55);
+  cursor: default;
+}
+
+.card:not(.cardActive):hover {
+  border-color: rgba(17, 24, 39, 0.16);
+  box-shadow: 0 26px 52px -20px rgba(17, 24, 39, 0.28);
+}
+
+/* --- Focus card internals: nested surface holding the trend line. --- */
+.glassPanel {
+  border-radius: 12px;
+  border: 1px solid currentColor;
+  border-color: color-mix(in srgb, currentColor 14%, transparent);
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  padding: 14px;
+}
+
+.trendDot { animation: pulse 1.6s var(--ardor-ease, ease) infinite; transform-origin: center; }
+@keyframes pulse { 0%,100% { r: 2.4; } 50% { r: 3.2; } }
+
+/* --- Progress rows, the slate card's block. --- */
+.progressTrack {
+  height: 14px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.progressFill { height: 100%; border-radius: 9999px; background: rgba(255, 255, 255, 0.8); }
+
+.interviewDate {
+  font-family: var(--ardor-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+}
+
+.cardTitle {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cardMeta {
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* --- Performance distribution: the source's bar-chart block.
+       Bars are a fixed narrow width, not flex-grown: with only a handful of
+       questions, flexing turned each bar into a wide capsule and the chart read
+       as blobs rather than a distribution. --- */
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 68px;
+}
+
+.bar {
+  width: 9px;
+  flex: none;
+  border-radius: 9999px;
+  transform-origin: bottom;
+  animation: grow var(--ardor-slow, 380ms) var(--ardor-ease, cubic-bezier(0.2, 0, 0, 1)) both;
+}
+
+@keyframes grow {
+  from { transform: scaleY(0.2); opacity: 0; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+
+.statRow {
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  padding: 6px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+/* --- Dots. --- */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: rgba(17, 24, 39, 0.2);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background-color var(--ardor-fast, 130ms) var(--ardor-ease, ease);
+}
+.dotActive {
+  background: #ed7b46;
+}
+.dot:focus-visible {
+  outline: 2px solid #ed7b46;
+  outline-offset: 3px;
+}
+
+/* --- Report surface below the stack. --- */
+.panel {
+  border-radius: 16px;
+  border: 1px solid #d8dadf;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.04), 0 18px 40px -24px rgba(17, 24, 39, 0.18);
+}
+
+.buttonPrimary {
+  border-radius: 8px;
+  background: linear-gradient(90deg, #ed7b46, #df6431);
+  color: #ffffff;
+  font-weight: 500;
+  box-shadow: 0 8px 16px rgba(237, 123, 70, 0.28);
+  transition: filter var(--ardor-fast, 130ms) var(--ardor-ease, ease);
+}
+.buttonPrimary:hover:not(:disabled) { filter: brightness(1.06); }
+.buttonPrimary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.buttonQuiet {
+  border-radius: 8px;
+  border: 1px solid #d8dadf;
+  background: #ffffff;
+  color: #111827;
+  font-weight: 500;
+  transition: background-color var(--ardor-fast, 130ms) var(--ardor-ease, ease);
+}
+.buttonQuiet:hover:not(:disabled) { background: #f4f5f7; }
+
+.pill {
+  border-radius: 9999px;
+  font-family: var(--ardor-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card { transition: none; }
+  .bar, .trendDot { animation: none; }
+}
+
+/* Selection follows the pointer, so the page must still scroll normally over the stack. */
+.stage { touch-action: pan-y; }
+
+/* Below the fan width the stack collapses to the focused card only; the
+   siblings are still reachable through the dots. */
+@media (max-width: 720px) {
+  .stage { height: 380px; }
+}
+
+/* --- Prev/next controls. Outside the 3D rail so z-index applies normally. --- */
+.navButton {
+  pointer-events: auto;
+  position: absolute;
+  top: 50%;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-top: -20px;
+  border-radius: 9999px;
+  border: 1px solid #d8dadf;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
+  box-shadow: 0 6px 18px -8px rgba(17, 24, 39, 0.35);
+  cursor: pointer;
+  transition: background-color var(--ardor-fast, 130ms) var(--ardor-ease, ease),
+    opacity var(--ardor-fast, 130ms) var(--ardor-ease, ease);
+}
+.navButton:hover:not(:disabled) { background: #ffffff; }
+.navButton:disabled { opacity: 0.3; cursor: not-allowed; }
+.navButton:focus-visible { outline: 2px solid #ed7b46; outline-offset: 3px; }
+.navPrev { left: 8px; }
+.navNext { right: 8px; }

@@ -23,6 +23,8 @@ public interface InterviewRecapJobRepository extends JpaRepository<InterviewReca
             UUID userId, String inputHash, Collection<InterviewRecapJobStatus> statuses);
     List<InterviewRecapJob> findTop20ByUserIdOrderByCreatedAtDesc(UUID userId);
 
+    Optional<InterviewRecapJob> findByIdAndUserId(UUID id, UUID userId);
+
     @Query(value = """
             WITH next_job AS (
                 SELECT id FROM interview_recap_jobs

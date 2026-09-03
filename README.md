@@ -105,6 +105,18 @@ docker exec project-ardor-postgres-1 psql -U ardor -d ardor -c "REINDEX DATABASE
 出于 SSRF 防护，用户填写的 Base URL 默认必须解析到公网地址。本地自托管模型
 （Ollama、LM Studio 等）需要在 `.env` 设置 `ARDOR_ALLOW_PRIVATE_API_BASE_URLS=true` 才能使用。
 
+## 容器 DNS
+
+后端容器固定了上游 DNS(`ARDOR_DNS_PRIMARY` / `ARDOR_DNS_SECONDARY`,默认 223.5.5.5 与 119.29.29.29)。
+Docker 内嵌解析器会转发给宿主机配置的上游,在部分 Windows / Docker Desktop 环境下上游不应答,
+表现为所有 LLM 调用在发出请求前就失败,报错是「Base URL 的主机暂时无法解析」。
+
+**如果你的宿主机能解析公共 DNS 解析不了的名字**——企业 VPN 的 split-horizon DNS,
+或只能通过内网主机名访问的自建模型(即设置 `ARDOR_ALLOW_PRIVATE_API_BASE_URLS=true` 的场景)
+——请在 `.env` 里把这两个变量指向你的内网解析器。否则会出现和上面完全相同的报错,很容易误判成同一个问题。
+
+`host.docker.internal` 通过 `extra_hosts` 显式映射,不受上述设置影响。
+
 ## 重要边界
 
 - 业务身份只能来自 Spring Security 认证上下文，API 不接受可信的前端 `user_id`。
