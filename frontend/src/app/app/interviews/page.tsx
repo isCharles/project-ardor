@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, MessageSquareText, Play, Send } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MessageSquareText, Play, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
@@ -151,6 +151,20 @@ export default function InterviewsPage() {
     } finally { setBusy(false); }
   }
 
+  async function deleteInterview(session: Session) {
+    const label = `${session.targetCompany ? `${session.targetCompany} · ` : ""}${session.targetRole}`;
+    if (!window.confirm(`永久删除“${label}”及其题目、回答和评价？`)) return;
+    setBusy(true); setError("");
+    try {
+      await api<void>(`/api/interviews/${session.id}`, { method: "DELETE" });
+      if (progress?.sessionId === session.id) setProgress(null);
+      setEvaluation(null);
+      await loadLists();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "删除面试失败");
+    } finally { setBusy(false); }
+  }
+
   return (
     <main className="ardor-workbench min-h-screen px-5 py-6 md:px-10 md:py-8">
       <Link href="/app" className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"><ArrowLeft className="size-4" />返回 Ardor</Link>
@@ -179,7 +193,7 @@ export default function InterviewsPage() {
             <h2 className="text-xl font-semibold">历史面试</h2>
             <div className="mt-5 space-y-3">
               {sessions.length === 0 && <p className="text-sm text-muted-foreground">还没有模拟面试。</p>}
-              {sessions.map((session) => <button key={session.id} className="w-full rounded-2xl border p-4 text-left transition hover:bg-muted" onClick={() => openSession(session)} disabled={busy}><span className="font-medium">{session.targetCompany ? `${session.targetCompany} · ` : ""}{session.targetRole}</span><span className="mt-1 block text-xs text-muted-foreground">{session.status === "COMPLETED" ? "已完成" : "进行中"}</span></button>)}
+              {sessions.map((session) => <div key={session.id} className="flex items-stretch gap-2"><button className="min-w-0 flex-1 rounded-2xl border p-4 text-left transition hover:bg-muted" onClick={() => openSession(session)} disabled={busy}><span className="block truncate font-medium">{session.targetCompany ? `${session.targetCompany} · ` : ""}{session.targetRole}</span><span className="mt-1 block text-xs text-muted-foreground">{session.status === "COMPLETED" ? "已完成" : session.status === "CANCELLED" ? "已取消" : "进行中"}</span></button><button aria-label={`删除 ${session.targetRole}`} title="永久删除" className="rounded-2xl border px-3 text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" onClick={() => void deleteInterview(session)} disabled={busy}><Trash2 className="size-4" /></button></div>)}
             </div>
           </section>
         </div>

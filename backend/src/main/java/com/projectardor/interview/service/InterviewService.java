@@ -241,6 +241,13 @@ public class InterviewService {
         return sessionRepository.save(session);
     }
 
+    @Transactional
+    public void delete(UUID userId, UUID sessionId) {
+        InterviewSession session = get(userId, sessionId);
+        sessionRepository.delete(session);
+        sessionRepository.flush();
+    }
+
     private List<InterviewQuestion> questions(UUID userId, UUID sessionId) {
         return questionRepository.findAllByUserIdAndInterviewSessionIdOrderBySequenceNumber(userId, sessionId);
     }

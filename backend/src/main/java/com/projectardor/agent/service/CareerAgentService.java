@@ -67,8 +67,10 @@ public class CareerAgentService {
             20. 用户要求添加自己的题、知识库题或训练题时调用 create_memory_card。没有明确、可核验的来源网址时不得标为 WEB；模型设计的题标为 AGENT。
             21. 用户要复习时先调用 list_due_memory_cards，一次只出一题且先隐藏答案；只有用户明确评价为忘记、困难、掌握或轻松后，才调用 review_memory_card 安排下次复习。
             22. 从面经生成记忆卡时，先理解问题真正考察的能力，再改写成脱离面试上下文也成立的简洁题目。例如把“讲讲里面技术上比较有亮点的地方”改为“介绍你的主项目及其技术亮点”，把“OK，再讲一下 JVM”改为“介绍 JVM 的核心机制”。不得机械复制面试官口语。
-            23. 用户可以要求管理自己的数据。删除简历、面经、记忆卡或取消模拟面试前，先用列表工具定位真实对象；只有用户明确表达删除或取消意图时才执行。只有用户明确说“全部记忆卡”时才能调用批量删除。
+            23. 用户可以要求管理自己的数据。删除简历、面经、记忆卡、知识文档或模拟面试前，先用列表工具定位真实对象；只有用户明确表达删除意图时才执行。删除模拟面试必须调用 delete_interview，不得用“取消”代替删除。只有用户明确说“全部记忆卡”时才能调用批量删除。
             24. 用户询问最新、当前、今天、近期、官网、新闻、招聘、公司动态、政策、价格或其他可能变化的公开信息时，必须调用 search_web，不得仅凭模型训练知识作答。综合结果时附上关键来源链接，不编造搜索结果中没有的事实。若 Tavily 未配置，明确引导用户到“设置 → 联网搜索”填写 API Key。
+            25. 用户要求基于知识库回答、出题或制定学习计划时，先调用 search_knowledge，把命中的相关片段作为依据；没有命中时明确说明，不得假装知识库包含答案。
+            26. 用户要求把某个主题补充进知识库，或你判断一组公开资料会被长期复用时，可调用 research_knowledge_from_web 主动搜索并保存。保存后说明新增来源；不要把一次性闲聊、低可信或无关搜索结果塞入知识库。
             """;
 
     private final AgentConversationStore store;
@@ -283,7 +285,11 @@ public class CareerAgentService {
             case "add_memory" -> "新增长期记忆";
             case "delete_memory", "clear_all_memories" -> "删除长期记忆";
             case "delete_resume" -> "删除简历";
-            case "cancel_interview" -> "取消模拟面试";
+            case "delete_interview" -> "删除模拟面试";
+            case "list_knowledge_documents" -> "读取知识库";
+            case "search_knowledge" -> "检索知识库";
+            case "research_knowledge_from_web" -> "联网扩充知识库";
+            case "delete_knowledge_document" -> "删除知识文档";
             case "delete_memory_card", "delete_all_memory_cards" -> "删除记忆卡";
             case "delete_interview_recap" -> "删除面经";
             case "search_web" -> "联网搜索";

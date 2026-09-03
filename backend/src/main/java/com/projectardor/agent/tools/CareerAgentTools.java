@@ -21,6 +21,10 @@ import com.projectardor.agent.web.AgentMemoryItemResponse;
 import com.projectardor.interview.web.InterviewEvaluationResponse;
 import com.projectardor.interview.web.InterviewProgressResponse;
 import com.projectardor.interview.web.InterviewSessionResponse;
+import com.projectardor.knowledge.service.KnowledgeService;
+import com.projectardor.knowledge.web.KnowledgeDocumentResponse;
+import com.projectardor.knowledge.web.KnowledgeResearchResponse;
+import com.projectardor.knowledge.web.KnowledgeSearchResult;
 import com.projectardor.profile.domain.UserProfile;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.resume.domain.Resume;
@@ -53,6 +57,7 @@ public class CareerAgentTools {
     private final InterviewRecapService interviewRecapService;
     private final InterviewRecapQueueService interviewRecapQueueService;
     private final TavilySearchService tavilySearchService;
+    private final KnowledgeService knowledgeService;
 
     public CareerAgentTools(
             ResumeService resumeService,
@@ -63,7 +68,8 @@ public class CareerAgentTools {
             CalendarTaskService calendarTaskService,
             InterviewRecapService interviewRecapService,
             InterviewRecapQueueService interviewRecapQueueService,
-            TavilySearchService tavilySearchService) {
+            TavilySearchService tavilySearchService,
+            KnowledgeService knowledgeService) {
         this.resumeService = resumeService;
         this.resumeAnalysisQueueService = resumeAnalysisQueueService;
         this.interviewService = interviewService;
@@ -73,6 +79,7 @@ public class CareerAgentTools {
         this.interviewRecapService = interviewRecapService;
         this.interviewRecapQueueService = interviewRecapQueueService;
         this.tavilySearchService = tavilySearchService;
+        this.knowledgeService = knowledgeService;
     }
 
     public BoundCareerTools bind(UUID trustedUserId) {
@@ -89,6 +96,11 @@ public class CareerAgentTools {
             case "RECAP" -> {
                 InterviewRecapResponse recap = interviewRecapService.detail(userId, contextId);
                 yield "用户在界面中明确指定了面经：" + recap.title() + "（面经 ID：" + recap.id() + "）。需要内容时调用 get_interview_recap。";
+            }
+            case "KNOWLEDGE" -> {
+                KnowledgeDocumentResponse document = knowledgeService.get(userId, contextId);
+                yield "用户在界面中明确指定了知识文档：" + document.title() + "（文档 ID：" + document.id()
+                        + "）。需要内容时调用 search_knowledge 检索，不得假装已经阅读全文。";
             }
             default -> throw new IllegalArgumentException("不支持的资料类型");
         };
@@ -111,6 +123,31 @@ public class CareerAgentTools {
         @Tool(name = "search_web", value = "使用 Tavily 搜索公开互联网，返回标题、链接、摘要和相关度。查询最新、当前、近期、官网、新闻、招聘、政策或其他可能变化的信息时必须使用；回答中应保留相关来源链接")
         public WebSearchResult searchWeb(@P("简洁、具体的搜索查询，最多 400 个字符") String query) {
             return tavilySearchService.search(userId, query);
+        }
+
+        @Tool(name = "list_knowledge_documents", value = "列出当前用户知识库中的上传文档和联网资料；返回文档 UUID、来源与切块数量")
+        public List<KnowledgeDocumentResponse> listKnowledgeDocuments() {
+            return knowledgeService.list(userId);
+        }
+
+        @Tool(name = "search_knowledge", value = "从当前用户知识库检索与问题最相关的片段，这是 RAG 的检索步骤。回答知识库问题或从知识库出题前必须调用")
+        public List<KnowledgeSearchResult> searchKnowledge(
+                @P("要检索的问题或关键词，最多 400 个字符") String query,
+                @P(value = "返回片段数，1 到 10；通常传 5", required = false) Integer limit) {
+            return knowledgeService.search(userId, query, limit == null ? 5 : limit);
+        }
+
+        @Tool(name = "research_knowledge_from_web", value = "主动联网搜索一个主题，并把可核验的来源摘要保存到当前用户知识库。适合用户要求补充知识库，或当前知识库缺少需要长期复用的资料时；成功后必须告诉用户新增了哪些来源")
+        public KnowledgeResearchResponse researchKnowledgeFromWeb(
+                @P("明确、可搜索的研究主题，最多 400 个字符") String query) {
+            return knowledgeService.researchFromWeb(userId, query);
+        }
+
+        @Tool(name = "delete_knowledge_document", value = "永久删除当前用户指定的一份知识文档及其全部检索切片。仅在用户明确要求删除时使用；先调用 list_knowledge_documents 定位真实 UUID")
+        public Map<String, Object> deleteKnowledgeDocument(@P("知识文档 UUID") String documentId) {
+            UUID id = uuid(documentId, "知识文档 ID");
+            knowledgeService.delete(userId, id);
+            return Map.of("deleted", true, "documentId", id);
         }
 
         @Tool(name = "update_user_memory", value = "覆盖当前用户的总体记忆。仅保存跨会话长期有用且已确认的信息；参数必须包含所有仍然有效信息的完整新版，不得包含密码、API Key 或其他凭据")
@@ -253,9 +290,11 @@ public class CareerAgentTools {
                     interviewService.getEvaluation(userId, uuid(interviewId, "面试 ID")));
         }
 
-        @Tool(name = "cancel_interview", value = "取消一场尚未结束的模拟面试。只有用户明确要求取消时使用；先调用 list_interviews 确认目标")
-        public InterviewSessionResponse cancelInterview(@P("面试 UUID") String interviewId) {
-            return InterviewSessionResponse.from(interviewService.cancel(userId, uuid(interviewId, "面试 ID")));
+        @Tool(name = "delete_interview", value = "永久删除当前用户指定的一场模拟面试，以及关联题目、回答和评价。只有用户明确要求删除时使用；先调用 list_interviews 确认目标，目标不唯一时先追问")
+        public Map<String, Object> deleteInterview(@P("面试 UUID") String interviewId) {
+            UUID id = uuid(interviewId, "面试 ID");
+            interviewService.delete(userId, id);
+            return Map.of("deleted", true, "interviewId", id);
         }
 
         @Tool(name = "organize_interview_recap", value = "把用户粘贴的真实面试内容提交到后台整理队列；立即返回任务状态，不自动生成记忆卡")

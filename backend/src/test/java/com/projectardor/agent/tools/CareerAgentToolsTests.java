@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import com.projectardor.agent.service.AgentMemoryService;
 import com.projectardor.calendar.service.CalendarTaskService;
 import com.projectardor.interview.service.InterviewService;
+import com.projectardor.knowledge.service.KnowledgeService;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecapService;
@@ -33,7 +34,8 @@ class CareerAgentToolsTests {
                 calendarTaskService,
                 mock(InterviewRecapService.class),
                 mock(InterviewRecapQueueService.class),
-                mock(TavilySearchService.class));
+                mock(TavilySearchService.class),
+                mock(KnowledgeService.class));
         UUID userId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
 
@@ -41,5 +43,28 @@ class CareerAgentToolsTests {
 
         verify(calendarTaskService).delete(userId, taskId);
         assertThat(result).containsEntry("deleted", true).containsEntry("taskId", taskId);
+    }
+
+    @Test
+    void deleteInterviewUsesTrustedUserAndRequestedInterview() {
+        InterviewService interviewService = mock(InterviewService.class);
+        CareerAgentTools tools = new CareerAgentTools(
+                mock(ResumeService.class),
+                mock(ResumeAnalysisQueueService.class),
+                interviewService,
+                mock(ProfileService.class),
+                mock(AgentMemoryService.class),
+                mock(CalendarTaskService.class),
+                mock(InterviewRecapService.class),
+                mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class),
+                mock(KnowledgeService.class));
+        UUID userId = UUID.randomUUID();
+        UUID interviewId = UUID.randomUUID();
+
+        Map<String, Object> result = tools.bind(userId).deleteInterview(interviewId.toString());
+
+        verify(interviewService).delete(userId, interviewId);
+        assertThat(result).containsEntry("deleted", true).containsEntry("interviewId", interviewId);
     }
 }

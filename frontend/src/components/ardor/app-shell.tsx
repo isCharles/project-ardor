@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  CalendarRange, FileText, Layers, MessageSquare, PanelLeft, Settings, SquareStack, X,
+  BookOpenText, CalendarRange, FileText, Layers, MessageSquare, PanelLeft, Settings, SquareStack, X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -18,6 +18,7 @@ const RECORD = [
   { href: "/app/interviews", label: "模拟面试", series: "I", icon: MessageSquare },
   { href: "/app/recaps", label: "面经", series: "V", icon: Layers },
   { href: "/app/cards", label: "记忆卡", series: "C", icon: SquareStack },
+  { href: "/app/knowledge", label: "知识库", series: "K", icon: BookOpenText },
   { href: "/app/calendar", label: "日程", series: "T", icon: CalendarRange },
 ] as const;
 
