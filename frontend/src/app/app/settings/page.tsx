@@ -123,10 +123,21 @@ export default function SettingsPage() {
     const data = new FormData(form);
     setTestingLlm(true); setLlmFeedback({ kind: "pending", message: "正在测试模型连接…" });
     try {
-      const result = await api<{ message: string; model: string; latencyMs: number }>("/api/settings/llm/test", {
-        method: "POST",
-        body: JSON.stringify({ provider: data.get("provider"), baseUrl: data.get("baseUrl"), model: data.get("model"), apiKey: data.get("apiKey") }),
-      });
+      const body = JSON.stringify({ provider: data.get("provider"), baseUrl: data.get("baseUrl"), model: data.get("model"), apiKey: data.get("apiKey") });
+      let result: { message: string; model: string; latencyMs: number } | null = null;
+      for (let attempt = 0; attempt <= 5; attempt += 1) {
+        if (attempt > 0) {
+          setLlmFeedback({ kind: "pending", message: `网络波动，正在进行第 ${attempt}/5 次重试…` });
+          await new Promise((resolve) => window.setTimeout(resolve, Math.min(1500 * (2 ** (attempt - 1)), 8000)));
+        }
+        try {
+          result = await api<{ message: string; model: string; latencyMs: number }>("/api/settings/llm/test", { method: "POST", body });
+          break;
+        } catch (reason) {
+          if (!(reason instanceof ApiError) || reason.body.retryable !== true || attempt === 5) throw reason;
+        }
+      }
+      if (!result) throw new Error("连接测试未返回结果");
       setLlmFeedback({ kind: "success", message: `${result.message} · ${result.model} · ${result.latencyMs} ms` });
     } catch (reason) { setLlmFeedback({ kind: "error", message: reason instanceof Error ? reason.message : "连接测试失败" }); }
     finally { setTestingLlm(false); }

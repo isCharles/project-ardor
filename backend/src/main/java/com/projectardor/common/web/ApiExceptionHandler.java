@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import com.projectardor.auth.service.DuplicateEmailException;
+import com.projectardor.common.security.ExternalHostResolutionException;
 import com.projectardor.llm.service.LlmCallException;
 
 @RestControllerAdvice
@@ -48,6 +49,12 @@ public class ApiExceptionHandler {
     @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
     ApiError uploadTooLarge() {
         return new ApiError("FILE_TOO_LARGE", "简历文件不能超过 10 MB");
+    }
+
+    @ExceptionHandler(ExternalHostResolutionException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    ApiError externalHostResolution(ExternalHostResolutionException exception) {
+        return new ApiError("EXTERNAL_DNS_TEMPORARY", exception.getMessage(), true);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

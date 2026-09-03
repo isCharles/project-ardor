@@ -12,6 +12,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class ExternalBaseUrlPolicy {
 
+    private static final int DNS_RESOLUTION_ATTEMPTS = 3;
+    private static final long DNS_RETRY_DELAY_MS = 300;
+
     private final boolean allowPrivateAddresses;
 
     public ExternalBaseUrlPolicy(
@@ -50,12 +53,7 @@ public class ExternalBaseUrlPolicy {
                 || normalized.endsWith(".internal")) {
             throw privateAddress();
         }
-        final InetAddress[] addresses;
-        try {
-            addresses = InetAddress.getAllByName(host);
-        } catch (UnknownHostException exception) {
-            throw new IllegalArgumentException("Base URL 的主机无法解析为公共网络地址");
-        }
+        InetAddress[] addresses = resolveAddresses(host);
         for (InetAddress address : addresses) {
             byte[] bytes = address.getAddress();
             boolean uniqueLocalIpv6 = bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc;
@@ -67,6 +65,28 @@ public class ExternalBaseUrlPolicy {
                     || uniqueLocalIpv6) {
                 throw privateAddress();
             }
+        }
+    }
+
+    private InetAddress[] resolveAddresses(String host) {
+        UnknownHostException lastFailure = null;
+        for (int attempt = 1; attempt <= DNS_RESOLUTION_ATTEMPTS; attempt++) {
+            try {
+                return InetAddress.getAllByName(host);
+            } catch (UnknownHostException exception) {
+                lastFailure = exception;
+                if (attempt < DNS_RESOLUTION_ATTEMPTS) pauseBeforeDnsRetry(attempt);
+            }
+        }
+        throw new ExternalHostResolutionException("Base URL 的主机暂时无法解析，请稍后重试", lastFailure);
+    }
+
+    private void pauseBeforeDnsRetry(int attempt) {
+        try {
+            Thread.sleep(DNS_RETRY_DELAY_MS * attempt);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new ExternalHostResolutionException("Base URL 主机解析被中断，请重试", exception);
         }
     }
 

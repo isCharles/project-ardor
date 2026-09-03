@@ -162,16 +162,14 @@ export default function AgentHomePage() {
   async function newConversation() {
     if (busy) return;
     setError("");
-    try {
-      const conversation = await api<Conversation>("/api/agent/conversations", { method: "POST" });
-      setConversations((current) => sortConversations([conversation, ...current]));
-      setMessages([]);
-      setSelectedContext(null);
-      setState((current) => current ? { ...current, conversationId: conversation.id, messages: [] } : current);
-      setDraft(readSavedDraft(conversation.id));
-      window.history.replaceState(null, "", `/app?conversation=${conversation.id}`);
-      setSidebarOpen(false);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法新建会话"); }
+    setRetryFailures([]);
+    setRunSteps([]);
+    setMessages([]);
+    setSelectedContext(null);
+    setState((current) => current ? { ...current, conversationId: null, messages: [] } : current);
+    setDraft(readSavedDraft(null));
+    window.history.replaceState(null, "", "/app");
+    setSidebarOpen(false);
   }
 
   async function send(text: string) {
@@ -397,6 +395,9 @@ export default function AgentHomePage() {
 
   if (!state && !error) return <main className="ardor-workbench grid min-h-screen place-items-center text-sm text-stone-500">正在唤醒 Ardor…</main>;
   const selected = conversations.find((item) => item.id === state?.conversationId);
+  const visibleError = error && !retryFailures.some((failure) =>
+    failure.detail === error || failure.detail.endsWith(` · ${error}`)
+  ) ? error : "";
 
   return (
     <main className="ardor-workbench h-screen overflow-hidden text-stone-900">
@@ -482,7 +483,7 @@ export default function AgentHomePage() {
                 <div className="pointer-events-none absolute inset-x-[6%] bottom-[-28%] h-[82%] rounded-[50%] bg-[radial-gradient(circle_at_28%_45%,rgba(255,107,177,0.58),transparent_43%),radial-gradient(circle_at_72%_38%,rgba(83,125,255,0.58),transparent_47%),radial-gradient(circle_at_50%_76%,rgba(149,92,246,0.46),transparent_58%)] blur-3xl" />
                 <div className="relative z-10 mx-auto w-full max-w-3xl text-center">
                   <h2 className="text-4xl font-semibold tracking-[-0.04em] text-stone-950 md:text-5xl">What should we build{state?.displayName?.trim() ? `, ${state.displayName.trim()}` : ""}?</h2>
-                  {(error || retryFailures.length > 0) && <div className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm"><p>{error}</p>{retryFailures.length > 0 && <ul className="mt-2 space-y-1 text-xs text-red-600">{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
+                  {(visibleError || retryFailures.length > 0) && <div className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{retryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
                   <form onSubmit={submit} className="mx-auto mt-10 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
                     {selectedContext && <div className="mx-3 mt-2 inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{selectedContext.label}</span><button type="button" aria-label="移除资料" onClick={() => setSelectedContext(null)}><X className="size-3.5" /></button></div>}
                     <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
@@ -521,7 +522,7 @@ export default function AgentHomePage() {
           </div>
 
           {messages.length > 0 && <div className="ardor-composer-enter relative z-10 shrink-0 px-4 pb-5 md:px-8">
-            {error && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{error}</p>{retryFailures.length > 0 && <ul className="mt-2 space-y-1 text-xs text-red-600">{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
+            {(visibleError || retryFailures.length > 0) && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{retryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {selectedContext && <div className="mx-3 mt-2 inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{selectedContext.label}</span><button type="button" aria-label="移除资料" onClick={() => setSelectedContext(null)}><X className="size-3.5" /></button></div>}
               <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />

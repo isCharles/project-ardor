@@ -24,6 +24,7 @@ import com.projectardor.agent.web.AgentConversationResponse;
 import com.projectardor.agent.web.AgentMemoryResponse;
 import com.projectardor.agent.web.AgentStateResponse;
 import com.projectardor.agent.web.AgentStreamEvent;
+import com.projectardor.common.security.ExternalHostResolutionException;
 import com.projectardor.llm.service.LlmCallException;
 import com.projectardor.llm.service.LlmConfigService;
 import com.projectardor.profile.service.ProfileService;
@@ -392,6 +393,7 @@ public class CareerAgentService {
         StringBuilder messages = new StringBuilder();
         Throwable current = throwable;
         while (current != null) {
+            if (current instanceof ExternalHostResolutionException) return true;
             if (current instanceof IOException) return true;
             String type = current.getClass().getSimpleName();
             if ("InternalServerException".equals(type)
@@ -422,6 +424,7 @@ public class CareerAgentService {
     private String transientFailureMessage(Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {
+            if (current instanceof ExternalHostResolutionException) return "Base URL 的主机暂时无法解析";
             String type = current.getClass().getSimpleName();
             if ("RateLimitException".equals(type)) return "模型服务限流（429）";
             if ("TimeoutException".equals(type)) return "连接模型服务超时";

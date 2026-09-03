@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.api.Test;
 
 class ExternalBaseUrlPolicyTests {
 
@@ -28,5 +29,13 @@ class ExternalBaseUrlPolicyTests {
     @ValueSource(strings = {"https://api.openai.com/", "https://api.anthropic.com"})
     void acceptsPublicDestinations(String url) {
         assertThat(policy.normalizeAndValidate(url)).doesNotEndWith("/");
+    }
+
+    @Test
+    void reportsUnresolvedPublicHostAsRetryableResolutionFailure() {
+        assertThatThrownBy(() -> policy.normalizeAndValidate("https://definitely-unresolvable.invalid"))
+                .isInstanceOf(ExternalHostResolutionException.class)
+                .hasMessage("Base URL 的主机暂时无法解析，请稍后重试")
+                .hasCauseInstanceOf(java.net.UnknownHostException.class);
     }
 }
