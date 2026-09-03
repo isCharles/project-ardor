@@ -49,6 +49,12 @@ public class InterviewRecap {
                 inputHash, overview, strengths, weaknesses, modelName);
     }
 
+    public void updateMetadata(String company, String targetRole, Instant occurredAt) {
+        this.company = company;
+        this.targetRole = targetRole;
+        this.occurredAt = occurredAt;
+    }
+
     @PrePersist void onCreate() { Instant now = Instant.now(); createdAt = now; updatedAt = now; }
     @PreUpdate void onUpdate() { updatedAt = Instant.now(); }
     public UUID getId() { return id; }
