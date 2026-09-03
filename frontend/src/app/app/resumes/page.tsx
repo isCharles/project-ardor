@@ -105,7 +105,7 @@ export default function ResumesPage() {
     try {
       const task = await api<AnalysisTask>(`/api/resumes/${resume.id}/analysis`, { method: "POST" });
       if (task.status === "COMPLETED" && task.analysisId) setAnalysis(await api<Analysis>(`/api/resumes/${resume.id}/analysis`));
-      else setNotice("Ardor 正在后台分析这份简历。你可以离开页面，完成后报告会自动出现。");
+      else { window.localStorage.setItem("ardor:background-pending:resumes", "1"); setNotice("Ardor 正在后台分析这份简历。你可以离开页面，完成后报告会自动出现。"); }
       await load();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "分析失败"); }
     finally { setBusy(""); }

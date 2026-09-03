@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Archive, ArrowUp, Brain, BrainCircuit, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame, MessageSquareText,
+  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame, MessageSquareText,
   LayoutGrid, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Settings2, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +23,10 @@ type RunStep = { key: string; label: string; elapsedMs: number; done: boolean };
 type SelectedContext = { type: "RESUME" | "RECAP"; id: string; label: string };
 type ResumeOption = { id: string; originalFilename: string };
 type RecapOption = { id: string; title: string };
+type BackgroundModule = "resumes" | "recaps" | "knowledge";
+type ResumeBackgroundStatus = { analysisId: string | null; analysisStatus: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | null };
+type RecapBackgroundStatus = { status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" };
+type KnowledgeBackgroundStatus = { pendingChunks: number };
 type AgentState = {
   conversationId: string | null;
   llmConfigured: boolean;
@@ -99,6 +103,7 @@ export default function AgentHomePage() {
   const [notice, setNotice] = useState("");
   const [menuId, setMenuId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [backgroundReady, setBackgroundReady] = useState<Record<BackgroundModule, boolean>>({ resumes: false, recaps: false, knowledge: false });
   const endRef = useRef<HTMLDivElement>(null);
   const runStartedAt = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -145,6 +150,40 @@ export default function AgentHomePage() {
     return () => { cancelled = true; };
   }, [applyState, router]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const modules: BackgroundModule[] = ["resumes", "recaps", "knowledge"];
+    const refresh = async () => {
+      try {
+        const [resumes, recaps, knowledge] = await Promise.all([
+          api<ResumeBackgroundStatus[]>("/api/resumes"),
+          api<RecapBackgroundStatus[]>("/api/interview-recaps/jobs"),
+          api<KnowledgeBackgroundStatus>("/api/knowledge/index-status"),
+        ]);
+        const active = {
+          resumes: resumes.some((item) => item.analysisStatus === "QUEUED" || item.analysisStatus === "RUNNING"),
+          recaps: recaps.some((item) => item.status === "QUEUED" || item.status === "RUNNING"),
+          knowledge: knowledge.pendingChunks > 0,
+        } satisfies Record<BackgroundModule, boolean>;
+        for (const itemModule of modules) {
+          const pendingKey = `ardor:background-pending:${itemModule}`;
+          const readyKey = `ardor:background-ready:${itemModule}`;
+          if (active[itemModule]) window.localStorage.setItem(pendingKey, "1");
+          else if (window.localStorage.getItem(pendingKey) === "1") {
+            window.localStorage.removeItem(pendingKey);
+            window.localStorage.setItem(readyKey, "1");
+          }
+        }
+        if (!cancelled) setBackgroundReady(Object.fromEntries(modules.map((itemModule) => [itemModule, window.localStorage.getItem(`ardor:background-ready:${itemModule}`) === "1"])) as Record<BackgroundModule, boolean>);
+      } catch {
+        // Background badges are best-effort and must never interrupt the workspace.
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
   useEffect(() => {
     if (!busy) return;
@@ -164,6 +203,7 @@ export default function AgentHomePage() {
     setError("");
     setRetryFailures([]);
     setRunSteps([]);
+    setRunElapsed(0);
     setMessages([]);
     setSelectedContext(null);
     setState((current) => current ? { ...current, conversationId: null, messages: [] } : current);
@@ -393,6 +433,11 @@ export default function AgentHomePage() {
     return <div className="relative"><input ref={uploadRef} type="file" accept=".pdf,.docx" className="hidden" onChange={(event) => void uploadResume(event.target.files?.[0])} /><button type="button" aria-label="添加资料" title="添加资料" onClick={() => void openAttachments()} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Plus className="size-4" /></button>{attachmentOpen && <div className="absolute bottom-11 left-0 z-30 max-h-80 w-72 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 text-sm shadow-2xl"><button type="button" onClick={() => uploadRef.current?.click()} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-stone-100"><Upload className="size-4" />上传简历</button>{resumeOptions.map((resume) => <button type="button" key={resume.id} onClick={() => { setSelectedContext({ type: "RESUME", id: resume.id, label: resume.originalFilename }); setAttachmentOpen(false); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left hover:bg-stone-100"><FileSearch className="size-4 shrink-0 text-blue-500" /><span className="truncate">{resume.originalFilename}</span></button>)}{recapOptions.map((recap) => <button type="button" key={recap.id} onClick={() => { setSelectedContext({ type: "RECAP", id: recap.id, label: recap.title }); setAttachmentOpen(false); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left hover:bg-stone-100"><FileText className="size-4 shrink-0 text-violet-500" /><span className="truncate">{recap.title}</span></button>)}</div>}</div>;
   }
 
+  function acknowledgeBackground(module: BackgroundModule) {
+    window.localStorage.removeItem(`ardor:background-ready:${module}`);
+    setBackgroundReady((current) => ({ ...current, [module]: false }));
+  }
+
   if (!state && !error) return <main className="ardor-workbench grid min-h-screen place-items-center text-sm text-stone-500">正在唤醒 Ardor…</main>;
   const selected = conversations.find((item) => item.id === state?.conversationId);
   const visibleError = error && !retryFailures.some((failure) =>
@@ -458,15 +503,16 @@ export default function AgentHomePage() {
               <h1 className="truncate text-sm font-medium text-stone-600">{selected?.title ?? "Ardor"}</h1>
             </div>
             <div className="relative">
-              <button type="button" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen((open) => !open)} className={`flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium transition ${workspaceOpen ? "border-stone-300 bg-white text-stone-900 shadow-sm" : "border-stone-200/80 bg-white/55 text-stone-600 hover:bg-white"}`}><LayoutGrid className="size-3.5" />工作区<ChevronDown className={`size-3.5 transition-transform ${workspaceOpen ? "rotate-180" : ""}`} /></button>
+              <button type="button" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen((open) => !open)} className={`relative flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium transition ${workspaceOpen ? "border-stone-300 bg-white text-stone-900 shadow-sm" : "border-stone-200/80 bg-white/55 text-stone-600 hover:bg-white"}`}><LayoutGrid className="size-3.5" />工作区<ChevronDown className={`size-3.5 transition-transform ${workspaceOpen ? "rotate-180" : ""}`} />{Object.values(backgroundReady).some(Boolean) && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-red-500 ring-2 ring-white" />}</button>
               {workspaceOpen && <div className="absolute right-0 top-12 z-30 w-64 rounded-2xl border border-white/80 bg-[#f8f6f1]/95 p-2.5 shadow-[0_24px_70px_rgba(42,35,27,0.18)] backdrop-blur-xl">
                 <div className="mb-2 flex items-center justify-between px-1"><span className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-400">工作区</span><button type="button" aria-label="收起工作区" onClick={() => setWorkspaceOpen(false)} className="grid size-7 place-items-center rounded-lg text-stone-400 hover:bg-white hover:text-stone-700"><X className="size-3.5" /></button></div>
                 <div className="grid grid-cols-2 gap-1.5">
-                  <Link href="/app/resumes" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileSearch className="size-4 text-blue-500" /><span>简历分析</span></Link>
+                  <Link href="/app/resumes" onClick={() => acknowledgeBackground("resumes")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileSearch className="size-4 text-blue-500" /><span>简历分析</span>{backgroundReady.resumes && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
                   <Link href="/app/interviews" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><MessageSquareText className="size-4 text-orange-500" /><span>模拟面试</span></Link>
-                  <Link href="/app/recaps" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileText className="size-4 text-emerald-600" /><span>面经</span></Link>
+                  <Link href="/app/recaps" onClick={() => acknowledgeBackground("recaps")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileText className="size-4 text-emerald-600" /><span>面经</span>{backgroundReady.recaps && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
                   <Link href="/app/cards" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BrainCircuit className="size-4 text-violet-500" /><span>记忆卡</span></Link>
                   <Link href="/app/calendar" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><CalendarDays className="size-4 text-rose-500" /><span>日历</span></Link>
+                  <Link href="/app/knowledge" onClick={() => acknowledgeBackground("knowledge")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BookOpenText className="size-4 text-cyan-600" /><span>知识库</span>{backgroundReady.knowledge && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
                   <button onClick={() => { setWorkspaceOpen(false); setMemoryOpen(true); }} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-left text-xs text-stone-700 transition hover:bg-white"><Brain className="size-4 text-violet-500" /><span>总体记忆</span><span className={`absolute right-2.5 top-2.5 size-1.5 rounded-full ${memoryDraft ? "bg-violet-500" : "bg-stone-300"}`} /></button>
                   <Link href="/app/settings" className="col-span-2 flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-stone-500 hover:bg-white/70 hover:text-stone-800"><Settings2 className="size-3.5" />设置</Link>
                 </div>
