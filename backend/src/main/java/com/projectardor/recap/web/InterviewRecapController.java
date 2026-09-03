@@ -19,6 +19,10 @@ public class InterviewRecapController {
     @GetMapping("/jobs") public List<InterviewRecapTaskResponse> jobs(@AuthenticationPrincipal ArdorPrincipal principal) { return queueService.list(principal.userId()).stream().map(InterviewRecapTaskResponse::from).toList(); }
     @GetMapping public List<InterviewRecapResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) { return service.list(principal.userId()); }
     @GetMapping("/{id}") public InterviewRecapResponse get(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) { return service.detail(principal.userId(), id); }
+    @PatchMapping("/{id}/metadata") public InterviewRecapResponse updateMetadata(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable UUID id, @Valid @RequestBody InterviewRecapMetadataRequest request) {
+        return service.updateMetadata(principal.userId(), id, request);
+    }
     @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) { service.delete(principal.userId(), id); }
 }
