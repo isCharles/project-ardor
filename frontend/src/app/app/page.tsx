@@ -504,25 +504,25 @@ export default function AgentHomePage() {
                     )}
                   </article>
                 ))}
-                {runSteps.length > 0 && <section className="max-w-xl rounded-2xl border border-white/70 bg-white/55 px-4 py-3 text-sm text-stone-600 shadow-sm backdrop-blur-md">
+                {(runSteps.length > 0 || busy || retryFailures.length > 0) && <section className="max-w-xl rounded-2xl border border-white/70 bg-white/55 px-4 py-3 text-sm text-stone-600 shadow-sm backdrop-blur-md">
                   <button type="button" onClick={() => setTraceOpen((open) => !open)} className="flex w-full items-center gap-2 text-left">
                     {traceOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                    <span className="font-medium text-stone-700">{busy ? "Ardor 正在工作" : "Ardor 已完成"}</span>
+                    <span className="font-medium text-stone-700">{busy ? "Ardor 正在工作" : error ? "Ardor 未完成" : "Ardor 已完成"}</span>
                     <span className="ml-auto text-xs tabular-nums text-stone-400">{formatElapsed(runElapsed)}</span>
                   </button>
                   {traceOpen && <div className="mt-3 space-y-2 border-l border-stone-200 pl-4">
                     {runSteps.map((step) => <div key={step.key} className="flex items-center gap-2 text-xs"><CheckCircle2 className={`size-3.5 ${step.done ? "text-emerald-500" : "animate-pulse text-violet-500"}`} /><span>{step.label}</span><span className="ml-auto tabular-nums text-stone-400">{step.done ? formatElapsed(step.elapsedMs) : "进行中"}</span></div>)}
+                    {retryFailures.map((failure, index) => <div key={`${failure.label}-${index}`} className="flex items-start gap-2 text-xs text-amber-700"><RotateCcw className="mt-0.5 size-3.5 shrink-0" /><span><span className="font-medium">{failure.label}</span> · {failure.detail}</span></div>)}
+                    {busy && retryAttempt > 0 && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin" /><span>连接波动，正在进行第 {retryAttempt}/{MAX_MESSAGE_RETRIES} 次重试</span></div>}
                   </div>}
                 </section>}
-                {busy && <div className="flex items-center text-stone-400">{retryAttempt > 0 ? <span className="text-sm">连接波动，正在进行第 {retryAttempt}/{MAX_MESSAGE_RETRIES} 次重试…</span> : <span className="flex gap-1"><i className="size-1.5 animate-pulse rounded-full bg-current" /><i className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:150ms]" /><i className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:300ms]" /></span>}</div>}
-                {retryFailures.length > 0 && <ul className="space-y-1.5 rounded-2xl bg-amber-50 px-4 py-3 text-xs text-amber-800">{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}><span className="font-medium">{failure.label}</span>：{failure.detail}</li>)}</ul>}
                 <div ref={endRef} />
               </div>
             )}
           </div>
 
           {messages.length > 0 && <div className="ardor-composer-enter relative z-10 shrink-0 px-4 pb-5 md:px-8">
-            {(visibleError || retryFailures.length > 0) && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{retryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
+            {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {selectedContext && <div className="mx-3 mt-2 inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{selectedContext.label}</span><button type="button" aria-label="移除资料" onClick={() => setSelectedContext(null)}><X className="size-3.5" /></button></div>}
               <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
