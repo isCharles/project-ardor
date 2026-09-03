@@ -17,6 +17,21 @@ public class InterviewRecapController {
         return InterviewRecapTaskResponse.from(queueService.request(principal.userId(), request.content()));
     }
     @GetMapping("/jobs") public List<InterviewRecapTaskResponse> jobs(@AuthenticationPrincipal ArdorPrincipal principal) { return queueService.list(principal.userId()).stream().map(InterviewRecapTaskResponse::from).toList(); }
+
+    /** Re-queues a failed整理 job using the material already stored on it. */
+    @PostMapping("/jobs/{jobId}/retry")
+    public InterviewRecapTaskResponse retryJob(
+            @AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID jobId) {
+        return InterviewRecapTaskResponse.from(queueService.retryFailed(principal.userId(), jobId));
+    }
+
+    /** Clears a failed job so it stops sitting in the user's task list forever. */
+    @DeleteMapping("/jobs/{jobId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void dismissJob(
+            @AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID jobId) {
+        queueService.dismissFailed(principal.userId(), jobId);
+    }
     @GetMapping public List<InterviewRecapResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) { return service.list(principal.userId()); }
     @GetMapping("/{id}") public InterviewRecapResponse get(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) { return service.detail(principal.userId(), id); }
     @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)

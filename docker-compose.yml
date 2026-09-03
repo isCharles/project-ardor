@@ -54,6 +54,19 @@ services:
       ARDOR_RESUME_STORAGE: /app/data/resumes
       ARDOR_HTTP_PROXY_HOST: ${ARDOR_HTTP_PROXY_HOST:-}
       ARDOR_HTTP_PROXY_PORT: ${ARDOR_HTTP_PROXY_PORT:-0}
+    # Docker's embedded resolver forwards to whatever the host has configured, which on
+    # some Windows/VPN setups answers nothing. Every outbound LLM call then fails at DNS
+    # with "Base URL 的主机暂时无法解析" before a single byte is sent. Pinning public
+    # upstreams fixes external names; container-to-container names still resolve through
+    # 127.0.0.11 as before. Override per environment if these resolvers are unreachable.
+    dns:
+      - ${ARDOR_DNS_PRIMARY:-223.5.5.5}
+      - ${ARDOR_DNS_SECONDARY:-119.29.29.29}
+    # Docker Desktop normally publishes host.docker.internal through the embedded
+    # resolver, which the pinned upstreams above bypass. Mapping it explicitly keeps
+    # ARDOR_HTTP_PROXY_HOST and any locally hosted model endpoint reachable.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
     depends_on:

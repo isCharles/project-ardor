@@ -98,7 +98,7 @@ public class InterviewRecapService {
         Map<UUID, List<InterviewRecapQuestion>> questionsByRecap = questionRepository
                 .findAllByUserIdOrderByRecapIdAscSequenceNumberAsc(userId).stream()
                 .collect(Collectors.groupingBy(InterviewRecapQuestion::getRecapId));
-        return recapRepository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
+        return recapRepository.findAllByUserIdOrderByInterviewTimeDesc(userId).stream()
                 .map(recap -> InterviewRecapResponse.from(
                         recap, questionsByRecap.getOrDefault(recap.getId(), List.of())))
                 .toList();

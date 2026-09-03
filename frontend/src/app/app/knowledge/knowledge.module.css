@@ -1,0 +1,236 @@
+/* Knowledge base surface — a scoped visual trial.
+   Everything here is deliberately local to this route: the app-wide tokens in
+   styles/tokens.css keep their own restrained palette, and nothing in this file
+   is allowed to leak out of the module. If the direction is adopted, these
+   values move into tokens.css; until then they stay here. */
+
+.shell {
+  /* The source design is light-only, so pin the scheme rather than let a dark
+     system preference render form controls against a cream ground. */
+  color-scheme: light;
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: #fff8df;
+  color: #162032;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Ambient mesh.
+       Anchored to the top of the page rather than fixed to the viewport: this is
+       a working surface, not a hero, so the colour decorates the masthead and
+       then releases the page to calm cream. A viewport-fixed mesh kept full
+       saturation behind the document list and fought the content. --- */
+.mesh {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 640px;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.meshField {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 4% 2%, rgba(0, 148, 255, 0.62) 0%, rgba(0, 154, 255, 0.4) 15%, transparent 34%),
+    radial-gradient(circle at 30% 4%, rgba(159, 230, 255, 0.58) 0%, rgba(196, 241, 255, 0.4) 20%, transparent 39%),
+    radial-gradient(circle at 56% 2%, rgba(255, 239, 40, 0.66) 0%, rgba(255, 226, 35, 0.46) 24%, transparent 46%),
+    radial-gradient(circle at 80% 5%, rgba(255, 175, 0, 0.6) 0%, rgba(255, 118, 24, 0.4) 23%, transparent 44%),
+    radial-gradient(circle at 103% 2%, rgba(255, 24, 90, 0.55) 0%, rgba(255, 72, 122, 0.36) 24%, transparent 47%),
+    linear-gradient(180deg, rgba(255, 248, 223, 0) 0%, rgba(255, 249, 230, 0.55) 46%, #fff8df 100%);
+  filter: blur(26px) saturate(1.08);
+  transform: scale(1.08);
+}
+
+.meshBeam {
+  position: absolute;
+  left: -8%;
+  top: -22%;
+  height: 460px;
+  width: 30vw;
+  rotate: 14deg;
+  opacity: 0.5;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 32, 128, 0.88) 0%,
+    rgba(0, 90, 210, 0.55) 36%,
+    transparent 72%
+  );
+  filter: blur(44px);
+}
+
+/* Fades the mesh out before it reaches the content, so long document lists stay
+   readable instead of competing with the gradient. */
+.meshFade {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 420px;
+  background: linear-gradient(to bottom, rgba(255, 248, 223, 0) 0%, rgba(255, 249, 230, 0.9) 42%, #fff8df 100%);
+}
+
+.meshGrain {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.45) 1px, transparent 1px);
+  background-size: 3px 3px;
+  opacity: 0.08;
+  mix-blend-mode: soft-light;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- Type. Mono is reserved for technical metadata, per the reference. --- */
+.label {
+  font-family: var(--ardor-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.display {
+  font-size: clamp(2.75rem, 6vw, 4rem);
+  font-weight: 500;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+}
+
+/* --- Surfaces. 8px radius throughout, matching the source geometry. --- */
+.card {
+  border-radius: 8px;
+  border: 1px solid rgba(22, 32, 50, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1px 2px rgba(22, 32, 50, 0.04), 0 12px 32px -14px rgba(22, 32, 50, 0.18);
+}
+
+.cardSolid {
+  border-radius: 8px;
+  border: 1px solid rgba(22, 32, 50, 0.07);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(22, 32, 50, 0.04), 0 12px 32px -16px rgba(22, 32, 50, 0.16);
+}
+
+.cardInk {
+  border-radius: 8px;
+  background: #162032;
+  color: #f4f7fb;
+  box-shadow: 0 18px 44px -20px rgba(22, 32, 50, 0.6);
+}
+
+/* --- Controls. --- */
+.buttonPrimary {
+  border-radius: 8px;
+  background: #08294a;
+  color: #ffffff;
+  font-weight: 500;
+  transition: background-color var(--ardor-fast, 130ms) var(--ardor-ease, ease);
+}
+.buttonPrimary:hover:not(:disabled) {
+  background: #102f50;
+}
+.buttonPrimary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.buttonGhost {
+  border-radius: 8px;
+  border: 1px solid rgba(22, 32, 50, 0.14);
+  background: rgba(255, 255, 255, 0.55);
+  color: #162032;
+  font-weight: 500;
+  transition: background-color var(--ardor-fast, 130ms) var(--ardor-ease, ease);
+}
+.buttonGhost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.85);
+}
+.buttonGhost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.field {
+  border-radius: 8px;
+  border: 1px solid rgba(22, 32, 50, 0.12);
+  background: rgba(255, 255, 255, 0.8);
+  color: #162032;
+  outline: none;
+  transition: border-color var(--ardor-fast, 130ms) var(--ardor-ease, ease),
+    box-shadow var(--ardor-fast, 130ms) var(--ardor-ease, ease);
+}
+.field::placeholder {
+  color: rgba(22, 32, 50, 0.42);
+}
+.field:focus {
+  border-color: #0094ff;
+  box-shadow: 0 0 0 3px rgba(0, 148, 255, 0.18);
+}
+
+.pill {
+  border-radius: 9999px;
+  font-family: var(--ardor-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* --- Index coverage meter. --- */
+.meter {
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(22, 32, 50, 0.1);
+  overflow: hidden;
+}
+.meterFill {
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #0094ff, #009aff 60%, #9fe6ff);
+  transition: width var(--ardor-slow, 380ms) var(--ardor-ease, ease);
+}
+
+/* Indeterminate sweep while the backfill is still running. */
+.meterPending {
+  height: 100%;
+  width: 38%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, #0094ff, transparent);
+  animation: sweep 1.5s var(--ardor-ease, ease) infinite;
+}
+
+@keyframes sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(320%); }
+}
+
+.riseIn {
+  animation: rise var(--ardor-base, 220ms) var(--ardor-ease, cubic-bezier(0.2, 0, 0, 1)) both;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meterPending,
+  .riseIn {
+    animation: none;
+  }
+  .meterFill {
+    transition: none;
+  }
+  .meterPending {
+    width: 100%;
+    opacity: 0.5;
+  }
+}
