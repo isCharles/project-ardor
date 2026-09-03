@@ -69,9 +69,15 @@ public class AgentConversationStore {
     @Transactional
     public List<ConversationMessage> appendExchange(
             UUID userId, Conversation conversation, String userText, String assistantText) {
+        return appendExchange(userId, conversation, userText, assistantText, null);
+    }
+
+    @Transactional
+    public List<ConversationMessage> appendExchange(
+            UUID userId, Conversation conversation, String userText, String assistantText, String runTrace) {
         List<ConversationMessage> saved = messageRepository.saveAll(List.of(
                 ConversationMessage.user(userId, conversation.getId(), userText),
-                ConversationMessage.assistant(userId, conversation.getId(), assistantText)));
+                ConversationMessage.assistant(userId, conversation.getId(), assistantText, runTrace)));
         conversation.titleFromFirstMessage(userText);
         conversation.touch();
         conversationRepository.save(conversation);

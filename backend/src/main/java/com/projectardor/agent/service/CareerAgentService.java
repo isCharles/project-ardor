@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -28,6 +29,7 @@ import com.projectardor.common.security.ExternalHostResolutionException;
 import com.projectardor.llm.service.LlmCallException;
 import com.projectardor.llm.service.LlmConfigService;
 import com.projectardor.profile.service.ProfileService;
+import tools.jackson.databind.ObjectMapper;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -80,6 +82,7 @@ public class CareerAgentService {
     private final LlmConfigService llmConfigService;
     private final AgentMemoryService memoryService;
     private final ProfileService profileService;
+    private final ObjectMapper objectMapper;
     private final ConcurrentHashMap<UUID, Semaphore> userLocks = new ConcurrentHashMap<>();
 
     public CareerAgentService(
@@ -88,13 +91,15 @@ public class CareerAgentService {
             CareerAgentTools tools,
             LlmConfigService llmConfigService,
             AgentMemoryService memoryService,
-            ProfileService profileService) {
+            ProfileService profileService,
+            ObjectMapper objectMapper) {
         this.store = store;
         this.modelFactory = modelFactory;
         this.tools = tools;
         this.llmConfigService = llmConfigService;
         this.memoryService = memoryService;
         this.profileService = profileService;
+        this.objectMapper = objectMapper;
     }
 
     public AgentStateResponse state(UUID userId, UUID requestedConversationId) {
@@ -200,6 +205,7 @@ public class CareerAgentService {
             Conversation conversation = conversationId == null ? store.create(userId) : store.requireActive(userId, conversationId);
             MessageWindowChatMemory memory = conversationMemory(userId, conversation.getId());
             ConcurrentHashMap<String, Long> toolStarts = new ConcurrentHashMap<>();
+            List<RunStep> persistedSteps = new CopyOnWriteArrayList<>();
             AtomicInteger partialChunks = new AtomicInteger();
             AtomicLong firstPartialAt = new AtomicLong();
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
@@ -216,6 +222,8 @@ public class CareerAgentService {
                     .onToolExecuted(execution -> {
                         Long toolStarted = toolStarts.remove(execution.request().id());
                         long duration = toolStarted == null ? 0 : Math.max(1, elapsedMs(toolStarted));
+                        persistedSteps.add(new RunStep(toolLabel(execution.request().name(), execution.hasFailed()), duration,
+                                execution.hasFailed() ? "FAILED" : "COMPLETED"));
                         sink.send(AgentStreamEvent.tool("tool_end", execution.request().name(),
                                 toolLabel(execution.request().name(), execution.hasFailed()), duration));
                     })
@@ -229,7 +237,9 @@ public class CareerAgentService {
                         try {
                             String answer = response.aiMessage().text();
                             if (answer == null || answer.isBlank()) throw new IllegalStateException("Agent 没有返回可用内容");
-                            List<ConversationMessage> saved = store.appendExchange(userId, conversation, message, answer.strip());
+                            long totalElapsed = elapsedMs(startedAt);
+                            List<ConversationMessage> saved = store.appendExchange(userId, conversation, message, answer.strip(),
+                                    runTrace(totalElapsed, persistedSteps));
                             long firstPartialMs = firstPartialAt.get() == 0 ? -1 : elapsedMs(firstPartialAt.get());
                             log.info("Agent stream completed: userId={}, conversationId={}, partialChunks={}, firstPartialMs={}, totalMs={}",
                                     userId, conversation.getId(), partialChunks.get(), firstPartialMs, elapsedMs(startedAt));
@@ -287,6 +297,21 @@ public class CareerAgentService {
     }
 
     private long elapsedMs(long startedAt) { return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt); }
+
+    private String runTrace(long elapsedMs, List<RunStep> toolSteps) {
+        List<RunStep> steps = new java.util.ArrayList<>();
+        long toolElapsed = toolSteps.stream().mapToLong(RunStep::elapsedMs).sum();
+        steps.add(new RunStep("理解请求与生成回复", Math.max(1, elapsedMs - toolElapsed), "COMPLETED"));
+        steps.addAll(toolSteps);
+        try { return objectMapper.writeValueAsString(new RunTrace(elapsedMs, "COMPLETED", steps)); }
+        catch (tools.jackson.core.JacksonException exception) {
+            log.warn("Could not serialize agent run trace: {}", exception.getMessage());
+            return null;
+        }
+    }
+
+    private record RunTrace(long elapsedMs, String status, List<RunStep> steps) {}
+    private record RunStep(String label, long elapsedMs, String status) {}
 
     private String toolLabel(String name, boolean failed) {
         String action = switch (name) {
