@@ -36,9 +36,10 @@ export function IndexMark({
 }
 
 /* ---------------------------------------------------------------
-   The rule. Structure in this product comes from hairlines and space,
-   never from a card with a shadow. A Rail is a list hung on one rule;
-   the active row marks the rule in ember.
+   The rule. A Rail is a list hung on one hairline; the active row marks
+   that hairline in ember. Reach for it where structure reads better as
+   rules and space than as boxes — cards, ambient light and gradient are
+   available too (DESIGN.md §4), this is not the only way to build a list.
    --------------------------------------------------------------- */
 
 export function Rail({

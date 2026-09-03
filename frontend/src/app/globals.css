@@ -15,9 +15,10 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
-/* The landing is charcoal while the product is paper, so the page tells
-   the document which ground it is on. Without this, overscroll on the
-   landing flashes the light body colour. */
+/* A page that runs on a dark ground says so, so the document can match it.
+   Which pages those are is a per-page decision, not a fixed landing-dark /
+   workspace-light split (DESIGN.md §11). Without this, overscroll on such a
+   page flashes the light body colour. */
 body:has(.ardor-dark-page) {
   background: var(--ardor-rail);
 }
@@ -319,8 +320,8 @@ time,
   animation-delay: calc(var(--ardor-i, 0) * 90ms);
 }
 
-/* The ember burning down a rail: Ardor's motif, doing real work as the
-   progress indicator for a running agent. */
+/* The ember burning down a rail, doing real work as the progress
+   indicator for a running agent. */
 @keyframes ardor-burn {
   from { transform: scaleY(0); }
   to { transform: scaleY(1); }
