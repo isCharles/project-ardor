@@ -90,7 +90,11 @@ public class TaskSeriesService {
         }
 
         ZoneId zone = zoneOf(userId);
-        LocalDate start = startDate == null ? LocalDate.now(zone) : startDate;
+        LocalDate today = LocalDate.now(zone);
+        LocalDate start = startDate == null ? today : startDate;
+        if (start.isBefore(today)) {
+            throw new IllegalArgumentException("重复安排的开始日期不能早于今天");
+        }
         if (untilDate != null && untilDate.isBefore(start)) {
             throw new IllegalArgumentException("结束日期不能早于开始日期");
         }
@@ -162,6 +166,7 @@ public class TaskSeriesService {
         Instant now = Instant.now();
         List<CalendarTask> withdrawn = taskRepository.findAllBySeriesIdAndUserId(seriesId, userId).stream()
                 .filter(task -> task.getStatus() == CalendarTaskStatus.TODO)
+                .filter(task -> !task.isUserModified())
                 .filter(task -> task.getDueAt() != null && task.getDueAt().isAfter(now))
                 .toList();
         taskRepository.deleteAll(withdrawn);

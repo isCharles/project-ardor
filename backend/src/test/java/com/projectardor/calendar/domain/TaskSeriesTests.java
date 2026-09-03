@@ -83,6 +83,15 @@ class TaskSeriesTests {
     }
 
     @Test
+    void unlimitedDailyRuleDoesNotSilentlyStopAfterFiveHundredOccurrences() {
+        TaskSeries series = TaskSeries.create(UUID.randomUUID(), "读书", null, CalendarTaskPriority.LOW,
+                CalendarTaskSource.AGENT, SHANGHAI, RecurrenceFrequency.DAILY, 1, Set.of(), null,
+                LocalTime.of(7, 30), LocalDate.of(2026, 1, 1), null, null);
+
+        assertThat(series.occurrencesThrough(LocalDate.of(2027, 8, 24))).hasSize(601);
+    }
+
+    @Test
     void monthlyRuleSkipsMonthsWithoutThatDay() {
         TaskSeries series = TaskSeries.create(UUID.randomUUID(), "复盘", null, CalendarTaskPriority.MEDIUM,
                 CalendarTaskSource.AGENT, SHANGHAI, RecurrenceFrequency.MONTHLY, 1, Set.of(), 31,

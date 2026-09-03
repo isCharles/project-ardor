@@ -22,6 +22,7 @@ public class CalendarTask {
     @Column(name = "memory_card_id") private UUID memoryCardId;
     @Column(name = "series_id") private UUID seriesId;
     @Column(name = "occurrence_date") private LocalDate occurrenceDate;
+    @Column(name = "user_modified", nullable = false) private boolean userModified;
     @Column(nullable = false, length = 240) private String title;
     @Column(columnDefinition = "text") private String description;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private CalendarTaskStatus status;
@@ -108,6 +109,7 @@ public class CalendarTask {
             this.status = status;
             this.completedAt = status == CalendarTaskStatus.COMPLETED ? Instant.now() : null;
         }
+        this.userModified = true;
     }
 
     @PrePersist
@@ -127,6 +129,7 @@ public class CalendarTask {
     public UUID getMemoryCardId() { return memoryCardId; }
     public UUID getSeriesId() { return seriesId; }
     public LocalDate getOccurrenceDate() { return occurrenceDate; }
+    public boolean isUserModified() { return userModified; }
     public String getTitle() { return title; }
     public String getDescription() { return description; }
     public CalendarTaskStatus getStatus() { return status; }

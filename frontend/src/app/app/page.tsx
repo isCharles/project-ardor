@@ -23,7 +23,7 @@ type AgentStreamEvent = { type: "status" | "delta" | "tool_start" | "tool_end" |
    button, and pressing it is an ordinary authenticated DELETE from here — the
    model never gets to destroy anything on its own say-so. */
 type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string };
-type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DONE" | "DISMISSED" | "FAILED"; error?: string };
+type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "DONE" | "DISMISSED" | "FAILED"; error?: string };
 type RunStep = { key: string; label: string; elapsedMs: number; done: boolean };
 type SelectedContext = { type: "RESUME" | "RECAP"; id: string; label: string };
 type ResumeOption = { id: string; originalFilename: string };
@@ -205,7 +205,7 @@ export default function AgentHomePage() {
 
   async function selectConversation(conversationId: string) {
     if (busy || conversationId === state?.conversationId) return;
-    setError(""); setMenuId(null); setSidebarOpen(false);
+    setError(""); setConfirmations([]); setMenuId(null); setSidebarOpen(false);
     try { await load(conversationId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入会话"); }
   }
@@ -215,6 +215,7 @@ export default function AgentHomePage() {
     setError("");
     setRetryFailures([]);
     setRunSteps([]);
+    setConfirmations([]);
     setRunElapsed(0);
     setMessages([]);
     setSelectedContext(null);
@@ -227,7 +228,7 @@ export default function AgentHomePage() {
   /* The button calls the same REST endpoint the corresponding page would call.
      No agent round trip, no confirmation phrase to retype. */
   async function confirmDeletion(pending: PendingConfirmation) {
-    setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint ? { ...item, state: "PENDING", error: undefined } : item));
+    setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint ? { ...item, state: "DELETING", error: undefined } : item));
     try {
       await api<void>(pending.endpoint, { method: "DELETE" });
       setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint ? { ...item, state: "DONE" } : item));
@@ -589,7 +590,7 @@ export default function AgentHomePage() {
                   {confirmations.map((pending) => <div key={pending.endpoint} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : pending.state === "DISMISSED" ? "border-stone-200 bg-white/50" : "border-rose-100 bg-white/80"}`}>
                     <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : <Trash2 className="size-4" />}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-stone-800">{pending.state === "DONE" ? "已删除" : pending.state === "DISMISSED" ? "已保留" : "确认删除"}<span className="ml-1 font-normal">「{pending.label}」</span></p>
+                      <p className="font-medium text-stone-800">{pending.state === "DONE" ? "已删除" : pending.state === "DISMISSED" ? "已保留" : pending.state === "DELETING" ? "正在删除" : "确认删除"}<span className="ml-1 font-normal">「{pending.label}」</span></p>
                       {pending.detail && pending.state === "PENDING" && <p className="mt-1 text-xs leading-5 text-stone-500">{pending.detail}</p>}
                       {pending.error && <p className="mt-1 text-xs leading-5 text-rose-600">{pending.error}</p>}
                     </div>

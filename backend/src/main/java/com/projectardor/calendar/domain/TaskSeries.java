@@ -37,9 +37,6 @@ import jakarta.persistence.Table;
 @Table(name = "task_series")
 public class TaskSeries {
 
-    /** A hard stop on expansion, whatever the rule and horizon ask for. */
-    private static final int MAX_OCCURRENCES = 500;
-
     @Id private UUID id;
     @Column(name = "user_id", nullable = false) private UUID userId;
     @Column(nullable = false, length = 240) private String title;
@@ -213,7 +210,7 @@ public class TaskSeries {
     public void cancel() { this.status = TaskSeriesStatus.CANCELLED; }
 
     private int cap() {
-        return occurrenceLimit == null ? MAX_OCCURRENCES : Math.min(occurrenceLimit, MAX_OCCURRENCES);
+        return occurrenceLimit == null ? Integer.MAX_VALUE : occurrenceLimit;
     }
 
     private static String format(Set<DayOfWeek> weekdays) {
