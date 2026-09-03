@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BrainCircuit, Check, ChevronLeft, ChevronRight, Clock3, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BrainCircuit, Check, ChevronLeft, ChevronRight, Clock3, Pencil, Plus, Repeat, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -19,8 +19,19 @@ type CalendarTask = {
   source: "MANUAL" | "AGENT";
   taskKind: "GENERAL" | "MEMORY_REVIEW";
   actionPath: string | null;
+  seriesId: string | null;
   dueAt: string | null;
   completedAt: string | null;
+};
+/* A repeating arrangement. The rule lives on the server; every occurrence is
+   already an ordinary task in the list above, so the calendar needs nothing
+   special to draw them — only a way to see and stop the rule itself. */
+type TaskSeries = {
+  id: string;
+  title: string;
+  summary: string;
+  status: "ACTIVE" | "ENDED" | "CANCELLED";
+  upcoming: string[];
 };
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
@@ -74,6 +85,7 @@ function calendarLabel(task: CalendarTask) {
 export default function CalendarPage() {
   const router = useRouter();
   const [tasks, setTasks] = useState<CalendarTask[]>([]);
+  const [series, setSeries] = useState<TaskSeries[]>([]);
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [selectedDay, setSelectedDay] = useState(() => dayStart(new Date()));
   const [editing, setEditing] = useState<CalendarTask | null>(null);
@@ -83,7 +95,13 @@ export default function CalendarPage() {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    try { setTasks(await api<CalendarTask[]>("/api/calendar/tasks")); }
+    try {
+      const [items, rules] = await Promise.all([
+        api<CalendarTask[]>("/api/calendar/tasks"),
+        api<TaskSeries[]>("/api/calendar/series"),
+      ]);
+      setTasks(items); setSeries(rules);
+    }
     catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) return router.replace("/login");
       setError(reason instanceof Error ? reason.message : "无法加载日历");
@@ -91,8 +109,12 @@ export default function CalendarPage() {
   }, [router]);
   useEffect(() => {
     let active = true;
-    api<CalendarTask[]>("/api/calendar/tasks").then((items) => {
-      if (active) setTasks(items);
+    Promise.all([
+      api<CalendarTask[]>("/api/calendar/tasks"),
+      api<TaskSeries[]>("/api/calendar/series"),
+    ]).then(([items, rules]) => {
+      if (!active) return;
+      setTasks(items); setSeries(rules);
     }).catch((reason) => {
       if (!active) return;
       if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
@@ -116,6 +138,7 @@ export default function CalendarPage() {
   const selectedDayInfo = chinaDayInfo(selectedDay);
   const selectedIsWeekend = (selectedDay.getDay() === 0 || selectedDay.getDay() === 6) && selectedDayInfo?.kind !== "workday";
   const agentScheduleHref = `/app?new=1&prefill=${encodeURIComponent("帮我把下面这件事安排到日历：\n")}`;
+  const activeSeries = series.filter((rule) => rule.status === "ACTIVE");
 
   function moveMonth(delta: number) {
     const next = new Date(month.getFullYear(), month.getMonth() + delta, 1);
@@ -141,6 +164,16 @@ export default function CalendarPage() {
       await api(`/api/calendar/tasks/${task.id}`, { method: "PUT", body: JSON.stringify({ title: task.title, description: task.description, dueAt: task.dueAt, priority: task.priority, status: task.status === "COMPLETED" ? "TODO" : "COMPLETED" }) });
       await load();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "更新失败"); }
+    finally { setBusy(false); }
+  }
+
+  /* Stopping a rule only withdraws untouched future occurrences; the server
+     keeps what has already happened, so the confirmation says exactly that. */
+  async function stopSeries(rule: TaskSeries) {
+    if (!window.confirm(`停止“${rule.title}”（${rule.summary}）？未开始的后续日程会被撤回，已完成和已经发生的记录保留。`)) return;
+    setBusy(true); setError("");
+    try { await api(`/api/calendar/series/${rule.id}`, { method: "DELETE" }); await load(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "停止重复安排失败"); }
     finally { setBusy(false); }
   }
 
@@ -171,6 +204,7 @@ export default function CalendarPage() {
         </section>
         <aside className="space-y-5">
           <section className="ardor-panel rounded-[2.25rem] p-6 md:p-7"><div><p className="text-xs font-medium uppercase tracking-[0.18em] text-violet-600">{selectedDay.toLocaleDateString("zh-CN", { weekday: "long" })}{selectedDayInfo ? ` · ${selectedDayInfo.name}` : selectedIsWeekend ? " · 周末" : ""}</p><h2 className="mt-2 text-3xl font-semibold">{selectedDay.getMonth() + 1} 月 {selectedDay.getDate()} 日</h2></div><div className="mt-6 space-y-3">{selectedTasks.map((task) => <TaskCard key={task.id} task={task} busy={busy} onToggle={toggle} onEdit={() => { setEditing(task); setShowForm(true); }} onDelete={() => remove(task)} />)}{selectedTasks.length === 0 && <div className="rounded-2xl bg-white/55 px-4 py-8 text-center text-sm text-stone-400">今天还没有安排</div>}</div></section>
+          {activeSeries.length > 0 && <section className="ardor-soft-panel rounded-[2rem] p-6"><div className="flex items-center gap-2"><Repeat className="size-4 text-violet-600" /><h2 className="font-semibold">重复安排</h2></div><div className="mt-4 space-y-2">{activeSeries.map((rule) => <div key={rule.id} className="group flex items-start gap-3 rounded-2xl bg-white/70 p-4"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-stone-800">{rule.title}</p><p className="mt-1 text-xs text-stone-500">{rule.summary}</p>{rule.upcoming[0] && <p className="mt-1 text-xs text-stone-400">下一次 {new Date(`${rule.upcoming[0]}T00:00:00`).toLocaleDateString("zh-CN", { month: "long", day: "numeric" })}</p>}</div><button aria-label={`停止 ${rule.title}`} title="停止这条重复安排" disabled={busy} onClick={() => stopSeries(rule)} className="rounded-lg p-1.5 text-stone-300 opacity-60 transition hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100"><Trash2 className="size-3.5" /></button></div>)}</div></section>}
           {unscheduled.length > 0 && <section className="ardor-soft-panel rounded-[2rem] p-6"><div className="flex items-center gap-2"><Clock3 className="size-4 text-violet-600" /><h2 className="font-semibold">待安排</h2></div><div className="mt-4 space-y-2">{unscheduled.map((task) => <TaskCard key={task.id} task={task} busy={busy} compact onToggle={toggle} onEdit={() => { setEditing(task); setShowForm(true); }} onDelete={() => remove(task)} />)}</div></section>}
         </aside>
       </div>
@@ -184,5 +218,5 @@ function TaskCard({ task, busy, compact = false, onToggle, onEdit, onDelete }: {
     return <div className={`rounded-2xl bg-white/70 ${compact ? "p-3" : "p-4"}`}><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-600"><BrainCircuit className="size-4" /></span><div className="min-w-0 flex-1"><p className="text-sm font-medium text-stone-800">记忆卡复习</p><p className="mt-1 text-xs text-stone-400">{task.description}</p></div><Link href={task.actionPath ?? "/app/cards"} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-stone-950 px-3 py-2 text-xs font-medium text-white hover:bg-black">开始<ArrowRight className="size-3.5" /></Link></div></div>;
   }
   const complete = task.status === "COMPLETED";
-  return <div className={`group rounded-2xl bg-white/70 ${compact ? "p-3" : "p-4"}`}><div className="flex items-start gap-3"><button aria-label={complete ? "恢复待办" : "完成待办"} disabled={busy} onClick={() => onToggle(task)} className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border transition ${complete ? "border-emerald-500 bg-emerald-500 text-white" : "border-stone-300 hover:border-violet-500"}`}>{complete && <Check className="size-3.5" />}</button><div className="min-w-0 flex-1"><div className="flex items-start gap-2"><span className={`mt-2 size-1.5 shrink-0 rounded-full ${priorityStyle[task.priority]}`} /><p className={`text-sm font-medium leading-5 ${complete ? "text-stone-400 line-through" : "text-stone-800"}`}>{task.title}</p>{task.source === "AGENT" && <span title="Ardor 创建" className="ml-auto shrink-0 text-violet-600"><Sparkles className="size-3.5" /></span>}</div>{task.dueAt && <p className="mt-2 text-xs text-stone-400">{new Date(task.dueAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</p>}{task.description && !compact && <p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-500">{task.description}</p>}</div></div><div className="mt-2 flex justify-end gap-1 opacity-60 transition group-hover:opacity-100"><button aria-label="编辑待办" onClick={onEdit} className="rounded-lg p-1.5 text-stone-400 hover:bg-white hover:text-stone-700"><Pencil className="size-3.5" /></button><button aria-label="删除待办" onClick={onDelete} className="rounded-lg p-1.5 text-stone-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="size-3.5" /></button></div></div>;
+  return <div className={`group rounded-2xl bg-white/70 ${compact ? "p-3" : "p-4"}`}><div className="flex items-start gap-3"><button aria-label={complete ? "恢复待办" : "完成待办"} disabled={busy} onClick={() => onToggle(task)} className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border transition ${complete ? "border-emerald-500 bg-emerald-500 text-white" : "border-stone-300 hover:border-violet-500"}`}>{complete && <Check className="size-3.5" />}</button><div className="min-w-0 flex-1"><div className="flex items-start gap-2"><span className={`mt-2 size-1.5 shrink-0 rounded-full ${priorityStyle[task.priority]}`} /><p className={`text-sm font-medium leading-5 ${complete ? "text-stone-400 line-through" : "text-stone-800"}`}>{task.title}</p><span className="ml-auto flex shrink-0 items-center gap-1.5">{task.seriesId && <span title="重复安排中的一次" className="text-stone-400"><Repeat className="size-3.5" /></span>}{task.source === "AGENT" && <span title="Ardor 创建" className="text-violet-600"><Sparkles className="size-3.5" /></span>}</span></div>{task.dueAt && <p className="mt-2 text-xs text-stone-400">{new Date(task.dueAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</p>}{task.description && !compact && <p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-500">{task.description}</p>}</div></div><div className="mt-2 flex justify-end gap-1 opacity-60 transition group-hover:opacity-100"><button aria-label="编辑待办" onClick={onEdit} className="rounded-lg p-1.5 text-stone-400 hover:bg-white hover:text-stone-700"><Pencil className="size-3.5" /></button><button aria-label="删除待办" onClick={onDelete} className="rounded-lg p-1.5 text-stone-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="size-3.5" /></button></div></div>;
 }

@@ -142,4 +142,13 @@ public class AgentController {
     public void clearMemory(@AuthenticationPrincipal ArdorPrincipal principal) {
         memoryService.clear(principal.userId());
     }
+
+    /** One memory, removed by the user — this is where a confirmation button lands. */
+    @DeleteMapping("/memory/items/{memoryId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteMemoryItem(
+            @AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable java.util.UUID memoryId) {
+        memoryService.remove(principal.userId(), memoryId);
+    }
 }

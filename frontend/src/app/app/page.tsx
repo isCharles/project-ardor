@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame, MessageSquareText,
+  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame, MessageSquareText,
   LayoutGrid, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Settings2, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
@@ -18,7 +18,12 @@ type AgentMessage = { id: string; conversationId: string; role: "USER" | "ASSIST
 type Conversation = { id: string; title: string; pinned: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
 type RetryFailure = { label: string; detail: string };
-type AgentStreamEvent = { type: "status" | "delta" | "tool_start" | "tool_end" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null };
+type AgentStreamEvent = { type: "status" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null };
+/* A deletion Ardor has proposed. Nothing is gone until the user presses the
+   button, and pressing it is an ordinary authenticated DELETE from here — the
+   model never gets to destroy anything on its own say-so. */
+type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string };
+type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "DONE" | "DISMISSED" | "FAILED"; error?: string };
 type RunStep = { key: string; label: string; elapsedMs: number; done: boolean };
 type SelectedContext = { type: "RESUME" | "RECAP"; id: string; label: string };
 type ResumeOption = { id: string; originalFilename: string };
@@ -92,6 +97,7 @@ export default function AgentHomePage() {
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retryFailures, setRetryFailures] = useState<RetryFailure[]>([]);
   const [runSteps, setRunSteps] = useState<RunStep[]>([]);
+  const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const [traceOpen, setTraceOpen] = useState(true);
   const [runElapsed, setRunElapsed] = useState(0);
   const [leavingEmptyState, setLeavingEmptyState] = useState(false);
@@ -199,7 +205,7 @@ export default function AgentHomePage() {
 
   async function selectConversation(conversationId: string) {
     if (busy || conversationId === state?.conversationId) return;
-    setError(""); setMenuId(null); setSidebarOpen(false);
+    setError(""); setConfirmations([]); setMenuId(null); setSidebarOpen(false);
     try { await load(conversationId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入会话"); }
   }
@@ -209,6 +215,7 @@ export default function AgentHomePage() {
     setError("");
     setRetryFailures([]);
     setRunSteps([]);
+    setConfirmations([]);
     setRunElapsed(0);
     setMessages([]);
     setSelectedContext(null);
@@ -216,6 +223,20 @@ export default function AgentHomePage() {
     setDraft(readSavedDraft(null));
     window.history.replaceState(null, "", "/app");
     setSidebarOpen(false);
+  }
+
+  /* The button calls the same REST endpoint the corresponding page would call.
+     No agent round trip, no confirmation phrase to retype. */
+  async function confirmDeletion(pending: PendingConfirmation) {
+    setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint ? { ...item, state: "DELETING", error: undefined } : item));
+    try {
+      await api<void>(pending.endpoint, { method: "DELETE" });
+      setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint ? { ...item, state: "DONE" } : item));
+    } catch (reason) {
+      setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint
+        ? { ...item, state: "FAILED", error: reason instanceof Error ? reason.message : "删除失败" }
+        : item));
+    }
   }
 
   async function send(text: string) {
@@ -230,7 +251,7 @@ export default function AgentHomePage() {
     let conversationCreatedForThisMessage: string | null = null;
     let savedDraftKey = draftStorageKey(conversationId);
     window.sessionStorage.setItem(savedDraftKey, message);
-    setError(""); setRetryFailures([]); setRunSteps([]); setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setBusy(true);
+    setError(""); setRetryFailures([]); setRunSteps([]); setConfirmations([]); setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setBusy(true);
     try {
       if (!conversationId) {
         const conversation = await api<Conversation>("/api/agent/conversations", { method: "POST" });
@@ -296,6 +317,11 @@ export default function AgentHomePage() {
                   ? { ...step, label: "理解请求与生成回复", elapsedMs: modelElapsed, done: true }
                   : step);
               });
+            } else if (event.type === "confirm" && event.confirmation) {
+              const proposal = event.confirmation;
+              setConfirmations((current) => current.some((item) => item.endpoint === proposal.endpoint)
+                ? current
+                : [...current, { ...proposal, state: "PENDING" }]);
             } else if (event.type === "error") streamFailure = event;
           });
           if (streamFailure) {
@@ -560,6 +586,20 @@ export default function AgentHomePage() {
                     )}
                   </article>
                 ))}
+                {confirmations.length > 0 && <section className="space-y-2">
+                  {confirmations.map((pending) => <div key={pending.endpoint} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : pending.state === "DISMISSED" ? "border-stone-200 bg-white/50" : "border-rose-100 bg-white/80"}`}>
+                    <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : <Trash2 className="size-4" />}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-stone-800">{pending.state === "DONE" ? "已删除" : pending.state === "DISMISSED" ? "已保留" : pending.state === "DELETING" ? "正在删除" : "确认删除"}<span className="ml-1 font-normal">「{pending.label}」</span></p>
+                      {pending.detail && pending.state === "PENDING" && <p className="mt-1 text-xs leading-5 text-stone-500">{pending.detail}</p>}
+                      {pending.error && <p className="mt-1 text-xs leading-5 text-rose-600">{pending.error}</p>}
+                    </div>
+                    {(pending.state === "PENDING" || pending.state === "FAILED") && <div className="flex shrink-0 items-center gap-2">
+                      <button type="button" onClick={() => setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint ? { ...item, state: "DISMISSED" } : item))} className="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 transition hover:bg-white hover:text-stone-800">保留</button>
+                      <button type="button" onClick={() => void confirmDeletion(pending)} className="rounded-full bg-rose-600 px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-rose-700">{pending.state === "FAILED" ? "重试删除" : "删除"}</button>
+                    </div>}
+                  </div>)}
+                </section>}
                 {(runSteps.length > 0 || busy || retryFailures.length > 0) && <section className="max-w-xl rounded-2xl border border-white/70 bg-white/55 px-4 py-3 text-sm text-stone-600 shadow-sm backdrop-blur-md">
                   <button type="button" onClick={() => setTraceOpen((open) => !open)} className="flex w-full items-center gap-2 text-left">
                     {traceOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}

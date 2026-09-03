@@ -18,6 +18,8 @@ public record CalendarTaskResponse(
         CalendarTaskSource source,
         CalendarTaskKind taskKind,
         String actionPath,
+        /** Set when this row is one occurrence of a repeating arrangement. */
+        UUID seriesId,
         Instant dueAt,
         Instant completedAt,
         Instant createdAt,
@@ -26,7 +28,8 @@ public record CalendarTaskResponse(
     public static CalendarTaskResponse from(CalendarTask task) {
         return new CalendarTaskResponse(
                 task.getId(), task.getTitle(), task.getDescription(), task.getStatus(),
-                task.getPriority(), task.getSource(), task.getTaskKind(), task.getActionPath(), task.getDueAt(), task.getCompletedAt(),
+                task.getPriority(), task.getSource(), task.getTaskKind(), task.getActionPath(),
+                task.getSeriesId(), task.getDueAt(), task.getCompletedAt(),
                 task.getCreatedAt(), task.getUpdatedAt());
     }
 }

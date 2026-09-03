@@ -20,6 +20,9 @@ public class CalendarTask {
     @Column(name = "user_id", nullable = false) private UUID userId;
     @Column(name = "source_interview_id") private UUID sourceInterviewId;
     @Column(name = "memory_card_id") private UUID memoryCardId;
+    @Column(name = "series_id") private UUID seriesId;
+    @Column(name = "occurrence_date") private LocalDate occurrenceDate;
+    @Column(name = "user_modified", nullable = false) private boolean userModified;
     @Column(nullable = false, length = 240) private String title;
     @Column(columnDefinition = "text") private String description;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private CalendarTaskStatus status;
@@ -73,6 +76,16 @@ public class CalendarTask {
         return task;
     }
 
+    /** One dated occurrence of a repeating series; an ordinary task otherwise. */
+    public static CalendarTask createOccurrence(TaskSeries series, LocalDate occurrenceDate) {
+        CalendarTask task = new CalendarTask(
+                series.getUserId(), series.getTitle(), series.getDescription(),
+                series.dueAtOn(occurrenceDate), series.getPriority(), series.getSource());
+        task.seriesId = series.getId();
+        task.occurrenceDate = occurrenceDate;
+        return task;
+    }
+
     public void scheduleMemoryCardReview(int cardCount, Instant dueAt) {
         this.title = "记忆卡复习";
         this.description = cardCount + " 张待复习";
@@ -96,6 +109,7 @@ public class CalendarTask {
             this.status = status;
             this.completedAt = status == CalendarTaskStatus.COMPLETED ? Instant.now() : null;
         }
+        this.userModified = true;
     }
 
     @PrePersist
@@ -113,6 +127,9 @@ public class CalendarTask {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public UUID getMemoryCardId() { return memoryCardId; }
+    public UUID getSeriesId() { return seriesId; }
+    public LocalDate getOccurrenceDate() { return occurrenceDate; }
+    public boolean isUserModified() { return userModified; }
     public String getTitle() { return title; }
     public String getDescription() { return description; }
     public CalendarTaskStatus getStatus() { return status; }

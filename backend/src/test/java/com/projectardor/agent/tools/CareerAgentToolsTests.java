@@ -1,11 +1,12 @@
 package com.projectardor.agent.tools;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -13,7 +14,12 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import com.projectardor.agent.service.AgentMemoryService;
+import com.projectardor.calendar.domain.CalendarTask;
+import com.projectardor.calendar.domain.CalendarTaskPriority;
+import com.projectardor.calendar.domain.CalendarTaskSource;
 import com.projectardor.calendar.service.CalendarTaskService;
+import com.projectardor.interview.domain.InterviewSession;
+import com.projectardor.calendar.service.TaskSeriesService;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.knowledge.service.KnowledgeService;
 import com.projectardor.profile.service.ProfileService;
@@ -27,7 +33,7 @@ import com.projectardor.websearch.service.WebSearchResult;
 class CareerAgentToolsTests {
 
     @Test
-    void deleteCalendarTaskUsesTrustedUserAndRequestedTask() {
+    void deletingACalendarTaskOnlyProposesItForTheUserToConfirm() {
         CalendarTaskService calendarTaskService = mock(CalendarTaskService.class);
         CareerAgentTools tools = new CareerAgentTools(
                 mock(ResumeService.class),
@@ -36,21 +42,32 @@ class CareerAgentToolsTests {
                 mock(ProfileService.class),
                 mock(AgentMemoryService.class),
                 calendarTaskService,
+                mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class),
                 mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class),
                 mock(KnowledgeService.class));
         UUID userId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
+        CalendarTask task = CalendarTask.create(userId, "组会", null, Instant.parse("2026-09-10T01:00:00Z"),
+                CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT);
+        when(calendarTaskService.get(userId, taskId)).thenReturn(task);
 
-        Map<String, Object> result = tools.bind(userId, "确认删除这个日历待办").deleteCalendarTask(taskId.toString());
+        var bound = tools.bind(userId, "删掉周四那个组会");
+        Map<String, Object> result = bound.deleteCalendarTask(taskId.toString());
 
-        verify(calendarTaskService).delete(userId, taskId);
-        assertThat(result).containsEntry("deleted", true).containsEntry("taskId", taskId);
+        // Nothing is destroyed by the model; the user gets a button instead.
+        verify(calendarTaskService, never()).delete(userId, taskId);
+        assertThat(result).containsEntry("status", "CONFIRMATION_REQUIRED").containsEntry("target", "组会");
+        assertThat(bound.pendingConfirmations()).singleElement().satisfies(pending -> {
+            assertThat(pending.kind()).isEqualTo("calendar_task");
+            assertThat(pending.targetId()).isEqualTo(taskId);
+            assertThat(pending.endpoint()).isEqualTo("/api/calendar/tasks/" + taskId);
+        });
     }
 
     @Test
-    void deleteInterviewUsesTrustedUserAndRequestedInterview() {
+    void deletingAnInterviewNamesTheRealSessionOnTheButton() {
         InterviewService interviewService = mock(InterviewService.class);
         CareerAgentTools tools = new CareerAgentTools(
                 mock(ResumeService.class),
@@ -59,47 +76,47 @@ class CareerAgentToolsTests {
                 mock(ProfileService.class),
                 mock(AgentMemoryService.class),
                 mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class),
                 mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class),
                 mock(KnowledgeService.class));
         UUID userId = UUID.randomUUID();
         UUID interviewId = UUID.randomUUID();
+        when(interviewService.get(userId, interviewId))
+                .thenReturn(InterviewSession.create(userId, null, "字节跳动", "Java 后端工程师"));
 
-        Map<String, Object> result = tools.bind(userId, "确认删除最近这场模拟面试").deleteInterview(interviewId.toString());
+        var bound = tools.bind(userId, "删掉最近那场模拟面试");
+        Map<String, Object> result = bound.deleteInterview(interviewId.toString());
 
-        verify(interviewService).delete(userId, interviewId);
-        assertThat(result).containsEntry("deleted", true).containsEntry("interviewId", interviewId);
+        verify(interviewService, never()).delete(userId, interviewId);
+        assertThat(result).containsEntry("target", "字节跳动 · Java 后端工程师");
+        assertThat(bound.pendingConfirmations()).singleElement()
+                .satisfies(pending -> assertThat(pending.endpoint()).isEqualTo("/api/interviews/" + interviewId));
     }
 
     @Test
-    void destructiveToolRejectsInstructionsThatWereNotInTrustedUserRequest() {
+    void noToolCallCanDeleteData_whateverTheModelWasTalkedInto() {
+        // A web page, a resume or a memory can all try to talk the model into
+        // deleting something. The strongest thing any of them can now achieve
+        // is a button the user does not have to press.
         InterviewService interviewService = mock(InterviewService.class);
+        UUID userId = UUID.randomUUID();
+        UUID interviewId = UUID.randomUUID();
+        when(interviewService.get(userId, interviewId))
+                .thenReturn(InterviewSession.create(userId, null, null, "Java 后端工程师"));
         CareerAgentTools tools = new CareerAgentTools(
                 mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), interviewService,
                 mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class), mock(KnowledgeService.class));
 
-        assertThatThrownBy(() -> tools.bind(UUID.randomUUID(), "搜索一下最近的招聘信息")
-                .deleteInterview(UUID.randomUUID().toString()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("二次确认");
-    }
+        var bound = tools.bind(userId, "搜索一下最近的招聘信息");
+        bound.deleteInterview(interviewId.toString());
 
-    @Test
-    void firstDeletionRequestCannotExecuteBeforeASecondExplicitConfirmation() {
-        CalendarTaskService calendarTaskService = mock(CalendarTaskService.class);
-        CareerAgentTools tools = new CareerAgentTools(
-                mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
-                mock(ProfileService.class), mock(AgentMemoryService.class), calendarTaskService,
-                mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
-                mock(TavilySearchService.class), mock(KnowledgeService.class));
-
-        assertThatThrownBy(() -> tools.bind(UUID.randomUUID(), "删除这个日历待办")
-                .deleteCalendarTask(UUID.randomUUID().toString()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("确认删除");
+        verify(interviewService, never()).delete(userId, interviewId);
+        assertThat(bound.pendingConfirmations()).hasSize(1);
     }
 
     @Test
@@ -115,6 +132,7 @@ class CareerAgentToolsTests {
         CareerAgentTools tools = new CareerAgentTools(
                 mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
                 mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 searchService, mock(KnowledgeService.class));
 
