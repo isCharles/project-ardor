@@ -58,7 +58,7 @@ public class AgentController {
     public SseEmitter chatStream(
             @AuthenticationPrincipal ArdorPrincipal principal,
             HttpServletResponse response,
-            @Valid @RequestBody AgentMessageRequest request) {
+            @RequestBody AgentMessageRequest request) {
         response.setHeader("Cache-Control", "no-cache, no-transform");
         response.setHeader("X-Accel-Buffering", "no");
         SseEmitter emitter = new SseEmitter(300_000L);

@@ -1,7 +1,5 @@
 package com.projectardor.llm.service;
 
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -13,16 +11,22 @@ import com.projectardor.llm.repository.LlmProviderConfigRepository;
 import com.projectardor.llm.security.ApiKeyCipher;
 import com.projectardor.llm.web.LlmConfigResponse;
 import com.projectardor.llm.web.LlmConfigUpdateRequest;
+import com.projectardor.common.security.ExternalBaseUrlPolicy;
 
 @Service
 public class LlmConfigService {
 
     private final LlmProviderConfigRepository repository;
     private final ApiKeyCipher cipher;
+    private final ExternalBaseUrlPolicy externalBaseUrlPolicy;
 
-    public LlmConfigService(LlmProviderConfigRepository repository, ApiKeyCipher cipher) {
+    public LlmConfigService(
+            LlmProviderConfigRepository repository,
+            ApiKeyCipher cipher,
+            ExternalBaseUrlPolicy externalBaseUrlPolicy) {
         this.repository = repository;
         this.cipher = cipher;
+        this.externalBaseUrlPolicy = externalBaseUrlPolicy;
     }
 
     @Transactional(readOnly = true)
@@ -42,7 +46,7 @@ public class LlmConfigService {
                 config.getApiKeyIv());
         return new LlmRuntimeConfig(
                 config.getProvider(),
-                config.getBaseUrl(),
+                normalizeBaseUrl(config.getBaseUrl()),
                 config.getModel(),
                 apiKey);
     }
@@ -87,20 +91,7 @@ public class LlmConfigService {
     }
 
     private String normalizeBaseUrl(String rawBaseUrl) {
-        String value = rawBaseUrl.strip();
-        try {
-            URI uri = new URI(value);
-            if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    || uri.getHost() == null) {
-                throw new IllegalArgumentException("Base URL 必须是有效的 HTTP 或 HTTPS 地址");
-            }
-        } catch (URISyntaxException exception) {
-            throw new IllegalArgumentException("Base URL 必须是有效的 HTTP 或 HTTPS 地址");
-        }
-        while (value.endsWith("/")) {
-            value = value.substring(0, value.length() - 1);
-        }
-        return value;
+        return externalBaseUrlPolicy.normalizeAndValidate(rawBaseUrl);
     }
 
     private String keyHint(String apiKey) {

@@ -11,7 +11,15 @@ import org.junit.jupiter.api.Test;
 class ApiKeyCipherTests {
 
     private final ApiKeyCipher cipher = new ApiKeyCipher(
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
+
+    @Test
+    void rejectsKnownWeakRepeatedByteKey() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                new ApiKeyCipher("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("弱密钥");
+    }
 
     @Test
     void encryptsAndDecryptsForTheSameUser() {

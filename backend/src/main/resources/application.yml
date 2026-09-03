@@ -30,6 +30,10 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 10MB
+  task:
+    scheduling:
+      pool:
+        size: 4
 
 server:
   port: ${BACKEND_PORT:8080}
@@ -59,7 +63,7 @@ app:
     connect-timeout: ${ARDOR_HTTP_CONNECT_TIMEOUT:10s}
     read-timeout: ${ARDOR_HTTP_READ_TIMEOUT:120s}
   security:
-    # Local development fallback only. Production must set ARDOR_ENCRYPTION_KEY.
-    api-key-encryption-key: ${ARDOR_ENCRYPTION_KEY:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+    api-key-encryption-key: ${ARDOR_ENCRYPTION_KEY}
+    allow-private-api-base-urls: ${ARDOR_ALLOW_PRIVATE_API_BASE_URLS:false}
   storage:
     resume-directory: ${ARDOR_RESUME_STORAGE:./data/resumes}

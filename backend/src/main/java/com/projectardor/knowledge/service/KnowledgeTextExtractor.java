@@ -31,7 +31,9 @@ public class KnowledgeTextExtractor {
             if (normalized.isBlank()) throw new IllegalArgumentException("文件中没有可提取的文本");
             if (normalized.length() > MAX_CHARACTERS) throw new IllegalArgumentException("知识文档文本不能超过 200 万字符");
             return normalized;
-        } catch (IOException exception) {
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (IOException | RuntimeException exception) {
             throw new IllegalArgumentException("知识文档无法解析或已损坏", exception);
         }
     }

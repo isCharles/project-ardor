@@ -94,4 +94,7 @@ repository.findByIdAndUserId(resumeId, currentUserId);
 - 邮箱已统一执行 `strip + lowercase`，数据库通过 CHECK 约束保持规范化。
 - 决定 UUID v4 或 v7，并在应用层统一生成。
 - 根据实际查询计划补充或调整索引。
-- 如加入 pgvector，所有检索 SQL 必须先限定 `user_id` 再计算相似度。
+- pgvector 已启用（V16）。`knowledge_chunks.embedding` 是不带维度的 `vector` 列，另存 `embedding_dim` 与 `embedding_model`；
+  每个用户自带 Embedding 服务，维度各不相同，所以相似度查询必须同时限定 `user_id` 和 `embedding_dim`，只比较同一向量空间的行。
+  不带维度的列无法建 HNSW/IVFFlat 索引；先按 `user_id` 过滤后做精确 KNN，在当前每用户切片量级下足够。
+  若某个部署统一了 Embedding 模型，可固定维度后再加 `USING hnsw (... vector_cosine_ops)`。

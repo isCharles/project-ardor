@@ -29,7 +29,11 @@ public class AgentMemoryService {
     @Transactional(readOnly = true)
     public AgentMemoryResponse get(UUID userId) {
         var items = itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId);
-        Instant updatedAt = items.stream().map(AgentMemoryItem::getUpdatedAt).max(Instant::compareTo).orElse(null);
+        Instant updatedAt = items.stream()
+                .map(AgentMemoryItem::getUpdatedAt)
+                .filter(java.util.Objects::nonNull)
+                .max(Instant::compareTo)
+                .orElse(null);
         return new AgentMemoryResponse(items.stream().map(AgentMemoryItem::getContent)
                 .collect(java.util.stream.Collectors.joining("\n")), updatedAt);
     }
@@ -43,11 +47,30 @@ public class AgentMemoryService {
     @Transactional
     public AgentMemoryResponse update(UUID userId, String rawContent) {
         String content = normalize(rawContent);
-        itemRepository.deleteAllByUserId(userId);
-        java.util.Arrays.stream(content.split("\\R")).map(String::strip)
+        java.util.List<String> desired = java.util.Arrays.stream(content.split("\\R")).map(String::strip)
                 .map(line -> line.replaceFirst("^[-*•]\\s*", ""))
-                .filter(line -> !line.isBlank()).distinct().limit(50)
-                .forEach(line -> itemRepository.save(AgentMemoryItem.create(userId, itemContent(line))));
+                .filter(line -> !line.isBlank())
+                .map(this::itemContent)
+                .collect(java.util.stream.Collectors.collectingAndThen(
+                        java.util.stream.Collectors.toMap(
+                                line -> line.toLowerCase(java.util.Locale.ROOT),
+                                line -> line,
+                                (left, right) -> left,
+                                java.util.LinkedHashMap::new),
+                        values -> values.values().stream().limit(50).toList()));
+        var existing = itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId);
+        java.util.Set<String> desiredKeys = desired.stream()
+                .map(line -> line.toLowerCase(java.util.Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        existing.stream()
+                .filter(item -> !desiredKeys.contains(item.getContent().toLowerCase(java.util.Locale.ROOT)))
+                .forEach(itemRepository::delete);
+        java.util.Set<String> existingKeys = existing.stream()
+                .map(item -> item.getContent().toLowerCase(java.util.Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        desired.stream()
+                .filter(line -> !existingKeys.contains(line.toLowerCase(java.util.Locale.ROOT)))
+                .forEach(line -> itemRepository.save(AgentMemoryItem.create(userId, line)));
         repository.findByUserId(userId).ifPresent(repository::delete);
         return get(userId);
     }

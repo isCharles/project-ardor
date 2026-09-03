@@ -1,10 +1,9 @@
 package com.projectardor.integrations.service;
 
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -18,16 +17,22 @@ import com.projectardor.integrations.repository.AuxiliaryApiConfigRepository;
 import com.projectardor.integrations.web.AuxiliaryApiConfigRequest;
 import com.projectardor.integrations.web.AuxiliaryApiConfigResponse;
 import com.projectardor.llm.security.ApiKeyCipher;
+import com.projectardor.common.security.ExternalBaseUrlPolicy;
 
 @Service
 public class AuxiliaryApiConfigService {
 
     private final AuxiliaryApiConfigRepository repository;
     private final ApiKeyCipher cipher;
+    private final ExternalBaseUrlPolicy externalBaseUrlPolicy;
 
-    public AuxiliaryApiConfigService(AuxiliaryApiConfigRepository repository, ApiKeyCipher cipher) {
+    public AuxiliaryApiConfigService(
+            AuxiliaryApiConfigRepository repository,
+            ApiKeyCipher cipher,
+            ExternalBaseUrlPolicy externalBaseUrlPolicy) {
         this.repository = repository;
         this.cipher = cipher;
+        this.externalBaseUrlPolicy = externalBaseUrlPolicy;
     }
 
     @Transactional(readOnly = true)
@@ -86,26 +91,29 @@ public class AuxiliaryApiConfigService {
                 apiKey);
     }
 
+    /**
+     * Resolves the saved configuration for one reserved service so runtime callers
+     * (embeddings, ASR, TTS) can use it. The API key is decrypted with the owning
+     * user's id as additional authenticated data, so a config can only ever be
+     * unlocked for the user it belongs to.
+     */
+    @Transactional(readOnly = true)
+    public Optional<AuxiliaryRuntimeConfig> runtimeConfig(UUID userId, AuxiliaryServiceType serviceType) {
+        return repository.findByUserIdAndServiceType(userId, serviceType)
+                .map(config -> new AuxiliaryRuntimeConfig(
+                        config.getProvider(),
+                        normalizeBaseUrl(config.getBaseUrl()),
+                        config.getModel(),
+                        cipher.decrypt(userId, config.getEncryptedApiKey(), config.getApiKeyIv())));
+    }
+
     @Transactional
     public void delete(UUID userId, AuxiliaryServiceType serviceType) {
         repository.findByUserIdAndServiceType(userId, serviceType).ifPresent(repository::delete);
     }
 
     private String normalizeBaseUrl(String rawBaseUrl) {
-        String value = rawBaseUrl.strip();
-        try {
-            URI uri = new URI(value);
-            if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    || uri.getHost() == null) {
-                throw new IllegalArgumentException("Base URL 必须是有效的 HTTP 或 HTTPS 地址");
-            }
-        } catch (URISyntaxException exception) {
-            throw new IllegalArgumentException("Base URL 必须是有效的 HTTP 或 HTTPS 地址");
-        }
-        while (value.endsWith("/")) {
-            value = value.substring(0, value.length() - 1);
-        }
-        return value;
+        return externalBaseUrlPolicy.normalizeAndValidate(rawBaseUrl);
     }
 
     private String keyHint(String apiKey) {

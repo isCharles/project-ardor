@@ -34,5 +34,7 @@ Phase 1 只交付可运行工程骨架、PostgreSQL、Flyway 初始 schema、前
 
 ## 明确不做
 
-V0.1 不实现语音、ASR/TTS、WebRTC、搜索、面经爬取、RAG、向量数据库、Google Calendar、Gmail、Multi-Agent、LangGraph，以及 Career 之外的生活领域。
+V0.1 不实现语音、ASR/TTS、WebRTC、面经爬取、Google Calendar、Gmail、Multi-Agent、LangGraph，以及 Career 之外的生活领域。
+
+联网搜索（Tavily）与知识库 RAG（pgvector + 用户自备 Embedding 模型）已在后续阶段落地，见 `docs/DATABASE.md` 与 `README.md`。
 

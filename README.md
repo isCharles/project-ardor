@@ -87,6 +87,24 @@ docker compose config
 
 项目默认把 PostgreSQL 映射到宿主机 5433，后端映射到 8080，前端映射到 3000。Redis 只在 Compose 内网开放 6379，并使用 `ardor-redis-data` Volume 持久化 30 天登录会话。简历原文件保存在 `ardor-resume-data` Volume；PostgreSQL 保存用户归属、解析文本、异步分析任务、分析结果、面试状态、答案和评价。
 
+## 升级说明：Postgres 镜像已切换到 pgvector
+
+知识库语义检索需要 `vector` 扩展，`docker-compose.yml` 的 postgres 镜像已从 `postgres:17-alpine`
+换成 `pgvector/pgvector:pg17`。两者同为 PostgreSQL 17，数据目录格式一致，已有 Volume 可以直接挂载，
+但底层 libc 从 musl 变成 glibc，文本索引的排序规则可能不同。升级后执行一次重建索引：
+
+```powershell
+docker compose up -d postgres
+docker exec project-ardor-postgres-1 psql -U ardor -d ardor -c "REINDEX DATABASE ardor;"
+```
+
+语义检索需要在 `设置 → 未来能力 → 向量模型` 配置一个 OpenAI 兼容的 Embedding 服务
+（`/embeddings` 接口）。没有配置时知识库自动退化为关键词检索，功能不受影响。
+上传文档会在事务提交后自动向量化；之前上传的文档会在下一次检索时按批补齐。
+
+出于 SSRF 防护，用户填写的 Base URL 默认必须解析到公网地址。本地自托管模型
+（Ollama、LM Studio 等）需要在 `.env` 设置 `ARDOR_ALLOW_PRIVATE_API_BASE_URLS=true` 才能使用。
+
 ## 重要边界
 
 - 业务身份只能来自 Spring Security 认证上下文，API 不接受可信的前端 `user_id`。
@@ -96,6 +114,7 @@ docker compose config
 - 简历分析与模拟面试会使用当前用户自己的 LLM 配置；页面与 Agent Tool 复用同一组 `ResumeService` / `InterviewService`。
 - Agent 使用 LangChain4j AI Services 进行工具选择与多回合 Tool Calling；可信用户身份在服务端绑定，模型不能传入或覆盖 `userId`。
 - 会话上下文只来自当前会话；总体记忆是单独、可见、可编辑的用户级数据，不等于把全部历史消息塞入提示词。
-- 当前不包含 RAG、语音、搜索、pgvector、多 Agent 或 LangGraph。Redis 目前只负责登录会话；简历任务队列使用 PostgreSQL 保证持久化。
+- 知识库使用 pgvector 做混合检索：稠密向量（用户自备 Embedding 服务）+ 关键词词频，按 RRF 融合。检索一律先按 `user_id` 过滤再算相似度。
+- 当前不包含语音、多 Agent 或 LangGraph。Redis 目前只负责登录会话；简历任务队列使用 PostgreSQL 保证持久化。
 
 详细设计见 [项目范围](docs/PROJECT.md)、[架构说明](docs/ARCHITECTURE.md)、[数据库设计](docs/DATABASE.md)、[路线图](docs/ROADMAP.md) 与 [AI 开发指南](docs/AI_GUIDE.md)。

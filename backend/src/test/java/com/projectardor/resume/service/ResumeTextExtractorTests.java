@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.junit.jupiter.api.Test;
@@ -35,5 +37,19 @@ class ResumeTextExtractorTests {
         assertThatThrownBy(() -> extractor.extract(new byte[] {1, 2, 3}, ".txt"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("只支持 PDF 或 DOCX");
+    }
+
+    @Test
+    void rejectsOrdinaryZipDisguisedAsDocx() throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(output)) {
+            zip.putNextEntry(new ZipEntry("hello.txt"));
+            zip.write("not a Word document".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+
+        assertThatThrownBy(() -> extractor.extract(output.toByteArray(), ".docx"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("无法解析或已损坏");
     }
 }

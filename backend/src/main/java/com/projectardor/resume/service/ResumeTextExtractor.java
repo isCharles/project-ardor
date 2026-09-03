@@ -31,7 +31,9 @@ public class ResumeTextExtractor {
                 throw new IllegalArgumentException("简历文本过长，请精简后重新上传");
             }
             return normalized;
-        } catch (IOException exception) {
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (IOException | RuntimeException exception) {
             throw new IllegalArgumentException("简历文件无法解析或已损坏", exception);
         }
     }

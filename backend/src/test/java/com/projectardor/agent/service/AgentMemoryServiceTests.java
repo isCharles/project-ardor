@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -50,5 +51,22 @@ class AgentMemoryServiceTests {
         assertThatThrownBy(() -> service.update(UUID.randomUUID(), "a".repeat(4001)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("4000");
+    }
+
+    @Test
+    void updatePreservesUnchangedMemoryItemInsteadOfRecreatingItsId() {
+        UUID userId = UUID.randomUUID();
+        AgentMemoryItem preserved = AgentMemoryItem.create(userId, "目标岗位：Java 后端");
+        AgentMemoryItem removed = AgentMemoryItem.create(userId, "旧偏好");
+        when(itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId))
+                .thenReturn(List.of(preserved, removed))
+                .thenReturn(List.of(preserved));
+        when(itemRepository.save(any(AgentMemoryItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.update(userId, "目标岗位：Java 后端\n偏好远程工作");
+
+        verify(itemRepository, never()).delete(preserved);
+        verify(itemRepository).delete(removed);
+        verify(itemRepository).save(any(AgentMemoryItem.class));
     }
 }

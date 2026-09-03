@@ -32,6 +32,16 @@ public class ApiKeyCipher {
         if (key.length != 32) {
             throw new IllegalStateException("ARDOR_ENCRYPTION_KEY 解码后必须正好为 32 字节");
         }
+        boolean allSame = true;
+        for (int index = 1; index < key.length; index++) {
+            if (key[index] != key[0]) {
+                allSame = false;
+                break;
+            }
+        }
+        if (allSame) {
+            throw new IllegalStateException("ARDOR_ENCRYPTION_KEY 不能使用全零或重复字节的弱密钥");
+        }
         this.encryptionKey = new SecretKeySpec(key, "AES");
     }
 

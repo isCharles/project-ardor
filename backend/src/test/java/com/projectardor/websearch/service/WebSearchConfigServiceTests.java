@@ -20,7 +20,7 @@ import com.projectardor.websearch.web.WebSearchConfigRequest;
 class WebSearchConfigServiceTests {
 
     private final WebSearchConfigRepository repository = mock(WebSearchConfigRepository.class);
-    private final ApiKeyCipher cipher = new ApiKeyCipher("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+    private final ApiKeyCipher cipher = new ApiKeyCipher("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
     private final WebSearchConfigService service = new WebSearchConfigService(repository, cipher);
 
     @Test

@@ -2,13 +2,16 @@ name: project-ardor
 
 services:
   postgres:
-    image: postgres:17-alpine
+    # pgvector build of PostgreSQL 17: same major version and on-disk format as the
+    # previous postgres:17-alpine image, plus the `vector` extension that V16 enables
+    # for knowledge-base semantic search.
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ardor}
       POSTGRES_USER: ${POSTGRES_USER:-ardor}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ardor_local_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - ardor-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -39,16 +42,20 @@ services:
     environment:
       DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ardor}
       DATABASE_USER: ${POSTGRES_USER:-ardor}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-ardor_local_password}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      ARDOR_ENCRYPTION_KEY: ${ARDOR_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      ARDOR_ENCRYPTION_KEY: ${ARDOR_ENCRYPTION_KEY:?ARDOR_ENCRYPTION_KEY must be set}
+      # Off by default: user-supplied Base URLs must resolve to public addresses, so a
+      # tenant cannot point the server at the internal network. Turn on only for local
+      # development against a self-hosted model (Ollama, LM Studio, a local embedding server).
+      ARDOR_ALLOW_PRIVATE_API_BASE_URLS: ${ARDOR_ALLOW_PRIVATE_API_BASE_URLS:-false}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       ARDOR_RESUME_STORAGE: /app/data/resumes
       ARDOR_HTTP_PROXY_HOST: ${ARDOR_HTTP_PROXY_HOST:-}
       ARDOR_HTTP_PROXY_PORT: ${ARDOR_HTTP_PROXY_PORT:-0}
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,7 +80,7 @@ services:
     environment:
       ARDOR_BACKEND_URL: http://backend:8080
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     depends_on:
       backend:
         condition: service_healthy

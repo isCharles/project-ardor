@@ -111,6 +111,9 @@ export default function InterviewsPage() {
       if (session.status === "COMPLETED") {
         setProgress(null);
         setEvaluation(await api<Evaluation>(`/api/interviews/${session.id}/evaluation`));
+      } else if (session.status === "CANCELLED") {
+        setProgress(null);
+        setError("这场面试已取消，只能从历史记录中删除。");
       } else {
         setProgress(await api<Progress>(`/api/interviews/${session.id}/next-question`));
       }

@@ -21,8 +21,9 @@ import com.projectardor.llm.security.ApiKeyCipher;
 class AuxiliaryApiConfigServiceTests {
 
     private final AuxiliaryApiConfigRepository repository = mock(AuxiliaryApiConfigRepository.class);
-    private final ApiKeyCipher cipher = new ApiKeyCipher("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-    private final AuxiliaryApiConfigService service = new AuxiliaryApiConfigService(repository, cipher);
+    private final ApiKeyCipher cipher = new ApiKeyCipher("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
+    private final AuxiliaryApiConfigService service = new AuxiliaryApiConfigService(
+            repository, cipher, new com.projectardor.common.security.ExternalBaseUrlPolicy(true));
 
     @Test
     void listsEveryReservedServiceEvenBeforeConfiguration() {

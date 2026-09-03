@@ -12,6 +12,7 @@ import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
 import { ApiError, api, streamApi } from "@/lib/api";
+import { useTypewriter } from "@/lib/use-typewriter";
 
 type AgentMessage = { id: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; createdAt: string };
 type Conversation = { id: string; title: string; pinned: boolean; createdAt: string; updatedAt: string };
@@ -77,7 +78,6 @@ export default function AgentHomePage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
   const [draft, setDraft] = useState("");
-  const [typedHint, setTypedHint] = useState("");
   const [busy, setBusy] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retryFailures, setRetryFailures] = useState<RetryFailure[]>([]);
@@ -88,6 +88,7 @@ export default function AgentHomePage() {
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const typedHint = useTypewriter(typewriterExamples, messages.length === 0);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
@@ -151,25 +152,6 @@ export default function AgentHomePage() {
     return () => window.clearInterval(timer);
   }, [busy]);
 
-  useEffect(() => {
-    if (messages.length > 0) return;
-    let phraseIndex = 0;
-    let characterIndex = 0;
-    let deleting = false;
-    let timer = 0;
-    const tick = () => {
-      const phrase = typewriterExamples[phraseIndex];
-      characterIndex += deleting ? -1 : 1;
-      setTypedHint(phrase.slice(0, characterIndex));
-      let delay = deleting ? 24 : 46;
-      if (!deleting && characterIndex === phrase.length) { deleting = true; delay = 1500; }
-      else if (deleting && characterIndex === 0) { deleting = false; phraseIndex = (phraseIndex + 1) % typewriterExamples.length; delay = 320; }
-      timer = window.setTimeout(tick, delay);
-    };
-    timer = window.setTimeout(tick, 350);
-    return () => window.clearTimeout(timer);
-  }, [messages.length]);
-
   async function selectConversation(conversationId: string) {
     if (busy || conversationId === state?.conversationId) return;
     setError(""); setMenuId(null); setSidebarOpen(false);
@@ -201,6 +183,7 @@ export default function AgentHomePage() {
     }
     const optimisticId = `pending-user-message-${crypto.randomUUID()}`;
     let conversationId = state?.conversationId ?? null;
+    let conversationCreatedForThisMessage: string | null = null;
     let savedDraftKey = draftStorageKey(conversationId);
     window.sessionStorage.setItem(savedDraftKey, message);
     setError(""); setRetryFailures([]); setRunSteps([]); setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setBusy(true);
@@ -208,6 +191,7 @@ export default function AgentHomePage() {
       if (!conversationId) {
         const conversation = await api<Conversation>("/api/agent/conversations", { method: "POST" });
         conversationId = conversation.id;
+        conversationCreatedForThisMessage = conversation.id;
         const conversationDraftKey = draftStorageKey(conversationId);
         window.sessionStorage.setItem(conversationDraftKey, message);
         window.sessionStorage.removeItem(savedDraftKey);
@@ -239,15 +223,19 @@ export default function AgentHomePage() {
           setRetryAttempt(retry);
           await new Promise((resolve) => window.setTimeout(resolve, Math.min(1500 * (2 ** (retry - 1)), 8000)));
         }
+        let receivedToolEvent = false;
+        let receivedDelta = false;
         try {
           let streamFailure: AgentStreamEvent | null = null;
           if (retry > 0) setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: "" } : item));
           await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { conversationId: activeConversationId, message, contextType: selectedContext?.type ?? null, contextId: selectedContext?.id ?? null }, (event) => {
             if (event.type === "delta" && event.content) {
+              receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
             } else if (event.type === "status" && event.label) {
               setRunSteps((current) => current.some((step) => step.key === "status") ? current : [...current, { key: "status", label: event.label!, elapsedMs: 0, done: false }]);
             } else if (event.type === "tool_start" && event.toolName) {
+              receivedToolEvent = true;
               setRunSteps((current) => [...current, { key: `${event.toolName}-${current.length}`, label: event.label ?? "调用工具", elapsedMs: 0, done: false }]);
             } else if (event.type === "tool_end" && event.toolName) {
               setRunSteps((current) => { const index = current.findLastIndex((step) => step.key.startsWith(`${event.toolName}-`) && !step.done); return index < 0 ? current : current.map((step, i) => i === index ? { ...step, label: event.label ?? step.label, elapsedMs: event.elapsedMs ?? 0, done: true } : step); });
@@ -272,7 +260,8 @@ export default function AgentHomePage() {
           }
           break;
         } catch (reason) {
-          const retryable = reason instanceof ApiError ? reason.body.retryable === true : (reason as { retryable?: boolean }).retryable !== false;
+          const serverRetryable = reason instanceof ApiError ? reason.body.retryable === true : (reason as { retryable?: boolean }).retryable !== false;
+          const retryable = serverRetryable && !receivedToolEvent && !receivedDelta;
           const label = retry === 0 ? "首次请求" : `第 ${retry}/${MAX_MESSAGE_RETRIES} 次重试`;
           const detail = reason instanceof ApiError
             ? `${reason.body.code ?? `HTTP ${reason.status}`} · ${reason.message}`
@@ -287,6 +276,18 @@ export default function AgentHomePage() {
       setSelectedContext(null);
       await load(completedAssistant.conversationId);
     } catch (reason) {
+      if (conversationCreatedForThisMessage) {
+        try {
+          const current = await api<AgentState>(`/api/agent?conversationId=${conversationCreatedForThisMessage}`);
+          if (current.messages.length === 0) {
+            await api<void>(`/api/agent/conversations/${conversationCreatedForThisMessage}`, { method: "DELETE" });
+            setConversations((items) => items.filter((item) => item.id !== conversationCreatedForThisMessage));
+            window.history.replaceState(null, "", "/app");
+          }
+        } catch {
+          // Preserve the original send error; an uncertain conversation is never deleted blindly.
+        }
+      }
       setMessages((current) => current.filter((item) => item.id !== optimisticId && !item.id.startsWith("pending-assistant-")));
       setDraft(message);
       window.sessionStorage.setItem(savedDraftKey, message);
@@ -484,13 +485,13 @@ export default function AgentHomePage() {
                   {(error || retryFailures.length > 0) && <div className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm"><p>{error}</p>{retryFailures.length > 0 && <ul className="mt-2 space-y-1 text-xs text-red-600">{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
                   <form onSubmit={submit} className="mx-auto mt-10 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
                     {selectedContext && <div className="mx-3 mt-2 inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{selectedContext.label}</span><button type="button" aria-label="移除资料" onClick={() => setSelectedContext(null)}><X className="size-3.5" /></button></div>}
-                    <textarea value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
+                    <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
                     <div className="flex items-center justify-between gap-3 px-2 pb-1">{attachmentPicker()}<div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label="发送" disabled={busy || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
                   </form>
                 </div>
               </div>
             ) : (
-              <div className="ardor-chat-enter mx-auto w-full max-w-3xl space-y-8 px-4 py-10 md:px-8">
+              <div aria-live="polite" className="ardor-chat-enter mx-auto w-full max-w-3xl space-y-8 px-4 py-10 md:px-8">
                 {messages.map((message) => (
                   <article key={message.id} className={`flex gap-3 ${message.role === "USER" ? "justify-end" : "justify-start"}`}>
                     {message.role === "USER" ? (
@@ -523,7 +524,7 @@ export default function AgentHomePage() {
             {error && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{error}</p>{retryFailures.length > 0 && <ul className="mt-2 space-y-1 text-xs text-red-600">{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {selectedContext && <div className="mx-3 mt-2 inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{selectedContext.label}</span><button type="button" aria-label="移除资料" onClick={() => setSelectedContext(null)}><X className="size-3.5" /></button></div>}
-              <textarea value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
+              <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
               <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label="发送" disabled={busy || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
             </form>
           </div>}

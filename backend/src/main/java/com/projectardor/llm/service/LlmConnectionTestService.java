@@ -55,7 +55,7 @@ public class LlmConnectionTestService {
         try {
             Map<ToolSpecification, ToolExecutor> schemaProbeTools = new LinkedHashMap<>();
             ToolExecutor noOpExecutor = (request, memoryId) -> "compatibility-schema-ok";
-            ToolSpecifications.toolSpecificationsFrom(careerAgentTools.bind(userId))
+                    ToolSpecifications.toolSpecificationsFrom(careerAgentTools.bind(userId, "连接测试"))
                     .forEach(specification -> schemaProbeTools.put(specification, noOpExecutor));
             ToolSpecifications.toolSpecificationsFrom(probe).forEach(specification ->
                     schemaProbeTools.put(specification, (request, memoryId) -> {

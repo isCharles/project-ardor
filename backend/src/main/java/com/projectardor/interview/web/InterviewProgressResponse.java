@@ -17,7 +17,9 @@ public record InterviewProgressResponse(
         return new InterviewProgressResponse(
                 progress.session().getId(), progress.session().getStatus(),
                 progress.answeredCount(), progress.totalQuestions(),
-                progress.nextQuestion() == null && progress.totalQuestions() > 0,
+                progress.session().getStatus() == InterviewStatus.IN_PROGRESS
+                        && progress.nextQuestion() == null
+                        && progress.totalQuestions() > 0,
                 InterviewQuestionResponse.from(progress.nextQuestion()));
     }
 }

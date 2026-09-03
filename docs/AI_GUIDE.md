@@ -33,7 +33,7 @@
 ## 不过度设计
 
 1. 只抽象已经稳定的边界，不为假设中的未来功能创建大量空接口。
-2. 当前不引入微服务、Redis、Kafka、Elasticsearch、向量数据库、LangGraph 或 Python AI Service。
+2. 当前不引入微服务、Kafka、Elasticsearch、LangGraph 或 Python AI Service。Redis 用于登录会话；向量检索使用 PostgreSQL 的 pgvector，不额外引入独立向量数据库。
 3. 优先完成 V0.1 Golden Path，再根据测试和真实使用数据演进。
 4. 修改核心架构、认证方式、数据归属或模块边界前，先在文档或变更说明中解释原因、替代方案和取舍。
 

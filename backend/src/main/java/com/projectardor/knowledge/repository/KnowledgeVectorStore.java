@@ -1,0 +1,110 @@
+package com.projectardor.knowledge.repository;
+
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+/**
+ * pgvector access for knowledge chunks.
+ *
+ * <p>Written against plain JDBC on purpose: pgvector accepts its text input format
+ * ({@code '[1,2,3]'::vector}), so no extra client library is needed.
+ *
+ * <p>Every statement here is scoped by {@code user_id} first, per the isolation rule in
+ * docs/AI_GUIDE.md ("向量检索必须先按 user_id 过滤，再计算相似度"). The dimension filter is
+ * what makes a dimension-less vector column safe: only vectors produced by a model with the
+ * same output size ever reach the distance operator.
+ */
+@Repository
+public class KnowledgeVectorStore {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    public KnowledgeVectorStore(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /** Stores one chunk's embedding. */
+    public void saveEmbedding(UUID userId, UUID chunkId, String vectorLiteral, int dimension, String model) {
+        jdbcTemplate.update("""
+                UPDATE knowledge_chunks
+                SET embedding = ?::vector,
+                    embedding_dim = ?,
+                    embedding_model = ?,
+                    embedded_at = ?
+                WHERE id = ? AND user_id = ?
+                """,
+                vectorLiteral, dimension, model, Timestamp.from(Instant.now()), chunkId, userId);
+    }
+
+    /**
+     * Nearest neighbours for one query vector, restricted to the caller's own chunks.
+     * Similarity is cosine, mapped to [0,1] where 1 is identical.
+     */
+    public List<VectorHit> search(UUID userId, String queryVectorLiteral, int dimension, int limit) {
+        return jdbcTemplate.query("""
+                SELECT id, document_id, content, 1 - (embedding <=> ?::vector) AS similarity
+                FROM knowledge_chunks
+                WHERE user_id = ?
+                  AND embedding IS NOT NULL
+                  AND embedding_dim = ?
+                ORDER BY embedding <=> ?::vector
+                LIMIT ?
+                """,
+                (rs, rowNum) -> new VectorHit(
+                        rs.getObject("id", UUID.class),
+                        rs.getObject("document_id", UUID.class),
+                        rs.getString("content"),
+                        rs.getDouble("similarity")),
+                queryVectorLiteral, userId, dimension, queryVectorLiteral, limit);
+    }
+
+    /** Chunks belonging to this user that still have no embedding, oldest first. */
+    public List<PendingChunk> findPending(UUID userId, int limit) {
+        return jdbcTemplate.query("""
+                SELECT id, content
+                FROM knowledge_chunks
+                WHERE user_id = ? AND embedding IS NULL
+                ORDER BY created_at
+                LIMIT ?
+                """,
+                (rs, rowNum) -> new PendingChunk(rs.getObject("id", UUID.class), rs.getString("content")),
+                userId, limit);
+    }
+
+    public long countPending(UUID userId) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM knowledge_chunks WHERE user_id = ? AND embedding IS NULL",
+                Long.class, userId);
+        return count == null ? 0 : count;
+    }
+
+    public long countEmbedded(UUID userId) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM knowledge_chunks WHERE user_id = ? AND embedding IS NOT NULL",
+                Long.class, userId);
+        return count == null ? 0 : count;
+    }
+
+    /**
+     * Drops embeddings that were produced by a different model than the one currently
+     * configured, so a model switch re-indexes instead of silently mixing vector spaces.
+     */
+    public int clearEmbeddingsForOtherModels(UUID userId, String currentModel) {
+        return jdbcTemplate.update("""
+                UPDATE knowledge_chunks
+                SET embedding = NULL, embedding_dim = NULL, embedding_model = NULL, embedded_at = NULL
+                WHERE user_id = ? AND embedding IS NOT NULL AND embedding_model IS DISTINCT FROM ?
+                """, userId, currentModel);
+    }
+
+    public record VectorHit(UUID chunkId, UUID documentId, String content, double similarity) {
+    }
+
+    public record PendingChunk(UUID chunkId, String content) {
+    }
+}

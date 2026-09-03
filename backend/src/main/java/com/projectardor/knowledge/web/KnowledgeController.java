@@ -52,6 +52,12 @@ public class KnowledgeController {
         knowledgeService.delete(principal.userId(), documentId);
     }
 
+    @GetMapping("/index-status")
+    public KnowledgeService.KnowledgeIndexStatus indexStatus(
+            @AuthenticationPrincipal ArdorPrincipal principal) {
+        return knowledgeService.indexStatus(principal.userId());
+    }
+
     @GetMapping("/search")
     public List<KnowledgeSearchResult> search(
             @AuthenticationPrincipal ArdorPrincipal principal,
