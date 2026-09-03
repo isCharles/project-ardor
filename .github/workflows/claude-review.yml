@@ -1,0 +1,82 @@
+name: Claude PR Review
+
+# 只在开 PR 和「就绪待审」时各审一次，刻意不监听 synchronize：
+# 开发过程中的每次 push 都触发重审会很快烧掉订阅额度。
+# 需要在修改后重审时，在 PR 里评论 @claude 手动触发（见 claude-mention.yml）。
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # 取完整历史：审查 Flyway migration 时需要看清它是新增还是修改了已发布的文件。
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            审查这个 PR。用中文输出。
+
+            只报告会造成以下后果的问题：错误行为、安全问题、数据损坏、权限越界、
+            兼容性问题、明显的运维风险。不要报告纯风格偏好、泛泛的重构建议，
+            也不要报告没有具体触发路径的猜测。每条结论必须给出具体文件和行号。
+            没有发现达到标准的问题时，明确说没有发现，不要为了凑数编造问题。
+
+            本仓库必须守住的不变量，优先逐条核对本 PR 是否破坏了它们：
+
+            1. 业务用户身份只能来自 Spring Security 认证上下文（@AuthenticationPrincipal
+               ArdorPrincipal）。API 绝不接受请求体、查询参数或模型传入的 userId。
+            2. 所有业务读写按「资源 ID + 当前用户 ID」联合限定，例如 findByIdAndUserId。
+               向量检索必须先按 user_id 过滤再计算相似度，且要限定 embedding_dim，
+               避免比较不同向量空间的行。
+            3. Flyway migration 只能前向新增。已发布的 migration 不得修改、重命名或删除。
+               新 migration 必须在已有数据上可升级，不能只适用于空库；
+               含 DELETE / DROP / 修改约束的 migration 要显式说明对存量数据的影响。
+            4. 页面接口和 Agent Tool 必须复用同一组 Service，权限校验和业务规则一致，
+               Tool 适配器不得绕过 Service 直接操作 Repository。
+            5. 用户自备的 Base URL（LLM / Embedding / 辅助 API）必须经过
+               ExternalBaseUrlPolicy 校验，防止 SSRF。
+            6. API Key 绝不能出现在响应体、日志、异常信息或序列化结果中。
+            7. LLM 调用、外部 HTTP 调用不要放在数据库事务内部，避免长事务占满连接池。
+            8. Agent 的不可逆删除工具（delete_resume / delete_interview /
+               delete_all_memory_cards / clear_all_memories / delete_knowledge_document 等）
+               不得在没有用户明确确认的情况下，被联网搜索结果或知识库内容驱动。
+               注意知识库内容可能来自 research_knowledge_from_web 保存的第三方网页。
+            9. 时间处理：服务端目前硬编码 Asia/Shanghai 且没有用户时区字段，
+               新增的时间分桶逻辑要说明这个前提。
+
+            PR 分支已经 checkout 在当前工作目录。你可以运行命令来验证判断，例如：
+              cd backend && ./mvnw -o test
+              cd frontend && npm run lint && npm run typecheck
+            如果依赖不可用，不要把环境问题误报成代码缺陷，说明哪些验证没执行即可。
+
+            用 `gh pr comment` 写总体结论（包含：是否可以合并的判断、以及未执行的验证）。
+            用 mcp__github_inline_comment__create_inline_comment（带 confirmed: true）
+            标注具体代码问题。只发 GitHub 评论，不要把结论当消息返回。
+
+          # 审查者只需要读 PR 和写评论，不给写文件、不给 push。
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(cd backend && ./mvnw -o test),Bash(cd frontend && npm run lint),Bash(cd frontend && npm run typecheck)"
+
+        # 备选：把审查改走第三方中转（例如 packyapi），把订阅额度留给交互式使用。
+        # 代价是每个 PR 的完整 diff 会持续外发给中转站运营方，本仓库含认证与密钥加密实现，
+        # 请自行权衡后再启用。启用时删掉上面的 claude_code_oauth_token 一行。
+        # 注意：这是未文档化的用法，action 升级后可能失效。
+        # env:
+        #   ANTHROPIC_BASE_URL: ${{ vars.RELAY_BASE_URL }}
+        #   ANTHROPIC_AUTH_TOKEN: ${{ secrets.RELAY_API_KEY }}
