@@ -34,9 +34,9 @@ Phase 1 只交付可运行工程骨架、PostgreSQL、Flyway 初始 schema、前
 
 ## 明确不做
 
-V0.1 已提供轮次式语音面试 MVP（录音、ASR 转写、题目 TTS 朗读和文字确认），
-可使用 OpenAI 标准语音接口，或由管理员统一配置阿里云百炼 Qwen3 ASR/TTS。
-逐帧流式 ASR、打断式对话和 WebRTC 原生 Speech-to-Speech 仍不在当前范围；
+V0.1 已提供实时语音面试（WebSocket、流式 ASR/TTS、服务端 VAD、用户开口打断 AI
+和文字确认），由管理员统一配置阿里云百炼 Qwen3 Realtime ASR/TTS。
+WebRTC 原生 Speech-to-Speech 仍不在当前范围；
 面经爬取、Google Calendar、Gmail、Multi-Agent、LangGraph 以及 Career 之外的生活领域也暂不实现。
 
 联网搜索（Tavily）与知识库 RAG（pgvector + 用户自备 Embedding 模型）已在后续阶段落地，见 `docs/DATABASE.md` 与 `README.md`。

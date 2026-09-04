@@ -67,6 +67,9 @@ app:
   speech:
     openai-voice: ${ARDOR_OPENAI_TTS_VOICE:alloy}
     dashscope-voice: ${ARDOR_DASHSCOPE_TTS_VOICE:Cherry}
+    realtime-asr-model: ${ARDOR_REALTIME_ASR_MODEL:qwen3-asr-flash-realtime}
+    realtime-tts-model: ${ARDOR_REALTIME_TTS_MODEL:qwen3-tts-flash-realtime}
+    vad-silence-duration: ${ARDOR_VAD_SILENCE_DURATION:800}
   security:
     api-key-encryption-key: ${ARDOR_ENCRYPTION_KEY}
     allow-private-api-base-urls: ${ARDOR_ALLOW_PRIVATE_API_BASE_URLS:false}
