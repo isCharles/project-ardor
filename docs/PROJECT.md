@@ -34,7 +34,8 @@ Phase 1 只交付可运行工程骨架、PostgreSQL、Flyway 初始 schema、前
 
 ## 明确不做
 
-V0.1 已提供轮次式语音面试 MVP（录音、ASR 转写、题目 TTS 朗读和文字确认）。
+V0.1 已提供轮次式语音面试 MVP（录音、ASR 转写、题目 TTS 朗读和文字确认），
+可使用 OpenAI 标准语音接口，或由管理员统一配置阿里云百炼 Qwen3 ASR/TTS。
 逐帧流式 ASR、打断式对话和 WebRTC 原生 Speech-to-Speech 仍不在当前范围；
 面经爬取、Google Calendar、Gmail、Multi-Agent、LangGraph 以及 Career 之外的生活领域也暂不实现。
 
