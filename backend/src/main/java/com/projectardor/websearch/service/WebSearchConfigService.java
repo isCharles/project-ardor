@@ -10,29 +10,40 @@ import com.projectardor.websearch.domain.WebSearchConfig;
 import com.projectardor.websearch.repository.WebSearchConfigRepository;
 import com.projectardor.websearch.web.WebSearchConfigRequest;
 import com.projectardor.websearch.web.WebSearchConfigResponse;
+import com.projectardor.admin.domain.SystemApiServiceType;
+import com.projectardor.admin.service.SystemApiConfigService;
 
 @Service
 public class WebSearchConfigService {
 
     private final WebSearchConfigRepository repository;
     private final ApiKeyCipher cipher;
+    private final SystemApiConfigService systemConfigService;
 
-    public WebSearchConfigService(WebSearchConfigRepository repository, ApiKeyCipher cipher) {
+    public WebSearchConfigService(WebSearchConfigRepository repository, ApiKeyCipher cipher,
+            SystemApiConfigService systemConfigService) {
         this.repository = repository;
         this.cipher = cipher;
+        this.systemConfigService = systemConfigService;
     }
 
     @Transactional(readOnly = true)
     public WebSearchConfigResponse get(UUID userId) {
         return repository.findByUserId(userId)
                 .map(WebSearchConfigResponse::configured)
-                .orElseGet(WebSearchConfigResponse::unconfigured);
+                .orElseGet(() -> systemConfigService.view(SystemApiServiceType.WEB_SEARCH)
+                        .map(view -> WebSearchConfigResponse.inherited(view.keyHint()))
+                        .orElseGet(WebSearchConfigResponse::unconfigured));
     }
 
     @Transactional(readOnly = true)
     public String requireApiKey(UUID userId) {
-        WebSearchConfig config = repository.findByUserId(userId)
-                .orElseThrow(() -> new IllegalStateException("请先在设置中配置 Tavily API Key"));
+        var personal = repository.findByUserId(userId);
+        if (personal.isEmpty()) {
+            return systemConfigService.webSearchApiKey()
+                    .orElseThrow(() -> new IllegalStateException("管理员尚未配置联网搜索，您也可以在设置中添加个人配置"));
+        }
+        WebSearchConfig config = personal.get();
         return cipher.decrypt(userId, config.getEncryptedApiKey(), config.getApiKeyIv());
     }
 

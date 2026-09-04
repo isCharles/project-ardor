@@ -18,6 +18,8 @@ import com.projectardor.integrations.web.AuxiliaryApiConfigRequest;
 import com.projectardor.integrations.web.AuxiliaryApiConfigResponse;
 import com.projectardor.llm.security.ApiKeyCipher;
 import com.projectardor.common.security.ExternalBaseUrlPolicy;
+import com.projectardor.admin.domain.SystemApiServiceType;
+import com.projectardor.admin.service.SystemApiConfigService;
 
 @Service
 public class AuxiliaryApiConfigService {
@@ -25,14 +27,17 @@ public class AuxiliaryApiConfigService {
     private final AuxiliaryApiConfigRepository repository;
     private final ApiKeyCipher cipher;
     private final ExternalBaseUrlPolicy externalBaseUrlPolicy;
+    private final SystemApiConfigService systemConfigService;
 
     public AuxiliaryApiConfigService(
             AuxiliaryApiConfigRepository repository,
             ApiKeyCipher cipher,
-            ExternalBaseUrlPolicy externalBaseUrlPolicy) {
+            ExternalBaseUrlPolicy externalBaseUrlPolicy,
+            SystemApiConfigService systemConfigService) {
         this.repository = repository;
         this.cipher = cipher;
         this.externalBaseUrlPolicy = externalBaseUrlPolicy;
+        this.systemConfigService = systemConfigService;
     }
 
     @Transactional(readOnly = true)
@@ -42,9 +47,10 @@ public class AuxiliaryApiConfigService {
         return Arrays.stream(AuxiliaryServiceType.values())
                 .map(type -> {
                     AuxiliaryApiConfig config = existing.get(type);
-                    return config == null
-                            ? AuxiliaryApiConfigResponse.unconfigured(type)
-                            : AuxiliaryApiConfigResponse.configured(config);
+                    if (config != null) return AuxiliaryApiConfigResponse.configured(config);
+                    return systemConfigService.view(systemType(type))
+                            .map(view -> AuxiliaryApiConfigResponse.inherited(type, view.provider(), view.baseUrl(), view.model(), view.keyHint()))
+                            .orElseGet(() -> AuxiliaryApiConfigResponse.unconfigured(type));
                 })
                 .toList();
     }
@@ -80,9 +86,13 @@ public class AuxiliaryApiConfigService {
             AuxiliaryApiConfigRequest request) {
         String apiKey = request.apiKey() == null ? "" : request.apiKey().strip();
         if (apiKey.isBlank()) {
-            AuxiliaryApiConfig existing = repository.findByUserIdAndServiceType(userId, serviceType)
-                    .orElseThrow(() -> new IllegalArgumentException("请填写 API Key 后再测试连接"));
-            apiKey = cipher.decrypt(userId, existing.getEncryptedApiKey(), existing.getApiKeyIv());
+            var existing = repository.findByUserIdAndServiceType(userId, serviceType);
+            if (existing.isPresent()) {
+                apiKey = cipher.decrypt(userId, existing.get().getEncryptedApiKey(), existing.get().getApiKeyIv());
+            } else {
+                apiKey = systemConfigService.auxiliary(systemType(serviceType)).map(AuxiliaryRuntimeConfig::apiKey)
+                        .orElseThrow(() -> new IllegalArgumentException("请填写 API Key 后再测试连接"));
+            }
         }
         return new AuxiliaryRuntimeConfig(
                 request.provider().strip(),
@@ -104,7 +114,8 @@ public class AuxiliaryApiConfigService {
                         config.getProvider(),
                         normalizeBaseUrl(config.getBaseUrl()),
                         config.getModel(),
-                        cipher.decrypt(userId, config.getEncryptedApiKey(), config.getApiKeyIv())));
+                        cipher.decrypt(userId, config.getEncryptedApiKey(), config.getApiKeyIv())))
+                .or(() -> systemConfigService.auxiliary(systemType(serviceType)));
     }
 
     @Transactional
@@ -119,6 +130,10 @@ public class AuxiliaryApiConfigService {
     private String keyHint(String apiKey) {
         int start = Math.max(0, apiKey.length() - 4);
         return "••••" + apiKey.substring(start);
+    }
+
+    private SystemApiServiceType systemType(AuxiliaryServiceType type) {
+        return SystemApiServiceType.valueOf(type.name());
     }
 
     public record AuxiliaryRuntimeConfig(String provider, String baseUrl, String model, String apiKey) {

@@ -6,16 +6,19 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
-public record ArdorPrincipal(UUID userId, String email, String passwordHash, boolean enabled)
+import com.projectardor.auth.domain.UserRole;
+
+public record ArdorPrincipal(UUID userId, String email, String passwordHash, boolean enabled, UserRole role)
         implements UserDetails, Serializable {
 
     private static final long serialVersionUID = 1L;
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of();
+        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
     @Override

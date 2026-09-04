@@ -39,6 +39,10 @@ public class LlmConnectionTestService {
 
     public LlmConnectionTestResponse test(UUID userId, LlmConfigUpdateRequest request) {
         var config = configService.runtimeConfigForTest(userId, request);
+        return test(userId, config);
+    }
+
+    public LlmConnectionTestResponse test(UUID userId, LlmConfigService.LlmRuntimeConfig config) {
         long startedAt = System.nanoTime();
         LlmGateway.LlmResult result = gateway.completeJson(
                 config,

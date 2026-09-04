@@ -29,7 +29,7 @@ public class DatabaseUserDetailsService implements UserDetailsService {
                 user.getId(),
                 user.getEmail(),
                 user.getPasswordHash(),
-                user.getStatus() == UserStatus.ACTIVE);
+                user.getStatus() == UserStatus.ACTIVE,
+                user.getRole());
     }
 }
-

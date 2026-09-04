@@ -1,0 +1,148 @@
+"use client";
+
+import { Activity, KeyRound, LoaderCircle, Save, Server, ShieldCheck, Trash2, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+import { AppShell, PageBody } from "@/components/ardor/app-shell";
+import { ApiError, api } from "@/lib/api";
+
+type ServiceType = "PRIMARY_LLM" | "EMBEDDING" | "ASR" | "TTS" | "FALLBACK_LLM" | "WEB_SEARCH";
+type ApiConfig = { serviceType: ServiceType; configured: boolean; provider: string; baseUrl: string | null; model: string | null; keyHint: string | null; updatedAt: string | null };
+type User = { id: string; email: string; status: "ACTIVE" | "DISABLED"; role: "USER" | "ADMIN"; createdAt: string };
+type Overview = { counts: Record<string, number>; databaseAvailable: boolean; apiConfigs: ApiConfig[] };
+type Feedback = { kind: "pending" | "success" | "error"; message: string };
+
+const services: Array<{ type: ServiceType; label: string; note: string }> = [
+  { type: "PRIMARY_LLM", label: "主模型", note: "Agent、简历分析与面经" },
+  { type: "EMBEDDING", label: "向量模型", note: "知识库语义检索" },
+  { type: "WEB_SEARCH", label: "联网搜索", note: "Tavily" },
+  { type: "FALLBACK_LLM", label: "备用模型", note: "主线路不可用时" },
+  { type: "ASR", label: "语音识别", note: "音频转录" },
+  { type: "TTS", label: "语音合成", note: "语音面试" },
+];
+
+const countLabels: Record<string, string> = {
+  users: "用户", conversations: "对话", messages: "消息", resumes: "简历",
+  recaps: "面经", knowledgeDocuments: "知识", calendarTasks: "日程", memoryCards: "卡片",
+};
+
+export default function AdminPage() {
+  const router = useRouter();
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [feedback, setFeedback] = useState<Partial<Record<ServiceType, Feedback>>>({});
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+
+  async function load() {
+    try {
+      const [current, nextOverview, nextUsers] = await Promise.all([
+        api<{ admin: boolean }>("/api/auth/me"),
+        api<Overview>("/api/admin/overview"),
+        api<User[]>("/api/admin/users"),
+      ]);
+      if (!current.admin) return router.replace("/app");
+      setOverview(nextOverview); setUsers(nextUsers);
+    } catch (reason) {
+      if (reason instanceof ApiError && (reason.status === 401 || reason.status === 403)) return router.replace("/app");
+      setError(reason instanceof Error ? reason.message : "无法加载管理面板");
+    }
+  }
+
+  useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function submitConfig(form: HTMLFormElement, type: ServiceType, action: "save" | "test") {
+    const data = new FormData(form);
+    const body = JSON.stringify({
+      provider: type === "WEB_SEARCH" ? "TAVILY" : data.get("provider"),
+      baseUrl: type === "WEB_SEARCH" ? "https://api.tavily.com" : data.get("baseUrl"),
+      model: type === "WEB_SEARCH" ? "-" : data.get("model"),
+      apiKey: data.get("apiKey"),
+    });
+    setBusy(`${type}:${action}`);
+    setFeedback((current) => ({ ...current, [type]: { kind: "pending", message: action === "save" ? "正在加密保存…" : "正在测试连接…" } }));
+    try {
+      if (action === "save") {
+        const updated = await api<ApiConfig>(`/api/admin/api-configs/${type}`, { method: "PUT", body });
+        (form.elements.namedItem("apiKey") as HTMLInputElement).value = "";
+        setOverview((current) => current ? { ...current, apiConfigs: current.apiConfigs.map((item) => item.serviceType === type ? updated : item) } : current);
+        setFeedback((current) => ({ ...current, [type]: { kind: "success", message: `已启用为系统默认${updated.keyHint ? ` · ${updated.keyHint}` : ""}` } }));
+      } else {
+        const result = await api<{ message?: string; latencyMs?: number }>(`/api/admin/api-configs/${type}/test`, { method: "POST", body });
+        setFeedback((current) => ({ ...current, [type]: { kind: "success", message: `${result.message ?? "连接成功"}${result.latencyMs == null ? "" : ` · ${result.latencyMs} ms`}` } }));
+      }
+    } catch (reason) {
+      setFeedback((current) => ({ ...current, [type]: { kind: "error", message: reason instanceof Error ? reason.message : "操作失败" } }));
+    } finally { setBusy(""); }
+  }
+
+  async function updateUser(user: User, patch: Partial<Pick<User, "status" | "role">>) {
+    setBusy(`user:${user.id}`); setError("");
+    try {
+      const updated = await api<User>(`/api/admin/users/${user.id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      setUsers((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "用户更新失败"); }
+    finally { setBusy(""); }
+  }
+
+  async function removeConfig(type: ServiceType, label: string) {
+    if (!window.confirm(`移除系统${label}？未设置个人配置的用户将无法使用这项能力。`)) return;
+    setBusy(`${type}:delete`);
+    try {
+      await api<void>(`/api/admin/api-configs/${type}`, { method: "DELETE" });
+      await load();
+      setFeedback((current) => ({ ...current, [type]: { kind: "success", message: "系统默认已移除" } }));
+    } catch (reason) {
+      setFeedback((current) => ({ ...current, [type]: { kind: "error", message: reason instanceof Error ? reason.message : "移除失败" } }));
+    } finally { setBusy(""); }
+  }
+
+  if (!overview) return <AppShell headerLeft={<span className="t-eyebrow">Admin</span>}><PageBody><div className="grid min-h-[50vh] place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--ardor-accent)]" /></div></PageBody></AppShell>;
+
+  return <AppShell headerLeft={<span className="t-eyebrow">Admin / System</span>}>
+    <PageBody>
+      <div className="mb-10 flex items-end justify-between gap-6">
+        <div><p className="t-eyebrow text-[var(--ardor-accent)]">Control plane</p><h1 className="mt-2 text-4xl font-semibold tracking-[-0.045em]">管理工作台</h1></div>
+        <div className="flex items-center gap-2 text-sm text-emerald-700"><Activity className="size-4" />系统在线</div>
+      </div>
+
+      {error && <p className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+
+      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-rule)] md:grid-cols-4">
+        {Object.entries(overview.counts).map(([name, value]) => <div key={name} className="bg-[var(--ardor-panel)] p-5"><p className="text-xs text-[var(--ardor-ink-3)]">{countLabels[name] ?? name}</p><p className="mt-2 text-3xl font-semibold tabular-nums">{value.toLocaleString()}</p></div>)}
+      </section>
+
+      <section className="mt-12">
+        <div className="mb-5 flex items-center gap-3"><Server className="size-5 text-[var(--ardor-accent)]" /><h2 className="text-xl font-semibold">系统 API</h2><span className="text-sm text-[var(--ardor-ink-3)]">用户默认继承，也可个人覆盖</span></div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {services.map(({ type, label, note }) => {
+            const config = overview.apiConfigs.find((item) => item.serviceType === type)!;
+            const state = feedback[type];
+            return <form key={`${type}:${config.updatedAt ?? "new"}`} onSubmit={(event) => { event.preventDefault(); void submitConfig(event.currentTarget, type, "save"); }} className="rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-panel)] p-5">
+              <div className="flex items-start justify-between"><div><h3 className="font-semibold">{label}</h3><p className="mt-1 text-xs text-[var(--ardor-ink-3)]">{note}</p></div><div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[11px] ${config.configured ? "bg-emerald-50 text-emerald-700" : "bg-[var(--ardor-sunken)] text-[var(--ardor-ink-3)]"}`}>{config.configured ? "已配置" : "未配置"}</span>{config.configured && <button type="button" aria-label={`移除${label}`} disabled={!!busy} onClick={() => void removeConfig(type, label)} className="grid size-7 place-items-center rounded-full text-[var(--ardor-ink-3)] hover:bg-rose-50 hover:text-rose-600"><Trash2 className="size-3.5" /></button>}</div></div>
+              {type !== "WEB_SEARCH" && <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {type === "PRIMARY_LLM" ? <select name="provider" defaultValue={config.provider || "OPENAI_COMPATIBLE"} className="h-10 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-sm"><option value="OPENAI_COMPATIBLE">OpenAI 兼容</option><option value="ANTHROPIC_COMPATIBLE">Anthropic 兼容</option></select> : <input name="provider" required defaultValue={config.provider} placeholder="Provider" className="h-10 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-sm" />}
+                <input name="model" required defaultValue={config.model ?? ""} placeholder="模型名称" className="h-10 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-sm" />
+                <input name="baseUrl" required defaultValue={config.baseUrl ?? ""} placeholder="Base URL" className="h-10 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-sm sm:col-span-2" />
+              </div>}
+              <div className="mt-3 flex gap-2"><div className="relative min-w-0 flex-1"><KeyRound className="absolute left-3 top-3 size-4 text-[var(--ardor-ink-3)]" /><input name="apiKey" type="password" required={!config.configured} autoComplete="off" placeholder={config.keyHint ? `当前已保存 ${config.keyHint}；输入新 Key 才会替换` : "API Key"} className="h-10 w-full rounded-xl border border-[var(--ardor-rule)] bg-transparent pl-9 pr-3 text-sm" /></div><button type="button" disabled={!!busy} onClick={(event) => { const form = event.currentTarget.form; if (form?.reportValidity()) void submitConfig(form, type, "test"); }} className="rounded-xl border border-[var(--ardor-rule)] px-3 text-sm">测试</button><button disabled={!!busy} className="grid size-10 place-items-center rounded-xl bg-[var(--ardor-ink)] text-white"><Save className="size-4" /></button></div>
+              {state && <p className={`mt-3 text-xs ${state.kind === "error" ? "text-rose-600" : state.kind === "success" ? "text-emerald-700" : "text-[var(--ardor-ink-3)]"}`}>{state.message}</p>}
+            </form>;
+          })}
+        </div>
+      </section>
+
+      <section className="mt-12">
+        <div className="mb-5 flex items-center gap-3"><Users className="size-5 text-[var(--ardor-accent)]" /><h2 className="text-xl font-semibold">用户</h2><span className="text-sm text-[var(--ardor-ink-3)]">{users.length} 个账户</span></div>
+        <div className="overflow-hidden rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-panel)]">
+          {users.map((user, index) => <div key={user.id} className={`flex flex-col gap-3 p-4 md:flex-row md:items-center ${index ? "border-t border-[var(--ardor-rule)]" : ""}`}>
+            <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user.email}</p><p className="mt-1 text-xs text-[var(--ardor-ink-3)]">{new Date(user.createdAt).toLocaleDateString("zh-CN")}</p></div>
+            <div className="flex items-center gap-2"><select value={user.role} disabled={busy === `user:${user.id}`} onChange={(event) => void updateUser(user, { role: event.target.value as User["role"] })} className="h-9 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-xs"><option value="USER">用户</option><option value="ADMIN">管理员</option></select><button disabled={busy === `user:${user.id}`} onClick={() => void updateUser(user, { status: user.status === "ACTIVE" ? "DISABLED" : "ACTIVE" })} className={`h-9 rounded-xl px-3 text-xs ${user.status === "ACTIVE" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>{user.status === "ACTIVE" ? "正常" : "已禁用"}</button></div>
+          </div>)}
+        </div>
+      </section>
+      <div className="mt-8 flex items-center gap-2 text-xs text-[var(--ardor-ink-3)]"><ShieldCheck className="size-4" />密钥仅显示末四位；管理员不读取用户内容。</div>
+    </PageBody>
+  </AppShell>;
+}

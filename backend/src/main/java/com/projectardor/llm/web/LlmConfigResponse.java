@@ -8,7 +8,9 @@ public record LlmConfigResponse(
         LlmProvider provider,
         String baseUrl,
         String model,
-        String keyHint) {
+        String keyHint,
+        String configurationSource,
+        boolean personalOverride) {
 
     public static LlmConfigResponse configured(LlmProviderConfig config) {
         return new LlmConfigResponse(
@@ -16,7 +18,11 @@ public record LlmConfigResponse(
                 config.getProvider(),
                 config.getBaseUrl(),
                 config.getModel(),
-                config.getKeyHint());
+                config.getKeyHint(), "PERSONAL", true);
+    }
+
+    public static LlmConfigResponse inherited(LlmProvider provider, String baseUrl, String model, String keyHint) {
+        return new LlmConfigResponse(true, provider, baseUrl, model, keyHint, "ADMIN", false);
     }
 
     public static LlmConfigResponse unconfigured() {
@@ -25,6 +31,6 @@ public record LlmConfigResponse(
                 LlmProvider.OPENAI_COMPATIBLE,
                 "https://api.openai.com/v1",
                 "gpt-4.1-mini",
-                null);
+                null, "NONE", false);
     }
 }

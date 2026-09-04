@@ -57,6 +57,8 @@ management:
         enabled: true
 
 app:
+  admin:
+    emails: ${ARDOR_ADMIN_EMAILS:}
   http:
     proxy-host: ${ARDOR_HTTP_PROXY_HOST:}
     proxy-port: ${ARDOR_HTTP_PROXY_PORT:0}
