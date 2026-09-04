@@ -14,7 +14,11 @@ Phase 2 已实现 BCrypt（cost 12）、Cookie CSRF Token、会话固定攻击�
 
 ### Java 21 与版本线
 
-后端固定 Java 21，使用 Spring Boot 4.1.1 与 LangChain4j 1.19.0。Agent 采用 LangChain4j AI Services、Chat Memory 和 Tool Calling；每次调用根据当前用户的 OpenAI Compatible 或 Anthropic Compatible 配置动态构建模型。简历分析与面试内部的结构化 LLM 调用仍通过稳定的 `LlmGateway` 边界执行。每位用户的 API Key 以 AES-256-GCM 加密，用户 UUID 作为附加认证数据；接口只返回尾号提示。
+后端固定 Java 21，使用 Spring Boot 4.1.1 与 LangChain4j 1.19.0。Agent 采用 LangChain4j AI Services、Chat Memory 和 Tool Calling；运行时先解析用户个人配置，没有个人配置时回退到管理员设置的系统默认。简历分析、面经与面试内部的结构化 LLM 调用仍通过稳定的 `LlmGateway` 边界执行。个人和系统 API Key 均以 AES-256-GCM 加密，接口只返回尾号提示。
+
+### 管理边界
+
+`/api/admin/**` 在服务端要求 `ROLE_ADMIN`。管理员可维护系统 API 默认值、用户角色和账户状态，并查看不含正文的聚合数量；工作台不提供读取用户消息、简历正文、面经正文或知识库正文的接口。初始管理员由 `ARDOR_ADMIN_EMAILS` 提升，避免在代码或 migration 中写死账户。
 
 ### Agent 与业务分层
 

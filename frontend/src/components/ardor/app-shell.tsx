@@ -1,13 +1,14 @@
 "use client";
 
 import {
-  BookOpenText, CalendarRange, FileText, Layers, MessageSquare, PanelLeft, Settings, SquareStack, X,
+  BookOpenText, CalendarRange, FileText, Layers, MessageSquare, PanelLeft, Settings, ShieldCheck, SquareStack, X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import styles from "./app-shell.module.css";
 
 /* The record: every durable thing Ardor keeps, addressed by series.
@@ -38,7 +39,12 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
+  const [admin, setAdmin] = React.useState(false);
   const close = React.useCallback(() => setOpen(false), []);
+
+  React.useEffect(() => {
+    api<{ admin: boolean }>("/api/auth/me").then((user) => setAdmin(user.admin)).catch(() => undefined);
+  }, []);
 
   return (
     <div className={cn(styles.shell, "flex h-dvh overflow-hidden bg-[var(--ardor-surface)] text-[var(--ardor-ink)]")}>
@@ -125,6 +131,21 @@ export function AppShell({
               </Link>
             );
           })}
+
+          {admin && <Link
+            href="/app/admin"
+            onClick={close}
+            aria-current={pathname.startsWith("/app/admin") ? "page" : undefined}
+            className={cn(
+              "relative mt-1 flex items-center gap-2.5 rounded-[var(--ardor-radius-sm)] py-1.5 pl-3.5 pr-2 text-[0.84375rem] transition-colors",
+              pathname.startsWith("/app/admin")
+                ? "bg-[var(--ardor-rail-active)] text-[var(--ardor-rail-ink)]"
+                : "text-[var(--ardor-rail-ink-2)] hover:bg-[var(--ardor-rail-hover)] hover:text-[var(--ardor-rail-ink)]",
+            )}
+          >
+            <ShieldCheck className="size-4 shrink-0 text-[var(--ardor-rail-ink-3)]" aria-hidden />
+            管理
+          </Link>}
 
           <Link
             href="/app/settings"

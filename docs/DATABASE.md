@@ -14,9 +14,10 @@
 
 | 表 | 用户归属 | 作用 | 关键关系或约束 |
 | --- | --- | --- | --- |
-| `users` | 自身 | 登录主体与账户状态 | email 唯一；只存密码摘要 |
+| `users` | 自身 | 登录主体、账户状态与 USER / ADMIN 角色 | email 唯一；只存密码摘要 |
 | `user_profiles` | `user_id` | 展示信息、目标岗位、偏好 | 每用户至多一条 |
 | `llm_provider_configs` | `user_id` | 用户自备模型服务和加密 API Key | 每用户至多一条；只存密文、IV 和尾号提示 |
+| `system_api_configs` | 系统 | 管理员配置的全局 API 默认值 | 每种服务至多一条；密钥只存密文、IV 和尾号提示 |
 | `resumes` | `user_id` | 文件元数据、解析文本与解析状态 | 按用户和创建时间索引 |
 | `resume_analyses` | `user_id` | 可复用的结构化分析 | 关联同一用户的 resume |
 | `conversations` | `user_id` | 可持续的 Agent 会话和上下文 | active / archived |

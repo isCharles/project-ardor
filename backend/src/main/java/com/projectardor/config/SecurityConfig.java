@@ -37,6 +37,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health", "/api/health", "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())

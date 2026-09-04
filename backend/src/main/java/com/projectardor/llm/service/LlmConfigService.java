@@ -1,6 +1,7 @@
 package com.projectardor.llm.service;
 
 import java.util.UUID;
+import java.util.Locale;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +13,7 @@ import com.projectardor.llm.security.ApiKeyCipher;
 import com.projectardor.llm.web.LlmConfigResponse;
 import com.projectardor.llm.web.LlmConfigUpdateRequest;
 import com.projectardor.common.security.ExternalBaseUrlPolicy;
+import com.projectardor.admin.service.SystemApiConfigService;
 
 @Service
 public class LlmConfigService {
@@ -19,27 +21,38 @@ public class LlmConfigService {
     private final LlmProviderConfigRepository repository;
     private final ApiKeyCipher cipher;
     private final ExternalBaseUrlPolicy externalBaseUrlPolicy;
+    private final SystemApiConfigService systemConfigService;
 
     public LlmConfigService(
             LlmProviderConfigRepository repository,
             ApiKeyCipher cipher,
-            ExternalBaseUrlPolicy externalBaseUrlPolicy) {
+            ExternalBaseUrlPolicy externalBaseUrlPolicy,
+            SystemApiConfigService systemConfigService) {
         this.repository = repository;
         this.cipher = cipher;
         this.externalBaseUrlPolicy = externalBaseUrlPolicy;
+        this.systemConfigService = systemConfigService;
     }
 
     @Transactional(readOnly = true)
     public LlmConfigResponse get(UUID userId) {
         return repository.findByUserId(userId)
                 .map(LlmConfigResponse::configured)
-                .orElseGet(LlmConfigResponse::unconfigured);
+                .orElseGet(() -> systemConfigService.view(com.projectardor.admin.domain.SystemApiServiceType.PRIMARY_LLM)
+                        .map(view -> LlmConfigResponse.inherited(
+                                LlmProvider.valueOf(view.provider().strip().toUpperCase(Locale.ROOT)),
+                                view.baseUrl(), view.model(), view.keyHint()))
+                        .orElseGet(LlmConfigResponse::unconfigured));
     }
 
     @Transactional(readOnly = true)
     public LlmRuntimeConfig getRuntimeConfig(UUID userId) {
-        LlmProviderConfig config = repository.findByUserId(userId)
-                .orElseThrow(() -> new IllegalStateException("请先配置 LLM 服务和 API Key"));
+        var personal = repository.findByUserId(userId);
+        if (personal.isEmpty()) {
+            return systemConfigService.primaryLlm()
+                    .orElseThrow(() -> new IllegalStateException("管理员尚未配置 LLM，您也可以在设置中添加个人配置"));
+        }
+        LlmProviderConfig config = personal.get();
         String apiKey = cipher.decrypt(
                 userId,
                 config.getEncryptedApiKey(),
@@ -55,9 +68,13 @@ public class LlmConfigService {
     public LlmRuntimeConfig runtimeConfigForTest(UUID userId, LlmConfigUpdateRequest request) {
         String apiKey = request.apiKey() == null ? "" : request.apiKey().strip();
         if (apiKey.isBlank()) {
-            LlmProviderConfig existing = repository.findByUserId(userId)
-                    .orElseThrow(() -> new IllegalArgumentException("请填写 API Key 后再测试连接"));
-            apiKey = cipher.decrypt(userId, existing.getEncryptedApiKey(), existing.getApiKeyIv());
+            var existing = repository.findByUserId(userId);
+            if (existing.isPresent()) {
+                apiKey = cipher.decrypt(userId, existing.get().getEncryptedApiKey(), existing.get().getApiKeyIv());
+            } else {
+                apiKey = systemConfigService.primaryLlm().map(LlmRuntimeConfig::apiKey)
+                        .orElseThrow(() -> new IllegalArgumentException("请填写 API Key 后再测试连接"));
+            }
         }
         return new LlmRuntimeConfig(
                 request.provider(), normalizeBaseUrl(request.baseUrl()), request.model().strip(), apiKey);

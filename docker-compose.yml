@@ -46,6 +46,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       ARDOR_ENCRYPTION_KEY: ${ARDOR_ENCRYPTION_KEY:?ARDOR_ENCRYPTION_KEY must be set}
+      ARDOR_ADMIN_EMAILS: ${ARDOR_ADMIN_EMAILS:-}
       # Off by default: user-supplied Base URLs must resolve to public addresses, so a
       # tenant cannot point the server at the internal network. Turn on only for local
       # development against a self-hosted model (Ollama, LM Studio, a local embedding server).

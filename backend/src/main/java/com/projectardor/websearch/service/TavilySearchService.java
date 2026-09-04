@@ -32,11 +32,15 @@ public class TavilySearchService {
     }
 
     public WebSearchTestResponse test(UUID userId, WebSearchConfigRequest request) {
+        return testApiKey(configService.apiKeyForTest(userId, request));
+    }
+
+    public WebSearchTestResponse testApiKey(String apiKey) {
         long startedAt = System.nanoTime();
         try {
             TavilyUsageResponse response = client.get()
                     .uri("/usage")
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + configService.apiKeyForTest(userId, request))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
                     .retrieve()
                     .body(TavilyUsageResponse.class);
             if (response == null || response.key() == null) {

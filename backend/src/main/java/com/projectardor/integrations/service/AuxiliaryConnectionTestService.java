@@ -31,6 +31,10 @@ public class AuxiliaryConnectionTestService {
             AuxiliaryApiConfigRequest request) {
         AuxiliaryApiConfigService.AuxiliaryRuntimeConfig config =
                 configService.runtimeConfigForTest(userId, serviceType, request);
+        return test(config);
+    }
+
+    public AuxiliaryConnectionTestResponse test(AuxiliaryApiConfigService.AuxiliaryRuntimeConfig config) {
         long startedAt = System.nanoTime();
         try {
             restClientBuilder.clone().baseUrl(config.baseUrl()).build().get()

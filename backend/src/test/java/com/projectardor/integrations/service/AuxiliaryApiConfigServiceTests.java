@@ -17,18 +17,25 @@ import com.projectardor.integrations.domain.AuxiliaryServiceType;
 import com.projectardor.integrations.repository.AuxiliaryApiConfigRepository;
 import com.projectardor.integrations.web.AuxiliaryApiConfigRequest;
 import com.projectardor.llm.security.ApiKeyCipher;
+import com.projectardor.admin.service.SystemApiConfigService;
+import com.projectardor.admin.domain.SystemApiServiceType;
+import com.projectardor.admin.web.AdminApiConfigResponse;
 
 class AuxiliaryApiConfigServiceTests {
 
     private final AuxiliaryApiConfigRepository repository = mock(AuxiliaryApiConfigRepository.class);
     private final ApiKeyCipher cipher = new ApiKeyCipher("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
+    private final SystemApiConfigService systemConfigService = mock(SystemApiConfigService.class);
     private final AuxiliaryApiConfigService service = new AuxiliaryApiConfigService(
-            repository, cipher, new com.projectardor.common.security.ExternalBaseUrlPolicy(true));
+            repository, cipher, new com.projectardor.common.security.ExternalBaseUrlPolicy(true), systemConfigService);
 
     @Test
     void listsEveryReservedServiceEvenBeforeConfiguration() {
         UUID userId = UUID.randomUUID();
         when(repository.findAllByUserId(userId)).thenReturn(List.of());
+        java.util.Arrays.stream(AuxiliaryServiceType.values()).forEach(type ->
+                when(systemConfigService.view(com.projectardor.admin.domain.SystemApiServiceType.valueOf(type.name())))
+                        .thenReturn(Optional.empty()));
 
         var result = service.list(userId);
 
@@ -83,5 +90,24 @@ class AuxiliaryApiConfigServiceTests {
                 new AuxiliaryApiConfigRequest("OpenAI", "https://api.example.com", "tts-model", ""));
 
         assertThat(runtime.apiKey()).isEqualTo("saved-secret");
+    }
+
+    @Test
+    void inheritsAdministratorDefaultWithoutCreatingPersonalConfig() {
+        UUID userId = UUID.randomUUID();
+        when(repository.findAllByUserId(userId)).thenReturn(List.of());
+        java.util.Arrays.stream(AuxiliaryServiceType.values()).forEach(type ->
+                when(systemConfigService.view(SystemApiServiceType.valueOf(type.name())))
+                        .thenReturn(Optional.empty()));
+        when(systemConfigService.view(SystemApiServiceType.EMBEDDING)).thenReturn(Optional.of(
+                new AdminApiConfigResponse(SystemApiServiceType.EMBEDDING, true, "OpenAI",
+                        "https://api.example.com", "embed-model", "••••1234", null)));
+
+        var embedding = service.list(userId).stream()
+                .filter(item -> item.serviceType() == AuxiliaryServiceType.EMBEDDING)
+                .findFirst().orElseThrow();
+
+        assertThat(embedding.configurationSource()).isEqualTo("ADMIN");
+        assertThat(embedding.personalOverride()).isFalse();
     }
 }
