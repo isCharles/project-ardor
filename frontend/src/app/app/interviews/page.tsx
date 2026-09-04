@@ -1,17 +1,19 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, MessageSquareText, Play, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { VoiceAnswerRecorder } from "@/components/interview/voice-answer-recorder";
 import { ApiError, api } from "@/lib/api";
 
 type ResumeItem = { id: string; originalFilename: string; analysisId: string | null };
 type Session = {
   id: string;
   resumeAnalysisId: string | null;
+  modality: "TEXT" | "VOICE";
   targetCompany: string | null;
   targetRole: string;
   status: "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "CREATED";
@@ -46,6 +48,8 @@ export default function InterviewsPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [answerText, setAnswerText] = useState("");
   const [selectedAnalysisId, setSelectedAnalysisId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -93,11 +97,14 @@ export default function InterviewsPage() {
         method: "POST",
         body: JSON.stringify({
           resumeAnalysisId: data.get("resumeAnalysisId") || null,
+          modality: data.get("modality"),
           targetCompany: data.get("targetCompany"),
           targetRole: data.get("targetRole"),
           questionCount: Number(data.get("questionCount")),
         }),
       });
+      setActiveSession(session);
+      setAnswerText("");
       setProgress(await api<Progress>(`/api/interviews/${session.id}/next-question`));
       await loadLists();
     } catch (reason) {
@@ -107,6 +114,8 @@ export default function InterviewsPage() {
 
   async function openSession(session: Session) {
     setBusy(true); setError(""); setEvaluation(null);
+    setActiveSession(session);
+    setAnswerText("");
     try {
       if (session.status === "COMPLETED") {
         setProgress(null);
@@ -125,18 +134,16 @@ export default function InterviewsPage() {
   async function submitAnswer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!progress?.nextQuestion) return;
-    const form = event.currentTarget;
-    const data = new FormData(form);
     setBusy(true); setError("");
     try {
       setProgress(await api<Progress>(`/api/interviews/${progress.sessionId}/answers`, {
         method: "POST",
         body: JSON.stringify({
           questionId: progress.nextQuestion.id,
-          answerText: data.get("answerText"),
+          answerText,
         }),
       }));
-      form.reset();
+      setAnswerText("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "提交答案失败");
     } finally { setBusy(false); }
@@ -161,6 +168,7 @@ export default function InterviewsPage() {
     try {
       await api<void>(`/api/interviews/${session.id}`, { method: "DELETE" });
       if (progress?.sessionId === session.id) setProgress(null);
+      if (activeSession?.id === session.id) setActiveSession(null);
       setEvaluation(null);
       await loadLists();
     } catch (reason) {
@@ -184,6 +192,13 @@ export default function InterviewsPage() {
           <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
             <div className="flex items-center gap-3"><Play className="size-5 text-primary" /><h2 className="text-xl font-semibold">创建面试</h2></div>
             <form className="mt-6 space-y-4" onSubmit={createInterview}>
+              <fieldset>
+                <legend className="text-sm font-medium">面试方式</legend>
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  <label className="flex cursor-pointer items-center gap-3 rounded-2xl border bg-white/70 p-4 transition has-[:checked]:border-violet-400 has-[:checked]:bg-violet-50"><input type="radio" name="modality" value="TEXT" defaultChecked className="sr-only" /><Keyboard className="size-4" /><span className="text-sm font-medium">文字</span></label>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-2xl border bg-white/70 p-4 transition has-[:checked]:border-violet-400 has-[:checked]:bg-violet-50"><input type="radio" name="modality" value="VOICE" className="sr-only" /><Mic className="size-4" /><span className="text-sm font-medium">语音</span></label>
+                </div>
+              </fieldset>
               <label className="block text-sm font-medium">简历分析<select className="field mt-2" name="resumeAnalysisId" value={selectedAnalysisId} onChange={(event) => setSelectedAnalysisId(event.target.value)}><option value="">不使用简历</option>{resumes.map((resume) => <option key={resume.id} value={resume.analysisId ?? ""}>{resume.originalFilename}</option>)}</select></label>
               <label className="block text-sm font-medium">目标公司<input className="field mt-2" name="targetCompany" maxLength={160} placeholder="例如：字节跳动（可选）" /></label>
               <label className="block text-sm font-medium">目标岗位<input className="field mt-2" name="targetRole" maxLength={160} required placeholder="例如：Java 后端工程师" /></label>
@@ -196,7 +211,7 @@ export default function InterviewsPage() {
             <h2 className="text-xl font-semibold">历史面试</h2>
             <div className="mt-5 space-y-3">
               {sessions.length === 0 && <p className="text-sm text-muted-foreground">还没有模拟面试。</p>}
-              {sessions.map((session) => <div key={session.id} className="flex items-stretch gap-2"><button className="min-w-0 flex-1 rounded-2xl border p-4 text-left transition hover:bg-muted" onClick={() => openSession(session)} disabled={busy}><span className="block truncate font-medium">{session.targetCompany ? `${session.targetCompany} · ` : ""}{session.targetRole}</span><span className="mt-1 block text-xs text-muted-foreground">{session.status === "COMPLETED" ? "已完成" : session.status === "CANCELLED" ? "已取消" : "进行中"}</span></button><button aria-label={`删除 ${session.targetRole}`} title="永久删除" className="rounded-2xl border px-3 text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" onClick={() => void deleteInterview(session)} disabled={busy}><Trash2 className="size-4" /></button></div>)}
+              {sessions.map((session) => <div key={session.id} className="flex items-stretch gap-2"><button className="min-w-0 flex-1 rounded-2xl border p-4 text-left transition hover:bg-muted" onClick={() => openSession(session)} disabled={busy}><span className="block truncate font-medium">{session.targetCompany ? `${session.targetCompany} · ` : ""}{session.targetRole}</span><span className="mt-1 block text-xs text-muted-foreground">{session.modality === "VOICE" ? "语音" : "文字"} · {session.status === "COMPLETED" ? "已完成" : session.status === "CANCELLED" ? "已取消" : "进行中"}</span></button><button aria-label={`删除 ${session.targetRole}`} title="永久删除" className="rounded-2xl border px-3 text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" onClick={() => void deleteInterview(session)} disabled={busy}><Trash2 className="size-4" /></button></div>)}
             </div>
           </section>
         </div>
@@ -209,7 +224,8 @@ export default function InterviewsPage() {
             <h3 className="mt-3 text-2xl font-semibold leading-9">{progress.nextQuestion.questionText}</h3>
             <p className="mt-3 text-sm text-muted-foreground">已回答 {progress.answeredCount} / {progress.totalQuestions}</p>
             <form className="mt-6 space-y-4" onSubmit={submitAnswer}>
-              <textarea className="field min-h-44 resize-y" name="answerText" maxLength={20000} required placeholder="像真实面试一样作答，建议说明思路、取舍和结果。" />
+              {activeSession?.modality === "VOICE" && <VoiceAnswerRecorder key={progress.nextQuestion.id} sessionId={progress.sessionId} questionId={progress.nextQuestion.id} disabled={busy} onTranscript={setAnswerText} onError={setError} />}
+              <textarea className="field min-h-44 resize-y" name="answerText" maxLength={20000} required value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder={activeSession?.modality === "VOICE" ? "转写结果会出现在这里，可修改后提交。" : "像真实面试一样作答，建议说明思路、取舍和结果。"} />
               <Button disabled={busy}><Send className="mr-2 size-4" />{busy ? "提交中…" : "提交并进入下一题"}</Button>
             </form>
           </div>}

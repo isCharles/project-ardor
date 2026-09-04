@@ -18,6 +18,7 @@ import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.interview.domain.InterviewAnswer;
 import com.projectardor.interview.domain.InterviewEvaluation;
+import com.projectardor.interview.domain.InterviewModality;
 import com.projectardor.interview.domain.InterviewQuestion;
 import com.projectardor.interview.domain.InterviewSession;
 import com.projectardor.interview.domain.InterviewStatus;
@@ -83,6 +84,17 @@ public class InterviewService {
             String targetCompany,
             String targetRole,
             int questionCount) {
+        return create(userId, resumeAnalysisId, InterviewModality.TEXT,
+                targetCompany, targetRole, questionCount);
+    }
+
+    public InterviewSession create(
+            UUID userId,
+            UUID resumeAnalysisId,
+            InterviewModality modality,
+            String targetCompany,
+            String targetRole,
+            int questionCount) {
         if (questionCount < 3 || questionCount > 10) {
             throw new IllegalArgumentException("面试题数量必须在 3 到 10 之间");
         }
@@ -113,7 +125,7 @@ public class InterviewService {
 
         return transactions.execute(status -> {
             InterviewSession session = sessionRepository.save(InterviewSession.create(
-                    userId, resumeAnalysisId, normalizedCompany, normalizedRole));
+                    userId, resumeAnalysisId, modality, normalizedCompany, normalizedRole));
             List<InterviewQuestion> questions = new ArrayList<>();
             for (int index = 0; index < drafts.size(); index++) {
                 QuestionDraft draft = drafts.get(index);
@@ -148,6 +160,13 @@ public class InterviewService {
                 .findFirst()
                 .orElse(null);
         return new InterviewProgress(session, next, answers.size(), questions.size());
+    }
+
+    @Transactional(readOnly = true)
+    public InterviewQuestion getQuestion(UUID userId, UUID sessionId, UUID questionId) {
+        get(userId, sessionId);
+        return questionRepository.findByIdAndUserIdAndInterviewSessionId(questionId, userId, sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("面试题不存在"));
     }
 
     @Transactional

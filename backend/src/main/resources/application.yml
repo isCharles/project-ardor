@@ -64,6 +64,8 @@ app:
     proxy-port: ${ARDOR_HTTP_PROXY_PORT:0}
     connect-timeout: ${ARDOR_HTTP_CONNECT_TIMEOUT:10s}
     read-timeout: ${ARDOR_HTTP_READ_TIMEOUT:120s}
+  speech:
+    default-voice: ${ARDOR_TTS_VOICE:alloy}
   security:
     api-key-encryption-key: ${ARDOR_ENCRYPTION_KEY}
     allow-private-api-base-urls: ${ARDOR_ALLOW_PRIVATE_API_BASE_URLS:false}

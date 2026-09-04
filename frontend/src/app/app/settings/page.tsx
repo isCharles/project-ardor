@@ -35,8 +35,8 @@ type InlineFeedback = { kind: "pending" | "success" | "error"; message: string }
 
 const integrationDetails = {
   EMBEDDING: { title: "向量模型", description: "为语义检索和长期记忆预留。", icon: Database },
-  ASR: { title: "语音识别 ASR", description: "为音频转文字与面试转写预留。", icon: Mic },
-  TTS: { title: "语音合成 TTS", description: "为语音回复与模拟面试预留。", icon: Volume2 },
+  ASR: { title: "语音识别 ASR", description: "用于语音面试的回答转写。", icon: Mic },
+  TTS: { title: "语音合成 TTS", description: "用于朗读语音面试题目。", icon: Volume2 },
   FALLBACK_LLM: { title: "备用 LLM", description: "为主模型不可用时的降级线路预留。", icon: Bot },
 } satisfies Record<AuxiliaryServiceType, { title: string; description: string; icon: typeof Database }>;
 
@@ -310,7 +310,7 @@ export default function SettingsPage() {
 
         <section className="ardor-panel rounded-[2rem] p-6 md:p-8 lg:col-span-2">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div><div className="flex items-center gap-3"><KeyRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">未来能力</h2></div><p className="mt-2 text-sm text-muted-foreground">先保存接入信息，后续启用时无需重新配置账户。</p></div>
+            <div><div className="flex items-center gap-3"><KeyRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">模型与语音服务</h2></div><p className="mt-2 text-sm text-muted-foreground">默认继承管理员配置，也可以单独覆盖。</p></div>
             <span className="rounded-full border border-stone-200 bg-white/60 px-3 py-1 text-xs font-medium text-stone-600">预留 · 尚未被 Agent 调用</span>
           </div>
           <div className="mt-7 grid gap-4 md:grid-cols-2">

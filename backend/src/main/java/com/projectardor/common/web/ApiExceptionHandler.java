@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import com.projectardor.auth.service.DuplicateEmailException;
 import com.projectardor.common.security.ExternalHostResolutionException;
 import com.projectardor.llm.service.LlmCallException;
+import com.projectardor.speech.service.SpeechCallException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -48,7 +49,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
     ApiError uploadTooLarge() {
-        return new ApiError("FILE_TOO_LARGE", "简历文件不能超过 10 MB");
+        return new ApiError("FILE_TOO_LARGE", "上传文件或单段录音不能超过 10 MB");
     }
 
     @ExceptionHandler(ExternalHostResolutionException.class)
@@ -66,6 +67,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(LlmCallException.class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
     ApiError llmCall(LlmCallException exception) {
+        return new ApiError(exception.getCode(), exception.getMessage(), exception.isRetryable());
+    }
+
+    @ExceptionHandler(SpeechCallException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    ApiError speechCall(SpeechCallException exception) {
         return new ApiError(exception.getCode(), exception.getMessage(), exception.isRetryable());
     }
 
