@@ -27,6 +27,7 @@ public record AdminApiConfigResponse(
     private static String defaultProvider(SystemApiServiceType type) {
         return switch (type) {
             case PRIMARY_LLM -> "OPENAI_COMPATIBLE";
+            case ASR, TTS -> "DASHSCOPE";
             case FALLBACK_LLM -> "OpenAI";
             case WEB_SEARCH -> "Tavily";
             default -> "OpenAI";
@@ -34,10 +35,20 @@ public record AdminApiConfigResponse(
     }
 
     private static String defaultBaseUrl(SystemApiServiceType type) {
-        return type == SystemApiServiceType.WEB_SEARCH ? "https://api.tavily.com" : "https://api.openai.com/v1";
+        return switch (type) {
+            case WEB_SEARCH -> "https://api.tavily.com";
+            case ASR -> "https://dashscope.aliyuncs.com/compatible-mode/v1";
+            case TTS -> "https://dashscope.aliyuncs.com/api/v1";
+            default -> "https://api.openai.com/v1";
+        };
     }
 
     private static String defaultModel(SystemApiServiceType type) {
-        return type == SystemApiServiceType.PRIMARY_LLM ? "gpt-4.1-mini" : "";
+        return switch (type) {
+            case PRIMARY_LLM -> "gpt-4.1-mini";
+            case ASR -> "qwen3-asr-flash";
+            case TTS -> "qwen3-tts-flash";
+            default -> "";
+        };
     }
 }

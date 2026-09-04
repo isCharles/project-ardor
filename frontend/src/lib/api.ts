@@ -60,6 +60,22 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
+export async function blobApi(path: string, init: RequestInit = {}): Promise<Blob> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const headers = new Headers(init.headers);
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    Object.entries(await csrfHeaders()).forEach(([name, value]) => headers.set(name, value));
+  }
+  const response = await fetch(path, {
+    ...init,
+    headers,
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!response.ok) throw new ApiError(response.status, await parseBody(response));
+  return response.blob();
+}
+
 export async function streamApi<T>(
   path: string,
   body: unknown,

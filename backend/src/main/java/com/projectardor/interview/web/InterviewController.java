@@ -35,7 +35,7 @@ public class InterviewController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody CreateInterviewRequest request) {
         return InterviewSessionResponse.from(interviewService.create(
-                principal.userId(), request.resumeAnalysisId(), request.targetCompany(),
+                principal.userId(), request.resumeAnalysisId(), request.resolvedModality(), request.targetCompany(),
                 request.targetRole(), request.resolvedQuestionCount()));
     }
 

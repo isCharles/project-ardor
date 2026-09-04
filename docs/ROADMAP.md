@@ -79,4 +79,6 @@
 
 ## 暂不排期
 
-语音、搜索、RAG、pgvector、Google Calendar、Multi-Agent 和 LangGraph 只有在 V0.1 Golden Path 完成并出现真实需求后再评估。Redis 已因持久登录需求提前引入，目前不承担通用缓存或任务队列。
+语音面试已先落地轮次式 MVP；逐帧流式 ASR、实时打断和 WebRTC Speech-to-Speech
+在基础链路稳定后再推进。Google Calendar、Multi-Agent 和 LangGraph 仍需在出现真实需求后评估。
+Redis 已因持久登录需求提前引入，目前不承担语音数据传输或通用任务队列。

@@ -29,11 +29,16 @@ public class InterviewSession {
 
     protected InterviewSession() {}
 
-    private InterviewSession(UUID userId, UUID resumeAnalysisId, String targetCompany, String targetRole) {
+    private InterviewSession(
+            UUID userId,
+            UUID resumeAnalysisId,
+            InterviewModality modality,
+            String targetCompany,
+            String targetRole) {
         this.id = UUID.randomUUID();
         this.userId = userId;
         this.resumeAnalysisId = resumeAnalysisId;
-        this.modality = InterviewModality.TEXT;
+        this.modality = modality;
         this.targetCompany = targetCompany;
         this.targetRole = targetRole;
         this.status = InterviewStatus.IN_PROGRESS;
@@ -42,7 +47,17 @@ public class InterviewSession {
 
     public static InterviewSession create(
             UUID userId, UUID resumeAnalysisId, String targetCompany, String targetRole) {
-        return new InterviewSession(userId, resumeAnalysisId, targetCompany, targetRole);
+        return create(userId, resumeAnalysisId, InterviewModality.TEXT, targetCompany, targetRole);
+    }
+
+    public static InterviewSession create(
+            UUID userId,
+            UUID resumeAnalysisId,
+            InterviewModality modality,
+            String targetCompany,
+            String targetRole) {
+        if (modality == null) throw new IllegalArgumentException("面试方式不能为空");
+        return new InterviewSession(userId, resumeAnalysisId, modality, targetCompany, targetRole);
     }
 
     public void complete() {
