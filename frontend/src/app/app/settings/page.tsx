@@ -59,6 +59,7 @@ export default function SettingsPage() {
   const [testingIntegrations, setTestingIntegrations] = useState<Partial<Record<AuxiliaryServiceType, boolean>>>({});
   const [savingIntegrations, setSavingIntegrations] = useState<Partial<Record<AuxiliaryServiceType, boolean>>>({});
   const [integrationFeedback, setIntegrationFeedback] = useState<Partial<Record<AuxiliaryServiceType, InlineFeedback>>>({});
+  const [showPersonalApis, setShowPersonalApis] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -253,6 +254,9 @@ export default function SettingsPage() {
 
   if (loading) return <main className="ardor-workbench grid min-h-screen place-items-center text-muted-foreground">正在载入设置…</main>;
   if (!user || !profile || !llm || !webSearch || !integrations) return <main className="ardor-workbench grid min-h-screen place-items-center px-6 text-red-700">{error || "设置不可用"}</main>;
+  const allApiConfigs = [llm, webSearch, ...integrations];
+  const personalApiCount = allApiConfigs.filter((item) => item.personalOverride).length;
+  const inheritedApiCount = allApiConfigs.filter((item) => item.configurationSource === "ADMIN").length;
 
   return (
     <main className="ardor-workbench min-h-screen px-5 py-6 md:px-10 md:py-8">
@@ -277,6 +281,20 @@ export default function SettingsPage() {
           </form>
         </section>
 
+        {!showPersonalApis ? <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
+          <div className="flex items-center gap-3"><KeyRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">API 服务</h2></div>
+          <div className="mt-8 rounded-[1.5rem] bg-gradient-to-br from-orange-50 to-violet-50 p-5">
+            <p className="text-sm font-medium">由管理员统一提供</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">已接入 {inheritedApiCount} 项能力，你无需填写 API Key。</p>
+          </div>
+          {personalApiCount > 0 && <p className="mt-4 text-xs text-muted-foreground">当前另有 {personalApiCount} 项个人覆盖配置。</p>}
+          <Button type="button" variant="outline" className="mt-6" onClick={() => setShowPersonalApis(true)}>使用自己的 API</Button>
+        </section> : <>
+        <section className="flex items-center justify-between gap-4 lg:col-span-2">
+          <div><h2 className="text-xl font-semibold">个人 API</h2><p className="mt-1 text-sm text-muted-foreground">只覆盖你主动配置的能力，其余继续使用管理员默认。</p></div>
+          <Button type="button" variant="outline" onClick={() => setShowPersonalApis(false)}>收起</Button>
+        </section>
+
         <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
           <div className="flex items-center justify-between gap-4"><div className="flex items-center gap-3"><KeyRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">LLM 服务</h2></div>{llm.configured && <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"><CheckCircle2 className="size-3.5" />{llm.personalOverride ? "个人配置" : "管理员默认"} {llm.keyHint}</span>}</div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">Agent 使用 LangChain4j Tool Calling。模型必须支持工具调用；建议先测试连接，再保存配置。</p>
@@ -284,7 +302,7 @@ export default function SettingsPage() {
             <label className="block text-sm font-medium">API 协议<select className="field mt-2" name="provider" defaultValue={llm.provider}><option value="OPENAI_COMPATIBLE">OpenAI Compatible</option><option value="ANTHROPIC_COMPATIBLE">Anthropic Compatible</option></select></label>
             <label className="block text-sm font-medium">Base URL<input className="field mt-2 font-mono text-sm" type="url" name="baseUrl" defaultValue={llm.baseUrl} maxLength={512} required /><span className="mt-2 block text-xs font-normal leading-5 text-muted-foreground">DeepSeek 示例：OpenAI 填 https://api.deepseek.com；Anthropic 填 https://api.deepseek.com/anthropic。</span></label>
             <label className="block text-sm font-medium">模型名称<input className="field mt-2 font-mono text-sm" name="model" defaultValue={llm.model} maxLength={160} required /></label>
-            <label className="block text-sm font-medium">API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="off" placeholder={llm.personalOverride ? `当前个人 Key ${llm.keyHint}；输入新 Key 才会替换` : llm.configurationSource === "ADMIN" ? "留空测试管理员默认；填写后创建个人覆盖" : "首次配置必须填写"} /></label>
+            <label className="block text-sm font-medium">API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="new-password" data-1p-ignore data-lpignore="true" placeholder={llm.personalOverride ? `当前个人 Key ${llm.keyHint}；输入新 Key 才会替换` : llm.configurationSource === "ADMIN" ? "留空测试管理员默认；填写后创建个人覆盖" : "首次配置必须填写"} /></label>
             <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" disabled={testingLlm || savingLlm} onClick={testLlm}>{testingLlm ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Wifi className="mr-2 size-4" />}{testingLlm ? "正在测试…" : "测试连接"}</Button><Button disabled={testingLlm || savingLlm}>{savingLlm ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}{savingLlm ? "正在保存…" : "保存为个人配置"}</Button>{llm.personalOverride && <Button type="button" variant="outline" onClick={() => void restoreAdminDefault("llm")}><RotateCcw className="mr-2 size-4" />恢复管理员默认</Button>}</div>
             <FeedbackBanner feedback={llmFeedback} />
           </form>
@@ -297,7 +315,7 @@ export default function SettingsPage() {
           </div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">让 Agent 在遇到最新职位、公司、政策和新闻时主动查证。当前使用 Tavily，Key 只会加密保存。</p>
           <form className="mt-7 max-w-2xl space-y-5" onSubmit={saveWebSearch}>
-            <label className="block text-sm font-medium">Tavily API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="off" placeholder={webSearch.personalOverride ? `当前个人 Key ${webSearch.keyHint}；输入新 Key 才会替换` : webSearch.configurationSource === "ADMIN" ? "留空测试管理员默认；填写后创建个人覆盖" : "首次配置必须填写"} /></label>
+            <label className="block text-sm font-medium">Tavily API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="new-password" data-1p-ignore data-lpignore="true" placeholder={webSearch.personalOverride ? `当前个人 Key ${webSearch.keyHint}；输入新 Key 才会替换` : webSearch.configurationSource === "ADMIN" ? "留空测试管理员默认；填写后创建个人覆盖" : "首次配置必须填写"} /></label>
             <p className="rounded-2xl bg-stone-950/[0.04] px-4 py-3 text-xs leading-5 text-muted-foreground">测试只读取 Tavily Key 与账户用量，不执行搜索，不消耗 Search credit。</p>
             <div className="flex flex-wrap gap-3">
               <Button type="button" variant="outline" disabled={testingWebSearch || savingWebSearch} onClick={testWebSearch}>{testingWebSearch ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Wifi className="mr-2 size-4" />}{testingWebSearch ? "正在测试…" : "测试连接"}</Button>
@@ -327,7 +345,7 @@ export default function SettingsPage() {
                     <label className="block text-xs font-medium">服务商<input className="field mt-2 text-sm" name="provider" defaultValue={integration.provider} maxLength={120} required placeholder="例如 OpenAI" /></label>
                     <label className="block text-xs font-medium">模型<input className="field mt-2 font-mono text-sm" name="model" defaultValue={integration.model} maxLength={160} required placeholder="模型名称" /></label>
                     <label className="block text-xs font-medium sm:col-span-2">Base URL<input className="field mt-2 font-mono text-sm" type="url" name="baseUrl" defaultValue={integration.baseUrl} maxLength={512} required placeholder="https://api.example.com" /></label>
-                    <label className="block text-xs font-medium sm:col-span-2">API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="off" placeholder={integration.personalOverride ? `当前个人 Key ${integration.keyHint}；输入新 Key 才会替换` : integration.configurationSource === "ADMIN" ? "留空测试管理员默认；填写后创建个人覆盖" : "首次配置必须填写"} /></label>
+                    <label className="block text-xs font-medium sm:col-span-2">API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="new-password" data-1p-ignore data-lpignore="true" placeholder={integration.personalOverride ? `当前个人 Key ${integration.keyHint}；输入新 Key 才会替换` : integration.configurationSource === "ADMIN" ? "留空测试管理员默认；填写后创建个人覆盖" : "首次配置必须填写"} /></label>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button type="button" variant="outline" disabled={testingIntegrations[integration.serviceType] || savingIntegrations[integration.serviceType]} onClick={(event) => testIntegration(event, integration.serviceType)}>{testingIntegrations[integration.serviceType] ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Wifi className="mr-2 size-4" />}{testingIntegrations[integration.serviceType] ? "正在测试…" : "测试连接"}</Button>
@@ -340,6 +358,7 @@ export default function SettingsPage() {
             })}
           </div>
         </section>
+        </>}
       </div>
     </main>
   );

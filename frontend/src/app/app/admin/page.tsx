@@ -4,7 +4,7 @@ import { Activity, KeyRound, LoaderCircle, Save, Server, ShieldCheck, Trash2, Us
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { AppShell, PageBody } from "@/components/ardor/app-shell";
+import { AdminShell } from "@/components/ardor/admin-shell";
 import { ApiError, api } from "@/lib/api";
 
 type ServiceType = "PRIMARY_LLM" | "EMBEDDING" | "ASR" | "TTS" | "FALLBACK_LLM" | "WEB_SEARCH";
@@ -98,10 +98,10 @@ export default function AdminPage() {
     } finally { setBusy(""); }
   }
 
-  if (!overview) return <AppShell headerLeft={<span className="t-eyebrow">Admin</span>}><PageBody><div className="grid min-h-[50vh] place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--ardor-accent)]" /></div></PageBody></AppShell>;
+  if (!overview) return <AdminShell><div className="grid min-h-[60vh] place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--ardor-accent)]" /></div></AdminShell>;
 
-  return <AppShell headerLeft={<span className="t-eyebrow">Admin / System</span>}>
-    <PageBody>
+  return <AdminShell>
+    <div>
       <div className="mb-10 flex items-end justify-between gap-6">
         <div><p className="t-eyebrow text-[var(--ardor-accent)]">Control plane</p><h1 className="mt-2 text-4xl font-semibold tracking-[-0.045em]">管理工作台</h1></div>
         <div className="flex items-center gap-2 text-sm text-emerald-700"><Activity className="size-4" />系统在线</div>
@@ -109,11 +109,11 @@ export default function AdminPage() {
 
       {error && <p className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
 
-      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-rule)] md:grid-cols-4">
+      <section id="overview" className="scroll-mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-rule)] md:grid-cols-4">
         {Object.entries(overview.counts).map(([name, value]) => <div key={name} className="bg-[var(--ardor-panel)] p-5"><p className="text-xs text-[var(--ardor-ink-3)]">{countLabels[name] ?? name}</p><p className="mt-2 text-3xl font-semibold tabular-nums">{value.toLocaleString()}</p></div>)}
       </section>
 
-      <section className="mt-12">
+      <section id="api-configs" className="mt-12 scroll-mt-8">
         <div className="mb-5 flex items-center gap-3"><Server className="size-5 text-[var(--ardor-accent)]" /><h2 className="text-xl font-semibold">系统 API</h2><span className="text-sm text-[var(--ardor-ink-3)]">用户默认继承，也可个人覆盖</span></div>
         <div className="grid gap-4 lg:grid-cols-2">
           {services.map(({ type, label, note }) => {
@@ -126,14 +126,14 @@ export default function AdminPage() {
                 <input name="model" required defaultValue={config.model ?? ""} placeholder="模型名称" className="h-10 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-sm" />
                 <input name="baseUrl" required defaultValue={config.baseUrl ?? ""} placeholder="Base URL" className="h-10 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-sm sm:col-span-2" />
               </div>}
-              <div className="mt-3 flex gap-2"><div className="relative min-w-0 flex-1"><KeyRound className="absolute left-3 top-3 size-4 text-[var(--ardor-ink-3)]" /><input name="apiKey" type="password" required={!config.configured} autoComplete="off" placeholder={config.keyHint ? `当前已保存 ${config.keyHint}；输入新 Key 才会替换` : "API Key"} className="h-10 w-full rounded-xl border border-[var(--ardor-rule)] bg-transparent pl-9 pr-3 text-sm" /></div><button type="button" disabled={!!busy} onClick={(event) => { const form = event.currentTarget.form; if (form?.reportValidity()) void submitConfig(form, type, "test"); }} className="rounded-xl border border-[var(--ardor-rule)] px-3 text-sm">测试</button><button disabled={!!busy} className="grid size-10 place-items-center rounded-xl bg-[var(--ardor-ink)] text-white"><Save className="size-4" /></button></div>
+              <div className="mt-3 flex gap-2"><div className="relative min-w-0 flex-1"><KeyRound className="absolute left-3 top-3 size-4 text-[var(--ardor-ink-3)]" /><input name="apiKey" type="password" required={!config.configured} autoComplete="new-password" data-1p-ignore data-lpignore="true" placeholder={config.keyHint ? `当前已保存 ${config.keyHint}；输入新 Key 才会替换` : "API Key"} className="h-10 w-full rounded-xl border border-[var(--ardor-rule)] bg-transparent pl-9 pr-3 text-sm" /></div><button type="button" disabled={!!busy} onClick={(event) => { const form = event.currentTarget.form; if (form?.reportValidity()) void submitConfig(form, type, "test"); }} className="rounded-xl border border-[var(--ardor-rule)] px-3 text-sm">测试</button><button disabled={!!busy} className="grid size-10 place-items-center rounded-xl bg-[var(--ardor-ink)] text-white"><Save className="size-4" /></button></div>
               {state && <p className={`mt-3 text-xs ${state.kind === "error" ? "text-rose-600" : state.kind === "success" ? "text-emerald-700" : "text-[var(--ardor-ink-3)]"}`}>{state.message}</p>}
             </form>;
           })}
         </div>
       </section>
 
-      <section className="mt-12">
+      <section id="users" className="mt-12 scroll-mt-8">
         <div className="mb-5 flex items-center gap-3"><Users className="size-5 text-[var(--ardor-accent)]" /><h2 className="text-xl font-semibold">用户</h2><span className="text-sm text-[var(--ardor-ink-3)]">{users.length} 个账户</span></div>
         <div className="overflow-hidden rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-panel)]">
           {users.map((user, index) => <div key={user.id} className={`flex flex-col gap-3 p-4 md:flex-row md:items-center ${index ? "border-t border-[var(--ardor-rule)]" : ""}`}>
@@ -143,6 +143,6 @@ export default function AdminPage() {
         </div>
       </section>
       <div className="mt-8 flex items-center gap-2 text-xs text-[var(--ardor-ink-3)]"><ShieldCheck className="size-4" />密钥仅显示末四位；管理员不读取用户内容。</div>
-    </PageBody>
-  </AppShell>;
+    </div>
+  </AdminShell>;
 }

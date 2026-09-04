@@ -2,20 +2,18 @@
    The single place that holds color, type, space, radius and motion values.
    The principles these serve live in docs/DESIGN.md, and that document wins
    whenever a comment here disagrees with it.
-   Light is the base; dark redefines only the values, never the roles. */
+   Product workspaces are intentionally light; dark scenes must opt in at the
+   page level instead of following the operating-system theme. */
 
 :root {
   color-scheme: light;
 
-  /* --- Ground. The app is not one flat plane: a dark rail holds the
-         navigation, the content sits on warm paper beside it. --- */
-  /* These are the grounds the workspace currently uses, not a limit on the
-     product's palette: DESIGN.md §11 retired both "only charcoal, warm
-     white and ember" and the fixed dark-landing / light-workspace split,
-     and §4 allows ambient colour and gradient beyond these tokens.
-     The ember is the one value with a fixed job — happening now, connected,
-     next — so it never becomes wallpaper. */
-  --ardor-rail: #131110;          /* charcoal: the left rail and dark surfaces */
+  /* --- Ground. Workspace shells override the legacy rail tokens with their
+         light surfaces. The dark defaults remain only for explicit contrast
+         scenes on the public story page; they are not a product-shell rule. --- */
+  /* These are not a limit on the product palette. DESIGN.md §4 defines the
+     current white base and ambient colour direction. */
+  --ardor-rail: #131110;
   --ardor-rail-ink: #f2ede4;      /* warm white */
   --ardor-rail-ink-2: #9c948a;
   --ardor-rail-ink-3: #6b645d;
@@ -95,8 +93,9 @@
   --ardor-shell: 82rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+/* Dark presentation is explicit. It must never recolour the authenticated
+   workspace merely because Windows or the browser prefers a dark scheme. */
+.ardor-dark-page {
     color-scheme: dark;
 
     --ardor-rail: #0e0d0c;
@@ -140,7 +139,6 @@
     --ardor-shadow-overlay:
       0 1px 2px rgba(0, 0, 0, 0.4),
       0 16px 48px -12px rgba(0, 0, 0, 0.65);
-  }
 }
 
 @theme inline {
