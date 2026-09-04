@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  BookOpenText, CalendarRange, FileText, Layers, MessageSquare, PanelLeft, Settings, ShieldCheck, SquareStack, X,
+  BookOpenText, CalendarRange, FileText, Flame, Layers, MessageSquare, PanelLeft, Settings, ShieldCheck, SquareStack, X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -11,16 +11,13 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import styles from "./app-shell.module.css";
 
-/* The record: every durable thing Ardor keeps, addressed by series.
-   The letters are the same ones that index items inside each section,
-   so the navigation teaches the notation. */
-const RECORD = [
-  { href: "/app/resumes", label: "简历", series: "R", icon: FileText },
-  { href: "/app/interviews", label: "模拟面试", series: "I", icon: MessageSquare },
-  { href: "/app/recaps", label: "面经", series: "V", icon: Layers },
-  { href: "/app/cards", label: "记忆卡", series: "C", icon: SquareStack },
-  { href: "/app/knowledge", label: "知识库", series: "K", icon: BookOpenText },
-  { href: "/app/calendar", label: "日程", series: "T", icon: CalendarRange },
+const WORKSPACE_ITEMS = [
+  { href: "/app/resumes", label: "简历", icon: FileText },
+  { href: "/app/interviews", label: "模拟面试", icon: MessageSquare },
+  { href: "/app/recaps", label: "面经", icon: Layers },
+  { href: "/app/cards", label: "记忆卡", icon: SquareStack },
+  { href: "/app/knowledge", label: "知识库", icon: BookOpenText },
+  { href: "/app/calendar", label: "日程", icon: CalendarRange },
 ] as const;
 
 export function AppShell({
@@ -67,11 +64,8 @@ export function AppShell({
       >
         <div className={cn(styles.sidebarHeader, "flex h-16 shrink-0 items-center justify-between pl-4 pr-2")}>
           <Link href="/app" onClick={close} className={styles.workspaceBrand}>
-            <span className={styles.protocolMark} aria-hidden><span /><span /></span>
-            <span>
-              <strong>ARDOR</strong>
-              <small>CAREER OS / 04</small>
-            </span>
+            <span className={styles.brandMark} aria-hidden><Flame className="size-4" /></span>
+            <strong>Project Ardor</strong>
           </Link>
           <button
             aria-label="关闭导航"
@@ -85,9 +79,8 @@ export function AppShell({
         {aside && <div className="flex min-h-0 flex-1 flex-col">{aside}</div>}
         {!aside && <div className="flex-1" />}
 
-        <nav className={cn(styles.protocolNav, "shrink-0 border-t border-[var(--ardor-rail-rule)] p-2")} aria-label="记录">
-          <p className="t-eyebrow px-2 pb-1.5 pt-1 text-[var(--ardor-rail-ink-3)]">Protocols</p>
-          {RECORD.map((item) => {
+        <nav className="shrink-0 border-t border-[var(--ardor-rail-rule)] p-3" aria-label="工作台">
+          {WORKSPACE_ITEMS.map((item) => {
             const active = pathname.startsWith(item.href);
             return (
               <Link
@@ -96,38 +89,21 @@ export function AppShell({
                 onClick={close}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "group relative flex items-center gap-2.5 rounded-[var(--ardor-radius-sm)] py-1.5 pl-3.5 pr-2",
-                  "text-[0.84375rem] transition-colors duration-[var(--ardor-fast)]",
+                  styles.navItem,
+                  "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-[var(--ardor-fast)]",
                   active
-                    ? "bg-[var(--ardor-rail-active)] text-[var(--ardor-rail-ink)]"
+                    ? "bg-[var(--ardor-rail-active)] text-[var(--ardor-rail-ink)] shadow-sm"
                     : "text-[var(--ardor-rail-ink-2)] hover:bg-[var(--ardor-rail-hover)] hover:text-[var(--ardor-rail-ink)]",
                 )}
               >
-                {/* A short length of the thread marks where you are. */}
-                <span
-                  aria-hidden
-                  className={cn(
-                    "absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full transition-colors duration-[var(--ardor-fast)]",
-                    active ? "bg-[var(--ardor-rail-accent)]" : "bg-transparent",
-                  )}
-                />
                 <item.icon
                   className={cn(
-                    "size-4 shrink-0",
-                    active ? "text-[var(--ardor-rail-ink-2)]" : "text-[var(--ardor-rail-ink-3)]",
+                    "size-[1.05rem] shrink-0",
+                    active ? "text-[var(--ardor-accent)]" : "text-[var(--ardor-rail-ink-3)]",
                   )}
                   aria-hidden
                 />
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                <span
-                  className={cn(
-                    "ardor-index",
-                    active ? "text-[var(--ardor-rail-accent)]" : "text-[var(--ardor-rail-ink-3)]",
-                  )}
-                  aria-hidden
-                >
-                  {item.series}
-                </span>
               </Link>
             );
           })}
@@ -137,13 +113,14 @@ export function AppShell({
             onClick={close}
             aria-current={pathname.startsWith("/app/admin") ? "page" : undefined}
             className={cn(
-              "relative mt-1 flex items-center gap-2.5 rounded-[var(--ardor-radius-sm)] py-1.5 pl-3.5 pr-2 text-[0.84375rem] transition-colors",
+              styles.navItem,
+              "relative mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all",
               pathname.startsWith("/app/admin")
                 ? "bg-[var(--ardor-rail-active)] text-[var(--ardor-rail-ink)]"
                 : "text-[var(--ardor-rail-ink-2)] hover:bg-[var(--ardor-rail-hover)] hover:text-[var(--ardor-rail-ink)]",
             )}
           >
-            <ShieldCheck className="size-4 shrink-0 text-[var(--ardor-rail-ink-3)]" aria-hidden />
+            <ShieldCheck className="size-[1.05rem] shrink-0 text-[var(--ardor-rail-ink-3)]" aria-hidden />
             管理
           </Link>}
 
@@ -152,21 +129,14 @@ export function AppShell({
             onClick={close}
             aria-current={pathname.startsWith("/app/settings") ? "page" : undefined}
             className={cn(
-              "relative mt-1 flex items-center gap-2.5 rounded-[var(--ardor-radius-sm)] py-1.5 pl-3.5 pr-2",
-              "text-[0.84375rem] transition-colors duration-[var(--ardor-fast)]",
+              styles.navItem,
+              "relative mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-[var(--ardor-fast)]",
               pathname.startsWith("/app/settings")
                 ? "bg-[var(--ardor-rail-active)] text-[var(--ardor-rail-ink)]"
                 : "text-[var(--ardor-rail-ink-2)] hover:bg-[var(--ardor-rail-hover)] hover:text-[var(--ardor-rail-ink)]",
             )}
           >
-            <span
-              aria-hidden
-              className={cn(
-                "absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full",
-                pathname.startsWith("/app/settings") ? "bg-[var(--ardor-rail-accent)]" : "bg-transparent",
-              )}
-            />
-            <Settings className="size-4 shrink-0 text-[var(--ardor-rail-ink-3)]" aria-hidden />
+            <Settings className="size-[1.05rem] shrink-0 text-[var(--ardor-rail-ink-3)]" aria-hidden />
             设置
           </Link>
         </nav>

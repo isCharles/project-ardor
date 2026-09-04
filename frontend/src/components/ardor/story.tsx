@@ -72,7 +72,7 @@ function Scene({
 }: {
   eyebrow: string;
   title: React.ReactNode;
-  /** One scene lifts off the charcoal, to change the light. */
+  /** An explicit contrast scene; authenticated workspaces stay light. */
   lift?: boolean;
   children: React.ReactNode;
 }) {
