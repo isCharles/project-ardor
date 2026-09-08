@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowLeft, Bot, CheckCircle2, Database, Globe2, KeyRound, LoaderCircle, LogOut, Mic, RotateCcw, Save, UserRound, Volume2, Wifi } from "lucide-react";
+import { Activity, ArrowLeft, Bot, CheckCircle2, CircleAlert, Database, Globe2, KeyRound, LoaderCircle, LogOut, Mic, RotateCcw, Save, UserRound, Volume2, Wifi } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, MouseEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ardor/overlay";
 import { ApiError, api } from "@/lib/api";
 
 type CurrentUser = { id: string; email: string };
@@ -32,13 +33,24 @@ type AuxiliaryApiConfig = {
   personalOverride: boolean;
 };
 type InlineFeedback = { kind: "pending" | "success" | "error"; message: string };
+type HealthServiceType = "PRIMARY_LLM" | "WEB_SEARCH" | AuxiliaryServiceType;
+type HealthResult = { kind: "pending" | "success" | "error"; message: string };
 
 const integrationDetails = {
-  EMBEDDING: { title: "向量模型", description: "为语义检索和长期记忆预留。", icon: Database },
+  EMBEDDING: { title: "向量模型", description: "用于知识库语义检索与长期记忆。", icon: Database },
   ASR: { title: "语音识别 ASR", description: "用于语音面试的回答转写。", icon: Mic },
   TTS: { title: "语音合成 TTS", description: "用于朗读语音面试题目。", icon: Volume2 },
-  FALLBACK_LLM: { title: "备用 LLM", description: "为主模型不可用时的降级线路预留。", icon: Bot },
+  FALLBACK_LLM: { title: "备用 LLM", description: "主模型不可用时的备用线路。", icon: Bot },
 } satisfies Record<AuxiliaryServiceType, { title: string; description: string; icon: typeof Database }>;
+
+const healthServiceLabels: Record<HealthServiceType, string> = {
+  PRIMARY_LLM: "主 LLM",
+  WEB_SEARCH: "联网搜索",
+  EMBEDDING: "向量模型",
+  ASR: "语音识别 ASR",
+  TTS: "语音合成 TTS",
+  FALLBACK_LLM: "备用 LLM",
+};
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -60,6 +72,9 @@ export default function SettingsPage() {
   const [savingIntegrations, setSavingIntegrations] = useState<Partial<Record<AuxiliaryServiceType, boolean>>>({});
   const [integrationFeedback, setIntegrationFeedback] = useState<Partial<Record<AuxiliaryServiceType, InlineFeedback>>>({});
   const [showPersonalApis, setShowPersonalApis] = useState(false);
+  const [healthDialogOpen, setHealthDialogOpen] = useState(false);
+  const [testingAll, setTestingAll] = useState(false);
+  const [healthResults, setHealthResults] = useState<Record<HealthServiceType, HealthResult> | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -146,6 +161,60 @@ export default function SettingsPage() {
       setLlmFeedback({ kind: "success", message: `${result.message} · ${result.model} · ${result.latencyMs} ms` });
     } catch (reason) { setLlmFeedback({ kind: "error", message: reason instanceof Error ? reason.message : "连接测试失败" }); }
     finally { setTestingLlm(false); }
+  }
+
+  async function testAllConnections() {
+    const serviceTypes: HealthServiceType[] = ["PRIMARY_LLM", "WEB_SEARCH", "EMBEDDING", "ASR", "TTS", "FALLBACK_LLM"];
+    const integrationConfigs = integrations ?? [];
+    const pending = Object.fromEntries(serviceTypes.map((type) => [type, { kind: "pending", message: "等待检测…" }])) as Record<HealthServiceType, HealthResult>;
+    setHealthResults(pending);
+    setHealthDialogOpen(true);
+    setTestingAll(true);
+
+    const update = (type: HealthServiceType, result: HealthResult) => {
+      setHealthResults((current) => current ? { ...current, [type]: result } : current);
+    };
+    const formData = (id: string) => {
+      const form = document.getElementById(id);
+      if (!(form instanceof HTMLFormElement)) throw new Error("配置表单尚未载入");
+      return new FormData(form);
+    };
+    const run = async (type: HealthServiceType, action: () => Promise<string>) => {
+      update(type, { kind: "pending", message: "正在连接…" });
+      try {
+        update(type, { kind: "success", message: await action() });
+      } catch (reason) {
+        update(type, { kind: "error", message: reason instanceof Error ? reason.message : "连接失败" });
+      }
+    };
+
+    await Promise.all([
+      run("PRIMARY_LLM", async () => {
+        const data = formData("personal-api-primary-llm");
+        const result = await api<{ message: string; model: string; latencyMs: number }>("/api/settings/llm/test", {
+          method: "POST",
+          body: JSON.stringify({ provider: data.get("provider"), baseUrl: data.get("baseUrl"), model: data.get("model"), apiKey: data.get("apiKey") }),
+        });
+        return `${result.model} · ${result.latencyMs} ms`;
+      }),
+      run("WEB_SEARCH", async () => {
+        const data = formData("personal-api-web-search");
+        const result = await api<{ message: string; latencyMs: number; usage: number | null; limit: number | null }>("/api/settings/web-search/test", {
+          method: "POST", body: JSON.stringify({ apiKey: data.get("apiKey") }),
+        });
+        const usage = result.usage == null || result.limit == null ? "" : ` · 用量 ${result.usage}/${result.limit}`;
+        return `${result.latencyMs} ms${usage}`;
+      }),
+      ...integrationConfigs.map((integration) => run(integration.serviceType, async () => {
+        const data = formData(`personal-api-${integration.serviceType.toLowerCase()}`);
+        const result = await api<{ success: boolean; message: string; latencyMs: number }>(`/api/settings/integrations/${integration.serviceType}/test`, {
+          method: "POST",
+          body: JSON.stringify({ provider: data.get("provider"), baseUrl: data.get("baseUrl"), model: data.get("model"), apiKey: data.get("apiKey") }),
+        });
+        return `${result.message} · ${result.latencyMs} ms`;
+      })),
+    ]);
+    setTestingAll(false);
   }
 
   async function saveWebSearch(event: FormEvent<HTMLFormElement>) {
@@ -290,34 +359,37 @@ export default function SettingsPage() {
           {personalApiCount > 0 && <p className="mt-4 text-xs text-muted-foreground">当前另有 {personalApiCount} 项个人覆盖配置。</p>}
           <Button type="button" variant="outline" className="mt-6" onClick={() => setShowPersonalApis(true)}>使用自己的 API</Button>
         </section> : <>
-        <section className="flex items-center justify-between gap-4 lg:col-span-2">
+        <section className="flex flex-wrap items-center justify-between gap-4 lg:col-span-2">
           <div><h2 className="text-xl font-semibold">个人 API</h2><p className="mt-1 text-sm text-muted-foreground">只覆盖你主动配置的能力，其余继续使用管理员默认。</p></div>
-          <Button type="button" variant="outline" onClick={() => setShowPersonalApis(false)}>收起</Button>
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" disabled={testingAll} onClick={() => void testAllConnections()}>{testingAll ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Activity className="mr-2 size-4" />}{testingAll ? "正在检测…" : "测试全部连接"}</Button>
+            <Button type="button" variant="outline" onClick={() => setShowPersonalApis(false)}>收起</Button>
+          </div>
         </section>
 
-        <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
+        <section className="ardor-panel flex min-h-[34rem] flex-col rounded-[2rem] p-6 md:p-8">
           <div className="flex items-center justify-between gap-4"><div className="flex items-center gap-3"><KeyRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">LLM 服务</h2></div>{llm.configured && <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"><CheckCircle2 className="size-3.5" />{llm.personalOverride ? "个人配置" : "管理员默认"} {llm.keyHint}</span>}</div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">Agent 使用 LangChain4j Tool Calling。模型必须支持工具调用；建议先测试连接，再保存配置。</p>
-          <form key={JSON.stringify(llm)} className="mt-7 space-y-5" onSubmit={saveLlm}>
+          <form id="personal-api-primary-llm" key={JSON.stringify(llm)} className="mt-7 flex flex-1 flex-col gap-5" onSubmit={saveLlm}>
             <label className="block text-sm font-medium">API 协议<select className="field mt-2" name="provider" defaultValue={llm.provider}><option value="OPENAI_COMPATIBLE">OpenAI Compatible</option><option value="ANTHROPIC_COMPATIBLE">Anthropic Compatible</option></select></label>
             <label className="block text-sm font-medium">Base URL<input className="field mt-2 font-mono text-sm" type="url" name="baseUrl" defaultValue={llm.baseUrl} maxLength={512} required /><span className="mt-2 block text-xs font-normal leading-5 text-muted-foreground">DeepSeek 示例：OpenAI 填 https://api.deepseek.com；Anthropic 填 https://api.deepseek.com/anthropic。</span></label>
             <label className="block text-sm font-medium">模型名称<input className="field mt-2 font-mono text-sm" name="model" defaultValue={llm.model} maxLength={160} required /></label>
             <label className="block text-sm font-medium">API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="new-password" data-1p-ignore data-lpignore="true" placeholder={llm.personalOverride ? `当前个人 Key ${llm.keyHint}；输入新 Key 才会替换` : llm.configurationSource === "ADMIN" ? "留空测试管理员默认；填写后创建个人覆盖" : "首次配置必须填写"} /></label>
-            <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" disabled={testingLlm || savingLlm} onClick={testLlm}>{testingLlm ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Wifi className="mr-2 size-4" />}{testingLlm ? "正在测试…" : "测试连接"}</Button><Button disabled={testingLlm || savingLlm}>{savingLlm ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}{savingLlm ? "正在保存…" : "保存为个人配置"}</Button>{llm.personalOverride && <Button type="button" variant="outline" onClick={() => void restoreAdminDefault("llm")}><RotateCcw className="mr-2 size-4" />恢复管理员默认</Button>}</div>
+            <div className="mt-auto flex flex-wrap gap-3 pt-2"><Button type="button" variant="outline" disabled={testingLlm || savingLlm} onClick={testLlm}>{testingLlm ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Wifi className="mr-2 size-4" />}{testingLlm ? "正在测试…" : "测试连接"}</Button><Button disabled={testingLlm || savingLlm}>{savingLlm ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}{savingLlm ? "正在保存…" : "保存为个人配置"}</Button>{llm.personalOverride && <Button type="button" variant="outline" onClick={() => void restoreAdminDefault("llm")}><RotateCcw className="mr-2 size-4" />恢复管理员默认</Button>}</div>
             <FeedbackBanner feedback={llmFeedback} />
           </form>
         </section>
 
-        <section className="ardor-panel rounded-[2rem] p-6 md:p-8 lg:col-span-2">
+        <section className="ardor-panel flex min-h-[34rem] flex-col rounded-[2rem] p-6 md:p-8">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3"><Globe2 className="size-5 text-primary" /><h2 className="text-xl font-semibold">联网搜索</h2></div>
             {webSearch.configured && <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"><CheckCircle2 className="size-3.5" />{webSearch.personalOverride ? "个人配置" : "管理员默认"} {webSearch.keyHint}</span>}
           </div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">让 Agent 在遇到最新职位、公司、政策和新闻时主动查证。当前使用 Tavily，Key 只会加密保存。</p>
-          <form className="mt-7 max-w-2xl space-y-5" onSubmit={saveWebSearch}>
+          <form id="personal-api-web-search" className="mt-7 flex flex-1 flex-col gap-5" onSubmit={saveWebSearch}>
             <label className="block text-sm font-medium">Tavily API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="new-password" data-1p-ignore data-lpignore="true" placeholder={webSearch.personalOverride ? `当前个人 Key ${webSearch.keyHint}；输入新 Key 才会替换` : webSearch.configurationSource === "ADMIN" ? "留空测试管理员默认；填写后创建个人覆盖" : "首次配置必须填写"} /></label>
             <p className="rounded-2xl bg-stone-950/[0.04] px-4 py-3 text-xs leading-5 text-muted-foreground">测试只读取 Tavily Key 与账户用量，不执行搜索，不消耗 Search credit。</p>
-            <div className="flex flex-wrap gap-3">
+            <div className="mt-auto flex flex-wrap gap-3 pt-2">
               <Button type="button" variant="outline" disabled={testingWebSearch || savingWebSearch} onClick={testWebSearch}>{testingWebSearch ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Wifi className="mr-2 size-4" />}{testingWebSearch ? "正在测试…" : "测试连接"}</Button>
               <Button disabled={testingWebSearch || savingWebSearch}>{savingWebSearch ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}{savingWebSearch ? "正在保存…" : "保存配置"}</Button>
               {webSearch.personalOverride && <Button type="button" variant="outline" onClick={() => void restoreAdminDefault("web-search")}><RotateCcw className="mr-2 size-4" />恢复管理员默认</Button>}
@@ -326,17 +398,11 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        <section className="ardor-panel rounded-[2rem] p-6 md:p-8 lg:col-span-2">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div><div className="flex items-center gap-3"><KeyRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">模型与语音服务</h2></div><p className="mt-2 text-sm text-muted-foreground">默认继承管理员配置，也可以单独覆盖。</p></div>
-            <span className="rounded-full border border-stone-200 bg-white/60 px-3 py-1 text-xs font-medium text-stone-600">预留 · 尚未被 Agent 调用</span>
-          </div>
-          <div className="mt-7 grid gap-4 md:grid-cols-2">
             {integrations.map((integration) => {
               const detail = integrationDetails[integration.serviceType];
               const Icon = detail.icon;
               return (
-                <form key={JSON.stringify(integration)} className="rounded-[1.5rem] border border-stone-200/80 bg-white/55 p-5" onSubmit={(event) => saveIntegration(event, integration.serviceType)}>
+                <form id={`personal-api-${integration.serviceType.toLowerCase()}`} key={JSON.stringify(integration)} className="ardor-panel flex min-h-[34rem] flex-col rounded-[2rem] p-6 md:p-8" onSubmit={(event) => saveIntegration(event, integration.serviceType)}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-stone-950 text-white"><Icon className="size-4" /></span><div><h3 className="font-semibold">{detail.title}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{detail.description}</p></div></div>
                     {integration.configured && <span className="shrink-0 text-xs font-medium text-emerald-700">{integration.personalOverride ? "个人配置" : "管理员默认"} {integration.keyHint}</span>}
@@ -347,7 +413,7 @@ export default function SettingsPage() {
                     <label className="block text-xs font-medium sm:col-span-2">Base URL<input className="field mt-2 font-mono text-sm" type="url" name="baseUrl" defaultValue={integration.baseUrl} maxLength={512} required placeholder="https://api.example.com" /></label>
                     <label className="block text-xs font-medium sm:col-span-2">API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="new-password" data-1p-ignore data-lpignore="true" placeholder={integration.personalOverride ? `当前个人 Key ${integration.keyHint}；输入新 Key 才会替换` : integration.configurationSource === "ADMIN" ? "留空测试管理员默认；填写后创建个人覆盖" : "首次配置必须填写"} /></label>
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="mt-auto flex flex-wrap gap-2 pt-6">
                     <Button type="button" variant="outline" disabled={testingIntegrations[integration.serviceType] || savingIntegrations[integration.serviceType]} onClick={(event) => testIntegration(event, integration.serviceType)}>{testingIntegrations[integration.serviceType] ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Wifi className="mr-2 size-4" />}{testingIntegrations[integration.serviceType] ? "正在测试…" : "测试连接"}</Button>
                     <Button disabled={testingIntegrations[integration.serviceType] || savingIntegrations[integration.serviceType]}>{savingIntegrations[integration.serviceType] ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}{savingIntegrations[integration.serviceType] ? "正在保存…" : "保存配置"}</Button>
                     {integration.personalOverride && <Button type="button" variant="outline" onClick={() => void restoreAdminDefault(integration.serviceType)}><RotateCcw className="mr-2 size-4" />恢复管理员默认</Button>}
@@ -356,10 +422,28 @@ export default function SettingsPage() {
                 </form>
               );
             })}
-          </div>
-        </section>
         </>}
       </div>
+
+      <Dialog
+        open={healthDialogOpen}
+        onClose={() => setHealthDialogOpen(false)}
+        title="连接健康检查"
+        description={testingAll ? "正在逐项检查，可关闭后继续使用设置页。" : "检查完成。结果会保留到你手动关闭。"}
+        footer={<Button type="button" onClick={() => setHealthDialogOpen(false)}>关闭</Button>}
+      >
+        <div className="space-y-2">
+          {(Object.keys(healthServiceLabels) as HealthServiceType[]).map((type) => {
+            const result = healthResults?.[type] ?? { kind: "pending", message: "等待检测…" };
+            return (
+              <div key={type} className="flex items-start gap-3 rounded-2xl bg-stone-950/[0.035] px-4 py-3">
+                {result.kind === "success" ? <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" /> : result.kind === "error" ? <CircleAlert className="mt-0.5 size-5 shrink-0 text-red-600" /> : <LoaderCircle className="mt-0.5 size-5 shrink-0 animate-spin text-violet-600" />}
+                <div className="min-w-0"><p className="text-sm font-semibold">{healthServiceLabels[type]}</p><p className={`mt-0.5 break-words text-xs leading-5 ${result.kind === "error" ? "text-red-700" : "text-muted-foreground"}`}>{result.message}</p></div>
+              </div>
+            );
+          })}
+        </div>
+      </Dialog>
     </main>
   );
 }
