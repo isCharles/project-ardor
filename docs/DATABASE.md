@@ -21,7 +21,7 @@
 | `resumes` | `user_id` | 文件元数据、解析文本与解析状态 | 按用户和创建时间索引 |
 | `resume_analyses` | `user_id` | 可复用的结构化分析 | 关联同一用户的 resume |
 | `conversations` | `user_id` | 可持续的 Agent 会话和上下文 | active / archived |
-| `messages` | `user_id` | 用户、助手、系统和 Tool 消息 | 关联同一用户的 conversation |
+| `messages` | `user_id` | 用户、助手、系统和 Tool 消息 | `context_references` 保存随消息发送的简历、面经、知识文档或学习计划引用 |
 | `user_agent_memories` | `user_id` | 跨会话共享、用户可管理的总体记忆 | 每个用户最多一份，最多 4000 字符 |
 | `interview_sessions` | `user_id` | 面试目标、模态和生命周期 | 模态可扩展，V0.1 只使用 TEXT |
 | `interview_questions` | `user_id` | 有序问题和评价标准 | session 内序号唯一 |
@@ -29,6 +29,7 @@
 | `interview_evaluations` | `user_id` | 总分和结构化反馈 | 每场面试最多一个评价 |
 | `tasks` | `user_id` | 后续行动及状态 | 可追溯来源面试；重复安排的每一次也是这里的一行 |
 | `task_series` | `user_id` | 重复日程的规则（按天、按周、按月） | 每条规则提前展开约 120 天的 `tasks`；`(series_id, occurrence_date)` 唯一 |
+| `learning_plans` | `user_id` | 学习主题、讲解、练习、评分与巩固状态 | 每个计划最多关联一条 `LEARNING` 日历任务；未掌握时更新原任务日期 |
 | `events` | `user_id` | 有明确时间段的计划 | 结束时间必须晚于开始时间 |
 
 ## JSONB 结构契约

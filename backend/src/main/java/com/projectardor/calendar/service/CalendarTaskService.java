@@ -67,6 +67,16 @@ public class CalendarTaskService {
     }
 
     @Transactional
+    public CalendarTask refreshLearningPlan(
+            UUID userId, UUID learningPlanId, String concept, String reason,
+            Instant dueAt, CalendarTaskSource source, boolean completed) {
+        CalendarTask task = repository.findByLearningPlanIdAndUserId(learningPlanId, userId)
+                .orElseGet(() -> CalendarTask.createLearning(userId, learningPlanId, concept, reason, dueAt, source));
+        task.scheduleLearning(concept, reason, dueAt, completed);
+        return repository.save(task);
+    }
+
+    @Transactional
     public CalendarTask update(
             UUID userId,
             UUID taskId,

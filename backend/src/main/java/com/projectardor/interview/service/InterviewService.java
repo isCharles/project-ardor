@@ -117,11 +117,18 @@ public class InterviewService {
                 userId,
                 """
                 你是中文技术面试官。只输出 JSON 对象，不要 Markdown。
-                格式必须为 {"questions":[{"questionText":"...","questionType":"TECHNICAL|PROJECT|BEHAVIORAL","evaluationCriteria":["..."]}]}。
+                格式必须为 {"questions":[{"questionText":"...","questionType":"TECHNICAL|PROJECT|BEHAVIORAL|CODING","evaluationCriteria":["..."]}]}。
                 问题应结合候选人背景、简历分析、目标公司和岗位，循序渐进，不得编造候选人经历。
+                技术岗位且题目数不少于 3 时，至少生成一道 CODING 编程题；题目要写清输入、输出、约束和示例，允许候选人用文字说明思路并给出代码，不要求在线运行。
                 """,
                 "请生成模拟面试题：\n" + context);
         List<QuestionDraft> drafts = parseQuestions(jsonParser.parseObject(result.content()), questionCount);
+        if (questionCount >= 3 && isTechnicalRole(normalizedRole)
+                && drafts.stream().noneMatch(draft -> "CODING".equals(draft.questionType()))) {
+            drafts.set(drafts.size() - 1, new QuestionDraft(
+                    "请用你熟悉的语言实现 twoSum：输入整数数组 nums 和整数 target，返回两个元素下标，使它们之和等于 target。假设恰有一个答案且同一元素不能重复使用。示例：nums=[2,7,11,15]，target=9，输出 [0,1]。请说明时间与空间复杂度。",
+                    "CODING", List.of("代码正确且覆盖边界情况", "能解释哈希表解法", "复杂度分析准确")));
+        }
 
         return transactions.execute(status -> {
             InterviewSession session = sessionRepository.save(InterviewSession.create(
@@ -285,7 +292,8 @@ public class InterviewService {
         for (JsonNode node : questionNodes) {
             String text = node.path("questionText").asText().strip();
             if (text.isBlank()) continue;
-            String type = node.path("questionType").asText("TECHNICAL").strip();
+            String type = node.path("questionType").asText("TECHNICAL").strip().toUpperCase(java.util.Locale.ROOT);
+            if (!java.util.Set.of("TECHNICAL", "PROJECT", "BEHAVIORAL", "CODING").contains(type)) type = "TECHNICAL";
             List<String> criteria = new ArrayList<>();
             if (node.path("evaluationCriteria").isArray()) {
                 node.path("evaluationCriteria").forEach(item -> {
@@ -297,6 +305,13 @@ public class InterviewService {
         }
         if (drafts.size() < 3) throw new IllegalStateException("LLM 返回的有效面试题少于 3 道");
         return drafts;
+    }
+
+    private boolean isTechnicalRole(String role) {
+        String normalized = role.toLowerCase(java.util.Locale.ROOT);
+        return java.util.List.of("开发", "工程师", "程序", "算法", "测试", "架构", "数据", "运维", "研发",
+                "java", "backend", "frontend", "fullstack", "developer", "engineer", "software", "ai", "ml")
+                .stream().anyMatch(normalized::contains);
     }
 
     private Map<String, Object> normalizedEvaluation(JsonNode root) {

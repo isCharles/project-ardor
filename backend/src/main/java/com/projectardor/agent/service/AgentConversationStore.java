@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.projectardor.agent.domain.Conversation;
 import com.projectardor.agent.domain.ConversationMessage;
+import com.projectardor.agent.AgentContextReference;
 import com.projectardor.agent.repository.ConversationMessageRepository;
 import com.projectardor.agent.repository.ConversationRepository;
 import com.projectardor.common.web.ResourceNotFoundException;
@@ -75,8 +76,15 @@ public class AgentConversationStore {
     @Transactional
     public List<ConversationMessage> appendExchange(
             UUID userId, Conversation conversation, String userText, String assistantText, String runTrace) {
+        return appendExchange(userId, conversation, userText, assistantText, runTrace, List.of());
+    }
+
+    @Transactional
+    public List<ConversationMessage> appendExchange(
+            UUID userId, Conversation conversation, String userText, String assistantText, String runTrace,
+            List<AgentContextReference> contextReferences) {
         List<ConversationMessage> saved = messageRepository.saveAll(List.of(
-                ConversationMessage.user(userId, conversation.getId(), userText),
+                ConversationMessage.user(userId, conversation.getId(), userText, contextReferences),
                 ConversationMessage.assistant(userId, conversation.getId(), assistantText, runTrace)));
         conversation.titleFromFirstMessage(userText);
         conversation.touch();

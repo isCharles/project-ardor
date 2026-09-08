@@ -37,6 +37,11 @@ import com.projectardor.knowledge.service.KnowledgeService;
 import com.projectardor.knowledge.web.KnowledgeDocumentResponse;
 import com.projectardor.knowledge.web.KnowledgeResearchResponse;
 import com.projectardor.knowledge.web.KnowledgeSearchResult;
+import com.projectardor.learning.domain.LearningPlan;
+import com.projectardor.learning.domain.LearningSourceType;
+import com.projectardor.learning.service.LearningPlanService;
+import com.projectardor.learning.web.LearningPlanResponse;
+import com.projectardor.agent.AgentContextReference;
 import com.projectardor.profile.domain.UserProfile;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.resume.domain.Resume;
@@ -72,6 +77,7 @@ public class CareerAgentTools {
     private final InterviewRecapQueueService interviewRecapQueueService;
     private final TavilySearchService tavilySearchService;
     private final KnowledgeService knowledgeService;
+    private final LearningPlanService learningPlanService;
 
     public CareerAgentTools(
             ResumeService resumeService,
@@ -84,7 +90,8 @@ public class CareerAgentTools {
             InterviewRecapService interviewRecapService,
             InterviewRecapQueueService interviewRecapQueueService,
             TavilySearchService tavilySearchService,
-            KnowledgeService knowledgeService) {
+            KnowledgeService knowledgeService,
+            LearningPlanService learningPlanService) {
         this.resumeService = resumeService;
         this.resumeAnalysisQueueService = resumeAnalysisQueueService;
         this.interviewService = interviewService;
@@ -96,6 +103,7 @@ public class CareerAgentTools {
         this.interviewRecapQueueService = interviewRecapQueueService;
         this.tavilySearchService = tavilySearchService;
         this.knowledgeService = knowledgeService;
+        this.learningPlanService = learningPlanService;
     }
 
     public BoundCareerTools bind(UUID trustedUserId, String trustedUserRequest) {
@@ -118,8 +126,25 @@ public class CareerAgentTools {
                 yield "用户在界面中明确指定了知识文档：" + document.title() + "（文档 ID：" + document.id()
                         + "）。需要内容时调用 search_knowledge 检索，不得假装已经阅读全文。";
             }
+            case "LEARNING" -> {
+                LearningPlan plan = learningPlanService.get(userId, contextId);
+                yield "用户在界面中明确指定了学习计划：" + plan.getConcept() + "（学习计划 ID："
+                        + plan.getId() + "）。需要内容时调用 get_learning_plan。";
+            }
             default -> throw new IllegalArgumentException("不支持的资料类型");
         };
+    }
+
+    public AgentContextReference resolveContext(UUID userId, String rawType, UUID contextId) {
+        String type = rawType == null ? "" : rawType.strip().toUpperCase(Locale.ROOT);
+        String label = switch (type) {
+            case "RESUME" -> resumeService.get(userId, contextId).getOriginalFilename();
+            case "RECAP" -> interviewRecapService.detail(userId, contextId).title();
+            case "KNOWLEDGE" -> knowledgeService.get(userId, contextId).title();
+            case "LEARNING" -> learningPlanService.get(userId, contextId).getConcept();
+            default -> throw new IllegalArgumentException("不支持的资料类型");
+        };
+        return new AgentContextReference(type, contextId, label);
     }
 
     public final class BoundCareerTools {
@@ -198,6 +223,28 @@ public class CareerAgentTools {
             KnowledgeDocumentResponse document = knowledgeService.get(userId, id);
             return propose("knowledge_document", id, document.title(),
                     "连同它的全部检索切片一起删除", "/api/knowledge/documents/" + id);
+        }
+
+        @Tool(name = "list_learning_plans", value = "列出当前用户的学习计划、状态、日期和 UUID")
+        public List<LearningPlanResponse> listLearningPlans() {
+            return learningPlanService.list(userId).stream().map(LearningPlanResponse::from).toList();
+        }
+
+        @Tool(name = "get_learning_plan", value = "读取指定学习计划的讲解、练习和最近一次评估")
+        public LearningPlanResponse getLearningPlan(@P("学习计划 UUID") String planId) {
+            return LearningPlanResponse.from(learningPlanService.get(userId, uuid(planId, "学习计划 ID")));
+        }
+
+        @Tool(name = "create_learning_plan", value = "为用户生成一个概念学习计划，并把它作为一条日程安排。适用于岗位要求或练习表现暴露出明确知识薄弱点时")
+        public LearningPlanResponse createLearningPlan(
+                @P("简洁明确的学习概念，例如 JVM 或数据库索引") String concept,
+                @P(value = "为什么需要学习；引用用户真实表现，不得虚构", required = false) String reason,
+                @P(value = "带时区的 ISO-8601 学习时间；留空则安排明天 09:00", required = false) String scheduledAt,
+                @P(value = "来源类型：AGENT、RESUME、RECAP 或 KNOWLEDGE；留空用 AGENT", required = false) String sourceType,
+                @P(value = "来源对象 UUID；没有则留空", required = false) String sourceId) {
+            LearningSourceType source = enumValue(LearningSourceType.class, sourceType, LearningSourceType.AGENT);
+            return LearningPlanResponse.from(learningPlanService.create(userId, concept, reason, source,
+                    nullableUuid(sourceId, "来源 ID"), nullableInstant(scheduledAt)));
         }
 
         public AgentMemoryResponse updateUserMemory(@P("完整的新版总体记忆，使用简洁中文要点；要清空时传空字符串") String memory) {

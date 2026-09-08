@@ -51,7 +51,8 @@ public class AgentController {
     public AgentMessageResponse chat(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody AgentMessageRequest request) {
-        return agentService.chat(principal.userId(), request.conversationId(), request.message(), request.contextType(), request.contextId());
+        return agentService.chat(principal.userId(), request.conversationId(), request.message(), request.contextType(),
+                request.contextId(), request.contextReferences());
     }
 
     @PostMapping(value = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -66,6 +67,7 @@ public class AgentController {
         emitter.onCompletion(() -> closed.set(true));
         emitter.onTimeout(() -> { closed.set(true); emitter.complete(); });
         agentService.chatStream(principal.userId(), request.conversationId(), request.message(), request.contextType(), request.contextId(),
+                request.contextReferences(),
                 new CareerAgentService.StreamSink() {
                     @Override public void send(AgentStreamEvent event) {
                         if (closed.get()) return;

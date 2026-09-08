@@ -19,7 +19,9 @@ import org.slf4j.LoggerFactory;
 
 import com.projectardor.agent.domain.Conversation;
 import com.projectardor.agent.domain.ConversationMessage;
+import com.projectardor.agent.AgentContextReference;
 import com.projectardor.agent.tools.CareerAgentTools;
+import com.projectardor.agent.web.AgentContextReferenceRequest;
 import com.projectardor.agent.web.AgentMessageResponse;
 import com.projectardor.agent.web.AgentConversationResponse;
 import com.projectardor.agent.web.AgentMemoryResponse;
@@ -79,6 +81,8 @@ public class CareerAgentService {
             24. 用户询问最新、当前、今天、近期、官网、新闻、招聘、公司动态、政策、价格或其他可能变化的公开信息时，必须调用 search_web，不得仅凭模型训练知识作答。综合结果时附上关键来源链接，不编造搜索结果中没有的事实。若 Tavily 未配置，明确引导用户到“设置 → 联网搜索”填写 API Key。
             25. 用户要求基于知识库回答、出题或制定学习计划时，先调用 search_knowledge，把命中的相关片段作为依据；没有命中时明确说明，不得假装知识库包含答案。
             26. 用户要求把某个主题补充进知识库，或你判断一组公开资料会被长期复用时，可调用 research_knowledge_from_web 主动搜索并保存。保存后说明新增来源；不要把一次性闲聊、低可信或无关搜索结果塞入知识库。
+            27. 当岗位要求、面经弱项、记忆卡练习或用户描述暴露出明确且稳定的知识缺口时，可建议学习；用户同意或明确要求安排后调用 create_learning_plan，而不是创建普通日历待办。学习主题要简短，原因必须来自真实材料。
+            28. 学习计划会自动生成讲解、练习并进入日历。创建后告诉用户安排的主题和时间，引导从日历或“学习”进入；不要在聊天中代替学习模块伪造练习分数。
             """;
 
     private final AgentConversationStore store;
@@ -131,8 +135,14 @@ public class CareerAgentService {
     }
 
     public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId) {
+        return chat(userId, conversationId, rawMessage, contextType, contextId, List.of());
+    }
+
+    public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
+            UUID contextId, List<AgentContextReferenceRequest> requestedReferences) {
         String message = normalizeMessage(rawMessage);
-        String agentInput = contextualMessage(userId, message, contextType, contextId);
+        List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
+        String agentInput = contextualMessage(userId, message, references);
         Semaphore lock = userLocks.computeIfAbsent(userId, ignored -> new Semaphore(1));
         if (!lock.tryAcquire()) {
             throw new IllegalStateException("Agent 正在处理上一条消息，请稍后再发送");
@@ -165,7 +175,7 @@ public class CareerAgentService {
                 throw new LlmCallException("AGENT_EMPTY_RESPONSE", "Agent 没有返回可用内容", true, null);
             }
             List<ConversationMessage> saved = store.appendExchange(
-                    userId, conversation, message, answer.strip());
+                    userId, conversation, message, answer.strip(), null, references);
             return AgentMessageResponse.from(saved.get(1));
         } catch (LlmCallException exception) {
             throw exception;
@@ -193,14 +203,21 @@ public class CareerAgentService {
         }
     }
 
-    public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId, StreamSink sink) {
+    public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId,
+            StreamSink sink) {
+        chatStream(userId, conversationId, rawMessage, contextType, contextId, List.of(), sink);
+    }
+
+    public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId,
+            List<AgentContextReferenceRequest> requestedReferences, StreamSink sink) {
         long startedAt = System.nanoTime();
         AtomicBoolean finished = new AtomicBoolean();
         Semaphore lock = userLocks.computeIfAbsent(userId, ignored -> new Semaphore(1));
         boolean acquired = false;
         try {
             String message = normalizeMessage(rawMessage);
-            String agentInput = contextualMessage(userId, message, contextType, contextId);
+            List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
+            String agentInput = contextualMessage(userId, message, references);
             if (!lock.tryAcquire()) {
                 sendStreamError(sink, new IllegalStateException("Agent 正在处理上一条消息，请稍后再发送"), startedAt);
                 return;
@@ -247,7 +264,7 @@ public class CareerAgentService {
                             if (answer == null || answer.isBlank()) throw new IllegalStateException("Agent 没有返回可用内容");
                             long totalElapsed = elapsedMs(startedAt);
                             List<ConversationMessage> saved = store.appendExchange(userId, conversation, message, answer.strip(),
-                                    runTrace(totalElapsed, persistedSteps));
+                                    runTrace(totalElapsed, persistedSteps), references);
                             long firstPartialMs = firstPartialAt.get() == 0 ? -1 : elapsedMs(firstPartialAt.get());
                             log.info("Agent stream completed: userId={}, conversationId={}, partialChunks={}, firstPartialMs={}, totalMs={}",
                                     userId, conversation.getId(), partialChunks.get(), firstPartialMs, elapsedMs(startedAt));
@@ -354,6 +371,8 @@ public class CareerAgentService {
             case "delete_knowledge_document" -> "删除知识文档";
             case "delete_memory_card", "delete_all_memory_cards" -> "删除记忆卡";
             case "delete_interview_recap" -> "删除面经";
+            case "list_learning_plans", "get_learning_plan" -> "读取学习计划";
+            case "create_learning_plan" -> "生成学习计划";
             case "search_web" -> "联网搜索";
             default -> "调用职业工具";
         };
@@ -371,9 +390,32 @@ public class CareerAgentService {
         return normalized;
     }
 
-    private String contextualMessage(UUID userId, String message, String contextType, UUID contextId) {
-        String hint = tools.contextHint(userId, contextType, contextId);
-        return hint.isBlank() ? message : message + "\n\n<selected_context>\n" + hint + "\n</selected_context>";
+    private List<AgentContextReference> resolveContexts(UUID userId, String legacyType, UUID legacyId,
+            List<AgentContextReferenceRequest> requests) {
+        java.util.LinkedHashMap<String, AgentContextReference> resolved = new java.util.LinkedHashMap<>();
+        if (legacyType != null && legacyId != null) {
+            AgentContextReference reference = tools.resolveContext(userId, legacyType, legacyId);
+            resolved.put(reference.type() + ":" + reference.id(), reference);
+        }
+        if (requests != null) {
+            for (AgentContextReferenceRequest request : requests) {
+                if (request == null || request.type() == null || request.id() == null) {
+                    throw new IllegalArgumentException("引用资料不完整");
+                }
+                AgentContextReference reference = tools.resolveContext(userId, request.type(), request.id());
+                resolved.put(reference.type() + ":" + reference.id(), reference);
+            }
+        }
+        if (resolved.size() > 5) throw new IllegalArgumentException("一次最多引用 5 份资料");
+        return List.copyOf(resolved.values());
+    }
+
+    private String contextualMessage(UUID userId, String message, List<AgentContextReference> references) {
+        if (references.isEmpty()) return message;
+        String hints = references.stream()
+                .map(reference -> tools.contextHint(userId, reference.type(), reference.id()))
+                .collect(java.util.stream.Collectors.joining("\n"));
+        return message + "\n\n<selected_context>\n" + hints + "\n</selected_context>";
     }
 
     public AgentConversationResponse renameConversation(UUID userId, UUID conversationId, String title) {

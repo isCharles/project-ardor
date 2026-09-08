@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame, MessageSquareText,
+  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame, GraduationCap, MessageSquareText,
   LayoutGrid, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Settings2, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { ApiError, api, streamApi } from "@/lib/api";
 import { useTypewriter } from "@/lib/use-typewriter";
 
-type AgentMessage = { id: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; runTrace?: string | null; createdAt: string };
+type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING"; id: string; label: string };
+type AgentMessage = { id: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; createdAt: string };
 type Conversation = { id: string; title: string; pinned: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
 type RetryFailure = { label: string; detail: string };
@@ -25,9 +26,10 @@ type AgentStreamEvent = { type: "status" | "delta" | "tool_start" | "tool_end" |
 type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string };
 type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "DONE" | "DISMISSED" | "FAILED"; error?: string };
 type RunStep = { key: string; label: string; elapsedMs: number; done: boolean };
-type SelectedContext = { type: "RESUME" | "RECAP"; id: string; label: string };
 type ResumeOption = { id: string; originalFilename: string };
 type RecapOption = { id: string; title: string };
+type KnowledgeOption = { id: string; title: string };
+type LearningOption = { id: string; concept: string };
 type BackgroundModule = "resumes" | "recaps" | "knowledge";
 type ResumeBackgroundStatus = { analysisId: string | null; analysisStatus: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | null };
 type RecapBackgroundStatus = { status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" };
@@ -108,10 +110,12 @@ export default function AgentHomePage() {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
-  const [selectedContext, setSelectedContext] = useState<SelectedContext | null>(null);
+  const [selectedContexts, setSelectedContexts] = useState<SelectedContext[]>([]);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [resumeOptions, setResumeOptions] = useState<ResumeOption[]>([]);
   const [recapOptions, setRecapOptions] = useState<RecapOption[]>([]);
+  const [knowledgeOptions, setKnowledgeOptions] = useState<KnowledgeOption[]>([]);
+  const [learningOptions, setLearningOptions] = useState<LearningOption[]>([]);
   const [notice, setNotice] = useState("");
   const [menuId, setMenuId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -144,12 +148,11 @@ export default function AgentHomePage() {
         if (cancelled) return;
         const params = new URLSearchParams(window.location.search);
         if (params.get("new") === "1") {
-          const conversation = await api<Conversation>("/api/agent/conversations", { method: "POST" });
-          result = { ...result, conversationId: conversation.id, messages: [], conversations: [conversation, ...result.conversations] };
+          result = { ...result, conversationId: null, messages: [] };
           const prefill = params.get("prefill") ?? "";
-          if (prefill) window.sessionStorage.setItem(draftStorageKey(conversation.id), prefill);
+          if (prefill) window.sessionStorage.setItem(draftStorageKey(null), prefill);
           const contextType = params.get("contextType"); const contextId = params.get("contextId"); const contextLabel = params.get("contextLabel");
-          if ((contextType === "RESUME" || contextType === "RECAP") && contextId && contextLabel) setSelectedContext({ type: contextType, id: contextId, label: contextLabel });
+          if ((contextType === "RESUME" || contextType === "RECAP" || contextType === "KNOWLEDGE" || contextType === "LEARNING") && contextId && contextLabel) setSelectedContexts([{ type: contextType, id: contextId, label: contextLabel }]);
         }
         if (params.get("notice") === "recap-queued") setNotice("面经已提交后台整理，你可以继续使用 Ardor。完成后会出现在面经列表里。");
         applyState(result);
@@ -218,7 +221,7 @@ export default function AgentHomePage() {
     setConfirmations([]);
     setRunElapsed(0);
     setMessages([]);
-    setSelectedContext(null);
+    setSelectedContexts([]);
     setState((current) => current ? { ...current, conversationId: null, messages: [] } : current);
     setDraft(readSavedDraft(null));
     window.history.replaceState(null, "", "/app");
@@ -272,7 +275,8 @@ export default function AgentHomePage() {
         const title = conversationTitle(message);
         setConversations((current) => current.map((item) => item.id === activeConversationId ? { ...item, title } : item));
       }
-      const optimistic: AgentMessage = { id: optimisticId, conversationId: activeConversationId, role: "USER", content: message, createdAt: "" };
+      const sentContexts = [...selectedContexts];
+      const optimistic: AgentMessage = { id: optimisticId, conversationId: activeConversationId, role: "USER", content: message, contextReferences: sentContexts, createdAt: "" };
       if (messages.length === 0) {
         setLeavingEmptyState(true);
         await new Promise((resolve) => window.setTimeout(resolve, 260));
@@ -293,7 +297,7 @@ export default function AgentHomePage() {
         try {
           let streamFailure: AgentStreamEvent | null = null;
           if (retry > 0) setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: "" } : item));
-          await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { conversationId: activeConversationId, message, contextType: selectedContext?.type ?? null, contextId: selectedContext?.id ?? null }, (event) => {
+          await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { conversationId: activeConversationId, message, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
             if (event.type === "delta" && event.content) {
               receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
@@ -343,7 +347,7 @@ export default function AgentHomePage() {
       const completedAssistant = assistant as AgentMessage | null;
       if (!completedAssistant) throw new Error("Agent 暂时无法回复");
       window.sessionStorage.removeItem(savedDraftKey);
-      setSelectedContext(null);
+      setSelectedContexts([]);
       await load(completedAssistant.conversationId);
       setRunSteps([]);
       setRetryFailures([]);
@@ -377,10 +381,13 @@ export default function AgentHomePage() {
 
   async function openAttachments() {
     setAttachmentOpen((open) => !open);
-    if (resumeOptions.length || recapOptions.length) return;
+    if (resumeOptions.length || recapOptions.length || knowledgeOptions.length || learningOptions.length) return;
     try {
-      const [resumes, recaps] = await Promise.all([api<ResumeOption[]>("/api/resumes"), api<RecapOption[]>("/api/interview-recaps")]);
-      setResumeOptions(resumes); setRecapOptions(recaps);
+      const [resumes, recaps, knowledge, learning] = await Promise.all([
+        api<ResumeOption[]>("/api/resumes"), api<RecapOption[]>("/api/interview-recaps"),
+        api<KnowledgeOption[]>("/api/knowledge/documents"), api<LearningOption[]>("/api/learning-plans"),
+      ]);
+      setResumeOptions(resumes); setRecapOptions(recaps); setKnowledgeOptions(knowledge); setLearningOptions(learning);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入资料"); }
   }
 
@@ -391,10 +398,17 @@ export default function AgentHomePage() {
     try {
       const resume = await api<ResumeOption>("/api/resumes", { method: "POST", body });
       setResumeOptions((items) => [resume, ...items]);
-      setSelectedContext({ type: "RESUME", id: resume.id, label: resume.originalFilename });
+      const context: SelectedContext = { type: "RESUME", id: resume.id, label: resume.originalFilename };
+      setSelectedContexts((items) => [...items.filter((item) => !(item.type === context.type && item.id === context.id)), context].slice(-5));
       setAttachmentOpen(false); setNotice("简历已加入资料库，并附加到这条消息。你可以让 Ardor 分析或管理它。");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "简历上传失败"); }
     finally { setBusy(false); if (uploadRef.current) uploadRef.current.value = ""; }
+  }
+
+  function toggleContext(context: SelectedContext) {
+    setSelectedContexts((items) => items.some((item) => item.type === context.type && item.id === context.id)
+      ? items.filter((item) => !(item.type === context.type && item.id === context.id))
+      : [...items, context].slice(-5));
   }
 
   async function renameConversation(conversation: Conversation) {
@@ -465,7 +479,8 @@ export default function AgentHomePage() {
   }
 
   function attachmentPicker() {
-    return <div className="relative"><input ref={uploadRef} type="file" accept=".pdf,.docx" className="hidden" onChange={(event) => void uploadResume(event.target.files?.[0])} /><button type="button" aria-label="添加资料" title="添加资料" onClick={() => void openAttachments()} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Plus className="size-4" /></button>{attachmentOpen && <div className="absolute bottom-11 left-0 z-30 max-h-80 w-72 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 text-sm shadow-2xl"><button type="button" onClick={() => uploadRef.current?.click()} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-stone-100"><Upload className="size-4" />上传简历</button>{resumeOptions.map((resume) => <button type="button" key={resume.id} onClick={() => { setSelectedContext({ type: "RESUME", id: resume.id, label: resume.originalFilename }); setAttachmentOpen(false); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left hover:bg-stone-100"><FileSearch className="size-4 shrink-0 text-blue-500" /><span className="truncate">{resume.originalFilename}</span></button>)}{recapOptions.map((recap) => <button type="button" key={recap.id} onClick={() => { setSelectedContext({ type: "RECAP", id: recap.id, label: recap.title }); setAttachmentOpen(false); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left hover:bg-stone-100"><FileText className="size-4 shrink-0 text-violet-500" /><span className="truncate">{recap.title}</span></button>)}</div>}</div>;
+    const option = (context: SelectedContext, icon: React.ReactNode) => <button type="button" key={`${context.type}-${context.id}`} onClick={() => toggleContext(context)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left hover:bg-stone-100">{icon}<span className="min-w-0 flex-1 truncate">{context.label}</span>{selectedContexts.some((item) => item.type === context.type && item.id === context.id) && <Check className="size-3.5 text-violet-600" />}</button>;
+    return <div className="relative"><input ref={uploadRef} type="file" accept=".pdf,.docx" className="hidden" onChange={(event) => void uploadResume(event.target.files?.[0])} /><button type="button" aria-label="添加资料" title="添加资料" onClick={() => void openAttachments()} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Plus className="size-4" /></button>{attachmentOpen && <div className="absolute bottom-11 left-0 z-30 max-h-96 w-80 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 text-sm shadow-2xl"><button type="button" onClick={() => uploadRef.current?.click()} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-stone-100"><Upload className="size-4" />上传简历</button>{resumeOptions.map((resume) => option({ type: "RESUME", id: resume.id, label: resume.originalFilename }, <FileSearch className="size-4 shrink-0 text-blue-500" />))}{recapOptions.map((recap) => option({ type: "RECAP", id: recap.id, label: recap.title }, <FileText className="size-4 shrink-0 text-violet-500" />))}{knowledgeOptions.map((document) => option({ type: "KNOWLEDGE", id: document.id, label: document.title }, <BookOpenText className="size-4 shrink-0 text-cyan-600" />))}{learningOptions.map((plan) => option({ type: "LEARNING", id: plan.id, label: plan.concept }, <BrainCircuit className="size-4 shrink-0 text-rose-500" />))}</div>}</div>;
   }
 
   function acknowledgeBackground(module: BackgroundModule) {
@@ -548,6 +563,7 @@ export default function AgentHomePage() {
                   <Link href="/app/cards" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BrainCircuit className="size-4 text-violet-500" /><span>记忆卡</span></Link>
                   <Link href="/app/calendar" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><CalendarDays className="size-4 text-rose-500" /><span>日历</span></Link>
                   <Link href="/app/knowledge" onClick={() => acknowledgeBackground("knowledge")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BookOpenText className="size-4 text-cyan-600" /><span>知识库</span>{backgroundReady.knowledge && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
+                  <Link href="/app/learning" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><GraduationCap className="size-4 text-rose-500" /><span>学习</span></Link>
                   <button onClick={() => { setWorkspaceOpen(false); setMemoryOpen(true); }} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-left text-xs text-stone-700 transition hover:bg-white"><Brain className="size-4 text-violet-500" /><span>总体记忆</span><span className={`absolute right-2.5 top-2.5 size-1.5 rounded-full ${memoryDraft ? "bg-violet-500" : "bg-stone-300"}`} /></button>
                   <Link href="/app/settings" className="col-span-2 flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-stone-500 hover:bg-white/70 hover:text-stone-800"><Settings2 className="size-3.5" />设置</Link>
                 </div>
@@ -566,7 +582,7 @@ export default function AgentHomePage() {
                   <h2 className="text-4xl font-semibold tracking-[-0.04em] text-stone-950 md:text-5xl">What should we build{state?.displayName?.trim() ? `, ${state.displayName.trim()}` : ""}?</h2>
                   {(visibleError || retryFailures.length > 0) && <div className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{retryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
                   <form onSubmit={submit} className="mx-auto mt-10 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
-                    {selectedContext && <div className="mx-3 mt-2 inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{selectedContext.label}</span><button type="button" aria-label="移除资料" onClick={() => setSelectedContext(null)}><X className="size-3.5" /></button></div>}
+                    {selectedContexts.length > 0 && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
                     <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
                     <div className="flex items-center justify-between gap-3 px-2 pb-1">{attachmentPicker()}<div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label="发送" disabled={busy || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
                   </form>
@@ -577,7 +593,7 @@ export default function AgentHomePage() {
                 {messages.map((message) => (
                   <article key={message.id} className={`flex gap-3 ${message.role === "USER" ? "justify-end" : "justify-start"}`}>
                     {message.role === "USER" ? (
-                      <div className="max-w-[86%] whitespace-pre-wrap rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7">{message.content}</div>
+                      <div className="max-w-[86%] rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7">{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" /><span className="truncate">{context.label}</span></span>)}</div>}<div className="whitespace-pre-wrap">{message.content}</div></div>
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
@@ -620,7 +636,7 @@ export default function AgentHomePage() {
           {messages.length > 0 && <div className="ardor-composer-enter relative z-10 shrink-0 px-4 pb-5 md:px-8">
             {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
-              {selectedContext && <div className="mx-3 mt-2 inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{selectedContext.label}</span><button type="button" aria-label="移除资料" onClick={() => setSelectedContext(null)}><X className="size-3.5" /></button></div>}
+              {selectedContexts.length > 0 && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
               <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label="发送" disabled={busy || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
             </form>

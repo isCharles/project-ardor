@@ -22,6 +22,7 @@ import com.projectardor.interview.domain.InterviewSession;
 import com.projectardor.calendar.service.TaskSeriesService;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.knowledge.service.KnowledgeService;
+import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecapService;
@@ -46,7 +47,8 @@ class CareerAgentToolsTests {
                 mock(InterviewRecapService.class),
                 mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class),
-                mock(KnowledgeService.class));
+                mock(KnowledgeService.class),
+                mock(LearningPlanService.class));
         UUID userId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
         CalendarTask task = CalendarTask.create(userId, "组会", null, Instant.parse("2026-09-10T01:00:00Z"),
@@ -80,7 +82,8 @@ class CareerAgentToolsTests {
                 mock(InterviewRecapService.class),
                 mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class),
-                mock(KnowledgeService.class));
+                mock(KnowledgeService.class),
+                mock(LearningPlanService.class));
         UUID userId = UUID.randomUUID();
         UUID interviewId = UUID.randomUUID();
         when(interviewService.get(userId, interviewId))
@@ -110,7 +113,7 @@ class CareerAgentToolsTests {
                 mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
                 mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
-                mock(TavilySearchService.class), mock(KnowledgeService.class));
+                mock(TavilySearchService.class), mock(KnowledgeService.class), mock(LearningPlanService.class));
 
         var bound = tools.bind(userId, "搜索一下最近的招聘信息");
         bound.deleteInterview(interviewId.toString());
@@ -134,7 +137,7 @@ class CareerAgentToolsTests {
                 mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
                 mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
-                searchService, mock(KnowledgeService.class));
+                searchService, mock(KnowledgeService.class), mock(LearningPlanService.class));
 
         String result = tools.bind(userId, "搜索 Java 招聘").searchWeb("Java 招聘");
 

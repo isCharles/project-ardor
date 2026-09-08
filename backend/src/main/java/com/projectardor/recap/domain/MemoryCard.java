@@ -57,6 +57,11 @@ public class MemoryCard {
         return new ReviewResult(previous, intervalDays);
     }
     public void suspend(boolean value) { status = value ? MemoryCardStatus.SUSPENDED : MemoryCardStatus.REVIEW; if (!value && nextReviewAt.isAfter(Instant.now())) nextReviewAt = Instant.now(); }
+    public void edit(String front, String back, List<String> tags) {
+        this.front = front;
+        this.back = back;
+        this.tags = new ArrayList<>(tags);
+    }
     @PrePersist void onCreate() { Instant now = Instant.now(); createdAt = now; updatedAt = now; }
     @PreUpdate void onUpdate() { updatedAt = Instant.now(); }
     public record ReviewResult(int previousIntervalDays, int nextIntervalDays) {}
