@@ -33,4 +33,19 @@ class MemoryCardTests {
         assertThat(card.getLapses()).isEqualTo(1);
         assertThat(card.getStatus()).isEqualTo(MemoryCardStatus.LEARNING);
     }
+
+    @Test
+    void editsContentWithoutResettingReviewProgress() {
+        Instant now = Instant.parse("2026-09-02T08:00:00Z");
+        MemoryCard card = MemoryCard.create(UUID.randomUUID(), null, MemoryCardSource.AGENT,
+                "训练题", null, "旧问题", "旧答案", List.of("旧标签"), now);
+        card.review(MemoryCardRating.GOOD, now);
+
+        card.edit("介绍 JVM 的核心机制", "类加载、运行时内存和执行引擎", List.of("JVM", "Java"));
+
+        assertThat(card.getFront()).isEqualTo("介绍 JVM 的核心机制");
+        assertThat(card.getBack()).contains("类加载");
+        assertThat(card.getTags()).containsExactly("JVM", "Java");
+        assertThat(card.getRepetitions()).isEqualTo(1);
+    }
 }

@@ -41,6 +41,9 @@ const evaluationLabels: Record<string, string> = {
   communicationIssues: "表达问题",
   suggestedNextSteps: "下一步建议",
 };
+const questionTypeLabels: Record<string, string> = {
+  TECHNICAL: "技术理解", PROJECT: "项目深挖", BEHAVIORAL: "行为经历", CODING: "编程题",
+};
 
 export default function InterviewsPage() {
   const router = useRouter();
@@ -220,12 +223,12 @@ export default function InterviewsPage() {
           <div className="flex items-center gap-3"><MessageSquareText className="size-5 text-primary" /><h2 className="text-xl font-semibold">面试区</h2></div>
           {!progress && !evaluation && <p className="mt-4 text-sm text-muted-foreground">创建一场新面试，或从历史记录继续。</p>}
           {progress?.nextQuestion && <div className="mt-7">
-            <p className="text-sm font-medium text-primary">第 {progress.nextQuestion.sequenceNumber} 题 · {progress.nextQuestion.questionType}</p>
+            <p className="text-sm font-medium text-primary">第 {progress.nextQuestion.sequenceNumber} 题 · {questionTypeLabels[progress.nextQuestion.questionType] ?? progress.nextQuestion.questionType}</p>
             <h3 className="mt-3 text-2xl font-semibold leading-9">{progress.nextQuestion.questionText}</h3>
             <p className="mt-3 text-sm text-muted-foreground">已回答 {progress.answeredCount} / {progress.totalQuestions}</p>
             <form className="mt-6 space-y-4" onSubmit={submitAnswer}>
               {activeSession?.modality === "VOICE" && <VoiceAnswerRecorder key={progress.nextQuestion.id} sessionId={progress.sessionId} questionId={progress.nextQuestion.id} disabled={busy} onTranscript={setAnswerText} onError={setError} />}
-              <textarea className="field min-h-44 resize-y" name="answerText" maxLength={20000} required value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder={activeSession?.modality === "VOICE" ? "转写结果会出现在这里，可修改后提交。" : "像真实面试一样作答，建议说明思路、取舍和结果。"} />
+              <textarea className={`field resize-y ${progress.nextQuestion.questionType === "CODING" ? "min-h-72 font-mono text-[13px] leading-6" : "min-h-44"}`} name="answerText" maxLength={20000} required value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder={activeSession?.modality === "VOICE" ? "转写结果会出现在这里，可修改后提交。" : progress.nextQuestion.questionType === "CODING" ? "先说明思路与复杂度，再写出代码。" : "像真实面试一样作答，建议说明思路、取舍和结果。"} />
               <Button disabled={busy}><Send className="mr-2 size-4" />{busy ? "提交中…" : "提交并进入下一题"}</Button>
             </form>
           </div>}

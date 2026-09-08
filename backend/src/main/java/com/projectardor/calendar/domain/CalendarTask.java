@@ -20,6 +20,7 @@ public class CalendarTask {
     @Column(name = "user_id", nullable = false) private UUID userId;
     @Column(name = "source_interview_id") private UUID sourceInterviewId;
     @Column(name = "memory_card_id") private UUID memoryCardId;
+    @Column(name = "learning_plan_id") private UUID learningPlanId;
     @Column(name = "series_id") private UUID seriesId;
     @Column(name = "occurrence_date") private LocalDate occurrenceDate;
     @Column(name = "user_modified", nullable = false) private boolean userModified;
@@ -76,6 +77,17 @@ public class CalendarTask {
         return task;
     }
 
+    public static CalendarTask createLearning(
+            UUID userId, UUID learningPlanId, String concept, String reason,
+            Instant dueAt, CalendarTaskSource source) {
+        CalendarTask task = new CalendarTask(userId, concept, reason, dueAt,
+                CalendarTaskPriority.HIGH, source);
+        task.learningPlanId = learningPlanId;
+        task.taskKind = CalendarTaskKind.LEARNING;
+        task.actionPath = "/app/learning?id=" + learningPlanId;
+        return task;
+    }
+
     /** One dated occurrence of a repeating series; an ordinary task otherwise. */
     public static CalendarTask createOccurrence(TaskSeries series, LocalDate occurrenceDate) {
         CalendarTask task = new CalendarTask(
@@ -93,6 +105,16 @@ public class CalendarTask {
         this.priority = CalendarTaskPriority.HIGH;
         this.status = CalendarTaskStatus.TODO;
         this.completedAt = null;
+    }
+
+    public void scheduleLearning(String concept, String reason, Instant dueAt, boolean completed) {
+        this.title = concept;
+        this.description = reason;
+        this.dueAt = dueAt;
+        this.status = completed ? CalendarTaskStatus.COMPLETED : CalendarTaskStatus.TODO;
+        this.completedAt = completed ? Instant.now() : null;
+        this.taskKind = CalendarTaskKind.LEARNING;
+        this.actionPath = "/app/learning?id=" + learningPlanId;
     }
 
     public void update(
@@ -127,6 +149,7 @@ public class CalendarTask {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public UUID getMemoryCardId() { return memoryCardId; }
+    public UUID getLearningPlanId() { return learningPlanId; }
     public UUID getSeriesId() { return seriesId; }
     public LocalDate getOccurrenceDate() { return occurrenceDate; }
     public boolean isUserModified() { return userModified; }

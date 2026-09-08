@@ -16,6 +16,7 @@ import com.projectardor.calendar.domain.CalendarTaskKind;
 public interface CalendarTaskRepository extends JpaRepository<CalendarTask, UUID> {
     Optional<CalendarTask> findByIdAndUserId(UUID id, UUID userId);
     Optional<CalendarTask> findByMemoryCardIdAndUserId(UUID memoryCardId, UUID userId);
+    Optional<CalendarTask> findByLearningPlanIdAndUserId(UUID learningPlanId, UUID userId);
     Optional<CalendarTask> findByUserIdAndTaskKindAndReviewDate(UUID userId, CalendarTaskKind taskKind, LocalDate reviewDate);
     List<CalendarTask> findAllByUserIdOrderByDueAtAscCreatedAtDesc(UUID userId);
     List<CalendarTask> findAllBySeriesIdAndUserId(UUID seriesId, UUID userId);

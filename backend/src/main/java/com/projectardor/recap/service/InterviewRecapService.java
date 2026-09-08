@@ -158,6 +158,14 @@ public class InterviewRecapService {
     }
 
     @Transactional
+    public MemoryCard updateCard(UUID userId, UUID cardId, String front, String back, List<String> tags) {
+        MemoryCard card = getCard(userId, cardId);
+        card.edit(required(front, "卡片问题不能为空", 12000),
+                required(back, "卡片答案不能为空", 20000), normalizeTags(tags));
+        return card;
+    }
+
+    @Transactional
     public MemoryCard review(UUID userId, UUID cardId, MemoryCardRating rating) {
         MemoryCard card = getCard(userId, cardId);
         if (card.getStatus() == MemoryCardStatus.SUSPENDED) throw new IllegalStateException("已暂停的卡片不能复习");

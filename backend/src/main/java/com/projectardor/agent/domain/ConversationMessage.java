@@ -1,6 +1,8 @@
 package com.projectardor.agent.domain;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -10,6 +12,8 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+
+import com.projectardor.agent.AgentContextReference;
 
 @Entity
 @Table(name = "messages")
@@ -29,6 +33,10 @@ public class ConversationMessage {
 
     @Column(nullable = false, columnDefinition = "text")
     private String content;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "context_references", nullable = false, columnDefinition = "jsonb")
+    private List<AgentContextReference> contextReferences = new ArrayList<>();
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "tool_calls", columnDefinition = "jsonb")
@@ -55,6 +63,13 @@ public class ConversationMessage {
         return new ConversationMessage(userId, conversationId, "USER", content);
     }
 
+    public static ConversationMessage user(UUID userId, UUID conversationId, String content,
+            List<AgentContextReference> contextReferences) {
+        ConversationMessage message = user(userId, conversationId, content);
+        message.contextReferences = contextReferences == null ? new ArrayList<>() : new ArrayList<>(contextReferences);
+        return message;
+    }
+
     public static ConversationMessage assistant(UUID userId, UUID conversationId, String content) {
         return new ConversationMessage(userId, conversationId, "ASSISTANT", content);
     }
@@ -77,6 +92,7 @@ public class ConversationMessage {
     public UUID getConversationId() { return conversationId; }
     public String getRole() { return role; }
     public String getContent() { return content; }
+    public List<AgentContextReference> getContextReferences() { return List.copyOf(contextReferences); }
     public String getRunTrace() { return runTrace; }
     public Instant getCreatedAt() { return createdAt; }
 }

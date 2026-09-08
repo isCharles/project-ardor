@@ -17,6 +17,12 @@ public class MemoryCardController {
         return MemoryCardResponse.from(service.createCard(principal.userId(), request.sourceType(), request.sourceLabel(),
                 request.sourceUrl(), request.front(), request.back(), request.tags(), request.nextReviewAt()));
     }
+    @PutMapping("/{id}")
+    public MemoryCardResponse update(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id,
+            @Valid @RequestBody MemoryCardUpdateRequest request) {
+        return MemoryCardResponse.from(service.updateCard(principal.userId(), id,
+                request.front(), request.back(), request.tags()));
+    }
     @PostMapping("/{id}/reviews") public MemoryCardResponse review(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID id, @Valid @RequestBody MemoryCardReviewRequest request) { return MemoryCardResponse.from(service.review(principal.userId(), id, request.rating())); }
     @PostMapping("/{id}/suspend") public MemoryCardResponse suspend(@AuthenticationPrincipal ArdorPrincipal principal,
