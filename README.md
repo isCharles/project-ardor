@@ -132,10 +132,11 @@ Docker 内嵌解析器会转发给宿主机配置的上游,在部分 Windows / D
 - Agent 永远不会自己删除数据：所有 `delete_*` 工具只返回 `CONFIRMATION_REQUIRED`，并在对话里给出一个写明真实对象名称的确认按钮，删除由用户点击后从浏览器直接调用对应 REST 接口完成。按钮上的名称由服务端读取对象本身生成，不来自模型。
 - 个人资料保存 IANA 时区，Agent 的相对日期与记忆卡日程按用户时区计算；默认 `Asia/Shanghai`。
 - 重复日程（每天、每周、每月）由 `task_series` 保存规则，并按用户时区提前展开成日历上真实的待办，因此单次可以独立完成、修改或删除。后台任务持续把展开窗口推到约 120 天以后；取消规则只撤回尚未开始、用户也没动过的后续日程。
-- 模拟面试支持文字与语音两种方式。语音 MVP 同时支持 OpenAI 标准语音接口，
-  以及阿里云百炼 `qwen3-asr-flash`（OpenAI 兼容 Chat Completions 音频输入）和
-  `qwen3-tts-flash`（百炼多模态语音合成）协议，完成整段回答转写与题目朗读；
-  原始录音不会持久化，最终确认的文字仍复用现有面试答案和评价链路。
+- 模拟面试支持文字与语音两种方式。浏览器与后端通过鉴权 WebSocket 保持实时语音会话，
+  麦克风音频以 16 kHz PCM 分片送入阿里云百炼流式 ASR，题目由 24 kHz PCM 流式 TTS
+  边生成边播放；服务端 VAD 在停顿后自动完成转写，用户开口会立即停止 AI 朗读。
+  原始录音不会持久化，最终确认的文字仍复用现有面试答案和评价链路；原有整段 HTTP
+  ASR/TTS 接口继续保留为兼容能力。
 - 当前不包含多 Agent 或 LangGraph。Redis 目前只负责登录会话；简历任务队列使用 PostgreSQL 保证持久化。
 
 详细设计见 [项目范围](docs/PROJECT.md)、[架构说明](docs/ARCHITECTURE.md)、[数据库设计](docs/DATABASE.md)、[路线图](docs/ROADMAP.md) 与 [AI 开发指南](docs/AI_GUIDE.md)。
