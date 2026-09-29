@@ -1,0 +1,54 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  review:
+    if: github.event.label.name == 'claude-review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ANTHROPIC_BASE_URL: https://www.packyapi.ai
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.PACKY_ANTHROPIC_TOKEN }}
+
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Review with Claude Code
+        uses: anthropics/claude-code-action@25e67a749845f3eb2c30bd814f65dca12c3bb8c3 # v1
+        with:
+          anthropic_api_key: ${{ secrets.PACKY_ANTHROPIC_TOKEN }}
+          track_progress: true
+          prompt: |
+            请作为 Project Ardor 的独立高级工程师审查当前 Pull Request。
+
+            只报告能够从变更或仓库上下文中验证的可执行问题，重点关注：
+            - 正确性、数据一致性和并发问题
+            - 身份认证、权限隔离、SSRF、提示注入与密钥泄露
+            - 异常处理、超时、重试和资源释放
+            - API、数据库迁移与前后端契约兼容性
+            - 缺失的关键测试
+
+            将问题分为 P0、P1、P2 或 Nit，并给出文件、位置、触发条件、影响和最小修复方向。
+            如果没有高置信度问题，请明确说明。不要修改代码，不要提交 commit，不要创建新 PR。
+          claude_args: |
+            --model claude-sonnet-5
+            --max-turns 4
+            --max-budget-usd 0.10
+            --allowedTools "Read,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git status:*)"
+
