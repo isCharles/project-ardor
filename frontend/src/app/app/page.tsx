@@ -2,7 +2,7 @@
 
 import {
   Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame, GraduationCap, MessageSquareText,
-  LayoutGrid, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Settings2, Trash2, Upload, X,
+  LayoutGrid, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Settings2, Target, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -31,6 +31,7 @@ type ResumeOption = { id: string; originalFilename: string };
 type RecapOption = { id: string; title: string };
 type KnowledgeOption = { id: string; title: string };
 type LearningOption = { id: string; concept: string };
+type ApplicationReminder = { weeklyCount: number; weeklyGoal: number; reminderDue: boolean };
 type BackgroundModule = "resumes" | "recaps" | "knowledge";
 type ResumeBackgroundStatus = { analysisId: string | null; analysisStatus: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | null };
 type RecapBackgroundStatus = { status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" };
@@ -119,6 +120,7 @@ export default function AgentHomePage() {
   const [knowledgeOptions, setKnowledgeOptions] = useState<KnowledgeOption[]>([]);
   const [learningOptions, setLearningOptions] = useState<LearningOption[]>([]);
   const [notice, setNotice] = useState("");
+  const [applicationReminder, setApplicationReminder] = useState<ApplicationReminder | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [backgroundReady, setBackgroundReady] = useState<Record<BackgroundModule, boolean>>({ resumes: false, recaps: false, knowledge: false });
@@ -167,6 +169,25 @@ export default function AgentHomePage() {
       });
     return () => { cancelled = true; };
   }, [applyState, router]);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      void api<ApplicationReminder>("/api/applications/rhythm")
+        .then((result) => { if (active) setApplicationReminder(result); })
+        .catch(() => undefined);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, []);
+
+  async function dismissApplicationReminder() {
+    try { setApplicationReminder(await api<ApplicationReminder>("/api/applications/rhythm/reminder/dismiss", { method: "POST" })); }
+    catch { /* Keep the reminder visible if the dismissal was not saved. */ }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -622,6 +643,7 @@ export default function AgentHomePage() {
                   <Link href="/app/recaps" onClick={() => acknowledgeBackground("recaps")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileText className="size-4 text-emerald-600" /><span>面经</span>{backgroundReady.recaps && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
                   <Link href="/app/cards" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BrainCircuit className="size-4 text-violet-500" /><span>记忆卡</span></Link>
                   <Link href="/app/calendar" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><CalendarDays className="size-4 text-rose-500" /><span>日历</span></Link>
+                  <Link href="/app/applications" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><Target className="size-4 text-violet-500" /><span>投递节奏</span></Link>
                   <Link href="/app/knowledge" onClick={() => acknowledgeBackground("knowledge")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BookOpenText className="size-4 text-cyan-600" /><span>知识库</span>{backgroundReady.knowledge && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
                   <Link href="/app/learning" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><GraduationCap className="size-4 text-rose-500" /><span>学习</span></Link>
                   <button onClick={() => { setWorkspaceOpen(false); setMemoryOpen(true); }} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-left text-xs text-stone-700 transition hover:bg-white"><Brain className="size-4 text-violet-500" /><span>总体记忆</span><span className={`absolute right-2.5 top-2.5 size-1.5 rounded-full ${memoryDraft ? "bg-violet-500" : "bg-stone-300"}`} /></button>
@@ -633,6 +655,7 @@ export default function AgentHomePage() {
 
           {!state?.llmConfigured && <div className="mx-4 mt-2 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 md:mx-8"><span>配置一个支持 Tool Calling 的模型后，Ardor 才能开始工作。</span><Link href="/app/settings" className="shrink-0 font-medium underline underline-offset-4">去设置</Link></div>}
           {notice && <button type="button" onClick={() => setNotice("")} className="mx-4 mt-2 rounded-2xl bg-emerald-50/90 px-4 py-3 text-left text-sm text-emerald-800 md:mx-8">{notice}</button>}
+          {applicationReminder?.reminderDue && <div className="mx-4 mt-2 flex items-center gap-3 rounded-2xl border border-violet-100 bg-white/80 px-4 py-3 text-sm text-stone-700 shadow-sm md:mx-8"><Target className="size-4 shrink-0 text-violet-500" /><span className="flex-1">今天投了多少份？本周 {applicationReminder.weeklyCount}/{applicationReminder.weeklyGoal}</span><Link href="/app/applications" className="shrink-0 font-medium text-violet-700 hover:underline">记一下</Link><button type="button" onClick={() => void dismissApplicationReminder()} className="shrink-0 text-xs text-stone-400 hover:text-stone-700">今天跳过</button></div>}
 
           <div className="relative flex-1 overflow-y-auto">
             {messages.length === 0 ? (
