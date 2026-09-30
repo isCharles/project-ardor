@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,7 @@ public class ApplicationRhythmService {
     private final ProfileService profiles;
     private final Clock clock;
 
+    @Autowired
     public ApplicationRhythmService(JdbcTemplate jdbc, ProfileService profiles) {
         this(jdbc, profiles, Clock.systemUTC());
     }

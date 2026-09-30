@@ -1,6 +1,7 @@
 package com.projectardor.applications.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -8,9 +9,24 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import com.projectardor.profile.service.ProfileService;
 
 class ApplicationRhythmServiceTests {
     private final ZoneId zone = ZoneId.of("Asia/Shanghai");
+
+    @Test
+    void springCanCreateServiceWithItsInjectableConstructor() {
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(JdbcTemplate.class, () -> mock(JdbcTemplate.class));
+            context.registerBean(ProfileService.class, () -> mock(ProfileService.class));
+            context.registerBean(ApplicationRhythmService.class);
+            context.refresh();
+            assertThat(context.getBean(ApplicationRhythmService.class)).isNotNull();
+        }
+    }
 
     @Test
     void reminderStartsOnlyAfterConfiguredTimeAndBeforeWeeklyGoalIsMet() {
