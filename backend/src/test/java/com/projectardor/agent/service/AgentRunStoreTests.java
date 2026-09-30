@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -73,14 +75,15 @@ class AgentRunStoreTests {
                 eq(requestId), eq(userId));
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = { "RUNNING", "INTERRUPTED" })
     @SuppressWarnings("unchecked")
-    void flushesMessagesBeforeLinkingCompletedRun() {
+    void flushesMessagesBeforeLinkingCompletedRun(String status) {
         UUID userId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
         Conversation conversation = Conversation.create(userId, "新对话");
         AgentRunStore.AgentRun running = new AgentRunStore.AgentRun(requestId, conversation.getId(),
-                "你好", "RUNNING", "正在理解", null, null, false, false, Instant.now(), Instant.now());
+                "你好", status, "正在理解", null, null, false, false, Instant.now(), Instant.now());
         when(jdbc.query(anyString(), org.mockito.ArgumentMatchers.<RowMapper<AgentRunStore.AgentRun>>any(),
                 eq(requestId), eq(userId))).thenReturn(List.of(running));
         List<ConversationMessage> messages = List.of(
@@ -95,6 +98,22 @@ class AgentRunStoreTests {
         InOrder order = inOrder(conversations, entityManager, jdbc);
         order.verify(conversations).appendExchange(userId, conversation, "你好", "你好！", null, List.of());
         order.verify(entityManager).flush();
-        order.verify(jdbc).update(anyString(), eq(messages.get(1).getId()), eq(requestId), eq(userId));
+        order.verify(jdbc).update(argThat(sql -> sql.contains("status IN ('RUNNING', 'INTERRUPTED')")),
+                eq(messages.get(1).getId()), eq(requestId), eq(userId));
+    }
+
+    @Test
+    void liveRunHeartbeatPreventsFalseStaleInterruption() {
+        UUID userId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        when(jdbc.update(anyString(), eq(requestId), eq(userId), eq(conversationId), anyString(), eq("你好")))
+                .thenReturn(1);
+        runs.begin(userId, requestId, conversationId, "你好", null, null, List.of());
+
+        runs.heartbeatActiveRuns();
+
+        verify(jdbc).update(argThat(sql -> sql.contains("updated_at = CURRENT_TIMESTAMP")),
+                eq(requestId), eq(userId));
     }
 }

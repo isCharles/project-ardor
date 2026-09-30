@@ -8,6 +8,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -36,6 +37,7 @@ public class AgentRunStore {
     private final JdbcTemplate jdbc;
     private final AgentConversationStore conversations;
     private final EntityManager entityManager;
+    private final ConcurrentHashMap<UUID, ActiveRun> activeRuns = new ConcurrentHashMap<>();
 
     public AgentRunStore(JdbcTemplate jdbc, AgentConversationStore conversations, EntityManager entityManager) {
         this.jdbc = jdbc;
@@ -60,6 +62,7 @@ public class AgentRunStore {
                 throw new IllegalArgumentException("请求标识已用于另一条消息");
             }
         }
+        if (inserted == 1) activeRuns.put(requestId, new ActiveRun(userId, Instant.now()));
         return inserted == 1;
     }
 
@@ -99,7 +102,7 @@ public class AgentRunStore {
     @Transactional
     public List<ConversationMessage> complete(UUID userId, UUID requestId, Conversation conversation,
             String message, String answer, String trace, List<AgentContextReference> references) {
-        if (!"RUNNING".equals(get(userId, requestId).status())) {
+        if (!List.of("RUNNING", "INTERRUPTED").contains(get(userId, requestId).status())) {
             throw new IllegalStateException("请求已结束，不能再次保存回复");
         }
         List<ConversationMessage> saved = conversations.appendExchange(
@@ -110,9 +113,10 @@ public class AgentRunStore {
                 UPDATE agent_runs SET status = 'COMPLETED', label = '已完成',
                        assistant_message_id = ?, updated_at = CURRENT_TIMESTAMP,
                        finished_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND user_id = ? AND status = 'RUNNING'
+                WHERE id = ? AND user_id = ? AND status IN ('RUNNING', 'INTERRUPTED')
                 """, saved.get(1).getId(), requestId, userId);
         if (updated != 1) throw new IllegalStateException("请求状态已改变，回复未保存");
+        activeRuns.remove(requestId);
         return saved;
     }
 
@@ -123,7 +127,18 @@ public class AgentRunStore {
                        updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ? AND status = 'RUNNING'
                 """, code, message, retryable, requestId, userId);
+        activeRuns.remove(requestId);
         return get(userId, requestId);
+    }
+
+    /** Keep this process's live model and tool calls distinguishable from runs orphaned by a crash. */
+    @Scheduled(fixedDelay = 30_000, initialDelay = 30_000)
+    public void heartbeatActiveRuns() {
+        Instant limit = Instant.now().minusSeconds(2 * 60 * 60);
+        activeRuns.forEach((requestId, active) -> {
+            if (active.startedAt().isBefore(limit)) activeRuns.remove(requestId, active);
+            else heartbeat(active.userId(), requestId);
+        });
     }
 
     /** A dead server cannot finish a run; do not let it remain "running" forever. */
@@ -161,4 +176,6 @@ public class AgentRunStore {
             String errorCode, String errorMessage, boolean retryable, boolean toolStarted,
             Instant createdAt, Instant updatedAt) {
     }
+
+    private record ActiveRun(UUID userId, Instant startedAt) {}
 }

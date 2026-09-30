@@ -207,6 +207,7 @@ export default function AgentHomePage() {
     const conversationId = state?.conversationId;
     if (!conversationId || busy) return;
     let stopped = false;
+    let timer: number | undefined;
     let previousStatus: AgentRun["status"] | null = runningRunId ? "RUNNING" : null;
     const check = async () => {
       try {
@@ -216,6 +217,7 @@ export default function AgentHomePage() {
           runStartedAt.current = new Date(run.createdAt).getTime();
           setRunningRun(run);
           previousStatus = "RUNNING";
+          timer = window.setTimeout(() => void check(), 3000);
         } else {
           setRunningRun(null);
           if (previousStatus === "RUNNING") {
@@ -227,15 +229,22 @@ export default function AgentHomePage() {
               setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
               setDraft((current) => current || readSavedDraft(conversationId));
             }
+          } else if (readSavedDraft(conversationId) === run.message) {
+            if (run.status === "COMPLETED") {
+              window.sessionStorage.removeItem(draftStorageKey(conversationId));
+              setDraft((current) => current === run.message ? "" : current);
+            } else {
+              setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
+            }
           }
         }
       } catch (reason) {
         if (reason instanceof ApiError && reason.status === 404 && !stopped) setRunningRun(null);
+        else if (!stopped && previousStatus === "RUNNING") timer = window.setTimeout(() => void check(), 5000);
       }
     };
     void check();
-    const timer = window.setInterval(() => void check(), 3000);
-    return () => { stopped = true; window.clearInterval(timer); };
+    return () => { stopped = true; if (timer) window.clearTimeout(timer); };
   }, [state?.conversationId, busy, load, runningRunId]);
   useEffect(() => {
     if (!busy && !runningRunId) return;
