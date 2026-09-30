@@ -1,0 +1,46 @@
+name: Database migrations
+
+on:
+  pull_request:
+    paths:
+      - "backend/src/main/resources/db/migration/**"
+      - ".github/workflows/database-migrations.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start isolated PostgreSQL 17 with pgvector
+        run: |
+          docker run --detach --name ardor-migration-check \
+            --env POSTGRES_PASSWORD=migration-check-only \
+            --env POSTGRES_DB=ardor \
+            pgvector/pgvector:pg17
+          for attempt in {1..30}; do
+            if docker exec ardor-migration-check pg_isready -U postgres -d ardor; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs ardor-migration-check
+          exit 1
+
+      - name: Apply every migration to a clean database
+        shell: bash
+        run: |
+          mapfile -t migrations < <(find backend/src/main/resources/db/migration -maxdepth 1 -name 'V*.sql' | sort -V)
+          test "${#migrations[@]}" -gt 0
+          for migration in "${migrations[@]}"; do
+            echo "Applying $(basename "$migration")"
+            docker exec -i ardor-migration-check \
+              psql -U postgres -d ardor -v ON_ERROR_STOP=1 < "$migration"
+          done
+          docker exec ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 \
+            -c "SELECT COUNT(*) FROM agent_runs;"

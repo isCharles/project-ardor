@@ -59,7 +59,7 @@ public class AgentController {
     public SseEmitter chatStream(
             @AuthenticationPrincipal ArdorPrincipal principal,
             HttpServletResponse response,
-            @RequestBody AgentMessageRequest request) {
+            @Valid @RequestBody AgentMessageRequest request) {
         response.setHeader("Cache-Control", "no-cache, no-transform");
         response.setHeader("X-Accel-Buffering", "no");
         SseEmitter emitter = new SseEmitter(300_000L);
@@ -67,7 +67,7 @@ public class AgentController {
         emitter.onCompletion(() -> closed.set(true));
         emitter.onTimeout(() -> { closed.set(true); emitter.complete(); });
         agentService.chatStream(principal.userId(), request.conversationId(), request.message(), request.contextType(), request.contextId(),
-                request.contextReferences(),
+                request.contextReferences(), request.requestId(),
                 new CareerAgentService.StreamSink() {
                     @Override public void send(AgentStreamEvent event) {
                         if (closed.get()) return;
@@ -79,6 +79,20 @@ public class AgentController {
                     }
                 });
         return emitter;
+    }
+
+    @GetMapping("/runs/{requestId}")
+    public AgentRunResponse run(
+            @AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable java.util.UUID requestId) {
+        return agentService.run(principal.userId(), requestId);
+    }
+
+    @GetMapping("/runs/latest")
+    public AgentRunResponse latestRun(
+            @AuthenticationPrincipal ArdorPrincipal principal,
+            @RequestParam java.util.UUID conversationId) {
+        return agentService.latestRun(principal.userId(), conversationId);
     }
 
     @PostMapping("/conversations")

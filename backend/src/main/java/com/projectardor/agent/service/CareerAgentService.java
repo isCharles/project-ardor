@@ -12,6 +12,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
@@ -27,6 +28,7 @@ import com.projectardor.agent.web.AgentConversationResponse;
 import com.projectardor.agent.web.AgentMemoryResponse;
 import com.projectardor.agent.web.AgentStateResponse;
 import com.projectardor.agent.web.AgentStreamEvent;
+import com.projectardor.agent.web.AgentRunResponse;
 import com.projectardor.common.security.ExternalHostResolutionException;
 import com.projectardor.llm.service.LlmCallException;
 import com.projectardor.llm.service.LlmConfigService;
@@ -86,6 +88,7 @@ public class CareerAgentService {
             """;
 
     private final AgentConversationStore store;
+    private final AgentRunStore runStore;
     private final LangChainModelFactory modelFactory;
     private final CareerAgentTools tools;
     private final LlmConfigService llmConfigService;
@@ -96,6 +99,7 @@ public class CareerAgentService {
 
     public CareerAgentService(
             AgentConversationStore store,
+            AgentRunStore runStore,
             LangChainModelFactory modelFactory,
             CareerAgentTools tools,
             LlmConfigService llmConfigService,
@@ -103,6 +107,7 @@ public class CareerAgentService {
             ProfileService profileService,
             ObjectMapper objectMapper) {
         this.store = store;
+        this.runStore = runStore;
         this.modelFactory = modelFactory;
         this.tools = tools;
         this.llmConfigService = llmConfigService;
@@ -132,6 +137,16 @@ public class CareerAgentService {
                 store.allMessages(userId, selected.getId()).stream()
                         .map(AgentMessageResponse::from)
                         .toList(), summaries, archivedSummaries, memory);
+    }
+
+    public AgentRunResponse run(UUID userId, UUID requestId) {
+        return AgentRunResponse.from(runStore.get(userId, requestId));
+    }
+
+    public AgentRunResponse latestRun(UUID userId, UUID conversationId) {
+        store.requireActive(userId, conversationId);
+        return AgentRunResponse.from(runStore.latest(userId, conversationId)
+                .orElseThrow(() -> new com.projectardor.common.web.ResourceNotFoundException("请求记录不存在")));
     }
 
     public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId) {
@@ -210,8 +225,14 @@ public class CareerAgentService {
 
     public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId,
             List<AgentContextReferenceRequest> requestedReferences, StreamSink sink) {
+        chatStream(userId, conversationId, rawMessage, contextType, contextId, requestedReferences, null, sink);
+    }
+
+    public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId,
+            List<AgentContextReferenceRequest> requestedReferences, UUID requestId, StreamSink sink) {
         long startedAt = System.nanoTime();
         AtomicBoolean finished = new AtomicBoolean();
+        AtomicReference<UUID> persistedRun = new AtomicReference<>();
         Semaphore lock = userLocks.computeIfAbsent(userId, ignored -> new Semaphore(1));
         boolean acquired = false;
         try {
@@ -225,11 +246,23 @@ public class CareerAgentService {
             acquired = true;
             llmConfigService.getRuntimeConfig(userId);
             Conversation conversation = conversationId == null ? store.create(userId) : store.requireActive(userId, conversationId);
+            if (requestId != null) {
+                if (!runStore.begin(userId, requestId, conversation.getId(), message,
+                        contextType, contextId, requestedReferences)) {
+                    sink.send(AgentStreamEvent.error("RUN_ALREADY_STARTED",
+                            "请求已被接收，请读取已有执行状态", false, elapsedMs(startedAt)));
+                    sink.complete();
+                    lock.release();
+                    return;
+                }
+                persistedRun.set(requestId);
+            }
             MessageWindowChatMemory memory = conversationMemory(userId, conversation.getId());
             ConcurrentHashMap<String, Long> toolStarts = new ConcurrentHashMap<>();
             List<RunStep> persistedSteps = new CopyOnWriteArrayList<>();
             AtomicInteger partialChunks = new AtomicInteger();
             AtomicLong firstPartialAt = new AtomicLong();
+            AtomicLong lastHeartbeatAt = new AtomicLong(System.nanoTime());
             // Held rather than inlined: after the run it is asked which deletions
             // the agent proposed, so each becomes a button in the transcript.
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message);
@@ -242,6 +275,7 @@ public class CareerAgentService {
                     .beforeToolExecution(before -> {
                         String name = before.request().name();
                         toolStarts.put(before.request().id(), System.nanoTime());
+                        if (requestId != null) runStore.progress(userId, requestId, toolLabel(name, false), true);
                         sink.send(AgentStreamEvent.tool("tool_start", name, toolLabel(name, false), elapsedMs(startedAt)));
                     })
                     .onToolExecuted(execution -> {
@@ -249,12 +283,19 @@ public class CareerAgentService {
                         long duration = toolStarted == null ? 0 : Math.max(1, elapsedMs(toolStarted));
                         persistedSteps.add(new RunStep(toolLabel(execution.request().name(), execution.hasFailed()), duration,
                                 execution.hasFailed() ? "FAILED" : "COMPLETED"));
+                        if (requestId != null) runStore.progress(userId, requestId, "正在整理回复", false);
                         sink.send(AgentStreamEvent.tool("tool_end", execution.request().name(),
                                 toolLabel(execution.request().name(), execution.hasFailed()), duration));
                     })
                     .onPartialResponse(token -> {
                         firstPartialAt.compareAndSet(0, System.nanoTime());
                         partialChunks.incrementAndGet();
+                        long now = System.nanoTime();
+                        long previousHeartbeatAt = lastHeartbeatAt.get();
+                        if (requestId != null && now - previousHeartbeatAt > java.util.concurrent.TimeUnit.SECONDS.toNanos(15)
+                                && lastHeartbeatAt.compareAndSet(previousHeartbeatAt, now)) {
+                            runStore.heartbeat(userId, requestId);
+                        }
                         sink.send(AgentStreamEvent.delta(token));
                     })
                     .onCompleteResponse(response -> {
@@ -263,8 +304,10 @@ public class CareerAgentService {
                             String answer = response.aiMessage().text();
                             if (answer == null || answer.isBlank()) throw new IllegalStateException("Agent 没有返回可用内容");
                             long totalElapsed = elapsedMs(startedAt);
-                            List<ConversationMessage> saved = store.appendExchange(userId, conversation, message, answer.strip(),
-                                    runTrace(totalElapsed, persistedSteps), references);
+                            String trace = runTrace(totalElapsed, persistedSteps);
+                            List<ConversationMessage> saved = requestId == null
+                                    ? store.appendExchange(userId, conversation, message, answer.strip(), trace, references)
+                                    : runStore.complete(userId, requestId, conversation, message, answer.strip(), trace, references);
                             long firstPartialMs = firstPartialAt.get() == 0 ? -1 : elapsedMs(firstPartialAt.get());
                             log.info("Agent stream completed: userId={}, conversationId={}, partialChunks={}, firstPartialMs={}, totalMs={}",
                                     userId, conversation.getId(), partialChunks.get(), firstPartialMs, elapsedMs(startedAt));
@@ -273,19 +316,19 @@ public class CareerAgentService {
                             sink.send(AgentStreamEvent.done(AgentMessageResponse.from(saved.get(1)), elapsedMs(startedAt)));
                             sink.complete();
                         } catch (RuntimeException exception) {
-                            sendStreamError(sink, exception, startedAt);
+                            sendStreamError(sink, exception, startedAt, userId, persistedRun.get());
                         } finally { lock.release(); }
                     })
                     .onError(exception -> {
                         if (!finished.compareAndSet(false, true)) return;
-                        try { sendStreamError(sink, exception, startedAt); }
+                        try { sendStreamError(sink, exception, startedAt, userId, persistedRun.get()); }
                         finally { lock.release(); }
                     });
             stream.start();
         } catch (RuntimeException exception) {
             if (finished.compareAndSet(false, true)) {
                 try {
-                    sendStreamError(sink, exception, startedAt);
+                    sendStreamError(sink, exception, startedAt, userId, persistedRun.get());
                 } finally {
                     if (acquired) lock.release();
                 }
@@ -303,23 +346,36 @@ public class CareerAgentService {
     }
 
     private void sendStreamError(StreamSink sink, Throwable exception, long startedAt) {
+        sendStreamError(sink, exception, startedAt, null, null);
+    }
+
+    private void sendStreamError(StreamSink sink, Throwable exception, long startedAt, UUID userId, UUID requestId) {
+        AgentStreamEvent event;
         if (exception instanceof LlmCallException llmException) {
-            sink.send(AgentStreamEvent.error(
-                    llmException.getCode(), llmException.getMessage(), llmException.isRetryable(), elapsedMs(startedAt)));
-            sink.complete();
-            return;
-        }
-        if (exception instanceof IllegalArgumentException || exception instanceof IllegalStateException) {
-            sink.send(AgentStreamEvent.error(
+            event = AgentStreamEvent.error(
+                    llmException.getCode(), llmException.getMessage(), llmException.isRetryable(), elapsedMs(startedAt));
+        } else if (exception instanceof IllegalArgumentException || exception instanceof IllegalStateException) {
+            event = AgentStreamEvent.error(
                     exception instanceof IllegalArgumentException ? "INVALID_REQUEST" : "INVALID_STATE",
-                    exception.getMessage(), false, elapsedMs(startedAt)));
-            sink.complete();
-            return;
+                    exception.getMessage(), false, elapsedMs(startedAt));
+        } else {
+            boolean retryable = isTransientFailure(exception);
+            event = AgentStreamEvent.error(retryable ? "AGENT_TEMPORARILY_UNAVAILABLE" : "AGENT_LLM_FAILED",
+                    retryable ? transientFailureMessage(exception) : "模型调用失败，请检查模型与 Tool Calling 兼容性",
+                    retryable, elapsedMs(startedAt));
         }
-        boolean retryable = isTransientFailure(exception);
-        sink.send(AgentStreamEvent.error(retryable ? "AGENT_TEMPORARILY_UNAVAILABLE" : "AGENT_LLM_FAILED",
-                retryable ? transientFailureMessage(exception) : "模型调用失败，请检查模型与 Tool Calling 兼容性",
-                retryable, elapsedMs(startedAt)));
+        if (requestId != null) {
+            try {
+                AgentRunStore.AgentRun failed = runStore.fail(userId, requestId,
+                        event.errorCode(), event.content(), Boolean.TRUE.equals(event.retryable()));
+                event = AgentStreamEvent.error(event.errorCode(), event.content(), failed.retryable(), elapsedMs(startedAt));
+            } catch (RuntimeException persistenceError) {
+                log.error("Could not persist agent run failure: userId={}, requestId={}", userId, requestId, persistenceError);
+                event = AgentStreamEvent.error("AGENT_RUN_STATUS_UNKNOWN",
+                        "请求状态暂时无法确认，请刷新查看运行记录后再试", false, elapsedMs(startedAt));
+            }
+        }
+        sink.send(event);
         sink.complete();
     }
 
