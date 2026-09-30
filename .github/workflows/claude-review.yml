@@ -27,7 +27,9 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          persist-credentials: false
+          # Claude Action fetches the PR branch again; this private repo needs read credentials.
+          # The workflow token has contents: read, so it cannot push code.
+          persist-credentials: true
 
       - name: Review with Claude Code
         uses: anthropics/claude-code-action@25e67a749845f3eb2c30bd814f65dca12c3bb8c3 # v1
@@ -49,7 +51,7 @@ jobs:
             如果没有高置信度问题，请明确说明。不要修改代码，不要提交 commit，不要创建新 PR。
           claude_args: |
             --model claude-sonnet-5
-            --max-turns 4
-            --max-budget-usd 0.10
+            --max-turns ${{ vars.CLAUDE_REVIEW_MAX_TURNS || '20' }}
+            --max-budget-usd ${{ vars.CLAUDE_REVIEW_MAX_BUDGET_USD || '5' }}
             --allowedTools "Read,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git status:*)"
 
