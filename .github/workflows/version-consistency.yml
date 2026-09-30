@@ -1,0 +1,24 @@
+name: Version consistency
+
+on:
+  pull_request:
+    paths:
+      - "backend/pom.xml"
+      - "backend/Dockerfile"
+      - "backend/.dockerignore"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "scripts/check-version.mjs"
+      - ".github/workflows/version-consistency.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: node scripts/check-version.mjs
