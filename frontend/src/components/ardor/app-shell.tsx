@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  BookOpenText, CalendarRange, FileText, Flame, GraduationCap, Layers, MessageSquare, PanelLeft, Settings, ShieldCheck, SquareStack, X,
+  BookOpenText, CalendarRange, FileText, Flame, GraduationCap, Layers, MessageSquare, PanelLeft, Settings, ShieldCheck, SquareStack, Target, X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -19,6 +19,7 @@ const WORKSPACE_ITEMS = [
   { href: "/app/knowledge", label: "知识库", icon: BookOpenText },
   { href: "/app/learning", label: "学习", icon: GraduationCap },
   { href: "/app/calendar", label: "日程", icon: CalendarRange },
+  { href: "/app/applications", label: "投递节奏", icon: Target },
 ] as const;
 
 export function AppShell({

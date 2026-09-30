@@ -17,6 +17,8 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
 
+import com.projectardor.applications.service.ApplicationRhythmService;
+import com.projectardor.applications.web.ApplicationRhythmResponse;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.calendar.domain.CalendarTaskPriority;
 import com.projectardor.calendar.domain.CalendarTaskSource;
@@ -78,6 +80,7 @@ public class CareerAgentTools {
     private final TavilySearchService tavilySearchService;
     private final KnowledgeService knowledgeService;
     private final LearningPlanService learningPlanService;
+    private final ApplicationRhythmService applicationRhythmService;
 
     public CareerAgentTools(
             ResumeService resumeService,
@@ -91,7 +94,8 @@ public class CareerAgentTools {
             InterviewRecapQueueService interviewRecapQueueService,
             TavilySearchService tavilySearchService,
             KnowledgeService knowledgeService,
-            LearningPlanService learningPlanService) {
+            LearningPlanService learningPlanService,
+            ApplicationRhythmService applicationRhythmService) {
         this.resumeService = resumeService;
         this.resumeAnalysisQueueService = resumeAnalysisQueueService;
         this.interviewService = interviewService;
@@ -104,6 +108,7 @@ public class CareerAgentTools {
         this.tavilySearchService = tavilySearchService;
         this.knowledgeService = knowledgeService;
         this.learningPlanService = learningPlanService;
+        this.applicationRhythmService = applicationRhythmService;
     }
 
     public BoundCareerTools bind(UUID trustedUserId, String trustedUserRequest) {
@@ -276,6 +281,31 @@ public class CareerAgentTools {
             int count = memoryService.listItems(userId).size();
             return propose("all_memories", null, "全部长期记忆（" + count + " 条）",
                     "清空后无法恢复", "/api/agent/memory");
+        }
+
+        @Tool(name = "get_application_rhythm", value = "查看用户本周投递份数、目标、每天记录和提醒设置；询问投递进度时先用此工具")
+        public ApplicationRhythmResponse getApplicationRhythm() {
+            return applicationRhythmService.get(userId);
+        }
+
+        @Tool(name = "record_application_count", value = "将某天的投递总数设为用户说出的准确数量。覆盖当天旧值，重试不会重复加数；不要把一次性投递数写入长期记忆")
+        public ApplicationRhythmResponse recordApplicationCount(
+                @P("当天总共投了多少份，0 到 500") int count,
+                @P(value = "日期 YYYY-MM-DD；用户说今天时传空字符串", required = false) String date) {
+            LocalDate day = date == null || date.isBlank()
+                    ? applicationRhythmService.get(userId).today()
+                    : parseLocalDate(date, "投递日期");
+            return applicationRhythmService.record(userId, day, count);
+        }
+
+        @Tool(name = "set_application_rhythm", value = "设置每周投递目标和工作台内提醒。只有用户明确提出目标和提醒要求才修改；提醒时间按用户资料时区解释")
+        public ApplicationRhythmResponse setApplicationRhythm(
+                @P("每周投递目标，0 到 500；0 表示关闭目标") int weeklyGoal,
+                @P("是否启用工作台内提醒") boolean reminderEnabled,
+                @P("本地提醒时间 HH:mm，例如 19:00") String reminderTime,
+                @P("是否仅工作日提醒") boolean weekdaysOnly) {
+            return applicationRhythmService.configure(userId, weeklyGoal, reminderEnabled,
+                    parseLocalTime(reminderTime), weekdaysOnly);
         }
 
         @Tool(name = "list_calendar_tasks", value = "读取当前用户的日历待办。可按 ISO-8601 时间范围过滤；不传范围则返回全部待办")
