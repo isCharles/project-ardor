@@ -73,9 +73,9 @@ Ardor 可以从已有资料中找到上下文，帮你把准备拆成真正可�
 
 ## 开始体验
 
-这是一个**持续迭代中的 V0.1**，目前提供本地自托管体验，尚未提供公开在线演示。准备好 Docker Desktop 与 Maven 后，按 [启动指南](docs/SETUP.md) 配置环境并运行 `.\start.ps1`，即可在 `http://localhost:3000` 打开 Ardor。
+当前版本为 **v0.2.0 自托管预览版**，仍在持续迭代，尚未提供公开在线演示。准备好 Docker Desktop 与 Maven 后，按 [启动指南](docs/SETUP.md) 配置环境并运行 `.\start.ps1`，即可在 `http://localhost:3000` 打开 Ardor。
 
-想了解项目如何设计？可以继续阅读 [产品范围](docs/PROJECT.md) · [架构说明](docs/ARCHITECTURE.md) · [路线图](docs/ROADMAP.md)。
+想了解项目如何设计？可以继续阅读 [产品范围](docs/PROJECT.md) · [架构说明](docs/ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [版本规则](docs/VERSIONING.md)。
 
 <div align="center">
   <br />
