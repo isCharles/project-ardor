@@ -14,5 +14,11 @@ public record AgentMessageRequest(
         String contextType,
         UUID contextId,
         @Size(max = 5, message = "一次最多引用 5 份资料")
-        List<AgentContextReferenceRequest> contextReferences) {
+        List<AgentContextReferenceRequest> contextReferences,
+        UUID requestId) {
+
+    public AgentMessageRequest(UUID conversationId, String message, String contextType, UUID contextId,
+            List<AgentContextReferenceRequest> contextReferences) {
+        this(conversationId, message, contextType, contextId, contextReferences, null);
+    }
 }

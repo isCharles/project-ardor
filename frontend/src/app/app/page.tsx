@@ -20,6 +20,7 @@ type Conversation = { id: string; title: string; pinned: boolean; createdAt: str
 type AgentMemory = { content: string; updatedAt: string | null };
 type RetryFailure = { label: string; detail: string };
 type AgentStreamEvent = { type: "status" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null };
+type AgentRun = { id: string; conversationId: string; message: string; status: "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED"; label: string; errorCode: string | null; errorMessage: string | null; retryable: boolean; createdAt: string; updatedAt: string };
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
    button, and pressing it is an ordinary authenticated DELETE from here — the
    model never gets to destroy anything on its own say-so. */
@@ -96,6 +97,7 @@ export default function AgentHomePage() {
   const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retryFailures, setRetryFailures] = useState<RetryFailure[]>([]);
   const [runSteps, setRunSteps] = useState<RunStep[]>([]);
@@ -123,6 +125,7 @@ export default function AgentHomePage() {
   const endRef = useRef<HTMLDivElement>(null);
   const runStartedAt = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
+  const runningRunId = runningRun?.id;
 
   const applyState = useCallback((result: AgentState) => {
     setState(result);
@@ -201,14 +204,48 @@ export default function AgentHomePage() {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
   useEffect(() => {
-    if (!busy) return;
+    const conversationId = state?.conversationId;
+    if (!conversationId || busy) return;
+    let stopped = false;
+    let previousStatus: AgentRun["status"] | null = runningRunId ? "RUNNING" : null;
+    const check = async () => {
+      try {
+        const run = await api<AgentRun>(`/api/agent/runs/latest?conversationId=${encodeURIComponent(conversationId)}`);
+        if (stopped) return;
+        if (run.status === "RUNNING") {
+          runStartedAt.current = new Date(run.createdAt).getTime();
+          setRunningRun(run);
+          previousStatus = "RUNNING";
+        } else {
+          setRunningRun(null);
+          if (previousStatus === "RUNNING") {
+            previousStatus = run.status;
+            if (run.status === "COMPLETED") {
+              window.sessionStorage.removeItem(draftStorageKey(conversationId));
+              await load(conversationId);
+            } else {
+              setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
+              setDraft((current) => current || readSavedDraft(conversationId));
+            }
+          }
+        }
+      } catch (reason) {
+        if (reason instanceof ApiError && reason.status === 404 && !stopped) setRunningRun(null);
+      }
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 3000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [state?.conversationId, busy, load, runningRunId]);
+  useEffect(() => {
+    if (!busy && !runningRunId) return;
     const timer = window.setInterval(() => setRunElapsed(Date.now() - runStartedAt.current), 250);
     return () => window.clearInterval(timer);
-  }, [busy]);
+  }, [busy, runningRunId]);
 
   async function selectConversation(conversationId: string) {
     if (busy || conversationId === state?.conversationId) return;
-    setError(""); setConfirmations([]); setMenuId(null); setSidebarOpen(false);
+    setError(""); setRunningRun(null); setConfirmations([]); setMenuId(null); setSidebarOpen(false);
     try { await load(conversationId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入会话"); }
   }
@@ -216,6 +253,7 @@ export default function AgentHomePage() {
   async function newConversation() {
     if (busy) return;
     setError("");
+    setRunningRun(null);
     setRetryFailures([]);
     setRunSteps([]);
     setConfirmations([]);
@@ -244,14 +282,14 @@ export default function AgentHomePage() {
 
   async function send(text: string) {
     const message = text.trim();
-    if (!message || busy) return;
+    if (!message || busy || runningRun) return;
     if (message.length > MAX_MESSAGE_LENGTH) {
       setError(`这条消息有 ${message.length.toLocaleString()} 个字符，单条最多 ${MAX_MESSAGE_LENGTH.toLocaleString()} 个字符。请删减或分段发送。`);
       return;
     }
     const optimisticId = `pending-user-message-${crypto.randomUUID()}`;
     let conversationId = state?.conversationId ?? null;
-    let conversationCreatedForThisMessage: string | null = null;
+    let acceptedRun = false;
     let savedDraftKey = draftStorageKey(conversationId);
     window.sessionStorage.setItem(savedDraftKey, message);
     setError(""); setRetryFailures([]); setRunSteps([]); setConfirmations([]); setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setBusy(true);
@@ -259,7 +297,6 @@ export default function AgentHomePage() {
       if (!conversationId) {
         const conversation = await api<Conversation>("/api/agent/conversations", { method: "POST" });
         conversationId = conversation.id;
-        conversationCreatedForThisMessage = conversation.id;
         const conversationDraftKey = draftStorageKey(conversationId);
         window.sessionStorage.setItem(conversationDraftKey, message);
         window.sessionStorage.removeItem(savedDraftKey);
@@ -286,6 +323,7 @@ export default function AgentHomePage() {
       setLeavingEmptyState(false);
       const pendingAssistantId = `pending-assistant-${crypto.randomUUID()}`;
       let assistant: AgentMessage | null = null;
+      let requestId = crypto.randomUUID();
       setMessages((current) => [...current, { id: pendingAssistantId, conversationId: activeConversationId, role: "ASSISTANT", content: "", createdAt: "" }]);
       for (let retry = 0; retry <= MAX_MESSAGE_RETRIES; retry += 1) {
         if (retry > 0) {
@@ -297,7 +335,7 @@ export default function AgentHomePage() {
         try {
           let streamFailure: AgentStreamEvent | null = null;
           if (retry > 0) setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: "" } : item));
-          await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { conversationId: activeConversationId, message, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
+          await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { requestId, conversationId: activeConversationId, message, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
             if (event.type === "delta" && event.content) {
               receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
@@ -332,16 +370,40 @@ export default function AgentHomePage() {
             const failure = streamFailure as AgentStreamEvent;
             throw Object.assign(new Error(failure.content ?? "Agent 暂时无法回复"), { retryable: failure.retryable, code: failure.errorCode });
           }
+          if (!assistant) throw new Error("连接结束但未收到完整回复");
           break;
         } catch (reason) {
-          const serverRetryable = reason instanceof ApiError ? reason.body.retryable === true : (reason as { retryable?: boolean }).retryable !== false;
-          const retryable = serverRetryable && !receivedToolEvent && !receivedDelta;
+          let recorded: AgentRun | null = null;
+          try { recorded = await api<AgentRun>(`/api/agent/runs/${requestId}`); }
+          catch (lookupError) {
+            if (!(lookupError instanceof ApiError && lookupError.status === 404)) {
+              throw new Error("暂时无法确认请求是否仍在执行。请刷新查看状态，不要重复发送。", { cause: lookupError });
+            }
+          }
+          if (recorded?.status === "COMPLETED") {
+            window.sessionStorage.removeItem(savedDraftKey);
+            await load(activeConversationId);
+            return;
+          }
+          if (recorded?.status === "RUNNING") {
+            acceptedRun = true;
+            setRunningRun(recorded);
+            setMessages((current) => current.filter((item) => item.id !== pendingAssistantId));
+            return;
+          }
+          const serverRetryable = recorded ? recorded.retryable : reason instanceof ApiError ? reason.body.retryable === true : (reason as { retryable?: boolean }).retryable !== false;
+          const retryable = serverRetryable && !receivedToolEvent && !receivedDelta && recorded?.status !== "INTERRUPTED";
           const label = retry === 0 ? "首次请求" : `第 ${retry}/${MAX_MESSAGE_RETRIES} 次重试`;
           const detail = reason instanceof ApiError
             ? `${reason.body.code ?? `HTTP ${reason.status}`} · ${reason.message}`
             : reason instanceof Error ? reason.message : "浏览器无法连接 Ardor 服务";
           setRetryFailures((current) => [...current, { label, detail }]);
-          if (!retryable || retry === MAX_MESSAGE_RETRIES) throw reason;
+          if (!retryable || retry === MAX_MESSAGE_RETRIES) {
+            if (recorded?.errorMessage) throw new Error(recorded.errorMessage);
+            throw reason;
+          }
+          // A 404 can race with a slow first POST. Reuse its ID so a late arrival cannot execute twice.
+          if (recorded?.status === "FAILED") requestId = crypto.randomUUID();
         }
       }
       const completedAssistant = assistant as AgentMessage | null;
@@ -353,23 +415,12 @@ export default function AgentHomePage() {
       setRetryFailures([]);
       setRunElapsed(0);
     } catch (reason) {
-      if (conversationCreatedForThisMessage) {
-        try {
-          const current = await api<AgentState>(`/api/agent?conversationId=${conversationCreatedForThisMessage}`);
-          if (current.messages.length === 0) {
-            await api<void>(`/api/agent/conversations/${conversationCreatedForThisMessage}`, { method: "DELETE" });
-            setConversations((items) => items.filter((item) => item.id !== conversationCreatedForThisMessage));
-            window.history.replaceState(null, "", "/app");
-          }
-        } catch {
-          // Preserve the original send error; an uncertain conversation is never deleted blindly.
-        }
-      }
+      // An empty conversation may still have an in-flight run. Never delete it on transport failure.
       setMessages((current) => current.filter((item) => item.id !== optimisticId && !item.id.startsWith("pending-assistant-")));
       setDraft(message);
       window.sessionStorage.setItem(savedDraftKey, message);
       setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
-    } finally { setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); }
+    } finally { setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
   }
 
   function updateDraft(value: string) {
@@ -580,11 +631,12 @@ export default function AgentHomePage() {
                 <div className="pointer-events-none absolute inset-x-[6%] bottom-[-28%] h-[82%] rounded-[50%] bg-[radial-gradient(circle_at_28%_45%,rgba(255,107,177,0.58),transparent_43%),radial-gradient(circle_at_72%_38%,rgba(83,125,255,0.58),transparent_47%),radial-gradient(circle_at_50%_76%,rgba(149,92,246,0.46),transparent_58%)] blur-3xl" />
                 <div className="relative z-10 mx-auto w-full max-w-3xl text-center">
                   <h2 className="text-4xl font-semibold tracking-[-0.04em] text-stone-950 md:text-5xl">What should we build{state?.displayName?.trim() ? `, ${state.displayName.trim()}` : ""}?</h2>
+                  {runningRun && <div role="status" className="mx-auto mt-5 max-w-2xl rounded-2xl border border-violet-100 bg-white/75 px-4 py-3 text-left text-sm text-violet-700">Ardor 正在处理上一条消息 · {runningRun.label}。完成后会自动显示。</div>}
                   {(visibleError || retryFailures.length > 0) && <div className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{retryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
                   <form onSubmit={submit} className="mx-auto mt-10 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
                     {selectedContexts.length > 0 && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
-                    <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-                    <div className="flex items-center justify-between gap-3 px-2 pb-1">{attachmentPicker()}<div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label="发送" disabled={busy || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
+                    <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !!runningRun || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
+                    <div className="flex items-center justify-between gap-3 px-2 pb-1">{attachmentPicker()}<div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label="发送" disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
                   </form>
                 </div>
               </div>
@@ -616,13 +668,14 @@ export default function AgentHomePage() {
                     </div>}
                   </div>)}
                 </section>}
-                {(runSteps.length > 0 || busy || retryFailures.length > 0) && <section className="max-w-xl rounded-2xl border border-white/70 bg-white/55 px-4 py-3 text-sm text-stone-600 shadow-sm backdrop-blur-md">
+                {(runSteps.length > 0 || busy || runningRun || retryFailures.length > 0) && <section className="max-w-xl rounded-2xl border border-white/70 bg-white/55 px-4 py-3 text-sm text-stone-600 shadow-sm backdrop-blur-md">
                   <button type="button" onClick={() => setTraceOpen((open) => !open)} className="flex w-full items-center gap-2 text-left">
                     {traceOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                    <span className="font-medium text-stone-700">{busy ? "Ardor 正在工作" : error ? "Ardor 未完成" : "Ardor 已完成"}</span>
+                    <span className="font-medium text-stone-700">{busy || runningRun ? "Ardor 正在工作" : error ? "Ardor 未完成" : "Ardor 已完成"}</span>
                     <span className="ml-auto text-xs tabular-nums text-stone-400">{formatElapsed(runElapsed)}</span>
                   </button>
                   {traceOpen && <div className="mt-3 space-y-2 border-l border-stone-200 pl-4">
+                    {runningRun && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin" /><span>{runningRun.label} · 可刷新页面继续查看</span></div>}
                     {runSteps.map((step) => <div key={step.key} className="flex items-center gap-2 text-xs"><CheckCircle2 className={`size-3.5 ${step.done ? "text-emerald-500" : "animate-pulse text-violet-500"}`} /><span>{step.label}</span><span className="ml-auto tabular-nums text-stone-400">{step.done ? formatElapsed(step.elapsedMs) : "进行中"}</span></div>)}
                     {retryFailures.map((failure, index) => <div key={`${failure.label}-${index}`} className="flex items-start gap-2 text-xs text-amber-700"><RotateCcw className="mt-0.5 size-3.5 shrink-0" /><span><span className="font-medium">{failure.label}</span> · {failure.detail}</span></div>)}
                     {busy && retryAttempt > 0 && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin" /><span>连接波动，正在进行第 {retryAttempt}/{MAX_MESSAGE_RETRIES} 次重试</span></div>}
@@ -637,8 +690,8 @@ export default function AgentHomePage() {
             {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {selectedContexts.length > 0 && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
-              <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label="发送" disabled={busy || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
+              <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !!runningRun || !state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
+              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label="发送" disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
             </form>
           </div>}
         </section>
