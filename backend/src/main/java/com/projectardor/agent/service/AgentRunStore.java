@@ -111,6 +111,7 @@ public class AgentRunStore {
         entityManager.flush();
         int updated = jdbc.update("""
                 UPDATE agent_runs SET status = 'COMPLETED', label = '已完成',
+                       error_code = NULL, error_message = NULL, retryable = FALSE,
                        assistant_message_id = ?, updated_at = CURRENT_TIMESTAMP,
                        finished_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ? AND status IN ('RUNNING', 'INTERRUPTED')
