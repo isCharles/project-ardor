@@ -22,6 +22,6 @@
 
 ## 私有仓库鉴权
 
-Checkout 使用临时 GitHub Token 检出私有仓库，但不把凭据留在工作区。工作流先生成有大小上限的 PR diff，Claude Code 在临时目录中审阅这份内容，不能使用本地工具，也不接收 GitHub Token。Claude 结束后，独立发布步骤使用 GitHub Token 把结果发到 PR。
+Checkout 使用临时 GitHub Token 检出私有仓库，但不把凭据留在工作区。工作流先生成有大小上限的 PR diff，Claude Code 在临时目录中审阅这份内容；它只加载该临时目录的项目设置，未预先批准任何本地工具，也不接收 GitHub Token。Claude 结束后，独立发布步骤使用 GitHub Token 把结果发到 PR。
 
 这一隔离也意味着审阅只覆盖提交的 diff：超出 120 KB 时工作流会停止，Claude 不会暗中截断后给出不完整结论。若判断问题需要 diff 之外的上下文，审阅者应明确说无法确认。
