@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BrainCircuit, Check, ChevronLeft, ChevronRight, Clock3, GraduationCap, Pencil, Plus, Repeat, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BrainCircuit, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, GraduationCap, Pencil, Plus, Repeat, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -17,7 +17,7 @@ type CalendarTask = {
   status: TaskStatus;
   priority: TaskPriority;
   source: "MANUAL" | "AGENT";
-  taskKind: "GENERAL" | "MEMORY_REVIEW" | "LEARNING";
+  taskKind: "GENERAL" | "MEMORY_REVIEW" | "LEARNING" | "INTERVIEW_RETEST";
   actionPath: string | null;
   seriesId: string | null;
   dueAt: string | null;
@@ -56,6 +56,7 @@ function localInputValue(iso: string | null, fallbackDay: Date) {
 
 function calendarLabel(task: CalendarTask) {
   if (task.taskKind === "MEMORY_REVIEW") return "复习卡片";
+  if (task.taskKind === "INTERVIEW_RETEST") return "面试复测";
   if (task.taskKind === "LEARNING") return task.title.length <= 8 ? task.title : `${task.title.slice(0, 7)}…`;
   const title = task.title.trim();
   if (title.length <= 8) return title;
@@ -220,6 +221,9 @@ function TaskCard({ task, busy, compact = false, onToggle, onEdit, onDelete }: {
   }
   if (task.taskKind === "LEARNING") {
     return <div className={`rounded-2xl bg-white/70 ${compact ? "p-3" : "p-4"}`}><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-rose-100 text-rose-600"><GraduationCap className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-stone-800">学习 · {task.title}</p>{task.description && <p className="mt-1 line-clamp-2 text-xs text-stone-400">{task.description}</p>}</div><Link href={task.actionPath ?? "/app/learning"} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-stone-950 px-3 py-2 text-xs font-medium text-white hover:bg-black">进入<ArrowRight className="size-3.5" /></Link></div></div>;
+  }
+  if (task.taskKind === "INTERVIEW_RETEST") {
+    return <div className={`rounded-2xl bg-white/70 ${compact ? "p-3" : "p-4"}`}><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-fuchsia-100 text-fuchsia-600"><CalendarDays className="size-4" /></span><div className="min-w-0 flex-1"><p className="text-sm font-medium text-stone-800">面试复测{task.status === "COMPLETED" ? " · 已完成" : ""}</p>{task.dueAt && <p className="mt-1 text-xs text-stone-400">{new Date(task.dueAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</p>}</div><Link href={task.actionPath ?? "/app/evidence"} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-stone-950 px-3 py-2 text-xs font-medium text-white hover:bg-black">{task.status === "COMPLETED" ? "回看" : "开始"}<ArrowRight className="size-3.5" /></Link></div></div>;
   }
   const complete = task.status === "COMPLETED";
   return <div className={`group rounded-2xl bg-white/70 ${compact ? "p-3" : "p-4"}`}><div className="flex items-start gap-3"><button aria-label={complete ? "恢复待办" : "完成待办"} disabled={busy} onClick={() => onToggle(task)} className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border transition ${complete ? "border-emerald-500 bg-emerald-500 text-white" : "border-stone-300 hover:border-violet-500"}`}>{complete && <Check className="size-3.5" />}</button><div className="min-w-0 flex-1"><div className="flex items-start gap-2"><span className={`mt-2 size-1.5 shrink-0 rounded-full ${priorityStyle[task.priority]}`} /><p className={`text-sm font-medium leading-5 ${complete ? "text-stone-400 line-through" : "text-stone-800"}`}>{task.title}</p><span className="ml-auto flex shrink-0 items-center gap-1.5">{task.seriesId && <span title="重复安排中的一次" className="text-stone-400"><Repeat className="size-3.5" /></span>}{task.source === "AGENT" && <span title="Ardor 创建" className="text-violet-600"><Sparkles className="size-3.5" /></span>}</span></div>{task.dueAt && <p className="mt-2 text-xs text-stone-400">{new Date(task.dueAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</p>}{task.description && !compact && <p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-500">{task.description}</p>}</div></div><div className="mt-2 flex justify-end gap-1 opacity-60 transition group-hover:opacity-100"><button aria-label="编辑待办" onClick={onEdit} className="rounded-lg p-1.5 text-stone-400 hover:bg-white hover:text-stone-700"><Pencil className="size-3.5" /></button><button aria-label="删除待办" onClick={onDelete} className="rounded-lg p-1.5 text-stone-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="size-3.5" /></button></div></div>;

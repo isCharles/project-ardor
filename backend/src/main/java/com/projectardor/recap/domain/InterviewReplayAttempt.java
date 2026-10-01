@@ -29,6 +29,8 @@ public class InterviewReplayAttempt {
     @JdbcTypeCode(SqlTypes.JSON) @Column(nullable = false, columnDefinition = "jsonb") private List<String> improvements = new ArrayList<>();
     @JdbcTypeCode(SqlTypes.JSON) @Column(name = "remaining_gaps", nullable = false, columnDefinition = "jsonb") private List<String> remainingGaps = new ArrayList<>();
     @Column(name = "next_challenge", columnDefinition = "text") private String nextChallenge;
+    @Column(name = "challenge_text", columnDefinition = "text") private String challengeText;
+    @Column(name = "retest_task_id") private UUID retestTaskId;
     @Column(name = "model_name", length = 120) private String modelName;
     @Column(name = "prompt_version", nullable = false, length = 40) private String promptVersion;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
@@ -49,14 +51,25 @@ public class InterviewReplayAttempt {
         this.remainingGaps = new ArrayList<>(remainingGaps);
         this.nextChallenge = nextChallenge;
         this.modelName = modelName;
-        this.promptVersion = "interview-replay-v1";
+        this.promptVersion = "interview-replay-v2";
     }
 
     public static InterviewReplayAttempt create(UUID userId, UUID recapQuestionId, UUID requestId,
             String answerText, ReplayVerdict verdict, String comparison, List<String> improvements,
             List<String> remainingGaps, String nextChallenge, String modelName) {
-        return new InterviewReplayAttempt(userId, recapQuestionId, requestId, answerText, verdict,
+        return create(userId, recapQuestionId, requestId, answerText, verdict, comparison,
+                improvements, remainingGaps, nextChallenge, modelName, null, null);
+    }
+
+    public static InterviewReplayAttempt create(UUID userId, UUID recapQuestionId, UUID requestId,
+            String answerText, ReplayVerdict verdict, String comparison, List<String> improvements,
+            List<String> remainingGaps, String nextChallenge, String modelName,
+            String challengeText, UUID retestTaskId) {
+        InterviewReplayAttempt attempt = new InterviewReplayAttempt(userId, recapQuestionId, requestId, answerText, verdict,
                 comparison, improvements, remainingGaps, nextChallenge, modelName);
+        attempt.challengeText = challengeText;
+        attempt.retestTaskId = retestTaskId;
+        return attempt;
     }
 
     @PrePersist void onCreate() { createdAt = Instant.now(); }
@@ -70,6 +83,8 @@ public class InterviewReplayAttempt {
     public List<String> getImprovements() { return List.copyOf(improvements); }
     public List<String> getRemainingGaps() { return List.copyOf(remainingGaps); }
     public String getNextChallenge() { return nextChallenge; }
+    public String getChallengeText() { return challengeText; }
+    public UUID getRetestTaskId() { return retestTaskId; }
     public String getModelName() { return modelName; }
     public Instant getCreatedAt() { return createdAt; }
 }

@@ -12,11 +12,14 @@ import org.springframework.data.repository.query.Param;
 
 import com.projectardor.calendar.domain.CalendarTask;
 import com.projectardor.calendar.domain.CalendarTaskKind;
+import com.projectardor.calendar.domain.CalendarTaskStatus;
 
 public interface CalendarTaskRepository extends JpaRepository<CalendarTask, UUID> {
     Optional<CalendarTask> findByIdAndUserId(UUID id, UUID userId);
     Optional<CalendarTask> findByMemoryCardIdAndUserId(UUID memoryCardId, UUID userId);
     Optional<CalendarTask> findByLearningPlanIdAndUserId(UUID learningPlanId, UUID userId);
+    Optional<CalendarTask> findFirstByUserIdAndTaskKindAndReplayQuestionIdAndStatusIn(
+            UUID userId, CalendarTaskKind taskKind, UUID replayQuestionId, List<CalendarTaskStatus> statuses);
     Optional<CalendarTask> findByUserIdAndTaskKindAndReviewDate(UUID userId, CalendarTaskKind taskKind, LocalDate reviewDate);
     List<CalendarTask> findAllByUserIdOrderByDueAtAscCreatedAtDesc(UUID userId);
     List<CalendarTask> findAllBySeriesIdAndUserId(UUID seriesId, UUID userId);

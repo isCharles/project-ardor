@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, RotateCcw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
@@ -16,6 +16,7 @@ type Attempt = {
   improvements: string[];
   remainingGaps: string[];
   nextChallenge: string | null;
+  challengeText: string | null;
   createdAt: string;
 };
 type Replay = {
@@ -29,18 +30,35 @@ type Replay = {
   attempts: Attempt[];
 };
 type Draft = { answer: string; requestId: string | null };
+type ScheduledRetest = { id: string; attemptId: string; dueAt: string; challenge: string };
+type RetestOverview = { scheduled: ScheduledRetest | null };
 
 const verdictLabel: Record<Attempt["verdict"], string> = {
   CLEARER: "这次更清楚", SIMILAR: "与上次相近", NEEDS_WORK: "仍需补强", UNKNOWN: "无法可靠比较",
 };
 
-function draftKey(questionId: string) { return `ardor:replay-draft:${questionId}`; }
+function draftKey(questionId: string, retestId: string | null) {
+  return `ardor:replay-draft:${questionId}:${retestId ?? "practice"}`;
+}
+function dateInputValue(date: Date) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+function defaultRetestDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 3);
+  date.setHours(9, 0, 0, 0);
+  return dateInputValue(date);
+}
 
 export default function ReplayPage() {
   const router = useRouter();
   const [replay, setReplay] = useState<Replay | null>(null);
   const [answer, setAnswer] = useState("");
   const [requestId, setRequestId] = useState<string | null>(null);
+  const [requestedRetestId, setRequestedRetestId] = useState<string | null>(null);
+  const [scheduledRetest, setScheduledRetest] = useState<ScheduledRetest | null>(null);
+  const [retestDate, setRetestDate] = useState(defaultRetestDate);
+  const [scheduling, setScheduling] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -49,17 +67,31 @@ export default function ReplayPage() {
     let active = true;
     const timer = window.setTimeout(() => {
       const questionId = new URLSearchParams(window.location.search).get("question");
+      const retestId = new URLSearchParams(window.location.search).get("retest");
       if (!questionId) { setError("没有指定面经问题。请从成长证据页进入。"); setLoading(false); return; }
+      setRequestedRetestId(retestId);
+      let draft: Draft | null = null;
       try {
-        const saved = window.sessionStorage.getItem(draftKey(questionId));
+        const saved = window.sessionStorage.getItem(draftKey(questionId, retestId));
         if (saved) {
-          const draft = JSON.parse(saved) as Draft;
+          draft = JSON.parse(saved) as Draft;
           setAnswer(typeof draft.answer === "string" ? draft.answer : "");
           setRequestId(typeof draft.requestId === "string" ? draft.requestId : null);
         }
-      } catch { window.sessionStorage.removeItem(draftKey(questionId)); }
-      api<Replay>(`/api/interview-replays/questions/${questionId}`)
-        .then((value) => { if (active) setReplay(value); })
+      } catch { window.sessionStorage.removeItem(draftKey(questionId, retestId)); }
+      Promise.all([
+        api<Replay>(`/api/interview-replays/questions/${questionId}`),
+        api<RetestOverview>(`/api/interview-replays/questions/${questionId}/retest`),
+      ])
+        .then(([value, overview]) => {
+          if (!active) return;
+          setReplay(value);
+          setScheduledRetest(overview.scheduled);
+          if (draft?.requestId && value.attempts.some((item) => item.requestId === draft?.requestId)) {
+            setAnswer(""); setRequestId(null);
+            window.sessionStorage.removeItem(draftKey(questionId, retestId));
+          }
+        })
         .catch((reason) => {
           if (!active) return;
           if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
@@ -73,7 +105,7 @@ export default function ReplayPage() {
   function changeAnswer(value: string) {
     setAnswer(value);
     setRequestId(null);
-    if (replay) window.sessionStorage.setItem(draftKey(replay.questionId), JSON.stringify({ answer: value, requestId: null }));
+    if (replay) window.sessionStorage.setItem(draftKey(replay.questionId, requestedRetestId), JSON.stringify({ answer: value, requestId: null }));
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -83,23 +115,38 @@ export default function ReplayPage() {
     setError("");
     const id = requestId ?? crypto.randomUUID();
     setRequestId(id);
-    window.sessionStorage.setItem(draftKey(replay.questionId), JSON.stringify({ answer, requestId: id }));
+    window.sessionStorage.setItem(draftKey(replay.questionId, requestedRetestId), JSON.stringify({ answer, requestId: id }));
+    const activeRetestId = scheduledRetest?.id === requestedRetestId ? requestedRetestId : null;
     try {
       const saved = await api<Attempt>(`/api/interview-replays/questions/${replay.questionId}`, {
-        method: "POST", body: JSON.stringify({ requestId: id, answer }),
+        method: "POST", body: JSON.stringify({ requestId: id, answer, retestTaskId: activeRetestId }),
       });
       setReplay((current) => current ? {
         ...current, attempts: [saved, ...current.attempts.filter((item) => item.id !== saved.id)],
       } : current);
       setAnswer("");
       setRequestId(null);
-      window.sessionStorage.removeItem(draftKey(replay.questionId));
+      window.sessionStorage.removeItem(draftKey(replay.questionId, requestedRetestId));
+      if (activeRetestId) setScheduledRetest(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "提交失败，请稍后重试；你的回答已保留。");
     } finally { setBusy(false); }
   }
 
+  async function scheduleRetest() {
+    if (!replay || !latest?.nextChallenge || scheduling) return;
+    setScheduling(true); setError("");
+    try {
+      const scheduled = await api<ScheduledRetest>(`/api/interview-replays/questions/${replay.questionId}/retest`, {
+        method: "POST", body: JSON.stringify({ attemptId: latest.id, dueAt: new Date(retestDate).toISOString() }),
+      });
+      setScheduledRetest(scheduled);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "安排复测失败"); }
+    finally { setScheduling(false); }
+  }
+
   const latest = replay?.attempts[0];
+  const activeRetest = scheduledRetest?.id === requestedRetestId ? scheduledRetest : null;
 
   return <main className="ardor-workbench min-h-screen px-5 pb-20 pt-6 text-[#1d1d1f] md:px-10">
     <div className="mx-auto max-w-5xl">
@@ -109,8 +156,10 @@ export default function ReplayPage() {
       {loading ? <div className="ardor-panel h-72 animate-pulse rounded-[2.5rem]" aria-label="正在加载面试回放" /> : replay && <>
         <section className="relative overflow-hidden rounded-[2.5rem] border border-white/80 bg-white/75 p-6 shadow-[0_25px_80px_rgba(89,58,138,0.08)] backdrop-blur-xl md:p-10">
           <div className="pointer-events-none absolute -right-24 -top-40 size-[32rem] rounded-full bg-[radial-gradient(circle,rgba(251,153,151,0.38),rgba(168,143,255,0.18)_46%,transparent_72%)] blur-3xl" />
-          <div className="relative"><p className="text-xs text-stone-500">{replay.recapTitle}</p><h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-snug tracking-tight md:text-4xl">{replay.questionText}</h2><p className="mt-5 text-sm text-stone-500">先独立回答，再看当时与现在的差别。</p></div>
+          <div className="relative"><p className="text-xs text-stone-500">{replay.recapTitle}</p>{activeRetest && <p className="mt-4 text-xs font-medium text-violet-600">变式复测 · {new Date(activeRetest.dueAt).toLocaleString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>}<h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-snug tracking-tight md:text-4xl">{activeRetest?.challenge ?? replay.questionText}</h2><p className="mt-5 text-sm text-stone-500">{activeRetest ? `原题：${replay.questionText}` : "先独立回答，再看当时与现在的差别。"}</p></div>
         </section>
+
+        {requestedRetestId && !activeRetest && <p className="mt-4 text-sm text-stone-500">这项复测已完成或取消；现在可以继续自由练习。</p>}
 
         <form onSubmit={submit} className="mt-6 rounded-[2rem] border border-white/80 bg-white/80 p-5 shadow-[0_16px_55px_rgba(73,57,122,0.06)] md:p-7">
           <label htmlFor="replay-answer" className="text-sm font-medium">这次你会怎么回答？</label>
@@ -122,12 +171,13 @@ export default function ReplayPage() {
         {latest && <section className="mt-8 space-y-5" aria-label="最新回放结果">
           <div className="flex flex-wrap items-center gap-3"><span className="rounded-full bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-700">{verdictLabel[latest.verdict]}</span><span className="text-xs text-stone-500">AI 对比 · 不是能力认证</span></div>
           <p className="max-w-3xl text-lg leading-8 text-stone-800">{latest.comparison}</p>
-          <div className="grid gap-4 md:grid-cols-2"><article className="rounded-3xl bg-white/65 p-6"><h3 className="text-xs font-medium text-stone-500">当时的回答</h3><p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">{replay.originalAnswer || "原始材料未记录回答，无法判断是否进步。"}</p></article><article className="rounded-3xl bg-white/65 p-6"><h3 className="text-xs font-medium text-violet-600">现在的回答</h3><p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">{latest.answerText}</p></article></div>
+          <div className="grid gap-4 md:grid-cols-2"><article className="rounded-3xl bg-white/65 p-6"><h3 className="text-xs font-medium text-stone-500">当时的回答</h3><p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">{replay.originalAnswer || "原始材料未记录回答，无法判断是否进步。"}</p></article><article className="rounded-3xl bg-white/65 p-6"><h3 className="text-xs font-medium text-violet-600">{latest.challengeText ? "复测回答" : "现在的回答"}</h3>{latest.challengeText && <p className="mt-3 text-xs leading-5 text-violet-700">{latest.challengeText}</p>}<p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">{latest.answerText}</p></article></div>
           <div className="grid gap-4 md:grid-cols-2"><FeedbackList title="有进步的地方" items={latest.improvements} tone="emerald" /><FeedbackList title="仍需补强" items={latest.remainingGaps} tone="rose" /></div>
           {latest.nextChallenge && <div className="flex items-start gap-3 rounded-2xl bg-violet-50/80 p-5"><Sparkles className="mt-0.5 size-4 shrink-0 text-violet-600" /><p className="text-sm leading-6 text-violet-900">下一次可以试着回答：{latest.nextChallenge}</p></div>}
+          {scheduledRetest ? <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-white/75 px-5 py-4 text-sm"><CalendarDays className="size-4 text-violet-600" /><span>已安排 {new Date(scheduledRetest.dueAt).toLocaleString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span><Link href="/app/calendar" className="ml-auto text-violet-700 hover:underline">查看日历</Link></div> : latest.nextChallenge && <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-white/75 px-5 py-4"><label htmlFor="retest-date" className="text-sm font-medium">三天后再试？</label><input id="retest-date" type="datetime-local" value={retestDate} onChange={(event) => setRetestDate(event.target.value)} className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm" /><button type="button" onClick={scheduleRetest} disabled={scheduling || !retestDate} className="rounded-full bg-stone-950 px-4 py-2 text-sm text-white disabled:opacity-45">{scheduling ? "安排中…" : "安排复测"}</button></div>}
         </section>}
 
-        {replay.attempts.length > 1 && <section className="mt-10"><h2 className="mb-4 text-lg font-semibold">之前的回放</h2><div className="space-y-2">{replay.attempts.slice(1).map((item) => <details key={item.id} className="rounded-2xl bg-white/65 px-5 py-4"><summary className="cursor-pointer text-sm font-medium text-stone-700">{new Date(item.createdAt).toLocaleString("zh-CN")} · {verdictLabel[item.verdict]}</summary><p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-stone-600">{item.answerText}</p><p className="mt-3 text-sm leading-6 text-stone-500">{item.comparison}</p></details>)}</div></section>}
+        {replay.attempts.length > 1 && <section className="mt-10"><h2 className="mb-4 text-lg font-semibold">之前的回放</h2><div className="space-y-2">{replay.attempts.slice(1).map((item) => <details key={item.id} className="rounded-2xl bg-white/65 px-5 py-4"><summary className="cursor-pointer text-sm font-medium text-stone-700">{new Date(item.createdAt).toLocaleString("zh-CN")} · {verdictLabel[item.verdict]}</summary>{item.challengeText && <p className="mt-4 text-sm text-violet-700">复测题：{item.challengeText}</p>}<p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-stone-600">{item.answerText}</p><p className="mt-3 text-sm leading-6 text-stone-500">{item.comparison}</p></details>)}</div></section>}
         <Link href={`/app/recaps?selected=${replay.recapId}`} className="mt-10 inline-flex items-center gap-2 text-sm text-stone-500 hover:text-stone-900"><RotateCcw className="size-4" />回到原始面经</Link>
       </>}
     </div>

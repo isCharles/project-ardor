@@ -21,6 +21,8 @@ public class CalendarTask {
     @Column(name = "source_interview_id") private UUID sourceInterviewId;
     @Column(name = "memory_card_id") private UUID memoryCardId;
     @Column(name = "learning_plan_id") private UUID learningPlanId;
+    @Column(name = "replay_question_id") private UUID replayQuestionId;
+    @Column(name = "replay_attempt_id") private UUID replayAttemptId;
     @Column(name = "series_id") private UUID seriesId;
     @Column(name = "occurrence_date") private LocalDate occurrenceDate;
     @Column(name = "user_modified", nullable = false) private boolean userModified;
@@ -88,6 +90,17 @@ public class CalendarTask {
         return task;
     }
 
+    public static CalendarTask createInterviewRetest(
+            UUID userId, UUID questionId, UUID replayAttemptId, String challenge, Instant dueAt) {
+        CalendarTask task = new CalendarTask(userId, "面试复测", challenge, dueAt,
+                CalendarTaskPriority.HIGH, CalendarTaskSource.MANUAL);
+        task.taskKind = CalendarTaskKind.INTERVIEW_RETEST;
+        task.replayQuestionId = questionId;
+        task.replayAttemptId = replayAttemptId;
+        task.actionPath = "/app/replay?question=" + questionId + "&retest=" + task.id;
+        return task;
+    }
+
     /** One dated occurrence of a repeating series; an ordinary task otherwise. */
     public static CalendarTask createOccurrence(TaskSeries series, LocalDate occurrenceDate) {
         CalendarTask task = new CalendarTask(
@@ -115,6 +128,14 @@ public class CalendarTask {
         this.completedAt = completed ? Instant.now() : null;
         this.taskKind = CalendarTaskKind.LEARNING;
         this.actionPath = "/app/learning?id=" + learningPlanId;
+    }
+
+    public void completeInterviewRetest() {
+        if (taskKind != CalendarTaskKind.INTERVIEW_RETEST) {
+            throw new IllegalStateException("不是面试复测任务");
+        }
+        status = CalendarTaskStatus.COMPLETED;
+        completedAt = Instant.now();
     }
 
     public void update(
@@ -150,6 +171,8 @@ public class CalendarTask {
     public UUID getUserId() { return userId; }
     public UUID getMemoryCardId() { return memoryCardId; }
     public UUID getLearningPlanId() { return learningPlanId; }
+    public UUID getReplayQuestionId() { return replayQuestionId; }
+    public UUID getReplayAttemptId() { return replayAttemptId; }
     public UUID getSeriesId() { return seriesId; }
     public LocalDate getOccurrenceDate() { return occurrenceDate; }
     public boolean isUserModified() { return userModified; }

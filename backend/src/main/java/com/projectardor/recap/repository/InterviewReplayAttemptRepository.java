@@ -11,4 +11,5 @@ import com.projectardor.recap.domain.InterviewReplayAttempt;
 public interface InterviewReplayAttemptRepository extends JpaRepository<InterviewReplayAttempt, UUID> {
     List<InterviewReplayAttempt> findAllByUserIdAndRecapQuestionIdOrderByCreatedAtDesc(UUID userId, UUID questionId);
     Optional<InterviewReplayAttempt> findByUserIdAndRequestId(UUID userId, UUID requestId);
+    Optional<InterviewReplayAttempt> findByIdAndUserId(UUID id, UUID userId);
 }

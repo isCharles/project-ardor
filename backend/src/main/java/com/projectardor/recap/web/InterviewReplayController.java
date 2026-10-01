@@ -35,6 +35,6 @@ public class InterviewReplayController {
     public InterviewReplayResponse.Attempt submit(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID questionId, @Valid @RequestBody InterviewReplaySubmitRequest request) {
         return InterviewReplayResponse.Attempt.from(service.submit(
-                principal.userId(), questionId, request.requestId(), request.answer()));
+                principal.userId(), questionId, request.requestId(), request.answer(), request.retestTaskId()));
     }
 }
