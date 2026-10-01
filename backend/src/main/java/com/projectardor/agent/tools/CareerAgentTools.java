@@ -246,7 +246,7 @@ public class CareerAgentTools {
                 @P(value = "为什么需要学习；引用用户真实表现，不得虚构", required = false) String reason,
                 @P(value = "带时区的 ISO-8601 学习时间；留空则安排明天 09:00", required = false) String scheduledAt,
                 @P(value = "来源类型：AGENT、RESUME、RECAP 或 KNOWLEDGE；留空用 AGENT", required = false) String sourceType,
-                @P(value = "来源对象 UUID；没有则留空", required = false) String sourceId) {
+                @P(value = "来源对象 UUID；针对面经某题时传问题 UUID，针对整场面试时传面经 UUID；没有则留空", required = false) String sourceId) {
             LearningSourceType source = enumValue(LearningSourceType.class, sourceType, LearningSourceType.AGENT);
             return LearningPlanResponse.from(learningPlanService.create(userId, concept, reason, source,
                     nullableUuid(sourceId, "来源 ID"), nullableInstant(scheduledAt)));
@@ -524,10 +524,12 @@ public class CareerAgentTools {
                 @P(value = "来源：INTERVIEW、KNOWLEDGE、AGENT 或 WEB", required = false) String sourceType,
                 @P(value = "来源名称，例如用户题库或文章名", required = false) String sourceLabel,
                 @P(value = "网络题的可核验链接；非网络题传空字符串", required = false) String sourceUrl,
-                @P(value = "知识点标签，多个用英文逗号分隔", required = false) String tags) {
+                @P(value = "知识点标签，多个用英文逗号分隔", required = false) String tags,
+                @P(value = "来自面经时填写面经问题 UUID；其它来源留空", required = false) String recapQuestionId) {
             return MemoryCardResponse.from(interviewRecapService.createCard(userId,
                     enumValue(MemoryCardSource.class, sourceType, MemoryCardSource.AGENT), sourceLabel, sourceUrl,
-                    question, answer, tags == null ? List.of() : List.of(tags.split(",")), Instant.now()));
+                    question, answer, tags == null ? List.of() : List.of(tags.split(",")), Instant.now(),
+                    nullableUuid(recapQuestionId, "面经问题 ID")));
         }
 
         @Tool(name = "review_memory_card", value = "用户完成记忆卡后登记掌握结果并安排下次复习。只有用户明确评价后才能调用")

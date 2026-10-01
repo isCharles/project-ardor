@@ -23,6 +23,8 @@ import com.projectardor.learning.domain.LearningStatus;
 import com.projectardor.learning.repository.LearningPlanRepository;
 import com.projectardor.llm.service.LlmGateway;
 import com.projectardor.profile.service.ProfileService;
+import com.projectardor.recap.repository.InterviewRecapQuestionRepository;
+import com.projectardor.recap.repository.InterviewRecapRepository;
 
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
@@ -36,16 +38,21 @@ public class LearningPlanService {
     private final ObjectMapper objectMapper;
     private final CalendarTaskService calendarTaskService;
     private final ProfileService profileService;
+    private final InterviewRecapRepository recapRepository;
+    private final InterviewRecapQuestionRepository recapQuestionRepository;
 
     public LearningPlanService(LearningPlanRepository repository, LlmGateway llmGateway,
             LlmJsonParser jsonParser, ObjectMapper objectMapper,
-            CalendarTaskService calendarTaskService, ProfileService profileService) {
+            CalendarTaskService calendarTaskService, ProfileService profileService,
+            InterviewRecapRepository recapRepository, InterviewRecapQuestionRepository recapQuestionRepository) {
         this.repository = repository;
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
         this.objectMapper = objectMapper;
         this.calendarTaskService = calendarTaskService;
         this.profileService = profileService;
+        this.recapRepository = recapRepository;
+        this.recapQuestionRepository = recapQuestionRepository;
     }
 
     public LearningPlan create(UUID userId, String rawConcept, String rawReason,
@@ -54,6 +61,11 @@ public class LearningPlanService {
         String reason = optional(rawReason, 4000);
         Instant schedule = scheduledAt == null ? tomorrowMorning(userId) : scheduledAt;
         LearningSourceType source = sourceType == null ? LearningSourceType.MANUAL : sourceType;
+        if (source == LearningSourceType.RECAP && sourceId != null
+                && recapRepository.findByIdAndUserId(sourceId, userId).isEmpty()
+                && recapQuestionRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
+            throw new ResourceNotFoundException("面经来源不存在");
+        }
         LlmGateway.LlmResult result = llmGateway.completeJson(userId, generationPrompt(),
                 "学习主题：" + concept + "\n安排原因：" + (reason == null ? "用户主动学习" : reason));
         JsonNode root = jsonParser.parseObject(result.content());

@@ -74,11 +74,12 @@ export default function CardsPage() {
   const [formSource, setFormSource] = useState<Card["sourceType"]>("KNOWLEDGE");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [focusedCardId, setFocusedCardId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     void api<Card[]>("/api/memory-cards")
-      .then((items) => { if (active) setCards(items); })
+      .then((items) => { if (active) { setCards(items); setFocusedCardId(new URLSearchParams(window.location.search).get("card")); } })
       .catch((reason) => {
         if (!active) return;
         setLoadFailed(true);
@@ -89,6 +90,11 @@ export default function CardsPage() {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => { active = false; window.clearInterval(timer); };
   }, [router]);
+
+  useEffect(() => {
+    if (!focusedCardId || loading || !cards.some((item) => item.id === focusedCardId)) return;
+    document.getElementById(`card-${focusedCardId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [cards, focusedCardId, loading]);
 
   const dueCards = useMemo(() => cards
     .filter((item) => item.status !== "SUSPENDED" && new Date(item.nextReviewAt).getTime() <= now)
@@ -214,7 +220,7 @@ export default function CardsPage() {
 
             <aside className="ardor-soft-panel rounded-[2rem] p-4 md:p-5" aria-label="卡片库">
               <div className="flex items-center justify-between px-2 py-2"><h2 className="font-semibold">卡片库</h2><span className="text-xs tabular-nums text-stone-500">{cards.length}</span></div>
-              {library.length === 0 ? <p className="px-2 pb-3 pt-5 text-sm text-stone-500">卡片会出现在这里。</p> : <div className="mt-2 max-h-[40rem] space-y-1 overflow-y-auto pr-1">{library.map((item) => <div key={item.id} className={`group rounded-2xl p-3.5 transition ${item.id === card?.id ? "bg-white shadow-sm" : "hover:bg-white/60"}`}><div className="flex items-start gap-2"><div className="min-w-0 flex-1"><p className="line-clamp-2 break-words text-sm font-medium leading-5">{item.front}</p><p className="mt-2 flex items-center gap-1.5 text-xs text-stone-500"><Clock3 className="size-3.5 shrink-0" />{item.status === "SUSPENDED" ? "已暂停" : new Date(item.nextReviewAt).getTime() <= now ? "待复习" : reviewDate(item.nextReviewAt)}</p></div><button type="button" aria-label={`编辑：${item.front.slice(0, 80)}`} onClick={() => openEdit(item)} className="shrink-0 rounded-full p-2 text-stone-500 hover:bg-white hover:text-stone-900"><Pencil className="size-3.5" /></button></div></div>)}</div>}
+              {library.length === 0 ? <p className="px-2 pb-3 pt-5 text-sm text-stone-500">卡片会出现在这里。</p> : <div className="mt-2 max-h-[40rem] space-y-1 overflow-y-auto pr-1">{library.map((item) => <div id={`card-${item.id}`} key={item.id} className={`group rounded-2xl p-3.5 transition ${item.id === focusedCardId ? "bg-violet-50 ring-2 ring-violet-300" : item.id === card?.id ? "bg-white shadow-sm" : "hover:bg-white/60"}`}><div className="flex items-start gap-2"><div className="min-w-0 flex-1"><p className="line-clamp-2 break-words text-sm font-medium leading-5">{item.front}</p><p className="mt-2 flex items-center gap-1.5 text-xs text-stone-500"><Clock3 className="size-3.5 shrink-0" />{item.status === "SUSPENDED" ? "已暂停" : new Date(item.nextReviewAt).getTime() <= now ? "待复习" : reviewDate(item.nextReviewAt)}</p></div><button type="button" aria-label={`编辑：${item.front.slice(0, 80)}`} onClick={() => openEdit(item)} className="shrink-0 rounded-full p-2 text-stone-500 hover:bg-white hover:text-stone-900"><Pencil className="size-3.5" /></button></div></div>)}</div>}
             </aside>
           </div>
         )}
