@@ -20,11 +20,13 @@ public record InterviewReplayResponse(UUID questionId, UUID recapId, String reca
     }
 
     public record Attempt(UUID id, UUID requestId, String answerText, ReplayVerdict verdict, String comparison,
-            List<String> improvements, List<String> remainingGaps, String nextChallenge, Instant createdAt) {
+            List<String> improvements, List<String> remainingGaps, String nextChallenge,
+            String challengeText, Instant createdAt) {
         public static Attempt from(InterviewReplayAttempt attempt) {
             return new Attempt(attempt.getId(), attempt.getRequestId(), attempt.getAnswerText(),
                     attempt.getVerdict(), attempt.getComparison(), attempt.getImprovements(),
-                    attempt.getRemainingGaps(), attempt.getNextChallenge(), attempt.getCreatedAt());
+                    attempt.getRemainingGaps(), attempt.getNextChallenge(),
+                    attempt.getChallengeText(), attempt.getCreatedAt());
         }
     }
 }
