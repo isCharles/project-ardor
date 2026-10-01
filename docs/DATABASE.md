@@ -27,6 +27,9 @@
 | `interview_questions` | `user_id` | 有序问题和评价标准 | session 内序号唯一 |
 | `interview_answers` | `user_id` | 用户答案 | 每题最多一个答案 |
 | `interview_evaluations` | `user_id` | 总分和结构化反馈 | 每场面试最多一个评价 |
+| `interview_recaps` / `interview_recap_questions` | `user_id` | 真实面试材料及逐题复盘 | 问题按用户与面经关联；删除面经时清理问题 |
+| `memory_cards` | `user_id` | 可复习的面试题和知识卡 | 可关联一条同用户面经问题 |
+| `interview_replay_attempts` | `user_id` | 真实问题的历次重新作答及 AI 比较 | 关联同用户面经问题；`(user_id, request_id)` 防重复提交 |
 | `tasks` | `user_id` | 后续行动及状态 | 可追溯来源面试；重复安排的每一次也是这里的一行 |
 | `task_series` | `user_id` | 重复日程的规则（按天、按周、按月） | 每条规则提前展开约 120 天的 `tasks`；`(series_id, occurrence_date)` 唯一 |
 | `learning_plans` | `user_id` | 学习主题、讲解、练习、评分与巩固状态 | 每个计划最多关联一条 `LEARNING` 日历任务；未掌握时更新原任务日期 |
