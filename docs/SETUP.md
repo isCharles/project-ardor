@@ -34,6 +34,8 @@ try { $rng.GetBytes($keyBytes) } finally { $rng.Dispose() }
 
 脚本会构建后端并通过 Docker Compose 启动 PostgreSQL、Redis、后端与前端。打开 <http://localhost:3000>，注册后进入 Ardor。
 
+在本机，脚本会先检查 Docker Engine；若它未启动，会在严格校验后尝试一次可逆的临时 socket 恢复。详细证据、安全边界与人工排障见 [Docker Desktop socket 故障记录](DOCKER_DESKTOP_SOCKET_RECOVERY.md)。
+
 模型设置支持 OpenAI Compatible 与 Anthropic Compatible 两种协议。填写 Base URL、模型和 API Key 后先测试连接。首次保存必须提供 Key；之后留空会保留已保存的 Key。普通用户默认使用管理员配置，也可以切换到个人配置。
 
 如需启用管理员工作台，在 `.env` 的 `ARDOR_ADMIN_EMAILS` 中填写一个或多个已注册邮箱（逗号分隔），重启后端并重新登录。管理员可以设置全体用户的默认 API、查看汇总信息和管理账户，但不能在工作台读取用户简历或对话正文。
