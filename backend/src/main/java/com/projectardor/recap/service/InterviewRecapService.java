@@ -136,13 +136,23 @@ public class InterviewRecapService {
 
     @Transactional
     public MemoryCard createCard(UUID userId, MemoryCardSource sourceType, String sourceLabel, String sourceUrl,
-            String front, String back, List<String> tags, Instant nextReviewAt) {
+            String front, String back, List<String> tags, Instant nextReviewAt, UUID recapQuestionId) {
         MemoryCardSource resolvedSource = sourceType == null ? MemoryCardSource.KNOWLEDGE : sourceType;
         String url = nullable(sourceUrl, 1000);
         if (resolvedSource == MemoryCardSource.WEB && url == null) {
             throw new IllegalArgumentException("网络题必须提供可核验的来源链接");
         }
-        MemoryCard card = cardRepository.save(MemoryCard.create(userId, null, resolvedSource,
+        if (recapQuestionId != null) {
+            if (resolvedSource != MemoryCardSource.INTERVIEW) {
+                throw new IllegalArgumentException("只有面试来源的记忆卡才能关联面经问题");
+            }
+            questionRepository.findByIdAndUserId(recapQuestionId, userId)
+                    .orElseThrow(() -> new ResourceNotFoundException("面经问题不存在"));
+            if (cardRepository.findByUserIdAndRecapQuestionId(userId, recapQuestionId).isPresent()) {
+                throw new IllegalArgumentException("这道面经问题已有记忆卡");
+            }
+        }
+        MemoryCard card = cardRepository.save(MemoryCard.create(userId, recapQuestionId, resolvedSource,
                 nullable(sourceLabel, 240), url, required(front, "卡片问题不能为空", 12000),
                 required(back, "卡片答案不能为空", 20000), normalizeTags(tags),
                 nextReviewAt == null ? Instant.now() : nextReviewAt));

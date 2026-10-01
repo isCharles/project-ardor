@@ -15,7 +15,8 @@ public class MemoryCardController {
     @PostMapping @ResponseStatus(HttpStatus.CREATED)
     public MemoryCardResponse create(@AuthenticationPrincipal ArdorPrincipal principal, @Valid @RequestBody MemoryCardCreateRequest request) {
         return MemoryCardResponse.from(service.createCard(principal.userId(), request.sourceType(), request.sourceLabel(),
-                request.sourceUrl(), request.front(), request.back(), request.tags(), request.nextReviewAt()));
+                request.sourceUrl(), request.front(), request.back(), request.tags(), request.nextReviewAt(),
+                request.recapQuestionId()));
     }
     @PutMapping("/{id}")
     public MemoryCardResponse update(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id,
