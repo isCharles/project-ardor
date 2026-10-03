@@ -27,8 +27,12 @@ public class AdminUserService {
 
     @Transactional(readOnly = true)
     public List<AdminUserResponse> list() {
-        return repository.findAllByOrderByCreatedAtDesc().stream()
-                .map(user -> AdminUserResponse.from(user, memberships.tier(user.getId()))).toList();
+        List<UserAccount> users = repository.findAllByOrderByCreatedAtDesc();
+        var tiers = memberships.tiers(users.stream().map(UserAccount::getId).toList());
+        return users.stream()
+                .map(user -> AdminUserResponse.from(user,
+                        tiers.getOrDefault(user.getId(), com.projectardor.usage.MembershipTier.FREE)))
+                .toList();
     }
 
     @Transactional

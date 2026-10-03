@@ -40,15 +40,33 @@ class QuotaAspectTests {
         factory.addAspect(new QuotaAspect(quotas));
         ProtectedOperation operation = factory.getProxy();
         UUID userId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
         var principal = new ArdorPrincipal(userId, "user@example.com", "", true, UserRole.USER);
         doThrow(new QuotaExceededException(UsageFeature.AGENT_CHAT,
                 QuotaStore.Decision.MONTHLY_LIMIT, java.time.Instant.now()))
-                .when(quotas).consume(userId, UsageFeature.AGENT_CHAT, null);
+                .when(quotas).consume(userId, UsageFeature.AGENT_CHAT, requestId);
+
+        assertThatThrownBy(() -> operation.call(principal,
+                new AgentMessageRequest(null, "hi", null, null, null, requestId)))
+                .isInstanceOf(QuotaExceededException.class);
+        assertThat(target.invocations).isZero();
+    }
+
+    @Test
+    void idempotentEndpointRejectsMissingRequestIdBeforeCharge() {
+        QuotaService quotas = mock(QuotaService.class);
+        var target = new ProtectedOperation();
+        var factory = new AspectJProxyFactory(target);
+        factory.addAspect(new QuotaAspect(quotas));
+        ProtectedOperation operation = factory.getProxy();
+        var principal = new ArdorPrincipal(UUID.randomUUID(), "user@example.com", "", true, UserRole.USER);
 
         assertThatThrownBy(() -> operation.call(principal,
                 new AgentMessageRequest(null, "hi", null, null, null, null)))
-                .isInstanceOf(QuotaExceededException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("requestId");
         assertThat(target.invocations).isZero();
+        org.mockito.Mockito.verifyNoInteractions(quotas);
     }
 
     static class ProtectedOperation {

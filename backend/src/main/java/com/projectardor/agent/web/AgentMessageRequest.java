@@ -3,6 +3,8 @@ package com.projectardor.agent.web;
 import java.util.UUID;
 import java.util.List;
 
+import com.projectardor.usage.QuotaRequestId;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -15,7 +17,7 @@ public record AgentMessageRequest(
         UUID contextId,
         @Size(max = 5, message = "一次最多引用 5 份资料")
         List<AgentContextReferenceRequest> contextReferences,
-        UUID requestId) {
+        UUID requestId) implements QuotaRequestId {
 
     public AgentMessageRequest(UUID conversationId, String message, String contextType, UUID contextId,
             List<AgentContextReferenceRequest> contextReferences) {

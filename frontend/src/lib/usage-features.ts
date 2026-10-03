@@ -1,0 +1,16 @@
+export const usageFeatureLabels: Record<string, string> = {
+  AGENT_CHAT: "Agent 对话",
+  RESUME_ANALYSIS: "简历分析",
+  INTERVIEW_CREATE: "模拟面试",
+  INTERVIEW_EVALUATION: "面试评价",
+  INTERVIEW_RECAP: "面经整理",
+  INTERVIEW_REPLAY: "面试复练",
+  LEARNING_PLAN: "学习计划",
+  LEARNING_ATTEMPT: "学习练习",
+  KNOWLEDGE_UPLOAD: "知识上传",
+  KNOWLEDGE_SEARCH: "知识检索",
+  KNOWLEDGE_RESEARCH: "联网研究",
+  CONNECTION_TEST: "连接测试",
+  VOICE_ASR: "语音转录",
+  VOICE_TTS: "语音生成",
+};

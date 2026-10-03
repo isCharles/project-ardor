@@ -26,7 +26,12 @@ class QuotaStoreTests {
     @Test
     void mapsAtomicRedisDenialWithoutTreatingItAsSuccess() {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
-        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenReturn(-2L);
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenAnswer(invocation -> {
+                    RedisScript<?> script = invocation.getArgument(0);
+                    assertThat(script.getScriptAsString()).contains("redis.call('INCR'", "return -i");
+                    return -2L;
+                });
         var store = new QuotaStore(redis);
         var policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 8, 30, Instant.now());
 

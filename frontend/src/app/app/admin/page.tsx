@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { AdminShell } from "@/components/ardor/admin-shell";
 import { ApiError, api } from "@/lib/api";
+import { usageFeatureLabels } from "@/lib/usage-features";
 
 type ServiceType = "PRIMARY_LLM" | "EMBEDDING" | "ASR" | "TTS" | "FALLBACK_LLM" | "WEB_SEARCH";
 type ApiConfig = { serviceType: ServiceType; configured: boolean; provider: string; baseUrl: string | null; model: string | null; keyHint: string | null; updatedAt: string | null };
@@ -27,14 +28,6 @@ const countLabels: Record<string, string> = {
   users: "用户", conversations: "对话", messages: "消息", resumes: "简历",
   recaps: "面经", knowledgeDocuments: "知识", calendarTasks: "日程", memoryCards: "卡片",
 };
-const featureLabels: Record<string, string> = {
-  AGENT_CHAT: "Agent 对话", RESUME_ANALYSIS: "简历分析", INTERVIEW_CREATE: "生成面试",
-  INTERVIEW_EVALUATION: "面试评价", INTERVIEW_RECAP: "面经整理", LEARNING_PLAN: "学习计划",
-  INTERVIEW_REPLAY: "面试复练", LEARNING_ATTEMPT: "学习练习", KNOWLEDGE_UPLOAD: "知识上传",
-  KNOWLEDGE_SEARCH: "知识检索", KNOWLEDGE_RESEARCH: "联网研究", CONNECTION_TEST: "连接测试",
-  VOICE_ASR: "语音转录", VOICE_TTS: "语音生成",
-};
-
 export default function AdminPage() {
   const router = useRouter();
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -172,7 +165,7 @@ export default function AdminPage() {
       <section id="quotas" className="mt-12 scroll-mt-8">
         <div className="mb-5"><h2 className="text-xl font-semibold">额度</h2><p className="mt-1 text-sm text-[var(--ardor-ink-3)]">按用户、功能和自然月计算；短时上限保护系统成本。</p></div>
         <div className="grid gap-3 lg:grid-cols-2">{policies.map((policy) => <form key={policy.feature} onSubmit={(event) => void updatePolicy(event, policy.feature)} className="rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-panel)] p-5">
-          <div className="flex items-center justify-between"><h3 className="font-medium">{featureLabels[policy.feature] ?? policy.feature}</h3><button disabled={!!busy} className="grid size-9 place-items-center rounded-xl bg-[var(--ardor-ink)] text-white" aria-label={`保存${featureLabels[policy.feature] ?? policy.feature}额度`}><Save className="size-4" /></button></div>
+          <div className="flex items-center justify-between"><h3 className="font-medium">{usageFeatureLabels[policy.feature] ?? policy.feature}</h3><button disabled={!!busy} className="grid size-9 place-items-center rounded-xl bg-[var(--ardor-ink)] text-white" aria-label={`保存${usageFeatureLabels[policy.feature] ?? policy.feature}额度`}><Save className="size-4" /></button></div>
           <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">{([
             ["freeMonthlyLimit", "免费 / 月"], ["memberMonthlyLimit", "会员 / 月"],
             ["userMinuteLimit", "每人 / 分"], ["globalMinuteLimit", "全站 / 分"],
@@ -185,7 +178,7 @@ export default function AdminPage() {
         <div className="overflow-hidden rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-panel)]">
           {users.map((user, index) => <div key={user.id} className={`flex flex-col gap-3 p-4 md:flex-row md:items-center ${index ? "border-t border-[var(--ardor-rule)]" : ""}`}>
             <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{user.email}</p><p className="mt-1 text-xs text-[var(--ardor-ink-3)]">{new Date(user.createdAt).toLocaleDateString("zh-CN")}</p></div>
-            <div className="flex items-center gap-2"><select aria-label={`${user.email} 的会员`} value={user.membership} disabled={!!busy} onChange={(event) => void updateMembership(user, event.target.value as User["membership"])} className="h-9 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-xs"><option value="MEMBER">会员</option><option value="FREE">免费</option></select><select value={user.role} disabled={busy === `user:${user.id}`} onChange={(event) => void updateUser(user, { role: event.target.value as User["role"] })} className="h-9 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-xs"><option value="USER">用户</option><option value="ADMIN">管理员</option></select><button disabled={busy === `user:${user.id}`} onClick={() => void updateUser(user, { status: user.status === "ACTIVE" ? "DISABLED" : "ACTIVE" })} className={`h-9 rounded-xl px-3 text-xs ${user.status === "ACTIVE" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>{user.status === "ACTIVE" ? "正常" : "已禁用"}</button></div>
+            <div className="flex items-center gap-2"><select aria-label={`${user.email} 的会员`} value={user.membership} disabled={!!busy} onChange={(event) => void updateMembership(user, event.target.value as User["membership"])} className="h-9 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-xs"><option value="MEMBER">会员</option><option value="FREE">免费</option></select><select value={user.role} disabled={!!busy} onChange={(event) => void updateUser(user, { role: event.target.value as User["role"] })} className="h-9 rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-xs"><option value="USER">用户</option><option value="ADMIN">管理员</option></select><button disabled={!!busy} onClick={() => void updateUser(user, { status: user.status === "ACTIVE" ? "DISABLED" : "ACTIVE" })} className={`h-9 rounded-xl px-3 text-xs ${user.status === "ACTIVE" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>{user.status === "ACTIVE" ? "正常" : "已禁用"}</button></div>
           </div>)}
         </div>
       </section>

@@ -8,7 +8,6 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.springframework.stereotype.Component;
 
-import com.projectardor.agent.web.AgentMessageRequest;
 import com.projectardor.auth.security.ArdorPrincipal;
 
 @Aspect
@@ -28,12 +27,16 @@ public class QuotaAspect {
                 .map(ArdorPrincipal.class::cast)
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("受额度保护的接口缺少用户身份"));
-        UUID requestId = protectedFeature.idempotentRequest() ? Arrays.stream(arguments)
-                .filter(AgentMessageRequest.class::isInstance)
-                .map(AgentMessageRequest.class::cast)
-                .map(AgentMessageRequest::requestId)
-                .filter(java.util.Objects::nonNull)
-                .findFirst().orElse(null) : null;
+        UUID requestId = null;
+        if (protectedFeature.idempotentRequest()) {
+            QuotaRequestId request = Arrays.stream(arguments)
+                    .filter(QuotaRequestId.class::isInstance)
+                    .map(QuotaRequestId.class::cast)
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("幂等额度接口缺少请求 ID 参数"));
+            requestId = request.requestId();
+            if (requestId == null) throw new IllegalArgumentException("流式请求缺少 requestId");
+        }
         quotas.consume(principal.userId(), protectedFeature.value(), requestId);
         return joinPoint.proceed();
     }

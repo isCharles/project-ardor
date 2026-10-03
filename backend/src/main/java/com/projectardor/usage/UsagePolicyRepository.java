@@ -27,7 +27,7 @@ public class UsagePolicyRepository {
 
     public UsagePolicy update(UsageFeature feature, int freeMonthly, int memberMonthly,
             int userMinute, int globalMinute) {
-        new UsagePolicy(feature, freeMonthly, memberMonthly, userMinute, globalMinute, null);
+        UsagePolicy.validateLimits(freeMonthly, memberMonthly, userMinute, globalMinute);
         int changed = jdbc.update("""
                 UPDATE usage_policies SET free_monthly_limit = ?, member_monthly_limit = ?,
                     user_minute_limit = ?, global_minute_limit = ?, updated_at = CURRENT_TIMESTAMP
