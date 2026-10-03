@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.interview.service.InterviewService;
+import com.projectardor.interview.service.InterviewCodeRunner;
 
 import jakarta.validation.Valid;
 
@@ -24,9 +25,31 @@ import jakarta.validation.Valid;
 public class InterviewController {
 
     private final InterviewService interviewService;
+    private final InterviewCodeRunner codeRunner;
 
-    public InterviewController(InterviewService interviewService) {
+    public InterviewController(InterviewService interviewService, InterviewCodeRunner codeRunner) {
         this.interviewService = interviewService;
+        this.codeRunner = codeRunner;
+    }
+
+    @GetMapping("/code-runner")
+    public java.util.Map<String, Boolean> codeRunnerStatus() {
+        return java.util.Map.of("available", codeRunner.available());
+    }
+
+    @PostMapping("/{sessionId}/run-code")
+    public InterviewCodeRunner.CodeRunResult runCode(
+            @AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable UUID sessionId,
+            @Valid @RequestBody RunCodeRequest request) {
+        var progress = interviewService.getNextQuestion(principal.userId(), sessionId);
+        var question = progress.nextQuestion();
+        if (progress.session().getStatus() != com.projectardor.interview.domain.InterviewStatus.IN_PROGRESS
+                || question == null || !question.getId().equals(request.questionId())
+                || !"CODING".equals(question.getQuestionType())) {
+            throw new IllegalStateException("只能运行当前编程题的代码");
+        }
+        return codeRunner.runJava(request.code(), request.stdin());
     }
 
     @PostMapping

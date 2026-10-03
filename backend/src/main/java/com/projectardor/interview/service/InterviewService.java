@@ -119,14 +119,14 @@ public class InterviewService {
                 你是中文技术面试官。只输出 JSON 对象，不要 Markdown。
                 格式必须为 {"questions":[{"questionText":"...","questionType":"TECHNICAL|PROJECT|BEHAVIORAL|CODING","evaluationCriteria":["..."]}]}。
                 问题应结合候选人背景、简历分析、目标公司和岗位，循序渐进，不得编造候选人经历。
-                技术岗位且题目数不少于 3 时，至少生成一道 CODING 编程题；题目要写清输入、输出、约束和示例，允许候选人用文字说明思路并给出代码，不要求在线运行。
+                技术岗位且题目数不少于 3 时，至少生成一道 CODING 编程题。候选人使用 Java 21 在站内运行代码，要求提交 public class Main，使用标准输入和标准输出。题目必须写清逐行输入格式、输出格式、约束及至少一个可直接复制到标准输入的样例；不要使用 LeetCode 专属函数签名。
                 """,
                 "请生成模拟面试题：\n" + context);
         List<QuestionDraft> drafts = parseQuestions(jsonParser.parseObject(result.content()), questionCount);
         if (questionCount >= 3 && isTechnicalRole(normalizedRole)
                 && drafts.stream().noneMatch(draft -> "CODING".equals(draft.questionType()))) {
             drafts.set(drafts.size() - 1, new QuestionDraft(
-                    "请用你熟悉的语言实现 twoSum：输入整数数组 nums 和整数 target，返回两个元素下标，使它们之和等于 target。假设恰有一个答案且同一元素不能重复使用。示例：nums=[2,7,11,15]，target=9，输出 [0,1]。请说明时间与空间复杂度。",
+                    "请用 Java 21 编写 public class Main，使用标准输入输出实现 twoSum。第一行输入 n 和 target，第二行输入 n 个整数。输出两个元素的下标（从 0 开始，以空格分隔），使其和等于 target；保证恰有一个答案，同一元素不能重复使用。样例输入：4 9\\n2 7 11 15；样例输出：0 1。请说明时间与空间复杂度。",
                     "CODING", List.of("代码正确且覆盖边界情况", "能解释哈希表解法", "复杂度分析准确")));
         }
 

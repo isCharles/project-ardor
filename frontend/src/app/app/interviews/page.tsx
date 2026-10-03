@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Code2, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
@@ -33,6 +33,19 @@ type Evaluation = {
   evaluation: Record<string, unknown>;
   modelName: string;
 };
+type CodeRunResult = {
+  compileStdout: string; compileStderr: string;
+  stdout: string; stderr: string; exitCode: number; status: string;
+};
+
+const javaStarter = `import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner in = new Scanner(System.in);
+        // 在这里编写代码
+    }
+}`;
 
 const evaluationLabels: Record<string, string> = {
   strengths: "表现优势",
@@ -53,6 +66,11 @@ export default function InterviewsPage() {
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [answerText, setAnswerText] = useState("");
+  const [code, setCode] = useState(javaStarter);
+  const [stdin, setStdin] = useState("");
+  const [runResult, setRunResult] = useState<CodeRunResult | null>(null);
+  const [runnerAvailable, setRunnerAvailable] = useState(false);
+  const [running, setRunning] = useState(false);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -71,6 +89,33 @@ export default function InterviewsPage() {
       if (reason instanceof ApiError && reason.status === 401) return router.replace("/login");
       setError(reason instanceof Error ? reason.message : "无法加载模拟面试");
     }
+  }
+
+  useEffect(() => {
+    api<{ available: boolean }>("/api/interviews/code-runner")
+      .then((status) => setRunnerAvailable(status.available))
+      .catch(() => setRunnerAvailable(false));
+  }, []);
+
+  function showProgress(next: Progress) {
+    setProgress(next);
+    const question = next.nextQuestion;
+    if (!question) return;
+    const prefix = `ardor:interview-draft:${question.id}:`;
+    setAnswerText(sessionStorage.getItem(`${prefix}answer`) ?? "");
+    if (question.questionType === "CODING") {
+      setCode(sessionStorage.getItem(`${prefix}code`) ?? javaStarter);
+      setStdin(sessionStorage.getItem(`${prefix}stdin`) ?? "");
+      setRunResult(null);
+    }
+  }
+
+  function saveDraft(field: "answer" | "code" | "stdin", value: string) {
+    const question = progress?.nextQuestion;
+    if (question) sessionStorage.setItem(`ardor:interview-draft:${question.id}:${field}`, value);
+    if (field === "answer") setAnswerText(value);
+    if (field === "code") setCode(value);
+    if (field === "stdin") setStdin(value);
   }
 
   useEffect(() => {
@@ -108,7 +153,7 @@ export default function InterviewsPage() {
       });
       setActiveSession(session);
       setAnswerText("");
-      setProgress(await api<Progress>(`/api/interviews/${session.id}/next-question`));
+      showProgress(await api<Progress>(`/api/interviews/${session.id}/next-question`));
       await loadLists();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "创建面试失败");
@@ -127,7 +172,7 @@ export default function InterviewsPage() {
         setProgress(null);
         setError("这场面试已取消，只能从历史记录中删除。");
       } else {
-        setProgress(await api<Progress>(`/api/interviews/${session.id}/next-question`));
+        showProgress(await api<Progress>(`/api/interviews/${session.id}/next-question`));
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法打开面试");
@@ -137,19 +182,39 @@ export default function InterviewsPage() {
   async function submitAnswer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!progress?.nextQuestion) return;
+    const question = progress.nextQuestion;
+    const submittedAnswer = question.questionType === "CODING"
+      ? `Java 21 代码：\n\`\`\`java\n${code}\n\`\`\`\n\n思路与复杂度：${answerText.trim() || "未填写"}`
+      : answerText;
+    if (submittedAnswer.length > 20000) { setError("答案过长，请缩短代码或说明。"); return; }
     setBusy(true); setError("");
     try {
-      setProgress(await api<Progress>(`/api/interviews/${progress.sessionId}/answers`, {
+      const next = await api<Progress>(`/api/interviews/${progress.sessionId}/answers`, {
         method: "POST",
         body: JSON.stringify({
           questionId: progress.nextQuestion.id,
-          answerText,
+          answerText: submittedAnswer,
         }),
-      }));
-      setAnswerText("");
+      });
+      const prefix = `ardor:interview-draft:${question.id}:`;
+      for (const field of ["answer", "code", "stdin"]) sessionStorage.removeItem(`${prefix}${field}`);
+      showProgress(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "提交答案失败");
     } finally { setBusy(false); }
+  }
+
+  async function runCode() {
+    if (!progress?.nextQuestion) return;
+    setRunning(true); setError(""); setRunResult(null);
+    try {
+      setRunResult(await api<CodeRunResult>(`/api/interviews/${progress.sessionId}/run-code`, {
+        method: "POST",
+        body: JSON.stringify({ questionId: progress.nextQuestion.id, code, stdin }),
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "代码运行失败");
+    } finally { setRunning(false); }
   }
 
   async function finishInterview() {
@@ -228,7 +293,27 @@ export default function InterviewsPage() {
             <p className="mt-3 text-sm text-muted-foreground">已回答 {progress.answeredCount} / {progress.totalQuestions}</p>
             <form className="mt-6 space-y-4" onSubmit={submitAnswer}>
               {activeSession?.modality === "VOICE" && <VoiceAnswerRecorder key={progress.nextQuestion.id} sessionId={progress.sessionId} questionId={progress.nextQuestion.id} disabled={busy} onTranscript={setAnswerText} onError={setError} />}
-              <textarea className={`field resize-y ${progress.nextQuestion.questionType === "CODING" ? "min-h-72 font-mono text-[13px] leading-6" : "min-h-44"}`} name="answerText" maxLength={20000} required value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder={activeSession?.modality === "VOICE" ? "转写结果会出现在这里，可修改后提交。" : progress.nextQuestion.questionType === "CODING" ? "先说明思路与复杂度，再写出代码。" : "像真实面试一样作答，建议说明思路、取舍和结果。"} />
+              {progress.nextQuestion.questionType === "CODING" && <div className="space-y-3 rounded-3xl border border-violet-200 bg-white/75 p-4">
+                <div className="flex items-center gap-2 text-sm font-medium"><Code2 className="size-4 text-violet-600" />Java 21 · Main.java</div>
+                  <textarea aria-label="Java 代码" className="field min-h-80 resize-y font-mono text-[13px] leading-6" spellCheck={false} maxLength={18000} value={code} onChange={(event) => saveDraft("code", event.target.value)} onKeyDown={(event) => {
+                  if (event.key !== "Tab") return;
+                  event.preventDefault();
+                  const input = event.currentTarget;
+                  const next = `${code.slice(0, input.selectionStart)}    ${code.slice(input.selectionEnd)}`;
+                  const position = input.selectionStart + 4;
+                  saveDraft("code", next);
+                  requestAnimationFrame(() => input.setSelectionRange(position, position));
+                }} />
+                <label className="block text-sm font-medium">标准输入<textarea className="field mt-2 min-h-24 resize-y font-mono text-sm" maxLength={8000} value={stdin} onChange={(event) => saveDraft("stdin", event.target.value)} placeholder="在这里粘贴样例输入，也可以自己构造边界用例" /></label>
+                <div className="flex items-center gap-3"><Button type="button" variant="outline" disabled={running || busy || !runnerAvailable || !code.trim()} onClick={() => void runCode()}><Play className="mr-2 size-4" />{running ? "运行中…" : "运行代码"}</Button>{!runnerAvailable && <span className="text-xs text-amber-700">运行器尚未配置</span>}</div>
+                {runResult && <div className="space-y-3 rounded-2xl bg-slate-950 p-4 text-sm text-slate-100" aria-live="polite">
+                  <div className="text-xs text-slate-400">{runResult.exitCode === 0 ? "运行完成" : `退出码 ${runResult.exitCode}`}{runResult.status ? ` · ${runResult.status}` : ""}</div>
+                  {(runResult.compileStderr || runResult.compileStdout) && <pre className="whitespace-pre-wrap break-all text-amber-200">{runResult.compileStderr || runResult.compileStdout}</pre>}
+                  <pre className="min-h-6 whitespace-pre-wrap break-all">{runResult.stdout || "（没有标准输出）"}</pre>
+                  {runResult.stderr && <pre className="whitespace-pre-wrap break-all text-rose-300">{runResult.stderr}</pre>}
+                </div>}
+              </div>}
+              <textarea className="field min-h-44 resize-y" name="answerText" maxLength={progress.nextQuestion.questionType === "CODING" ? 1500 : 20000} required={progress.nextQuestion.questionType !== "CODING"} value={answerText} onChange={(event) => saveDraft("answer", event.target.value)} placeholder={activeSession?.modality === "VOICE" ? "转写结果会出现在这里，可修改后提交。" : progress.nextQuestion.questionType === "CODING" ? "可选：说明思路和复杂度" : "像真实面试一样作答，建议说明思路、取舍和结果。"} />
               <Button disabled={busy}><Send className="mr-2 size-4" />{busy ? "提交中…" : "提交并进入下一题"}</Button>
             </form>
           </div>}
