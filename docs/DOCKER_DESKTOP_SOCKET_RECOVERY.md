@@ -8,6 +8,10 @@
 
 已给 `start.ps1` 和 `scripts/Start-DockerDesktopSafely.ps1` 加 UTF-8 BOM，让 Windows PowerShell 5.1 能按 UTF-8 读取中文内容；用本机 5.1 的解析器检查两个脚本均为零错误，并在 Engine 已就绪时实际运行恢复脚本，确认它直接返回“无需恢复”。**尚未为了测试而再次停机制造 socket 故障**；这项改动修的是自动恢复入口的编码兼容性，不是 Docker/Windows 遗留 socket 的上游根因。
 
+当天下午 Engine 再次消失、Docker 进程已退出，受控脚本在 Windows PowerShell 5.1 下又暴露第二个入口问题：`$ErrorActionPreference = "Stop"` 会把失败的 `docker info` 标准错误提升为终止异常，导致脚本在检查两处 socket 之前退出。日志为 `恢复中止：failed to connect to the docker API ... dockerDesktopLinuxEngine ... pipe ... cannot find the file specified`；后端日志最后写入时间仍是 13:11，没有新的 Docker 启动失败日志。独立只读复现中，5.1 对同一探测命令抛出 `RemoteException`。已把 `Test-DockerEngine` 的探测异常转成“Engine 不可用”布尔结果；其他失败仍按脚本原有规则中止，未放宽目录白名单或数据盘边界。
+
+修复后在 17:11 用同一个 Windows PowerShell 5.1 入口实际运行：脚本保留两处新备份 `run.socket-backup-20261003-171125-23852d62` 与 `docker-secrets-engine.socket-backup-20261003-171125-264ade76`，17:11:40 Engine 恢复响应。此次验证的是脚本在故障状态下从头到尾可运行；上游遗留 socket 的根因仍未定位。
+
 ## 结论与当前状态
 
 本机 Docker Desktop 4.77.0 曾反复在启动阶段因 Windows 无法移除自身留下的 AF_UNIX socket 而退出。失败发生在 **Docker Engine 启动之前**，不是 Ardor 的容器、镜像、数据卷或 E 盘 VHDX 损坏。`dockerInference` 和 `docker-secrets-engine\engine.sock` 两处会轮流挡住启动；仅处理其中一处再启动，会重新生成它，下一次又从头报错。

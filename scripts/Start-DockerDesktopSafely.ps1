@@ -31,8 +31,16 @@ function Write-RecoveryEvent {
 }
 
 function Test-DockerEngine {
-    & docker info --format '{{.ServerVersion}}' *> $null
-    return $LASTEXITCODE -eq 0
+    try {
+        & docker info --format '{{.ServerVersion}}' *> $null
+        return $LASTEXITCODE -eq 0
+    }
+    catch {
+        # Windows PowerShell 5.1 can promote native stderr to a terminating
+        # RemoteException when ErrorActionPreference is Stop. An absent Engine
+        # is an expected probe result, not a reason to abort safe recovery.
+        return $false
+    }
 }
 
 function Get-DockerDesktopProcesses {
