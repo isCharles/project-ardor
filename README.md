@@ -77,6 +77,8 @@ Ardor 可以从已有资料中找到上下文，帮你把准备拆成真正可�
 
 想了解项目如何设计？可以继续阅读 [产品范围](docs/PROJECT.md) · [架构说明](docs/ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [版本规则](docs/VERSIONING.md)。
 
+Windows 桌面客户端正在准备安装包与应用内更新；现阶段仍按上方启动指南使用网页。安装方式和发布限制见 [桌面版说明](docs/DESKTOP.md)。
+
 <div align="center">
   <br />
   <strong>Project Ardor · Keep the fire going.</strong>

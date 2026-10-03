@@ -7,6 +7,7 @@ import { FormEvent, MouseEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ardor/overlay";
+import { DesktopSettings } from "@/components/ardor/desktop-settings";
 import { ApiError, api } from "@/lib/api";
 import { usageFeatureLabels } from "@/lib/usage-features";
 
@@ -342,6 +343,7 @@ export default function SettingsPage() {
       {(notice || error) && <div className={`mx-auto mb-6 max-w-6xl rounded-2xl px-5 py-4 text-sm ${error ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-800"}`}>{error || notice}</div>}
 
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-2">
+        <DesktopSettings />
         {usage && <section className="ardor-panel rounded-[2rem] p-6 md:col-span-2 md:p-8">
           <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">使用额度</h2><span className="rounded-full bg-violet-50 px-3 py-1 text-xs text-violet-700">{usage.tier === "MEMBER" ? "会员" : "免费"}</span></div>
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{usage.features.filter((item) => ["AGENT_CHAT", "RESUME_ANALYSIS", "INTERVIEW_CREATE", "INTERVIEW_RECAP"].includes(item.feature)).map((item) => <div key={item.feature} className="rounded-2xl bg-white/70 p-4"><p className="text-xs text-muted-foreground">{usageFeatureLabels[item.feature] ?? item.feature}</p><p className="mt-2 text-lg font-semibold tabular-nums">{item.used} / {item.limit}</p></div>)}</div>

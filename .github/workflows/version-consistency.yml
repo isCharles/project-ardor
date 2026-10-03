@@ -8,6 +8,8 @@ on:
       - "backend/.dockerignore"
       - "frontend/package.json"
       - "frontend/package-lock.json"
+      - "desktop/package.json"
+      - "desktop/package-lock.json"
       - "scripts/check-version.mjs"
       - ".github/workflows/version-consistency.yml"
   workflow_dispatch:
