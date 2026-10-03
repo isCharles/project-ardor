@@ -18,6 +18,8 @@ import com.projectardor.interview.domain.InterviewModality;
 import com.projectardor.interview.domain.InterviewSession;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.speech.service.SpeechService;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 
 @RestController
 @RequestMapping("/api/interviews/{sessionId}/voice")
@@ -32,6 +34,7 @@ public class InterviewSpeechController {
     }
 
     @PostMapping(path = "/transcriptions", consumes = "multipart/form-data")
+    @QuotaProtected(UsageFeature.VOICE_ASR)
     public SpeechTranscriptionResponse transcribe(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID sessionId,
@@ -41,6 +44,7 @@ public class InterviewSpeechController {
     }
 
     @PostMapping("/questions/{questionId}/speech")
+    @QuotaProtected(UsageFeature.VOICE_TTS)
     public ResponseEntity<byte[]> questionSpeech(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID sessionId,

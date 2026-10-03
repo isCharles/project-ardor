@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.interview.service.InterviewService;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 
 import jakarta.validation.Valid;
 
@@ -30,6 +32,7 @@ public class InterviewController {
     }
 
     @PostMapping
+    @QuotaProtected(UsageFeature.INTERVIEW_CREATE)
     @ResponseStatus(HttpStatus.CREATED)
     public InterviewSessionResponse create(
             @AuthenticationPrincipal ArdorPrincipal principal,
@@ -72,6 +75,7 @@ public class InterviewController {
     }
 
     @PostMapping("/{sessionId}/finish")
+    @QuotaProtected(UsageFeature.INTERVIEW_EVALUATION)
     public InterviewEvaluationResponse finish(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID sessionId) {

@@ -24,6 +24,9 @@ import com.projectardor.integrations.service.AuxiliaryApiConfigService;
 import com.projectardor.interview.domain.InterviewModality;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.speech.realtime.DashScopeRealtimeSpeechGateway.RealtimeSession;
+import com.projectardor.usage.QuotaExceededException;
+import com.projectardor.usage.QuotaService;
+import com.projectardor.usage.UsageFeature;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -39,17 +42,20 @@ public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
     private final InterviewService interviewService;
     private final AuxiliaryApiConfigService configService;
     private final DashScopeRealtimeSpeechGateway gateway;
+    private final QuotaService quotas;
     private final Map<String, LiveSession> liveSessions = new ConcurrentHashMap<>();
 
     public RealtimeSpeechWebSocketHandler(
             ObjectMapper objectMapper,
             InterviewService interviewService,
             AuxiliaryApiConfigService configService,
-            DashScopeRealtimeSpeechGateway gateway) {
+            DashScopeRealtimeSpeechGateway gateway,
+            QuotaService quotas) {
         this.objectMapper = objectMapper;
         this.interviewService = interviewService;
         this.configService = configService;
         this.gateway = gateway;
+        this.quotas = quotas;
     }
 
     @Override
@@ -89,7 +95,7 @@ public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
                 case "interrupt_tts" -> live.interruptTts();
                 default -> live.send(RealtimeSpeechEvent.error("不支持的实时语音指令"));
             }
-        } catch (IllegalArgumentException | IllegalStateException exception) {
+        } catch (IllegalArgumentException | IllegalStateException | QuotaExceededException exception) {
             live.send(RealtimeSpeechEvent.error(exception.getMessage()));
         } catch (Exception exception) {
             live.send(RealtimeSpeechEvent.error("实时语音指令无法处理"));
@@ -153,10 +159,11 @@ public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
         }
 
         private void startAsr() {
-            close(asr.getAndSet(null));
-            audioCharacters = 0;
             var config = configService.runtimeConfig(userId, AuxiliaryServiceType.ASR)
                     .orElseThrow(() -> new IllegalStateException("管理员尚未配置语音识别服务"));
+            quotas.consume(userId, UsageFeature.VOICE_ASR, null);
+            close(asr.getAndSet(null));
+            audioCharacters = 0;
             asr.set(gateway.openAsr(config, this::onAsrEvent));
             send(RealtimeSpeechEvent.signal("asr_connecting"));
         }
@@ -183,9 +190,10 @@ public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
 
         private void speakQuestion(UUID questionId) {
             String question = interviewService.getQuestion(userId, interviewId, questionId).getQuestionText();
-            close(tts.getAndSet(null));
             var config = configService.runtimeConfig(userId, AuxiliaryServiceType.TTS)
                     .orElseThrow(() -> new IllegalStateException("管理员尚未配置语音合成服务"));
+            quotas.consume(userId, UsageFeature.VOICE_TTS, null);
+            close(tts.getAndSet(null));
             tts.set(gateway.openTts(config, question, this::onTtsEvent));
             send(RealtimeSpeechEvent.signal("tts_connecting"));
         }

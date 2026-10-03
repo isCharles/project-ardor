@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -15,9 +16,22 @@ import com.projectardor.auth.service.DuplicateEmailException;
 import com.projectardor.common.security.ExternalHostResolutionException;
 import com.projectardor.llm.service.LlmCallException;
 import com.projectardor.speech.service.SpeechCallException;
+import com.projectardor.usage.QuotaExceededException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    @ExceptionHandler(QuotaExceededException.class)
+    ResponseEntity<ApiError> quotaExceeded(QuotaExceededException exception) {
+        long retryAfter = Math.max(1, java.time.Duration.between(
+                java.time.Instant.now(), exception.resetAt()).toSeconds());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(retryAfter))
+                .body(new ApiError("QUOTA_EXCEEDED", exception.getMessage(), Map.of(
+                        "feature", exception.feature().name(),
+                        "dimension", exception.reason().name(),
+                        "resetAt", exception.resetAt().toString())));
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)

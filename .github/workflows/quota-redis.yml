@@ -1,0 +1,30 @@
+name: Redis quota script
+
+on:
+  pull_request:
+    paths:
+      - "backend/src/main/java/com/projectardor/usage/QuotaStore.java"
+      - "backend/src/main/resources/redis/quota-consume.lua"
+      - "backend/src/test/resources/redis/quota-consume-test.sh"
+      - ".github/workflows/quota-redis.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Execute production Lua against isolated Redis
+        run: |
+          docker run --detach --rm --name ardor-quota-check redis:7
+          for attempt in {1..20}; do
+            if docker exec ardor-quota-check redis-cli ping | grep -qx PONG; then break; fi
+            sleep 1
+          done
+          docker cp backend/src/main/resources/redis/quota-consume.lua ardor-quota-check:/tmp/quota-consume.lua
+          docker cp backend/src/test/resources/redis/quota-consume-test.sh ardor-quota-check:/tmp/quota-consume-test.sh
+          docker exec ardor-quota-check sh /tmp/quota-consume-test.sh

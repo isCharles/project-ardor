@@ -19,6 +19,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.knowledge.service.KnowledgeService;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 
 import jakarta.validation.Valid;
 
@@ -32,6 +34,7 @@ public class KnowledgeController {
     }
 
     @PostMapping("/documents")
+    @QuotaProtected(UsageFeature.KNOWLEDGE_UPLOAD)
     @ResponseStatus(HttpStatus.CREATED)
     public KnowledgeDocumentResponse upload(
             @AuthenticationPrincipal ArdorPrincipal principal,
@@ -59,6 +62,7 @@ public class KnowledgeController {
     }
 
     @GetMapping("/search")
+    @QuotaProtected(UsageFeature.KNOWLEDGE_SEARCH)
     public List<KnowledgeSearchResult> search(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @RequestParam String query,
@@ -67,6 +71,7 @@ public class KnowledgeController {
     }
 
     @PostMapping("/research")
+    @QuotaProtected(UsageFeature.KNOWLEDGE_RESEARCH)
     @ResponseStatus(HttpStatus.CREATED)
     public KnowledgeResearchResponse research(
             @AuthenticationPrincipal ArdorPrincipal principal,

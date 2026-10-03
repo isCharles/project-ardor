@@ -24,6 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.projectardor.agent.service.CareerAgentService;
 import com.projectardor.agent.service.AgentMemoryService;
 import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 
 import jakarta.validation.Valid;
 
@@ -48,6 +50,7 @@ public class AgentController {
     }
 
     @PostMapping("/messages")
+    @QuotaProtected(UsageFeature.AGENT_CHAT)
     public AgentMessageResponse chat(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody AgentMessageRequest request) {
@@ -56,6 +59,7 @@ public class AgentController {
     }
 
     @PostMapping(value = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @QuotaProtected(value = UsageFeature.AGENT_CHAT, idempotentRequest = true)
     public SseEmitter chatStream(
             @AuthenticationPrincipal ArdorPrincipal principal,
             HttpServletResponse response,
