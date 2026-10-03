@@ -2,6 +2,12 @@
 
 > 记录日期：2026-10-01，Asia/Shanghai。本文记录本机实测，不把临时恢复称为 Docker 的永久修复。后续 Agent 请先核对当前状态和日志，不要照搬旧结论。
 
+## 2026-10-03 复发与启动脚本编码修复
+
+再次启动时 Engine 管道缺失，Docker Desktop 和后端进程均已退出。两处运行时目录中仅有本脚本白名单内的 socket 重解析点；数据盘 Junction 仍指向 `E:\AppDataMoves\DockerDisk`，VHDX 存在。第一次用 Windows PowerShell 5.1 直接运行恢复脚本时，在执行脚本主体前就因无 BOM 的 UTF-8 中文字符串解析失败。随后用 PowerShell 7 运行同一个脚本：它将 `Docker\run` 和 `docker-secrets-engine` 分别改名保留为 `.socket-backup-20261003-125100-981f6162`、`.socket-backup-20261003-125101-d918ee8e`，一次启动后 Engine 29.5.3 于 12:51:15 响应。四个 Ardor 容器正常，后端、Redis、PostgreSQL 健康，三卷仍在，3000 为 200、未认证 8080 为 401。没有删除备份或触碰 E 盘数据。
+
+已给 `start.ps1` 和 `scripts/Start-DockerDesktopSafely.ps1` 加 UTF-8 BOM，让 Windows PowerShell 5.1 能按 UTF-8 读取中文内容；用本机 5.1 的解析器检查两个脚本均为零错误，并在 Engine 已就绪时实际运行恢复脚本，确认它直接返回“无需恢复”。**尚未为了测试而再次停机制造 socket 故障**；这项改动修的是自动恢复入口的编码兼容性，不是 Docker/Windows 遗留 socket 的上游根因。
+
 ## 结论与当前状态
 
 本机 Docker Desktop 4.77.0 曾反复在启动阶段因 Windows 无法移除自身留下的 AF_UNIX socket 而退出。失败发生在 **Docker Engine 启动之前**，不是 Ardor 的容器、镜像、数据卷或 E 盘 VHDX 损坏。`dockerInference` 和 `docker-secrets-engine\engine.sock` 两处会轮流挡住启动；仅处理其中一处再启动，会重新生成它，下一次又从头报错。
