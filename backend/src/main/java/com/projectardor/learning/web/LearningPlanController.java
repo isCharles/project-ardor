@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.learning.service.LearningPlanService;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 
 import jakarta.validation.Valid;
 
@@ -39,6 +41,7 @@ public class LearningPlanController {
     }
 
     @PostMapping
+    @QuotaProtected(UsageFeature.LEARNING_PLAN)
     @ResponseStatus(HttpStatus.CREATED)
     public LearningPlanResponse create(@AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody LearningPlanCreateRequest request) {
@@ -52,6 +55,7 @@ public class LearningPlanController {
     }
 
     @PostMapping("/{id}/attempts")
+    @QuotaProtected(UsageFeature.LEARNING_ATTEMPT)
     public LearningPlanResponse attempt(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID id, @Valid @RequestBody LearningAttemptRequest request) {
         return LearningPlanResponse.from(service.submit(principal.userId(), id, request.answers()));

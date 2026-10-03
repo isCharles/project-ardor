@@ -13,16 +13,22 @@ import com.projectardor.auth.domain.UserRole;
 import com.projectardor.auth.domain.UserStatus;
 import com.projectardor.auth.repository.UserAccountRepository;
 import com.projectardor.common.web.ResourceNotFoundException;
+import com.projectardor.usage.MembershipService;
 
 @Service
 public class AdminUserService {
     private final UserAccountRepository repository;
+    private final MembershipService memberships;
 
-    public AdminUserService(UserAccountRepository repository) { this.repository = repository; }
+    public AdminUserService(UserAccountRepository repository, MembershipService memberships) {
+        this.repository = repository;
+        this.memberships = memberships;
+    }
 
     @Transactional(readOnly = true)
     public List<AdminUserResponse> list() {
-        return repository.findAllByOrderByCreatedAtDesc().stream().map(AdminUserResponse::from).toList();
+        return repository.findAllByOrderByCreatedAtDesc().stream()
+                .map(user -> AdminUserResponse.from(user, memberships.tier(user.getId()))).toList();
     }
 
     @Transactional
@@ -39,6 +45,6 @@ public class AdminUserService {
         }
         user.setStatus(nextStatus);
         user.setRole(nextRole);
-        return AdminUserResponse.from(user);
+        return AdminUserResponse.from(user, memberships.tier(user.getId()));
     }
 }

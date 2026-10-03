@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.websearch.service.TavilySearchService;
 import com.projectardor.websearch.service.WebSearchConfigService;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 
 import jakarta.validation.Valid;
 
@@ -42,6 +44,7 @@ public class WebSearchConfigController {
     }
 
     @PostMapping("/test")
+    @QuotaProtected(UsageFeature.CONNECTION_TEST)
     public WebSearchTestResponse test(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody WebSearchConfigRequest request) {

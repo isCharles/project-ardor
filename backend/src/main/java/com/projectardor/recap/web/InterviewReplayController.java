@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.recap.service.InterviewReplayService;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 
 import jakarta.validation.Valid;
 
@@ -31,6 +33,7 @@ public class InterviewReplayController {
     }
 
     @PostMapping
+    @QuotaProtected(UsageFeature.INTERVIEW_REPLAY)
     @ResponseStatus(HttpStatus.CREATED)
     public InterviewReplayResponse.Attempt submit(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID questionId, @Valid @RequestBody InterviewReplaySubmitRequest request) {

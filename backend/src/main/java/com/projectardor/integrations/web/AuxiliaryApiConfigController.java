@@ -18,6 +18,8 @@ import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.integrations.domain.AuxiliaryServiceType;
 import com.projectardor.integrations.service.AuxiliaryApiConfigService;
 import com.projectardor.integrations.service.AuxiliaryConnectionTestService;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 
 import jakarta.validation.Valid;
 
@@ -49,6 +51,7 @@ public class AuxiliaryApiConfigController {
     }
 
     @PostMapping("/{serviceType}/test")
+    @QuotaProtected(UsageFeature.CONNECTION_TEST)
     public AuxiliaryConnectionTestResponse test(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable AuxiliaryServiceType serviceType,

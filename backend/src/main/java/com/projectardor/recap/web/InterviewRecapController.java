@@ -6,6 +6,8 @@ import org.springframework.web.bind.annotation.*;
 import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.recap.service.InterviewRecapService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 import jakarta.validation.Valid;
 @RestController @RequestMapping("/api/interview-recaps")
 public class InterviewRecapController {
@@ -13,6 +15,7 @@ public class InterviewRecapController {
     private final InterviewRecapQueueService queueService;
     public InterviewRecapController(InterviewRecapService service, InterviewRecapQueueService queueService) { this.service = service; this.queueService = queueService; }
     @PostMapping @ResponseStatus(HttpStatus.ACCEPTED)
+    @QuotaProtected(UsageFeature.INTERVIEW_RECAP)
     public InterviewRecapTaskResponse create(@AuthenticationPrincipal ArdorPrincipal principal, @Valid @RequestBody InterviewRecapCreateRequest request) {
         return InterviewRecapTaskResponse.from(queueService.request(principal.userId(), request.content()));
     }
@@ -20,6 +23,7 @@ public class InterviewRecapController {
 
     /** Re-queues a failed整理 job using the material already stored on it. */
     @PostMapping("/jobs/{jobId}/retry")
+    @QuotaProtected(UsageFeature.INTERVIEW_RECAP)
     public InterviewRecapTaskResponse retryJob(
             @AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID jobId) {
         return InterviewRecapTaskResponse.from(queueService.retryFailed(principal.userId(), jobId));

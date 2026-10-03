@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.llm.service.LlmConfigService;
 import com.projectardor.llm.service.LlmConnectionTestService;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 
 import jakarta.validation.Valid;
 
@@ -42,6 +44,7 @@ public class LlmConfigController {
     }
 
     @PostMapping("/test")
+    @QuotaProtected(UsageFeature.CONNECTION_TEST)
     public LlmConnectionTestResponse testConnection(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody LlmConfigUpdateRequest request) {

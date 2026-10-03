@@ -35,6 +35,7 @@ type AuxiliaryApiConfig = {
 type InlineFeedback = { kind: "pending" | "success" | "error"; message: string };
 type HealthServiceType = "PRIMARY_LLM" | "WEB_SEARCH" | AuxiliaryServiceType;
 type HealthResult = { kind: "pending" | "success" | "error"; message: string };
+type UsageSnapshot = { tier: "FREE" | "MEMBER"; resetsAt: string; features: Array<{ feature: string; used: number; limit: number }> };
 
 const integrationDetails = {
   EMBEDDING: { title: "向量模型", description: "用于知识库语义检索与长期记忆。", icon: Database },
@@ -59,6 +60,7 @@ export default function SettingsPage() {
   const [llm, setLlm] = useState<LlmConfig | null>(null);
   const [webSearch, setWebSearch] = useState<WebSearchConfig | null>(null);
   const [integrations, setIntegrations] = useState<AuxiliaryApiConfig[] | null>(null);
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -83,10 +85,11 @@ export default function SettingsPage() {
       api<LlmConfig>("/api/settings/llm"),
       api<WebSearchConfig>("/api/settings/web-search"),
       api<AuxiliaryApiConfig[]>("/api/settings/integrations"),
+      api<UsageSnapshot>("/api/usage").catch(() => null),
     ])
-      .then(([currentUser, currentProfile, currentLlm, currentWebSearch, currentIntegrations]) => {
+      .then(([currentUser, currentProfile, currentLlm, currentWebSearch, currentIntegrations, currentUsage]) => {
         setUser(currentUser); setProfile(currentProfile); setLlm(currentLlm);
-        setWebSearch(currentWebSearch); setIntegrations(currentIntegrations);
+        setWebSearch(currentWebSearch); setIntegrations(currentIntegrations); setUsage(currentUsage);
       })
       .catch((reason) => {
         if (reason instanceof ApiError && reason.status === 401) return router.replace("/login");
@@ -338,6 +341,11 @@ export default function SettingsPage() {
       {(notice || error) && <div className={`mx-auto mb-6 max-w-6xl rounded-2xl px-5 py-4 text-sm ${error ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-800"}`}>{error || notice}</div>}
 
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-2">
+        {usage && <section className="ardor-panel rounded-[2rem] p-6 md:col-span-2 md:p-8">
+          <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">使用额度</h2><span className="rounded-full bg-violet-50 px-3 py-1 text-xs text-violet-700">{usage.tier === "MEMBER" ? "会员" : "免费"}</span></div>
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{usage.features.filter((item) => ["AGENT_CHAT", "RESUME_ANALYSIS", "INTERVIEW_CREATE", "INTERVIEW_RECAP"].includes(item.feature)).map((item) => <div key={item.feature} className="rounded-2xl bg-white/70 p-4"><p className="text-xs text-muted-foreground">{{ AGENT_CHAT: "对话", RESUME_ANALYSIS: "简历分析", INTERVIEW_CREATE: "模拟面试", INTERVIEW_RECAP: "面经整理" }[item.feature as "AGENT_CHAT" | "RESUME_ANALYSIS" | "INTERVIEW_CREATE" | "INTERVIEW_RECAP"]}</p><p className="mt-2 text-lg font-semibold tabular-nums">{item.used} / {item.limit}</p></div>)}</div>
+          <p className="mt-4 text-xs text-muted-foreground">每月重置 · {new Date(usage.resetsAt).toLocaleDateString("zh-CN")}</p>
+        </section>}
         <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
           <div className="flex items-center gap-3"><UserRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">个人资料</h2></div>
           <p className="mt-2 text-sm text-muted-foreground">Agent 会把这些信息作为求职上下文。</p>

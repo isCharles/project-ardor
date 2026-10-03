@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 const ADMIN_ITEMS = [
   { href: "#overview", label: "系统概览", icon: Gauge },
   { href: "#api-configs", label: "系统 API", icon: Server },
+  { href: "#quotas", label: "额度", icon: Gauge },
   { href: "#users", label: "用户管理", icon: Users },
 ] as const;
 

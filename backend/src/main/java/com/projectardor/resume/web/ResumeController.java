@@ -19,6 +19,8 @@ import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.resume.domain.ResumeAnalysis;
 import com.projectardor.resume.service.ResumeService;
 import com.projectardor.resume.service.ResumeAnalysisQueueService;
+import com.projectardor.usage.QuotaProtected;
+import com.projectardor.usage.UsageFeature;
 
 @RestController
 @RequestMapping("/api/resumes")
@@ -58,6 +60,7 @@ public class ResumeController {
     }
 
     @PostMapping("/{resumeId}/analysis")
+    @QuotaProtected(UsageFeature.RESUME_ANALYSIS)
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ResumeAnalysisTaskResponse analyze(
             @AuthenticationPrincipal ArdorPrincipal principal,
