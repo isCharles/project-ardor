@@ -1,0 +1,31 @@
+appId: com.projectardor.desktop
+productName: Project Ardor
+asar: true
+directories:
+  output: dist
+files:
+  - main.cjs
+  - preload.cjs
+  - server-config.cjs
+  - offline.html
+  - offline.css
+  - offline.js
+  - assets/icon.ico
+  - assets/icon.png
+  - package.json
+win:
+  target: nsis
+  icon: assets/icon.ico
+  artifactName: Project-Ardor-Setup-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Project Ardor
+  uninstallDisplayName: Project Ardor
+publish:
+  provider: github
+  owner: isCharles
+  repo: project-ardor

@@ -21,9 +21,9 @@ Ardor 使用 `v主版本.次版本.修订版本` 标记**经过验证的产品�
 
 ## 发布方式
 
-1. 在 `feat/version-*` 分支准备发布 PR。同步修改 `backend/pom.xml`、`backend/Dockerfile`、`backend/.dockerignore`、`frontend/package.json`、`frontend/package-lock.json` 和 README 中的产品版本；更新 [CHANGELOG](../CHANGELOG.md)。不改 Flyway 迁移编号：数据库迁移与产品版本是两条独立序列。
+1. 在 `feat/version-*` 分支准备发布 PR。同步修改 `backend/pom.xml`、`backend/Dockerfile`、`backend/.dockerignore`、`frontend/package.json`、`frontend/package-lock.json`、`desktop/package.json`、`desktop/package-lock.json` 和 README 中的产品版本；更新 [CHANGELOG](../CHANGELOG.md)。不改 Flyway 迁移编号：数据库迁移与产品版本是两条独立序列。
 2. 对 PR 执行相关测试、前端构建和 Compose 启动验证。若改动涉及数据库，额外检查从上一版本升级。`node scripts/check-version.mjs` 会检查构建元数据与容器 JAR 路径是否一致；版本文件变更的 PR 也会自动运行该检查。
-3. 合并后在**合并提交**打带注释的 `vX.Y.Z` 标签，再以同一标签创建 GitHub Release；候选版本标为 pre-release。Release Notes 写明用户可见变化、已知限制和升级步骤。
+3. 合并后在**合并提交**打带注释的 `vX.Y.Z` 标签，再以同一标签创建 GitHub Release；候选版本标为 pre-release。Release Notes 写明用户可见变化、已知限制和升级步骤。Release 发布后 Windows Runner 会构建桌面安装包并附加更新元数据；公开宣告桌面版可下载前，核对 Release 中安装包、`.blockmap`、`latest.yml` 均已出现。
 4. 后续功能 PR 不自动修改版本号。未打标签的 `main` 是开发状态；判断一个可复现发布版本时，以 Git 标签与其提交为准，而不是仅看包里的版本字符串。
 
 发布后的版本不可覆盖或移动标签。修复已发布版本应创建新修订版本。

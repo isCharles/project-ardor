@@ -1,0 +1,42 @@
+name: Windows desktop installer
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Verify product version
+        shell: pwsh
+        run: |
+          node scripts/check-version.mjs
+          $expected = "v$((Get-Content -Raw -Encoding UTF8 desktop/package.json | ConvertFrom-Json).version)"
+          if ($env:RELEASE_TAG -ne $expected) { throw "Release tag $env:RELEASE_TAG does not match $expected" }
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+      - name: Build guided Windows installer
+        working-directory: desktop
+        run: |
+          npm ci
+          npm test
+          npm run dist:win
+      - name: Attach installer and update metadata to this release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" desktop/dist/*.exe desktop/dist/*.exe.blockmap desktop/dist/latest.yml --clobber

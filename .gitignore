@@ -15,6 +15,13 @@ frontend/out/
 frontend/.env.local
 frontend/next-env.d.ts
 frontend/*.tsbuildinfo
+desktop/node_modules/
+desktop/dist/
+desktop/assets/icon.ico
+desktop/assets/icon.png
+desktop/.electron-cache/
+desktop/.builder-cache/
+.npm-cache/
 
 # IDE and OS
 .idea/
