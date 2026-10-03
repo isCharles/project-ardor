@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateRange(15, 300)][int]$TimeoutSeconds = 120
 )
 
