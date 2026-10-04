@@ -9,9 +9,11 @@ import { Field, Input } from "@/components/ardor/field";
 import { Notice } from "@/components/ardor/page";
 import { AuthFrame } from "@/components/auth-frame";
 import { api } from "@/lib/api";
+import { useLocale } from "@/lib/locale";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { t } = useLocale();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -31,7 +33,7 @@ export default function RegisterPage() {
       });
       router.replace("/app");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "注册失败");
+      setError(reason instanceof Error ? reason.message : t("Registration failed", "注册失败"));
     } finally {
       setBusy(false);
     }
@@ -39,22 +41,22 @@ export default function RegisterPage() {
 
   return (
     <AuthFrame
-      title="开始使用 Ardor"
-      description="建好账号，开始你的下一步。"
-      footer={<>已有账号？ <Link href="/login">直接登录</Link></>}
+      title={t("Start with Ardor", "开始使用 Ardor")}
+      description={t("Create an account and take your next step.", "建好账号，开始你的下一步。")}
+      footer={<>{t("Already have an account?", "已有账号？")} <Link href="/login">{t("Sign in", "直接登录")}</Link></>}
     >
       <form className="space-y-4" onSubmit={submit}>
-        <Field label="称呼（选填）" htmlFor="displayName">
-          <Input id="displayName" name="displayName" maxLength={120} autoComplete="name" autoFocus placeholder="你的名字或昵称" />
+        <Field label={t("Name (optional)", "称呼（选填）")} htmlFor="displayName">
+          <Input id="displayName" name="displayName" maxLength={120} autoComplete="name" autoFocus placeholder={t("Your name or nickname", "你的名字或昵称")} />
         </Field>
-        <Field label="邮箱" htmlFor="email">
+        <Field label={t("Email", "邮箱")} htmlFor="email">
           <Input id="email" type="email" name="email" autoComplete="email" required placeholder="name@example.com" />
         </Field>
-        <Field label="密码" htmlFor="password">
-          <Input id="password" type="password" name="password" minLength={8} maxLength={72} autoComplete="new-password" required placeholder="至少 8 位字符" />
+        <Field label={t("Password", "密码")} htmlFor="password">
+          <Input id="password" type="password" name="password" minLength={8} maxLength={72} autoComplete="new-password" required placeholder={t("At least 8 characters", "至少 8 位字符")} />
         </Field>
         {error && <Notice tone="bad">{error}</Notice>}
-        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>创建账号</Button>
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>{t("Create account", "创建账号")}</Button>
       </form>
     </AuthFrame>
   );

@@ -1,17 +1,18 @@
 import type { Metadata } from "next";
 import { DesktopUpdatePrompt } from "@/components/ardor/desktop-update-prompt";
+import { LocaleProvider } from "@/lib/locale";
 
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Ardor",
-  description: "记住你求职进度的 career agent：简历、模拟面试、薄弱点和日程。",
+  description: "An AI career agent for resumes, interviews, learning, and momentum.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
-      <body><DesktopUpdatePrompt />{children}</body>
+    <html lang="en">
+      <body><LocaleProvider><DesktopUpdatePrompt />{children}</LocaleProvider></body>
     </html>
   );
 }

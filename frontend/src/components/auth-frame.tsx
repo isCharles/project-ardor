@@ -1,5 +1,9 @@
+"use client";
+
 import Link from "next/link";
 
+import { LocaleSwitch } from "@/components/ardor/locale-switch";
+import { useLocale } from "@/lib/locale";
 import styles from "./auth-frame.module.css";
 
 export function AuthFrame({
@@ -13,19 +17,21 @@ export function AuthFrame({
   children: React.ReactNode;
   footer: React.ReactNode;
 }) {
+  const { t } = useLocale();
   return (
     <main className={styles.page}>
       <div className={styles.light} aria-hidden="true" />
       <header className={styles.header}>
-        <Link href="/" className={styles.brand} aria-label="返回 Ardor 首页">
+        <Link href="/app" className={styles.brand} aria-label={t("Go to Ardor", "前往 Ardor")}>
           <span className={styles.brandMark} aria-hidden="true">✦</span>
           Ardor
         </Link>
+        <LocaleSwitch />
       </header>
       <div className={styles.layout}>
         <div className={styles.statement} aria-hidden="true">
-          <span>下一步，</span>
-          <span>继续向前。</span>
+          <span>{t("Your next", "下一步，")}</span>
+          <span>{t("move starts here.", "继续向前。")}</span>
         </div>
         <section className={styles.panel} aria-labelledby="auth-title">
           <h1 id="auth-title" className={styles.title}>{title}</h1>

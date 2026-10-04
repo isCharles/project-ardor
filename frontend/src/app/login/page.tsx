@@ -9,9 +9,11 @@ import { Field, Input } from "@/components/ardor/field";
 import { Notice } from "@/components/ardor/page";
 import { AuthFrame } from "@/components/auth-frame";
 import { api } from "@/lib/api";
+import { useLocale } from "@/lib/locale";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useLocale();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -27,7 +29,7 @@ export default function LoginPage() {
       });
       router.replace("/app");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "登录失败");
+      setError(reason instanceof Error ? reason.message : t("Sign in failed", "登录失败"));
     } finally {
       setBusy(false);
     }
@@ -35,27 +37,27 @@ export default function LoginPage() {
 
   return (
     <AuthFrame
-      title="欢迎回来"
-      description="登录 Ardor，继续推进。"
+      title={t("Welcome back", "欢迎回来")}
+      description={t("Sign in and pick up where you left off.", "登录 Ardor，继续推进。")}
       footer={
         <>
-          还没有账号？{" "}
+          {t("New to Ardor?", "还没有账号？")}{" "}
           <Link href="/register">
-            创建账号
+            {t("Create an account", "创建账号")}
           </Link>
         </>
       }
     >
       <form className="space-y-4" onSubmit={submit}>
-        <Field label="邮箱" htmlFor="email">
+        <Field label={t("Email", "邮箱")} htmlFor="email">
           <Input id="email" type="email" name="email" autoComplete="email" required autoFocus />
         </Field>
-        <Field label="密码" htmlFor="password">
+        <Field label={t("Password", "密码")} htmlFor="password">
           <Input id="password" type="password" name="password" autoComplete="current-password" required />
         </Field>
         {error && <Notice tone="bad">{error}</Notice>}
         <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>
-          登录
+          {t("Sign in", "登录")}
         </Button>
       </form>
     </AuthFrame>
