@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { DEFAULT_SERVER_URL, normalizeServerUrl, isTrustedAppUrl, isHealthyBackendStatus } = require("./server-config.cjs");
+const { updateErrorMessage } = require("./update-errors.cjs");
 
 let window;
 let serverUrl = DEFAULT_SERVER_URL;
@@ -81,14 +82,14 @@ function configureUpdater() {
   autoUpdater.on("checking-for-update", () => sendUpdateStatus("checking", "正在检查更新…"));
   autoUpdater.on("update-available", (info) => {
     sendUpdateStatus("downloading", `发现 ${info.version}，正在下载…`, { version: info.version });
-    void autoUpdater.downloadUpdate().catch((error) => sendUpdateStatus("error", `下载失败：${error.message}`));
+    void autoUpdater.downloadUpdate().catch((error) => sendUpdateStatus("error", updateErrorMessage(error)));
   });
   autoUpdater.on("update-not-available", () => sendUpdateStatus("current", "已经是最新版本"));
   autoUpdater.on("download-progress", (progress) => {
     sendUpdateStatus("downloading", `正在下载更新 ${Math.round(progress.percent)}%…`, { percent: Math.round(progress.percent) });
   });
   autoUpdater.on("update-downloaded", (info) => sendUpdateStatus("ready", `版本 ${info.version} 已下载，可安装并重启`, { version: info.version }));
-  autoUpdater.on("error", (error) => sendUpdateStatus("error", `更新失败：${error.message}`));
+  autoUpdater.on("error", (error) => sendUpdateStatus("error", updateErrorMessage(error)));
 }
 
 async function checkForUpdates() {
@@ -96,7 +97,7 @@ async function checkForUpdates() {
   if (updateCheckRunning || ["downloading", "ready"].includes(updateStatus.state)) return updateStatus;
   updateCheckRunning = true;
   try { await autoUpdater.checkForUpdates(); return updateStatus; }
-  catch (error) { sendUpdateStatus("error", `检查失败：${error.message}`); return updateStatus; }
+  catch (error) { sendUpdateStatus("error", updateErrorMessage(error)); return updateStatus; }
   finally { updateCheckRunning = false; }
 }
 

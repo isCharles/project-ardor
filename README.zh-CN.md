@@ -74,7 +74,7 @@ Ardor 可以从已有资料中找到上下文，帮你把准备拆成真正可�
 
 ## 开始体验
 
-当前版本为 **v0.4.0 自托管预览版**，仍在持续迭代，尚未提供公开在线演示。Windows 用户可以从 [GitHub Releases](https://github.com/isCharles/project-ardor/releases/latest) 下载安装程序；本机使用仍需先按 [启动指南](docs/SETUP.md) 启动服务，然后双击桌面快捷方式打开 Ardor。当前安装包未签名，Windows 可能提示未知发布者。也可以直接在 `http://localhost:3000` 使用网页。
+当前版本为 **v0.4.0 自托管预览版**，仍在持续迭代，尚未提供公开在线演示。Windows 用户可以从 [公开桌面版下载仓库](https://github.com/isCharles/project-ardor-releases/releases/latest) 下载安装程序；本机使用仍需先按 [启动指南](docs/SETUP.md) 启动服务，然后双击桌面快捷方式打开 Ardor。当前安装包未签名，Windows 可能提示未知发布者。也可以直接在 `http://localhost:3000` 使用网页。
 
 想了解项目如何设计？可以继续阅读 [产品范围](docs/PROJECT.md) · [架构说明](docs/ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [版本规则](docs/VERSIONING.md)。
 
