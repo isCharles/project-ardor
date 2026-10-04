@@ -29,7 +29,10 @@ public record LearningPlanResponse(
 
     public static LearningPlanResponse from(LearningPlan plan) {
         List<ExerciseResponse> exercises = plan.getExercises().stream()
-                .map(item -> new ExerciseResponse(String.valueOf(item.get("question"))))
+                .map(item -> new ExerciseResponse(String.valueOf(item.get("question")),
+                        String.valueOf(item.getOrDefault("type", "SHORT_ANSWER")),
+                        item.get("options") instanceof List<?> options
+                                ? options.stream().map(String::valueOf).toList() : List.of()))
                 .toList();
         return new LearningPlanResponse(plan.getId(), plan.getConcept(), plan.getReason(),
                 plan.getSourceType(), plan.getSourceId(), plan.getStatus(), plan.getLesson(),
@@ -38,5 +41,5 @@ public record LearningPlanResponse(
                 plan.getCreatedAt(), plan.getUpdatedAt());
     }
 
-    public record ExerciseResponse(String question) {}
+    public record ExerciseResponse(String question, String type, List<String> options) {}
 }

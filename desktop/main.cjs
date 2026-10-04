@@ -61,7 +61,9 @@ async function connect() {
     const backend = await net.fetch(`${serverUrl}/api/auth/me`, { signal: AbortSignal.timeout(8000), cache: "no-store" });
     if (!isHealthyBackendStatus(backend.status)) throw new Error(`Backend HTTP ${backend.status}`);
     offline = false;
-    await window.loadURL(`${serverUrl}/`);
+    // Keep the landing page for the website; the desktop opens login or the
+    // workspace directly according to the current server session.
+    await window.loadURL(`${serverUrl}${backend.status === 401 ? "/login" : "/app"}`);
     return { connected: true };
   } catch {
     await showOffline();
