@@ -9,17 +9,19 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useLocale } from "@/lib/locale";
+import { LocaleSwitch } from "./locale-switch";
 import styles from "./app-shell.module.css";
 
 const WORKSPACE_ITEMS = [
-  { href: "/app/resumes", label: "简历", icon: FileText },
-  { href: "/app/interviews", label: "模拟面试", icon: MessageSquare },
-  { href: "/app/recaps", label: "面经", icon: Layers },
-  { href: "/app/cards", label: "记忆卡", icon: SquareStack },
-  { href: "/app/knowledge", label: "知识库", icon: BookOpenText },
-  { href: "/app/learning", label: "学习", icon: GraduationCap },
-  { href: "/app/calendar", label: "日程", icon: CalendarRange },
-  { href: "/app/applications", label: "投递节奏", icon: Target },
+  { href: "/app/resumes", en: "Resumes", zh: "简历", icon: FileText },
+  { href: "/app/interviews", en: "Mock interviews", zh: "模拟面试", icon: MessageSquare },
+  { href: "/app/recaps", en: "Interview notes", zh: "面经", icon: Layers },
+  { href: "/app/cards", en: "Flashcards", zh: "记忆卡", icon: SquareStack },
+  { href: "/app/knowledge", en: "Knowledge", zh: "知识库", icon: BookOpenText },
+  { href: "/app/learning", en: "Learning", zh: "学习", icon: GraduationCap },
+  { href: "/app/calendar", en: "Calendar", zh: "日程", icon: CalendarRange },
+  { href: "/app/applications", en: "Application rhythm", zh: "投递节奏", icon: Target },
 ] as const;
 
 export function AppShell({
@@ -37,6 +39,7 @@ export function AppShell({
   scroll?: boolean;
 }) {
   const pathname = usePathname();
+  const { t } = useLocale();
   const [open, setOpen] = React.useState(false);
   const [admin, setAdmin] = React.useState(false);
   const close = React.useCallback(() => setOpen(false), []);
@@ -49,7 +52,7 @@ export function AppShell({
     <div className={cn(styles.shell, "flex h-dvh overflow-hidden bg-[var(--ardor-surface)] text-[var(--ardor-ink)]")}>
       {open && (
         <button
-          aria-label="关闭导航"
+          aria-label={t("Close navigation", "关闭导航")}
           onClick={() => setOpen(false)}
           className="fixed inset-0 z-40 bg-[rgba(26,25,23,0.32)] md:hidden"
         />
@@ -70,7 +73,7 @@ export function AppShell({
             <strong>Project Ardor</strong>
           </Link>
           <button
-            aria-label="关闭导航"
+            aria-label={t("Close navigation", "关闭导航")}
             onClick={() => setOpen(false)}
             className="rounded-[var(--ardor-radius-sm)] p-1.5 text-[var(--ardor-rail-ink-3)] hover:bg-[var(--ardor-rail-hover)] md:hidden"
           >
@@ -81,7 +84,7 @@ export function AppShell({
         {aside && <div className="flex min-h-0 flex-1 flex-col">{aside}</div>}
         {!aside && <div className="flex-1" />}
 
-        <nav className="shrink-0 border-t border-[var(--ardor-rail-rule)] p-3" aria-label="工作台">
+        <nav className="shrink-0 border-t border-[var(--ardor-rail-rule)] p-3" aria-label={t("Workspace", "工作台")}>
           {WORKSPACE_ITEMS.map((item) => {
             const active = pathname.startsWith(item.href);
             return (
@@ -105,7 +108,7 @@ export function AppShell({
                   )}
                   aria-hidden
                 />
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <span className="min-w-0 flex-1 truncate">{t(item.en, item.zh)}</span>
               </Link>
             );
           })}
@@ -123,7 +126,7 @@ export function AppShell({
             )}
           >
             <ShieldCheck className="size-[1.05rem] shrink-0 text-[var(--ardor-rail-ink-3)]" aria-hidden />
-            管理
+            {t("Admin", "管理")}
           </Link>}
 
           <Link
@@ -139,7 +142,7 @@ export function AppShell({
             )}
           >
             <Settings className="size-[1.05rem] shrink-0 text-[var(--ardor-rail-ink-3)]" aria-hidden />
-            设置
+            {t("Settings", "设置")}
           </Link>
         </nav>
       </aside>
@@ -147,7 +150,7 @@ export function AppShell({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className={cn(styles.topbar, "flex h-14 shrink-0 items-center gap-2 border-b border-[var(--ardor-rule)] px-3 md:px-5")}>
           <button
-            aria-label="打开导航"
+            aria-label={t("Open navigation", "打开导航")}
             onClick={() => setOpen(true)}
             className="rounded-[var(--ardor-radius-sm)] p-1.5 text-[var(--ardor-ink-3)] hover:bg-[var(--ardor-sunken)] md:hidden"
           >
@@ -157,6 +160,7 @@ export function AppShell({
             <span className={styles.topbarSignal} aria-hidden />
             {headerLeft}
           </div>
+          <LocaleSwitch className="shrink-0" />
           {headerRight}
         </header>
         <main className={cn(styles.workspace, "min-h-0 flex-1", scroll && "overflow-y-auto")}>{children}</main>

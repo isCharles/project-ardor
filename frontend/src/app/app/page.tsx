@@ -11,7 +11,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
+import { LocaleSwitch } from "@/components/ardor/locale-switch";
 import { ApiError, api, streamApi } from "@/lib/api";
+import { useLocale } from "@/lib/locale";
 import { useTypewriter } from "@/lib/use-typewriter";
 
 type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING"; id: string; label: string };
@@ -64,6 +66,12 @@ const typewriterExamples = [
   "Ask Ardor to start a mock interview",
   "Tell Ardor what I want to improve",
 ];
+const typewriterExamplesZh = [
+  "请 Ardor 分析我最新的简历",
+  "告诉 Ardor 我在找 Java 后端岗位",
+  "请 Ardor 开始一场模拟面试",
+  "告诉 Ardor 我想改进什么",
+];
 
 function conversationTitle(message: string) {
   const normalized = message.trim().replace(/\s+/g, " ");
@@ -92,6 +100,7 @@ function readSavedDraft(conversationId?: string | null) {
 
 export default function AgentHomePage() {
   const router = useRouter();
+  const { locale, t } = useLocale();
   const [state, setState] = useState<AgentState | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -109,7 +118,7 @@ export default function AgentHomePage() {
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const typedHint = useTypewriter(typewriterExamples, messages.length === 0);
+  const typedHint = useTypewriter(locale === "en" ? typewriterExamples : typewriterExamplesZh, messages.length === 0);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
@@ -569,7 +578,7 @@ export default function AgentHomePage() {
     setBackgroundReady((current) => ({ ...current, [module]: false }));
   }
 
-  if (!state && !error) return <main className="ardor-workbench grid min-h-screen place-items-center text-sm text-stone-500">正在唤醒 Ardor…</main>;
+  if (!state && !error) return <main className="ardor-workbench grid min-h-screen place-items-center text-sm text-stone-500">{t("Waking Ardor…", "正在唤醒 Ardor…")}</main>;
   const selected = conversations.find((item) => item.id === state?.conversationId);
   const visibleError = error && !retryFailures.some((failure) =>
     failure.detail === error || failure.detail.endsWith(` · ${error}`)
@@ -578,45 +587,45 @@ export default function AgentHomePage() {
   return (
     <main className="ardor-workbench h-screen overflow-hidden text-stone-900">
       <div className="flex h-full">
-        {sidebarOpen && <button aria-label="关闭会话栏" className="fixed inset-0 z-30 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} />}
+        {sidebarOpen && <button aria-label={t("Close conversations", "关闭会话栏")} className="fixed inset-0 z-30 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} />}
         <aside className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-stone-200/70 bg-[#f4f2ed] p-3 transition-[width,transform,padding] duration-200 md:static md:z-auto ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} ${sidebarCollapsed ? "md:w-0 md:-translate-x-full md:overflow-hidden md:border-0 md:p-0" : "md:w-72 md:translate-x-0"}`}>
           <div className="flex h-12 items-center justify-between px-2">
-            <Link href="/" className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
+            <Link href="/app" className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
               <span className="grid size-8 place-items-center rounded-xl bg-stone-950 text-white"><Flame className="size-4" /></span>Project Ardor
             </Link>
-            <button aria-label="关闭会话栏" className="rounded-lg p-2 text-stone-500 hover:bg-white md:hidden" onClick={() => setSidebarOpen(false)}><X className="size-4" /></button>
-            <button aria-label="收起会话栏" title="收起侧栏" className="hidden rounded-lg p-2 text-stone-400 hover:bg-white hover:text-stone-800 md:block" onClick={() => setSidebarCollapsed(true)}><PanelLeftClose className="size-4" /></button>
+            <button aria-label={t("Close conversations", "关闭会话栏")} className="rounded-lg p-2 text-stone-500 hover:bg-white md:hidden" onClick={() => setSidebarOpen(false)}><X className="size-4" /></button>
+            <button aria-label={t("Collapse sidebar", "收起会话栏")} title={t("Collapse sidebar", "收起侧栏")} className="hidden rounded-lg p-2 text-stone-400 hover:bg-white hover:text-stone-800 md:block" onClick={() => setSidebarCollapsed(true)}><PanelLeftClose className="size-4" /></button>
           </div>
-          <button type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium shadow-sm transition hover:border-stone-300 hover:shadow disabled:opacity-50"><Plus className="size-4" />新对话</button>
+          <button type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium shadow-sm transition hover:border-stone-300 hover:shadow disabled:opacity-50"><Plus className="size-4" />{t("New chat", "新对话")}</button>
 
           <div className="mt-5 flex-1 overflow-y-auto">
-            <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">最近对话</p>
+            <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">{t("Recent chats", "最近对话")}</p>
             <div className="space-y-1">
               {conversations.map((conversation) => (
                 <div key={conversation.id} className={`group relative rounded-xl ${conversation.id === state?.conversationId ? "bg-white shadow-sm" : "hover:bg-white/70"}`}>
                   <button type="button" onClick={() => selectConversation(conversation.id)} className="flex w-full items-center gap-2 px-3 py-2.5 pr-10 text-left text-sm">{conversation.pinned && <Pin className="size-3.5 shrink-0 fill-stone-700 text-stone-700" />}<span className="truncate">{conversation.title}</span></button>
-                  <button type="button" aria-label="会话操作" onClick={() => setMenuId(menuId === conversation.id ? null : conversation.id)} className="absolute right-1.5 top-1.5 rounded-lg p-2 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-stone-700 md:opacity-0 md:group-hover:opacity-100"><MoreHorizontal className="size-4" /></button>
+                  <button type="button" aria-label={t("Chat actions", "会话操作")} onClick={() => setMenuId(menuId === conversation.id ? null : conversation.id)} className="absolute right-1.5 top-1.5 rounded-lg p-2 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-stone-700 md:opacity-0 md:group-hover:opacity-100"><MoreHorizontal className="size-4" /></button>
                   {menuId === conversation.id && (
                     <div className="absolute right-2 top-10 z-20 w-36 rounded-xl border border-stone-200 bg-white p-1.5 text-sm shadow-xl">
-                      <button onClick={() => togglePin(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pin className={`size-3.5 ${conversation.pinned ? "fill-current" : ""}`} />{conversation.pinned ? "取消置顶" : "置顶"}</button>
-                      <button onClick={() => renameConversation(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pencil className="size-3.5" />重命名</button>
-                      <button onClick={() => removeConversation(conversation.id, false)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Archive className="size-3.5" />归档</button>
-                      <button onClick={() => removeConversation(conversation.id, true)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-red-600 hover:bg-red-50"><Trash2 className="size-3.5" />永久删除</button>
+                      <button onClick={() => togglePin(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pin className={`size-3.5 ${conversation.pinned ? "fill-current" : ""}`} />{conversation.pinned ? t("Unpin", "取消置顶") : t("Pin", "置顶")}</button>
+                      <button onClick={() => renameConversation(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pencil className="size-3.5" />{t("Rename", "重命名")}</button>
+                      <button onClick={() => removeConversation(conversation.id, false)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Archive className="size-3.5" />{t("Archive", "归档")}</button>
+                      <button onClick={() => removeConversation(conversation.id, true)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-red-600 hover:bg-red-50"><Trash2 className="size-3.5" />{t("Delete permanently", "永久删除")}</button>
                     </div>
                   )}
                 </div>
               ))}
-              {conversations.length === 0 && <p className="px-2 py-3 text-xs leading-5 text-stone-400">新对话会出现在这里。</p>}
+              {conversations.length === 0 && <p className="px-2 py-3 text-xs leading-5 text-stone-400">{t("New chats will appear here.", "新对话会出现在这里。")}</p>}
             </div>
             {archivedConversations.length > 0 && (
               <div className="mt-4 border-t border-stone-200/70 pt-3">
-                <button onClick={() => setShowArchived((current) => !current)} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-stone-500 hover:bg-white/70"><Archive className="size-3.5" />已归档<span className="ml-auto text-stone-400">{archivedConversations.length}</span></button>
+                <button onClick={() => setShowArchived((current) => !current)} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-stone-500 hover:bg-white/70"><Archive className="size-3.5" />{t("Archived", "已归档")}<span className="ml-auto text-stone-400">{archivedConversations.length}</span></button>
                 {showArchived && <div className="mt-1 space-y-1">
                   {archivedConversations.map((conversation) => (
                     <div key={conversation.id} className="group flex items-center gap-1 rounded-xl px-2 py-1 hover:bg-white/70">
                       <span className="min-w-0 flex-1 truncate px-1 text-xs text-stone-500">{conversation.title}</span>
-                      <button title="恢复" onClick={() => restoreConversation(conversation.id)} className="rounded-lg p-2 text-stone-400 hover:bg-white hover:text-stone-800"><RotateCcw className="size-3.5" /></button>
-                      <button title="永久删除" onClick={() => removeConversation(conversation.id, true)} className="rounded-lg p-2 text-stone-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="size-3.5" /></button>
+                      <button title={t("Restore", "恢复")} onClick={() => restoreConversation(conversation.id)} className="rounded-lg p-2 text-stone-400 hover:bg-white hover:text-stone-800"><RotateCcw className="size-3.5" /></button>
+                      <button title={t("Delete permanently", "永久删除")} onClick={() => removeConversation(conversation.id, true)} className="rounded-lg p-2 text-stone-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="size-3.5" /></button>
                     </div>
                   ))}
                 </div>}
@@ -629,34 +638,34 @@ export default function AgentHomePage() {
         <section className="relative flex min-w-0 flex-1 flex-col">
           <header className="relative z-10 flex h-16 shrink-0 items-center justify-between px-4 md:px-6">
             <div className="flex min-w-0 items-center gap-2">
-              <button aria-label="打开会话栏" onClick={() => setSidebarOpen(true)} className="rounded-xl p-2 text-stone-500 hover:bg-white md:hidden"><PanelLeftOpen className="size-5" /></button>
-              {sidebarCollapsed && <button aria-label="展开会话栏" title="展开侧栏" onClick={() => setSidebarCollapsed(false)} className="hidden rounded-xl p-2 text-stone-500 hover:bg-white md:block"><PanelLeftOpen className="size-5" /></button>}
+              <button aria-label={t("Open conversations", "打开会话栏")} onClick={() => setSidebarOpen(true)} className="rounded-xl p-2 text-stone-500 hover:bg-white md:hidden"><PanelLeftOpen className="size-5" /></button>
+              {sidebarCollapsed && <button aria-label={t("Expand sidebar", "展开会话栏")} title={t("Expand sidebar", "展开侧栏")} onClick={() => setSidebarCollapsed(false)} className="hidden rounded-xl p-2 text-stone-500 hover:bg-white md:block"><PanelLeftOpen className="size-5" /></button>}
               <h1 className="truncate text-sm font-medium text-stone-600">{selected?.title ?? "Ardor"}</h1>
             </div>
-            <div className="relative">
-              <button type="button" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen((open) => !open)} className={`relative flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium transition ${workspaceOpen ? "border-stone-300 bg-white text-stone-900 shadow-sm" : "border-stone-200/80 bg-white/55 text-stone-600 hover:bg-white"}`}><LayoutGrid className="size-3.5" />工作区<ChevronDown className={`size-3.5 transition-transform ${workspaceOpen ? "rotate-180" : ""}`} />{Object.values(backgroundReady).some(Boolean) && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-red-500 ring-2 ring-white" />}</button>
+            <div className="flex items-center gap-2"><LocaleSwitch /><div className="relative">
+              <button type="button" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen((open) => !open)} className={`relative flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium transition ${workspaceOpen ? "border-stone-300 bg-white text-stone-900 shadow-sm" : "border-stone-200/80 bg-white/55 text-stone-600 hover:bg-white"}`}><LayoutGrid className="size-3.5" />{t("Workspace", "工作区")}<ChevronDown className={`size-3.5 transition-transform ${workspaceOpen ? "rotate-180" : ""}`} />{Object.values(backgroundReady).some(Boolean) && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-red-500 ring-2 ring-white" />}</button>
               {workspaceOpen && <div className="absolute right-0 top-12 z-30 w-64 rounded-2xl border border-white/80 bg-[#f8f6f1]/95 p-2.5 shadow-[0_24px_70px_rgba(42,35,27,0.18)] backdrop-blur-xl">
-                <div className="mb-2 flex items-center justify-between px-1"><span className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-400">工作区</span><button type="button" aria-label="收起工作区" onClick={() => setWorkspaceOpen(false)} className="grid size-7 place-items-center rounded-lg text-stone-400 hover:bg-white hover:text-stone-700"><X className="size-3.5" /></button></div>
+                <div className="mb-2 flex items-center justify-between px-1"><span className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-400">{t("Workspace", "工作区")}</span><button type="button" aria-label={t("Close workspace", "收起工作区")} onClick={() => setWorkspaceOpen(false)} className="grid size-7 place-items-center rounded-lg text-stone-400 hover:bg-white hover:text-stone-700"><X className="size-3.5" /></button></div>
                 <div className="grid grid-cols-2 gap-1.5">
-                  <Link href="/app/resumes" onClick={() => acknowledgeBackground("resumes")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileSearch className="size-4 text-blue-500" /><span>简历分析</span>{backgroundReady.resumes && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
-                  <Link href="/app/interviews" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><MessageSquareText className="size-4 text-orange-500" /><span>模拟面试</span></Link>
-                  <Link href="/app/recaps" onClick={() => acknowledgeBackground("recaps")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileText className="size-4 text-emerald-600" /><span>面经</span>{backgroundReady.recaps && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
-                  <Link href="/app/cards" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BrainCircuit className="size-4 text-violet-500" /><span>记忆卡</span></Link>
-                  <Link href="/app/calendar" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><CalendarDays className="size-4 text-rose-500" /><span>日历</span></Link>
-                  <Link href="/app/applications" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><Target className="size-4 text-violet-500" /><span>投递节奏</span></Link>
-                  <Link href="/app/knowledge" onClick={() => acknowledgeBackground("knowledge")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BookOpenText className="size-4 text-cyan-600" /><span>知识库</span>{backgroundReady.knowledge && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
-                  <Link href="/app/learning" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><GraduationCap className="size-4 text-rose-500" /><span>学习</span></Link>
-                  <Link href="/app/evidence" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BrainCircuit className="size-4 text-fuchsia-500" /><span>成长证据</span></Link>
-                  <button onClick={() => { setWorkspaceOpen(false); setMemoryOpen(true); }} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-left text-xs text-stone-700 transition hover:bg-white"><Brain className="size-4 text-violet-500" /><span>总体记忆</span><span className={`absolute right-2.5 top-2.5 size-1.5 rounded-full ${memoryDraft ? "bg-violet-500" : "bg-stone-300"}`} /></button>
-                  <Link href="/app/settings" className="col-span-2 flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-stone-500 hover:bg-white/70 hover:text-stone-800"><Settings2 className="size-3.5" />设置</Link>
+                  <Link href="/app/resumes" onClick={() => acknowledgeBackground("resumes")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileSearch className="size-4 text-blue-500" /><span>{t("Resume analysis", "简历分析")}</span>{backgroundReady.resumes && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
+                  <Link href="/app/interviews" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><MessageSquareText className="size-4 text-orange-500" /><span>{t("Mock interview", "模拟面试")}</span></Link>
+                  <Link href="/app/recaps" onClick={() => acknowledgeBackground("recaps")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileText className="size-4 text-emerald-600" /><span>{t("Interview notes", "面经")}</span>{backgroundReady.recaps && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
+                  <Link href="/app/cards" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BrainCircuit className="size-4 text-violet-500" /><span>{t("Flashcards", "记忆卡")}</span></Link>
+                  <Link href="/app/calendar" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><CalendarDays className="size-4 text-rose-500" /><span>{t("Calendar", "日历")}</span></Link>
+                  <Link href="/app/applications" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><Target className="size-4 text-violet-500" /><span>{t("Applications", "投递节奏")}</span></Link>
+                  <Link href="/app/knowledge" onClick={() => acknowledgeBackground("knowledge")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BookOpenText className="size-4 text-cyan-600" /><span>{t("Knowledge", "知识库")}</span>{backgroundReady.knowledge && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
+                  <Link href="/app/learning" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><GraduationCap className="size-4 text-rose-500" /><span>{t("Learning", "学习")}</span></Link>
+                  <Link href="/app/evidence" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BrainCircuit className="size-4 text-fuchsia-500" /><span>{t("Growth evidence", "成长证据")}</span></Link>
+                  <button onClick={() => { setWorkspaceOpen(false); setMemoryOpen(true); }} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-left text-xs text-stone-700 transition hover:bg-white"><Brain className="size-4 text-violet-500" /><span>{t("Memory", "总体记忆")}</span><span className={`absolute right-2.5 top-2.5 size-1.5 rounded-full ${memoryDraft ? "bg-violet-500" : "bg-stone-300"}`} /></button>
+                  <Link href="/app/settings" className="col-span-2 flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-stone-500 hover:bg-white/70 hover:text-stone-800"><Settings2 className="size-3.5" />{t("Settings", "设置")}</Link>
                 </div>
               </div>}
-            </div>
+            </div></div>
           </header>
 
-          {!state?.llmConfigured && <div className="mx-4 mt-2 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 md:mx-8"><span>配置一个支持 Tool Calling 的模型后，Ardor 才能开始工作。</span><Link href="/app/settings" className="shrink-0 font-medium underline underline-offset-4">去设置</Link></div>}
+          {!state?.llmConfigured && <div className="mx-4 mt-2 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 md:mx-8"><span>{t("Connect a tool-capable model to get started.", "配置一个支持 Tool Calling 的模型后，Ardor 才能开始工作。")}</span><Link href="/app/settings" className="shrink-0 font-medium underline underline-offset-4">{t("Settings", "去设置")}</Link></div>}
           {notice && <button type="button" onClick={() => setNotice("")} className="mx-4 mt-2 rounded-2xl bg-emerald-50/90 px-4 py-3 text-left text-sm text-emerald-800 md:mx-8">{notice}</button>}
-          {applicationReminder?.reminderDue && <div className="mx-4 mt-2 flex items-center gap-3 rounded-2xl border border-violet-100 bg-white/80 px-4 py-3 text-sm text-stone-700 shadow-sm md:mx-8"><Target className="size-4 shrink-0 text-violet-500" /><span className="flex-1">今天投了多少份？本周 {applicationReminder.weeklyCount}/{applicationReminder.weeklyGoal}</span><Link href="/app/applications" className="shrink-0 font-medium text-violet-700 hover:underline">记一下</Link><button type="button" onClick={() => void dismissApplicationReminder()} className="shrink-0 text-xs text-stone-400 hover:text-stone-700">今天跳过</button></div>}
+          {applicationReminder?.reminderDue && <div className="mx-4 mt-2 flex items-center gap-3 rounded-2xl border border-violet-100 bg-white/80 px-4 py-3 text-sm text-stone-700 shadow-sm md:mx-8"><Target className="size-4 shrink-0 text-violet-500" /><span className="flex-1">{t(`How many applications today? ${applicationReminder.weeklyCount}/${applicationReminder.weeklyGoal} this week`, `今天投了多少份？本周 ${applicationReminder.weeklyCount}/${applicationReminder.weeklyGoal}`)}</span><Link href="/app/applications" className="shrink-0 font-medium text-violet-700 hover:underline">{t("Log it", "记一下")}</Link><button type="button" onClick={() => void dismissApplicationReminder()} className="shrink-0 text-xs text-stone-400 hover:text-stone-700">{t("Skip today", "今天跳过")}</button></div>}
 
           <div className="relative flex-1 overflow-y-auto">
             {messages.length === 0 ? (
@@ -664,12 +673,12 @@ export default function AgentHomePage() {
                 <div className="pointer-events-none absolute inset-x-[6%] bottom-[-28%] h-[82%] rounded-[50%] bg-[radial-gradient(circle_at_28%_45%,rgba(255,107,177,0.58),transparent_43%),radial-gradient(circle_at_72%_38%,rgba(83,125,255,0.58),transparent_47%),radial-gradient(circle_at_50%_76%,rgba(149,92,246,0.46),transparent_58%)] blur-3xl" />
                 <div className="relative z-10 mx-auto w-full max-w-3xl text-center">
                   <h2 className="text-4xl font-semibold tracking-[-0.04em] text-stone-950 md:text-5xl">What should we build{state?.displayName?.trim() ? `, ${state.displayName.trim()}` : ""}?</h2>
-                  {runningRun && <div role="status" className="mx-auto mt-5 max-w-2xl rounded-2xl border border-violet-100 bg-white/75 px-4 py-3 text-left text-sm text-violet-700">Ardor 正在处理上一条消息 · {runningRun.label}。完成后会自动显示。</div>}
+                  {runningRun && <div role="status" className="mx-auto mt-5 max-w-2xl rounded-2xl border border-violet-100 bg-white/75 px-4 py-3 text-left text-sm text-violet-700">{t(`Ardor is working on your last message · ${runningRun.label}. It will appear when ready.`, `Ardor 正在处理上一条消息 · ${runningRun.label}。完成后会自动显示。`)}</div>}
                   {(visibleError || retryFailures.length > 0) && <div className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{retryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
                   <form onSubmit={submit} className="mx-auto mt-10 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
-                    {selectedContexts.length > 0 && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
-                    <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !!runningRun || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-                    <div className="flex items-center justify-between gap-3 px-2 pb-1">{attachmentPicker()}<div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label="发送" disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
+                    {selectedContexts.length > 0 && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
+                    <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !!runningRun || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
+                    <div className="flex items-center justify-between gap-3 px-2 pb-1">{attachmentPicker()}<div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
                   </form>
                 </div>
               </div>
