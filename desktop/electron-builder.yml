@@ -7,6 +7,7 @@ files:
   - main.cjs
   - preload.cjs
   - server-config.cjs
+  - update-errors.cjs
   - offline.html
   - offline.css
   - offline.js
@@ -37,4 +38,4 @@ nsis:
 publish:
   provider: github
   owner: isCharles
-  repo: project-ardor
+  repo: project-ardor-releases

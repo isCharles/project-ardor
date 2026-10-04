@@ -76,3 +76,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$RELEASE_TAG" desktop/dist/*.exe desktop/dist/*.exe.blockmap desktop/dist/latest.yml
+      - name: Publish installer to public download repository
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.ARDOR_RELEASES_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          SIGNED_BUILD: ${{ steps.signing.outputs.signed }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+            throw 'ARDOR_RELEASES_TOKEN is required to publish desktop updates to the public download repository.'
+          }
+          $repo = 'isCharles/project-ardor-releases'
+          $visibility = gh repo view $repo --json visibility --jq '.visibility'
+          if ($LASTEXITCODE -ne 0 -or $visibility -ne 'PUBLIC') { throw 'Desktop download repository must be public.' }
+          $signatureNotice = if ($env:SIGNED_BUILD -eq 'true') { 'The installer was signed and verified before upload.' } else { 'The installer is unsigned. Windows may show a SmartScreen warning; verify this official download before choosing whether to keep it.' }
+          $notes = "Project Ardor $env:RELEASE_TAG Windows x64 installer. This desktop client needs an Ardor server. $signatureNotice"
+          $assets = @(Get-ChildItem -LiteralPath desktop/dist -File | Where-Object { $_.Name -match '^Project-Ardor-Setup-.+-x64\.exe(\.blockmap)?$' -or $_.Name -eq 'latest.yml' } | ForEach-Object { $_.FullName })
+          if ($assets.Count -ne 3) { throw "Expected installer, blockmap and latest.yml; found $($assets.Count) assets." }
+          gh release create $env:RELEASE_TAG --repo $repo --target main --title "Project Ardor $env:RELEASE_TAG" --notes $notes --draft
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release upload $env:RELEASE_TAG @assets --repo $repo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release edit $env:RELEASE_TAG --repo $repo --draft=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
