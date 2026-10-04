@@ -1,83 +1,80 @@
 <div align="center">
-  <img src="docs/assets/ardor-hero.svg" alt="Project Ardor：让每一步准备，都成为下一步的底气" width="100%" />
+  <img src="docs/assets/ardor-hero.svg" alt="Project Ardor — build momentum for every next step" width="100%" />
 
   <h1>Project Ardor</h1>
-  <h3>你的求职，不该从每一次新对话重新开始。</h3>
-  <p><strong>一位记得你的目标、看得见你的进步、愿意陪你练到会的 AI Career Agent。</strong></p>
-  <p><a href="#一段对话让准备真正发生">认识 Ardor</a> · <a href="#为真正的求职过程而设计">看看能做什么</a> · <a href="#开始体验">开始体验</a></p>
+  <p><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
+  <h3>Your career shouldn't restart with every new conversation.</h3>
+  <p><strong>An AI career agent that remembers your goals, sees your progress, and helps you practice until you're ready.</strong></p>
+  <p><a href="#one-conversation-real-progress">Meet Ardor</a> · <a href="#built-for-the-real-job-search">What it does</a> · <a href="#get-started">Get started</a></p>
 </div>
 
 ---
 
-## 求职的难，不只是「不知道答案」
+## The hard part isn't just finding the right answer
 
-简历改了很多版，面试也准备了很多场。可每次打开一个新工具，还是要重新讲一遍自己是谁、投什么岗位、上次哪里答得不好。
+You revise your résumé and prepare for interview after interview. Yet every new tool asks you to explain your background, target role, and last weak answer all over again.
 
-Ardor 想改变的就是这件事：**把散落在简历、面试、笔记和日程里的努力，连成一条能继续向前的线。**
+Ardor connects the work scattered across your résumé, interviews, notes, and calendar into a process you can actually continue. Talk to the agent or open a module directly. It can help you analyze, practice, and plan, while keeping you in control of consequential actions.
 
-你可以和它聊天，也可以直接打开任何一个模块。它既能帮你分析、练习和安排，也会在下一次对话里记得哪些事值得继续推进。决定权始终在你手里。
+## One conversation, real progress
 
-## 一段对话，让准备真正发生
+> “I have a Java backend interview next week. Here are my résumé and notes from my last interview. What should I work on first?”
 
-> “我下周有一场 Java 后端面试。这是我的简历和上次面试的记录，帮我看看这几天怎么准备。”
+Ardor can use what it already knows to turn that question into concrete preparation:
 
-Ardor 可以从已有资料中找到上下文，帮你把准备拆成真正可做的事：
-
-| 看清现状 | 走进现场 | 找到短板 | 持续补强 |
+| Understand where you stand | Practice the real thing | Find the weak spots | Keep improving |
 | :--- | :--- | :--- | :--- |
-| 理解简历与目标岗位，给出结构化分析和改进建议 | 发起文字或语音模拟面试，练项目、技术、行为与编程题 | 整理真实面试记录，逐题回看回答与薄弱点 | 安排学习、记忆卡与日历任务，让复盘有下一步 |
+| Analyze your résumé and target role with structured recommendations | Practice project, technical, behavioral, and coding questions by text or voice | Organize past interviews question by question and identify gaps in your answers | Schedule learning, flashcards, and calendar tasks for what comes next |
 
-不是“聊完就算了”。你的资料、会话、面试与计划会留在自己的工作台里，方便回来接着做。
+The work does not disappear when the chat ends. Your documents, conversations, interviews, and plans stay in your own workspace.
 
-## 为真正的求职过程而设计
+## Built for the real job search
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3>✦ 懂你的 Agent</h3>
-      多会话对话与可见、可编辑的总体记忆。需要时引用你的简历、面经、知识文档或学习计划；信息不足时先问清楚，再行动。
+      <h3>✦ An agent with context</h3>
+      Multiple conversations and a visible, editable long-term memory. Ardor can reference your résumé, interview notes, knowledge documents, and learning plans, and ask when information is missing.
     </td>
     <td width="50%" valign="top">
-      <h3>✦ 有内容的简历报告</h3>
-      上传 PDF 或 DOCX 后异步分析。报告呈现评分、优势与改进方向；旧简历和旧报告也能随时找回。
+      <h3>✦ Résumé reports worth reading</h3>
+      Upload a PDF or DOCX for asynchronous analysis. Reports present a score, strengths, and actionable improvements; previous uploads and reports remain available.
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <h3>✦ 可以练的模拟面试</h3>
-      从项目深挖到编程题，逐题作答并得到评价。除了文字，还支持实时语音、停顿自动识别和开口打断 AI。
+      <h3>✦ Interviews you can practice</h3>
+      Work through project deep dives and coding questions one at a time. Text and real-time voice interviews support pause detection and interrupting the AI interviewer.
     </td>
     <td valign="top">
-      <h3>✦ 不会白白过去的真实面试</h3>
-      把转录或回忆交给 Ardor，整理成逐题面经，找出回答中的弱势点，再决定要不要生成补强计划。
+      <h3>✦ Real interviews that teach you something</h3>
+      Turn transcripts or recollections into question-by-question recaps, locate weak answers, and decide whether to create a focused improvement plan.
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <h3>✦ 从“我不会”到“我练会了”</h3>
-      为薄弱概念生成讲解与练习；记忆卡按日期复习，学习计划与待办进入同一张日历。
+      <h3>✦ From “I don't know” to “I've practiced it”</h3>
+      Generate explanations and exercises for weak concepts. Review flashcards on a schedule and see learning plans alongside tasks in one calendar.
     </td>
     <td valign="top">
-      <h3>✦ 你的知识，随时可用</h3>
-      上传资料建立个人知识库，也可让 Agent 联网研究。检索结果能成为后续对话的依据，而不只是躺在文件夹里。
+      <h3>✦ Your knowledge, ready when you need it</h3>
+      Upload material into a personal knowledge base or ask the agent to research online. Retrieved context can support later conversations instead of sitting in a folder.
     </td>
   </tr>
 </table>
 
-## 为使用者，也为愿意自己掌控工具的人
+## For job seekers—and people who want control of their tools
 
-- **一个入口，多个选择。** 从对话开始，或直接进入简历、面经、面试、记忆卡、学习、知识库与日历。
-- **配置由你决定。** 管理员可以统一配置模型与语音服务；个人也可以使用自己的 API 配置。
-- **重要操作由你确认。** Agent 可以提出删除建议，但删除数据要由你在界面上确认。
-- **可以自己部署。** Ardor 当前以本地自托管方式运行，资料留在你的部署环境中。
+- **One entry point, many paths.** Start with chat or go straight to résumés, recaps, interviews, flashcards, learning, knowledge, and your calendar.
+- **Your choice of model configuration.** An administrator can provide shared AI and voice services; individuals can also configure their own APIs.
+- **You confirm important actions.** The agent may propose a deletion, but you approve data removal in the UI.
+- **Self-hostable today.** Ardor currently runs on your own deployment, where your documents and data remain.
 
-## 开始体验
+## Get started
 
-当前版本为 **v0.3.0 自托管预览版**，仍在持续迭代，尚未提供公开在线演示。Windows 用户可以从 [GitHub Releases](https://github.com/isCharles/project-ardor/releases/latest) 下载安装程序；本机使用仍需先按 [启动指南](docs/SETUP.md) 启动服务，然后双击桌面快捷方式打开 Ardor。也可以直接在 `http://localhost:3000` 使用网页。
+**v0.3.1** is a self-hosted preview, not a public hosted service. Windows users can download the installer from [GitHub Releases](https://github.com/isCharles/project-ardor/releases/latest). For local use, start the Ardor services with the [setup guide](docs/SETUP.md), then launch the desktop shortcut. The current installer is **unsigned**, so Windows may warn that the publisher is unknown. You can also use `http://localhost:3000` in a browser.
 
-想了解项目如何设计？可以继续阅读 [产品范围](docs/PROJECT.md) · [架构说明](docs/ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [版本规则](docs/VERSIONING.md)。
-
-桌面版的安装、连接服务器与应用内更新见 [桌面版说明](docs/DESKTOP.md)。
+Explore the [product scope](docs/PROJECT.md), [architecture](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), and [version policy](docs/VERSIONING.md). The [desktop guide](docs/DESKTOP.md) covers installation, server connections, and updates. Technical documentation is currently in Chinese.
 
 <div align="center">
   <br />
