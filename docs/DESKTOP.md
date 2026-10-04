@@ -10,7 +10,7 @@ GitHub Release 提供 `Project-Ardor-Setup-<版本>-x64.exe`，不是 ZIP。安�
 
 ## 本地构建
 
-在 `desktop` 目录执行 `npm ci`、`npm test` 和 `npm run dist:win`。构建产物在 `desktop/dist/`。本机安装包只用于验收；不要覆盖已发布的同版本 Git 标签。新版本按 [版本规则](VERSIONING.md) 同步前后端、桌面包、锁文件和发布说明后，再发布新 GitHub Release。Release 发布事件会在 Windows Runner 构建 NSIS 安装程序，并把更新元数据上传到该 Release。已有的 `v0.2.0` 是自托管预览版，首个公开桌面安装包须使用更新的产品版本。
+在 `desktop` 目录执行 `npm ci`、`npm test` 和 `npm run dist:win`。构建产物在 `desktop/dist/`。本机安装包只用于验收；不要覆盖已发布的同版本 Git 标签。新版本按 [版本规则](VERSIONING.md) 同步前后端、桌面包、锁文件和发布说明后，再发布新 GitHub Release。Release 发布事件会在 Windows Runner 构建 NSIS 安装程序，并把更新元数据上传到该 Release。`v0.3.0` 是首个包含公开桌面安装包的目标版本；发布成功以 Release 附件实际出现为准。
 
 ## 当前限制
 
