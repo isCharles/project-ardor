@@ -35,13 +35,13 @@ export default function LoginPage() {
 
   return (
     <AuthFrame
-      title="继续"
-      description="登录后回到你上次停下的地方。"
+      title="欢迎回来"
+      description="登录 Ardor，继续推进。"
       footer={
         <>
           还没有账号？{" "}
-          <Link href="/register" className="text-[var(--ardor-ink)] underline decoration-[var(--ardor-accent-line)] underline-offset-4 hover:decoration-[var(--ardor-accent)]">
-            创建一个
+          <Link href="/register">
+            创建账号
           </Link>
         </>
       }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Wordmark } from "@/components/ardor/wordmark";
+import styles from "./auth-frame.module.css";
 
 export function AuthFrame({
   title,
@@ -14,17 +14,25 @@ export function AuthFrame({
   footer: React.ReactNode;
 }) {
   return (
-    <main className="grid min-h-dvh place-items-center bg-[var(--ardor-surface)] px-5 py-12">
-      <div className="w-full max-w-[22rem]">
-        <Link href="/" className="inline-block rounded-[var(--ardor-radius-sm)]">
-          <Wordmark />
+    <main className={styles.page}>
+      <div className={styles.light} aria-hidden="true" />
+      <header className={styles.header}>
+        <Link href="/" className={styles.brand} aria-label="返回 Ardor 首页">
+          <span className={styles.brandMark} aria-hidden="true">✦</span>
+          Ardor
         </Link>
-        <h1 className="t-title-1 mt-10 text-[var(--ardor-ink)]">{title}</h1>
-        <p className="t-body mt-2 text-[var(--ardor-ink-3)]">{description}</p>
-        <div className="mt-8">{children}</div>
-        <p className="t-body mt-7 border-t border-[var(--ardor-rule)] pt-5 text-[var(--ardor-ink-3)]">
-          {footer}
-        </p>
+      </header>
+      <div className={styles.layout}>
+        <div className={styles.statement} aria-hidden="true">
+          <span>下一步，</span>
+          <span>继续向前。</span>
+        </div>
+        <section className={styles.panel} aria-labelledby="auth-title">
+          <h1 id="auth-title" className={styles.title}>{title}</h1>
+          <p className={styles.description}>{description}</p>
+          <div className={styles.form}>{children}</div>
+          <p className={styles.footer}>{footer}</p>
+        </section>
       </div>
     </main>
   );
