@@ -1,6 +1,7 @@
 package com.projectardor.auth.service;
 
 import java.util.Locale;
+import java.util.UUID;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -52,6 +53,19 @@ public class AuthService {
 
     public String normalizeEmail(String email) {
         return email.strip().toLowerCase(Locale.ROOT);
+    }
+
+    @Transactional
+    public void changePassword(UUID userId, String currentPassword, String newPassword) {
+        UserAccount user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("账号不存在"));
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new IllegalArgumentException("当前密码不正确");
+        }
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new IllegalArgumentException("新密码不能与当前密码相同");
+        }
+        user.changePasswordHash(passwordEncoder.encode(newPassword));
     }
 
     private String normalizeDisplayName(String displayName) {

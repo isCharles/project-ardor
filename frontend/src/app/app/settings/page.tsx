@@ -8,6 +8,7 @@ import { FormEvent, MouseEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ardor/overlay";
 import { DesktopSettings } from "@/components/ardor/desktop-settings";
+import { PasswordSettings } from "@/components/ardor/password-settings";
 import { ApiError, api } from "@/lib/api";
 import { usageFeatureLabels } from "@/lib/usage-features";
 
@@ -360,6 +361,8 @@ export default function SettingsPage() {
             <Button><Save className="mr-2 size-4" />保存资料</Button>
           </form>
         </section>
+
+        <PasswordSettings />
 
         {!showPersonalApis ? <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
           <div className="flex items-center gap-3"><KeyRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">API 服务</h2></div>

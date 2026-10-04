@@ -89,4 +89,6 @@ public class UserAccount {
     public void setStatus(UserStatus status) { this.status = status; }
 
     public void setRole(UserRole role) { this.role = role; }
+
+    public void changePasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
 }

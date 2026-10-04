@@ -69,6 +69,7 @@ export function DesktopSettings() {
         <div>
           <p className="text-sm font-medium">应用更新</p>
           <p role="status" aria-live="polite" className="mt-2 text-sm text-muted-foreground">{status?.message ?? "可检查更新"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">桌面版启动后会自动检查并下载更新；由你决定何时安装并重启。</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {status?.state === "ready" ? <Button type="button" onClick={() => void window.ardorDesktop?.installUpdate()}><Download className="mr-2 size-4" />安装并重启</Button> : <Button type="button" variant="outline" disabled={!info.packaged || status?.state === "checking" || status?.state === "downloading"} onClick={() => void checkUpdate()}><RotateCw className="mr-2 size-4" />检查更新</Button>}
           </div>
