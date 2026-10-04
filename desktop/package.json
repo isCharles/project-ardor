@@ -1,7 +1,7 @@
 {
   "name": "project-ardor-desktop",
   "productName": "Project Ardor",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "Project Ardor Windows desktop client",
   "main": "main.cjs",
