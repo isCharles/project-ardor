@@ -10,11 +10,11 @@ GitHub Release 提供 `Project-Ardor-Setup-<版本>-x64.exe`，不是 ZIP。安�
 
 ## 本地构建
 
-在 `desktop` 目录执行 `npm ci`、`npm test` 和 `npm run dist:win`。构建产物在 `desktop/dist/`；此命令允许生成**未签名的本地验收包**，不能用于正式发布。不要覆盖已发布的同版本 Git 标签。新版本按 [版本规则](VERSIONING.md) 同步前后端、桌面包、锁文件和发布说明后，再发布新 GitHub Release。Release 发布事件会在 Windows Runner 构建双语 NSIS 安装程序，并把更新元数据上传到该 Release。`v0.3.0` 是首个包含公开桌面安装包的版本，但当时的附件未签名，不能称作“已验证的发布者”。
+在 `desktop` 目录执行 `npm ci`、`npm test` 和 `npm run dist:win`。构建产物在 `desktop/dist/`；此命令生成**未签名的安装包**。不要覆盖已发布的同版本 Git 标签。新版本按 [版本规则](VERSIONING.md) 同步前后端、桌面包、锁文件和发布说明后，再发布新 GitHub Release。Release 发布事件会在 Windows Runner 构建双语 NSIS 安装程序，并把更新元数据上传到该 Release。`v0.3.0` 是首个包含公开桌面安装包的版本，但当时的附件未签名，不能称作“已验证的发布者”。
 
 ## Windows 可信签名接入
 
-当前**没有**可信代码签名凭据。GitHub Release 工作流已改为拒绝未签名产物：缺少凭据、签名失败、签名者不符、时间戳缺失，或 `latest.yml` 的 SHA-512 与签名后的安装包不符，都会在上传前失败。不会用自签名证书冒充可信签名，也不会重新上传或覆盖 `v0.3.0` 附件。
+当前**没有**可信代码签名凭据。GitHub Release 工作流在完全未配置签名时会正常发布未签名安装包，并在日志中明确警告；部分配置则失败，避免误以为已经签名。配置完整时会强制签名和验签：签名失败、签名者不符、时间戳缺失，或 `latest.yml` 的 SHA-512 与安装包不符，都会在上传前失败。未配置签名时仍校验安装包、blockmap 和更新摘要。不会用自签名证书冒充可信签名，也不会重新上传或覆盖 `v0.3.0` 附件。
 
 准备经可信 CA 签发、可用于 Windows Authenticode 代码签名且允许 CI 使用的 PFX 后，在仓库设置中配置：
 
@@ -24,11 +24,11 @@ GitHub Release 提供 `Project-Ardor-Setup-<版本>-x64.exe`，不是 ZIP。安�
 
 先在受信任的 Windows 环境中确认 PFX 的签名身份、有效期和私钥管理方式，并对 CI 的 Secret 访问权限做最小化配置。签名使用 SHA-256，electron-builder 在打包阶段同时签应用程序与安装器，再生成更新元数据；不要在生成 `latest.yml` 后另外改写 EXE。工作流随后用 Windows Authenticode 验证应用程序和安装器，确认时间戳、签名者和更新摘要后才上传。可本地运行 `npm run dist:win:signed`，再执行 `desktop/scripts/verify-signed-release.ps1 -DistDirectory desktop/dist -ExpectedThumbprint <证书指纹>`；签名密钥仅通过环境变量提供，不写进配置文件。
 
-务必在**发布新版本前**配置并验收这些值。当前流程由 GitHub Release 发布事件触发，若凭据未配好，Release 页面会出现但没有新的安装包；应保留失败日志、修好凭据后重跑工作流，而不是上传未经验证的文件。首次可信签名发布必须使用新版本和新标签。签名可证明发布者身份与文件完整性，但新软件仍可能因下载量和信誉不足被 SmartScreen 提醒；不承诺签名后立刻消除所有警告。
+没有证书时可以继续发布，但 Release 说明与下载入口必须明确提示“未签名，Windows 可能显示未知发布者”；用户应先从项目官方 Release 下载并核对来源，再自行决定是否保留和运行。不要指导用户全局关闭 SmartScreen。首次可信签名发布必须使用新版本和新标签。签名可证明发布者身份与文件完整性，但新软件仍可能因下载量和信誉不足被 SmartScreen 提醒；不承诺签名后立刻消除所有警告。
 
 ## 当前限制
 
 - Windows x64 首版；没有 macOS/Linux 安装包。
-- 当前 `v0.3.0` 安装包仍未签名，Windows SmartScreen 可能提示未知发布者；新的正式安装包必须经过签名发布校验。
+- 当前 `v0.3.0` 安装包仍未签名，Windows SmartScreen 可能提示未知发布者。后续版本若仍无证书，也会明确标注未签名状态。
 - 真实的跨版本升级必须在连续两个正式 Release 上验收。单次构建只能验证安装包与 `latest.yml` 生成，不能证明自动更新已成功安装。
 - 客户端只保存服务器根地址，不保存模型密钥。账号会话由所连接服务器的 Cookie 管理；切换服务器可能需要重新登录。

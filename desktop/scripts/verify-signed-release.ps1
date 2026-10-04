@@ -1,11 +1,11 @@
 param(
     [Parameter(Mandatory = $true)][string]$DistDirectory,
-    [Parameter(Mandatory = $true)][string]$ExpectedThumbprint
+    [string]$ExpectedThumbprint = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $expected = ($ExpectedThumbprint -replace '\s', '').ToUpperInvariant()
-if ($expected -notmatch '^[0-9A-F]{40}$') {
+if ($expected -and $expected -notmatch '^[0-9A-F]{40}$') {
     throw 'Expected signer thumbprint must be a 40-character SHA-1 certificate thumbprint.'
 }
 
@@ -30,16 +30,18 @@ foreach ($path in @($installerPath, $blockmapPath)) {
     }
 }
 
-foreach ($path in @($appPath, $installerPath)) {
-    $signature = Get-AuthenticodeSignature -LiteralPath $path
-    if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
-        throw "Authenticode signature is not valid for $path (status: $($signature.Status))."
-    }
-    if ($signature.SignerCertificate.Thumbprint.ToUpperInvariant() -ne $expected) {
-        throw "Unexpected Authenticode signer for $path."
-    }
-    if ($null -eq $signature.TimeStamperCertificate) {
-        throw "Authenticode timestamp is missing for $path."
+if ($expected) {
+    foreach ($path in @($appPath, $installerPath)) {
+        $signature = Get-AuthenticodeSignature -LiteralPath $path
+        if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
+            throw "Authenticode signature is not valid for $path (status: $($signature.Status))."
+        }
+        if ($signature.SignerCertificate.Thumbprint.ToUpperInvariant() -ne $expected) {
+            throw "Unexpected Authenticode signer for $path."
+        }
+        if ($null -eq $signature.TimeStamperCertificate) {
+            throw "Authenticode timestamp is missing for $path."
+        }
     }
 }
 
@@ -67,4 +69,8 @@ if ($actualHash -ne $hashMatch.Groups[1].Value) {
     throw 'Update metadata SHA-512 does not match the signed installer.'
 }
 
-Write-Output "Verified installer and application signatures, timestamp, signer, blockmap, and update digest: $([System.IO.Path]::GetFileName($installerPath))"
+if ($expected) {
+    Write-Output "Verified installer and application signatures, timestamp, signer, blockmap, and update digest: $([System.IO.Path]::GetFileName($installerPath))"
+} else {
+    Write-Warning 'Installer is UNSIGNED. Verified blockmap and update digest only; Windows may show an unknown-publisher warning.'
+}
