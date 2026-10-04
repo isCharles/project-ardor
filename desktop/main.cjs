@@ -13,6 +13,7 @@ let updateStatus = { state: "idle", message: "可检查更新" };
 let updateCheckRunning = false;
 let offline = false;
 const offlineFile = path.join(__dirname, "offline.html");
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function configPath() { return path.join(app.getPath("userData"), "server.json"); }
 
@@ -90,6 +91,21 @@ function configureUpdater() {
   autoUpdater.on("error", (error) => sendUpdateStatus("error", `更新失败：${error.message}`));
 }
 
+async function checkForUpdates() {
+  if (!app.isPackaged) return { state: "unavailable", message: "开发模式不能检查安装包更新" };
+  if (updateCheckRunning || ["downloading", "ready"].includes(updateStatus.state)) return updateStatus;
+  updateCheckRunning = true;
+  try { await autoUpdater.checkForUpdates(); return updateStatus; }
+  catch (error) { sendUpdateStatus("error", `检查失败：${error.message}`); return updateStatus; }
+  finally { updateCheckRunning = false; }
+}
+
+function scheduleUpdateChecks() {
+  if (!app.isPackaged) return;
+  setTimeout(() => { void checkForUpdates(); }, 20_000);
+  setInterval(() => { void checkForUpdates(); }, UPDATE_CHECK_INTERVAL_MS);
+}
+
 function createWindow() {
   window = new BrowserWindow({
     width: 1280, height: 820, minWidth: 860, minHeight: 600,
@@ -137,12 +153,7 @@ function registerIpc() {
   });
   ipcMain.handle("desktop:check-update", async (event) => {
     assertTrusted(event);
-    if (!app.isPackaged) return { state: "unavailable", message: "开发模式不能检查安装包更新" };
-    if (updateCheckRunning) return updateStatus;
-    updateCheckRunning = true;
-    try { await autoUpdater.checkForUpdates(); return updateStatus; }
-    catch (error) { sendUpdateStatus("error", `检查失败：${error.message}`); return updateStatus; }
-    finally { updateCheckRunning = false; }
+    return checkForUpdates();
   });
   ipcMain.handle("desktop:install-update", (event) => {
     assertTrusted(event);
@@ -166,6 +177,7 @@ if (app.requestSingleInstanceLock()) {
     configureUpdater();
     registerIpc();
     createWindow();
+    scheduleUpdateChecks();
   });
   app.on("window-all-closed", () => app.quit());
 } else app.quit();

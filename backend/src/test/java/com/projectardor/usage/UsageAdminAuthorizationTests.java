@@ -84,5 +84,13 @@ class UsageAdminAuthorizationTests {
                     org.mockito.Mockito.mock(UsagePolicyRepository.class),
                     org.mockito.Mockito.mock(MembershipService.class));
         }
+
+        @Bean
+        com.projectardor.auth.repository.UserAccountRepository userAccountRepository() {
+            var users = org.mockito.Mockito.mock(com.projectardor.auth.repository.UserAccountRepository.class);
+            org.mockito.Mockito.when(users.findById(org.mockito.ArgumentMatchers.any()))
+                    .thenReturn(java.util.Optional.of(com.projectardor.auth.domain.UserAccount.create("test@example.com", "")));
+            return users;
+        }
     }
 }

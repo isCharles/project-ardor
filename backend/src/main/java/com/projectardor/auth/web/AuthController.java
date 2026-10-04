@@ -76,6 +76,17 @@ public class AuthController {
         return CurrentUserResponse.from(principal);
     }
 
+    @PostMapping("/change-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal ArdorPrincipal principal,
+            HttpServletRequest servletRequest) {
+        authService.changePassword(principal.userId(), request.currentPassword(), request.newPassword());
+        if (servletRequest.getSession(false) != null) servletRequest.getSession(false).invalidate();
+        securityContextHolderStrategy.clearContext();
+    }
+
     private Authentication authenticateAndPersist(
             String email,
             String password,
