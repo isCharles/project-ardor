@@ -28,15 +28,36 @@ jobs:
           if ($env:RELEASE_TAG -ne $expected) { throw "Release tag $env:RELEASE_TAG does not match $expected" }
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-      - name: Build guided Windows installer
+      - name: Require trusted signing credentials
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          WIN_SIGNER_THUMBPRINT: ${{ vars.WIN_SIGNER_THUMBPRINT }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK) -or
+              [string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD) -or
+              $env:WIN_SIGNER_THUMBPRINT -notmatch '^[0-9A-Fa-f]{40}$') {
+            throw 'Trusted Windows signing is not configured. Set WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD secrets plus WIN_SIGNER_THUMBPRINT variable before publishing a release.'
+          }
+      - name: Build signed bilingual Windows installer
         working-directory: desktop
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
           npm ci
           npm test
-          npm run dist:win
+          npm run dist:win:signed
+      - name: Verify signatures and update metadata
+        shell: pwsh
+        env:
+          WIN_SIGNER_THUMBPRINT: ${{ vars.WIN_SIGNER_THUMBPRINT }}
+        run: |
+          ./desktop/scripts/verify-signed-release.ps1 -DistDirectory desktop/dist -ExpectedThumbprint $env:WIN_SIGNER_THUMBPRINT
       - name: Attach installer and update metadata to this release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" desktop/dist/*.exe desktop/dist/*.exe.blockmap desktop/dist/latest.yml --clobber
+        run: gh release upload "$RELEASE_TAG" desktop/dist/*.exe desktop/dist/*.exe.blockmap desktop/dist/latest.yml
