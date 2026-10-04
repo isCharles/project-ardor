@@ -13,7 +13,7 @@
 
     <groupId>com.projectardor</groupId>
     <artifactId>ardor-backend</artifactId>
-    <version>0.3.1</version>
+    <version>0.4.0</version>
     <name>Project Ardor Backend</name>
     <description>Career Agent backend for Project Ardor</description>
 

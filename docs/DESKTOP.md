@@ -29,6 +29,6 @@ GitHub Release 提供 `Project-Ardor-Setup-<版本>-x64.exe`，不是 ZIP。安�
 ## 当前限制
 
 - Windows x64 首版；没有 macOS/Linux 安装包。
-- 当前 `v0.3.0` 安装包仍未签名，Windows SmartScreen 可能提示未知发布者。后续版本若仍无证书，也会明确标注未签名状态。
+- 未配置可信证书时，安装包仍未签名，Windows SmartScreen 可能提示未知发布者；Release 会明确标注。
 - 真实的跨版本升级必须在连续两个正式 Release 上验收。单次构建只能验证安装包与 `latest.yml` 生成，不能证明自动更新已成功安装。
 - 客户端只保存服务器根地址，不保存模型密钥。账号会话由所连接服务器的 Cookie 管理；切换服务器可能需要重新登录。
