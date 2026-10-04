@@ -159,17 +159,13 @@ export default function KnowledgePage() {
       <div className={`${styles.content} mx-auto max-w-6xl px-5 pb-24 pt-6 md:px-10`}>
         <Link
           href="/app"
-          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[#162032]/70 transition hover:bg-white/60 hover:text-[#162032]"
+          className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-stone-600 transition hover:bg-white/70 hover:text-stone-900"
         >
           <ArrowLeft className="size-4" />返回 Ardor
         </Link>
 
         <header className="pb-10 pt-14 md:pb-14 md:pt-20">
-          <p className={`${styles.label} text-[#162032]/65`}>Knowledge Base</p>
-          <h1 className={`${styles.display} mt-5 max-w-3xl`}>
-            知识，检索得到
-            <span className="text-[#162032]/55"> 才算拥有。</span>
-          </h1>
+          <h1 className={`${styles.display} max-w-3xl`}>知识库</h1>
         </header>
 
         {(error || notice) && (
@@ -188,13 +184,13 @@ export default function KnowledgePage() {
           <section aria-labelledby="index-heading" className={`${styles.cardInk} ${styles.riseIn} mb-8 p-6 md:p-8`}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className={`${styles.label} text-[#9FE6FF]`}>Retrieval Index</p>
+                <p className={`${styles.label} text-violet-600`}>检索状态</p>
                 <h2 id="index-heading" className="mt-3 text-xl font-medium">
                   {indexStatus.embeddingConfigured ? "语义检索已启用" : "当前仅关键词检索"}
                 </h2>
               </div>
               {indexStatus.embeddingConfigured && indexStatus.embeddingModel && (
-                <span className={`${styles.pill} bg-white/10 px-3 py-1.5 text-[#9FE6FF]`}>
+                <span className={`${styles.pill} bg-violet-50 px-3 py-1.5 text-violet-700`}>
                   {indexStatus.embeddingModel}
                 </span>
               )}
@@ -204,17 +200,17 @@ export default function KnowledgePage() {
               <>
                 <div className="mt-6 flex items-baseline gap-6">
                   <span className="font-mono text-3xl font-medium tabular-nums">{indexStatus.embeddedChunks}</span>
-                  <span className="text-sm text-white/60">
+                  <span className="text-sm text-stone-500">
                     个片段已向量化
                     {indexStatus.pendingChunks > 0 && ` · ${indexStatus.pendingChunks} 个排队中`}
                   </span>
                 </div>
-                <div className={`${styles.meter} mt-4 bg-white/15`}>
+                <div className={`${styles.meter} mt-4`}>
                   {indexStatus.pendingChunks > 0
                     ? <div className={styles.meterPending} />
                     : <div className={styles.meterFill} style={{ width: `${coverage}%` }} />}
                 </div>
-                <p className="mt-4 text-sm leading-6 text-white/55">
+                <p className="mt-4 text-sm leading-6 text-stone-500">
                   {indexStatus.pendingChunks > 0
                     ? "新加入的资料正在后台补齐向量，完成前这部分只能通过关键词命中。"
                     : "检索会同时使用语义相似度和关键词，两路结果按排名融合。"}
@@ -222,8 +218,8 @@ export default function KnowledgePage() {
               </>
             ) : (
               <>
-                <div className="mt-5 flex items-start gap-3 text-sm leading-6 text-white/70">
-                  <TriangleAlert className="mt-0.5 size-4 shrink-0 text-[#FFD84D]" />
+                <div className="mt-5 flex items-start gap-3 text-sm leading-6 text-stone-600">
+                  <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
                   <p>
                     还没有配置 Embedding 服务，知识库只能按字面匹配。
                     换个说法提问就可能搜不到——例如资料里写“垃圾回收”，搜“自动内存管理”不会命中。
@@ -231,7 +227,7 @@ export default function KnowledgePage() {
                 </div>
                 <Link
                   href="/app/settings"
-                  className={`${styles.buttonGhost} mt-6 inline-flex items-center gap-2 border-white/20 bg-white/10 px-5 py-2.5 text-sm text-white hover:bg-white/20`}
+                  className={`${styles.buttonGhost} mt-6 inline-flex items-center gap-2 px-5 py-2.5 text-sm`}
                 >
                   <Sparkles className="size-4" />去设置向量模型
                 </Link>
@@ -242,11 +238,11 @@ export default function KnowledgePage() {
 
         <section className="grid gap-5 lg:grid-cols-2">
           <form onSubmit={upload} className={`${styles.cardSolid} p-6 md:p-8`}>
-            <FileUp className="size-6 text-[#0094FF]" />
+            <FileUp className="size-6 text-violet-600" />
             <h2 className="mt-5 text-xl font-medium">上传资料</h2>
             <label
               htmlFor="knowledge-file"
-              className="mt-6 flex min-h-14 cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed border-[#162032]/20 bg-[#FFFCF0] px-5 text-sm text-[#162032]/60 transition hover:border-[#0094FF]"
+              className="mt-6 flex min-h-14 cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed border-violet-200 bg-violet-50/40 px-5 text-sm text-stone-600 transition hover:border-violet-400"
             >
               <span className={styles.label}>PDF · DOCX · TXT · MD</span>
               <input
@@ -264,7 +260,7 @@ export default function KnowledgePage() {
           </form>
 
           <form onSubmit={research} className={`${styles.cardSolid} p-6 md:p-8`}>
-            <Globe2 className="size-6 text-[#FF7618]" />
+            <Globe2 className="size-6 text-orange-500" />
             <h2 className="mt-5 text-xl font-medium">联网收录</h2>
             <label htmlFor="knowledge-research" className="sr-only">要收录的主题</label>
             <input
@@ -285,7 +281,7 @@ export default function KnowledgePage() {
           <form onSubmit={search} className="flex flex-wrap gap-3">
             <div className="relative min-w-56 flex-1">
               <label htmlFor="knowledge-search" className="sr-only">检索知识库</label>
-              <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-[#162032]/35" />
+              <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-stone-400" />
               <input
                 id="knowledge-search"
                 name="query"
@@ -303,21 +299,21 @@ export default function KnowledgePage() {
           {results.length > 0 && (
             <div className="mt-6 grid gap-3">
               {results.map((result, index) => (
-                <article key={`${result.documentId}-${index}`} className={`${styles.riseIn} rounded-lg bg-[#FFFCF0] p-5`}>
+                <article key={`${result.documentId}-${index}`} className={`${styles.riseIn} rounded-2xl bg-violet-50/40 p-5`}>
                   <div className="flex items-center justify-between gap-3">
-                    <p className={`${styles.label} text-[#0094FF]`}>{result.title}</p>
-                    <span className={`${styles.pill} shrink-0 bg-[#162032]/6 px-2.5 py-1 text-[#162032]/55`}>
+                    <p className={`${styles.label} text-violet-700`}>{result.title}</p>
+                    <span className={`${styles.pill} shrink-0 bg-white/75 px-2.5 py-1 text-stone-500`}>
                       {result.score.toFixed(4)}
                     </span>
                   </div>
-                  <p className="mt-3 line-clamp-4 text-sm leading-6 text-[#162032]/70">{result.content}</p>
+                  <p className="mt-3 line-clamp-4 text-sm leading-6 text-stone-600">{result.content}</p>
                 </article>
               ))}
             </div>
           )}
 
           {searched && results.length === 0 && busy === "" && (
-            <p className="mt-6 text-sm leading-6 text-[#162032]/55">
+            <p className="mt-6 text-sm leading-6 text-stone-500">
               没有命中。
               {indexStatus && !indexStatus.embeddingConfigured
                 ? "当前只有关键词检索，换成资料里出现过的说法再试，或配置向量模型以支持语义检索。"
@@ -329,13 +325,12 @@ export default function KnowledgePage() {
         <section className="mt-12">
           <div className="flex items-end justify-between gap-4">
             <div>
-              <p className={`${styles.label} text-[#162032]/45`}>Library</p>
-              <h2 className="mt-3 text-xl font-medium">资料 · {documents.length} 份</h2>
+              <h2 className="text-xl font-medium">资料 · {documents.length} 份</h2>
             </div>
           </div>
 
           {documents.length === 0 ? (
-            <div className={`${styles.card} mt-6 py-16 text-center text-[#162032]/45`}>
+            <div className={`${styles.card} mt-6 py-16 text-center text-stone-400`}>
               <BookOpenText className="mx-auto size-8" />
               <p className="mt-4 text-sm">还没有资料</p>
             </div>
@@ -347,8 +342,8 @@ export default function KnowledgePage() {
                     <span
                       className={`${styles.pill} px-3 py-1 ${
                         document.sourceType === "WEB"
-                          ? "bg-[#0094FF]/10 text-[#0067b3]"
-                          : "bg-[#FF7618]/10 text-[#b34e00]"
+                          ? "bg-violet-50 text-violet-700"
+                          : "bg-orange-50 text-orange-700"
                       }`}
                     >
                       {document.sourceType === "WEB" ? "Web" : "Upload"}
@@ -357,19 +352,19 @@ export default function KnowledgePage() {
                       aria-label={`删除 ${document.title}`}
                       onClick={() => void remove(document)}
                       disabled={busy !== ""}
-                      className="rounded-lg p-2 text-[#162032]/25 transition hover:bg-[#a33a32]/8 hover:text-[#a33a32] disabled:opacity-40"
+                      className="rounded-lg p-2 text-stone-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
                     >
                       <Trash2 className="size-4" />
                     </button>
                   </div>
                   <h3 className="mt-6 line-clamp-2 text-lg font-medium leading-7">{document.title}</h3>
-                  <p className={`${styles.label} mt-3 text-[#162032]/40`}>{document.chunkCount} Chunks</p>
+                  <p className={`${styles.label} mt-3 text-stone-400`}>{document.chunkCount} Chunks</p>
                   {document.sourceUrl && (
                     <a
                       href={document.sourceUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="mt-5 block truncate text-xs text-[#0094FF] hover:underline"
+                      className="mt-5 block truncate text-xs text-violet-700 hover:underline"
                     >
                       查看来源
                     </a>
