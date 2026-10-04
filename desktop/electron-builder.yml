@@ -17,10 +17,19 @@ win:
   target: nsis
   icon: assets/icon.ico
   artifactName: Project-Ardor-Setup-${version}-${arch}.${ext}
+  verifyUpdateCodeSignature: true
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  multiLanguageInstaller: true
+  installerLanguages:
+    - en_US
+    - zh_CN
+  displayLanguageSelector: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Project Ardor

@@ -28,15 +28,51 @@ jobs:
           if ($env:RELEASE_TAG -ne $expected) { throw "Release tag $env:RELEASE_TAG does not match $expected" }
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-      - name: Build guided Windows installer
+      - name: Determine signing mode
+        id: signing
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          WIN_SIGNER_THUMBPRINT: ${{ vars.WIN_SIGNER_THUMBPRINT }}
+        run: |
+          $configured = @($env:WIN_CSC_LINK, $env:WIN_CSC_KEY_PASSWORD, $env:WIN_SIGNER_THUMBPRINT) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          if ($configured.Count -eq 0) {
+            "signed=false" >> $env:GITHUB_OUTPUT
+            Write-Warning 'No signing certificate configured. Publishing an unsigned installer; Windows may warn about an unknown publisher.'
+          } elseif ($configured.Count -ne 3 -or $env:WIN_SIGNER_THUMBPRINT -notmatch '^[0-9A-Fa-f]{40}$') {
+            throw 'Partial signing configuration. Configure all of WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD, WIN_SIGNER_THUMBPRINT, or none of them.'
+          } else {
+            "signed=true" >> $env:GITHUB_OUTPUT
+          }
+      - name: Build bilingual Windows installer
         working-directory: desktop
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          SIGNED_BUILD: ${{ steps.signing.outputs.signed }}
         run: |
           npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm test
-          npm run dist:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:SIGNED_BUILD -eq 'true') { npm run dist:win:signed } else { npm run dist:win }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify release artifact and signatures if configured
+        shell: pwsh
+        env:
+          WIN_SIGNER_THUMBPRINT: ${{ vars.WIN_SIGNER_THUMBPRINT }}
+          SIGNED_BUILD: ${{ steps.signing.outputs.signed }}
+        run: |
+          if ($env:SIGNED_BUILD -eq 'true') {
+            ./desktop/scripts/verify-signed-release.ps1 -DistDirectory desktop/dist -ExpectedThumbprint $env:WIN_SIGNER_THUMBPRINT
+          } else {
+            ./desktop/scripts/verify-signed-release.ps1 -DistDirectory desktop/dist
+          }
       - name: Attach installer and update metadata to this release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" desktop/dist/*.exe desktop/dist/*.exe.blockmap desktop/dist/latest.yml --clobber
+        run: gh release upload "$RELEASE_TAG" desktop/dist/*.exe desktop/dist/*.exe.blockmap desktop/dist/latest.yml
