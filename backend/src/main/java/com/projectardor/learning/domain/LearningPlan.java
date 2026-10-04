@@ -69,6 +69,11 @@ public class LearningPlan {
     }
 
     public void recordAttempt(int score, Map<String, Object> evaluation, Instant nextReviewAt) {
+        recordAttempt(score, evaluation, nextReviewAt, List.of());
+    }
+
+    public void recordAttempt(int score, Map<String, Object> evaluation, Instant nextReviewAt,
+            List<Map<String, Object>> followUpExercises) {
         this.lastScore = score;
         this.lastEvaluation = new LinkedHashMap<>(evaluation);
         this.attemptCount++;
@@ -81,6 +86,9 @@ public class LearningPlan {
             this.nextReviewAt = nextReviewAt;
             this.scheduledAt = nextReviewAt;
             this.completedAt = null;
+            if (followUpExercises != null && !followUpExercises.isEmpty()) {
+                this.exercises = List.copyOf(followUpExercises);
+            }
         }
     }
 

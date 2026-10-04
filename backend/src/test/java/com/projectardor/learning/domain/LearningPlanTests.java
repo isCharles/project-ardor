@@ -41,4 +41,22 @@ class LearningPlanTests {
         assertThat(plan.getCompletedAt()).isNotNull();
         assertThat(plan.getNextReviewAt()).isNull();
     }
+
+    @Test
+    void weakAttemptMovesToTargetedQuestionsWithoutDiscardingFeedback() {
+        LearningPlan plan = plan();
+        List<Map<String, Object>> nextQuestions = List.of(
+                Map.of("question", "JVM 何时触发类初始化？", "type", "MULTIPLE_CHOICE",
+                        "options", List.of("创建实例", "声明变量", "导入包"), "rubric", List.of("创建实例")),
+                Map.of("question", "结合项目说明一次 GC 排查", "type", "SCENARIO",
+                        "rubric", List.of("定位步骤")));
+        Instant followUp = Instant.parse("2026-09-10T01:00:00Z");
+
+        plan.recordAttempt(62, Map.of("feedback", "还需练习", "attempts", List.of("submitted")), followUp,
+                nextQuestions);
+
+        assertThat(plan.getExercises()).isEqualTo(nextQuestions);
+        assertThat(plan.getLastEvaluation().get("attempts")).isEqualTo(List.of("submitted"));
+        assertThat(plan.getStatus()).isEqualTo(LearningStatus.NEEDS_REVIEW);
+    }
 }

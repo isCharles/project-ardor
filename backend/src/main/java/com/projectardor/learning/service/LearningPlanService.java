@@ -116,8 +116,29 @@ public class LearningPlanService {
         JsonNode node = jsonParser.parseObject(result.content());
         int score = node.path("score").asInt(-1);
         if (score < 0 || score > 100) throw new IllegalStateException("模型没有返回有效练习分数");
-        Map<String, Object> evaluation = objectMapper.convertValue(node, new TypeReference<>() {});
-        plan.recordAttempt(score, evaluation, score >= 80 ? null : tomorrowMorning(userId));
+        Map<String, Object> evaluation = new LinkedHashMap<>(
+                objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() {}));
+        // The next round's rubric is for grading only; never expose it through lastEvaluation.
+        evaluation.remove("nextExercises");
+        List<Object> history = new ArrayList<>();
+        if (plan.getLastEvaluation().get("attempts") instanceof List<?> previous) {
+            history.addAll(previous.subList(Math.max(0, previous.size() - 19), previous.size()));
+        }
+        List<Map<String, Object>> answeredItems = new ArrayList<>();
+        for (int index = 0; index < answers.size(); index++) {
+            Map<String, Object> exercise = plan.getExercises().get(index);
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("question", exercise.get("question"));
+            item.put("type", exercise.getOrDefault("type", "SHORT_ANSWER"));
+            item.put("options", exercise.getOrDefault("options", List.of()));
+            item.put("answer", answers.get(index));
+            answeredItems.add(item);
+        }
+        history.add(Map.of("items", answeredItems, "score", score,
+                "submittedAt", Instant.now().toString(), "feedback", node.path("feedback").asText("")));
+        evaluation.put("attempts", history);
+        List<Map<String, Object>> followUps = score >= 80 ? List.of() : optionalExercises(node.path("nextExercises"));
+        plan.recordAttempt(score, evaluation, score >= 80 ? null : tomorrowMorning(userId), followUps);
         LearningPlan saved = repository.save(plan);
         syncCalendar(saved);
         return saved;
@@ -146,10 +167,27 @@ public class LearningPlanService {
         if (nodes.isArray()) for (JsonNode node : nodes) {
             String question = node.path("question").asText().strip();
             List<String> rubric = strings(node.path("rubric"), 1);
-            if (!question.isBlank()) values.add(Map.of("question", question, "rubric", rubric));
+            if (question.isBlank()) continue;
+            String type = node.path("type").asText("SHORT_ANSWER").strip();
+            if (!type.equals("MULTIPLE_CHOICE") && !type.equals("SCENARIO")) type = "SHORT_ANSWER";
+            Map<String, Object> exercise = new LinkedHashMap<>();
+            exercise.put("question", question);
+            exercise.put("rubric", rubric);
+            exercise.put("type", type);
+            if (type.equals("MULTIPLE_CHOICE")) {
+                List<String> options = strings(node.path("options"), 0);
+                if (options.size() < 3 || options.size() > 5) continue;
+                exercise.put("options", options);
+            }
+            values.add(exercise);
         }
         if (values.size() < 2) throw new IllegalStateException("模型返回的有效练习题少于 2 道");
         return values;
+    }
+
+    private List<Map<String, Object>> optionalExercises(JsonNode nodes) {
+        try { return exercises(nodes); }
+        catch (IllegalStateException exception) { return List.of(); }
     }
 
     private List<String> strings(JsonNode node, int minimum) {
@@ -181,8 +219,11 @@ public class LearningPlanService {
         return """
                 你是严谨的中文技术导师。只输出 JSON 对象，不要 Markdown。
                 格式：{"lesson":{"summary":"一句话","keyPoints":["..."],"explanation":"系统讲解",
-                "example":"具体例子","pitfalls":["..."]},"exercises":[{"question":"练习题","rubric":["评分要点"]}]}。
+                "example":"具体例子","pitfalls":["..."]},"exercises":[{"question":"练习题",
+                "type":"SHORT_ANSWER 或 MULTIPLE_CHOICE 或 SCENARIO",
+                "options":["选项一","选项二","选项三"],"rubric":["评分要点"]}]}。
                 生成 3 到 5 个关键点和 2 到 4 道练习。讲解要准确、循序渐进、面向求职；
+                练习至少有一道 MULTIPLE_CHOICE 选择题，其余可为简答或情境题。只有选择题需要 options。
                 练习必须检验理解与应用，不能只问定义，也不得虚构用户经历。
                 """;
     }
@@ -191,7 +232,13 @@ public class LearningPlanService {
         return """
                 你是严格但有建设性的中文技术教练。只输出 JSON 对象，不要 Markdown。
                 格式：{"score":0,"feedback":"总体反馈","strengths":["..."],"gaps":["..."],
-                "nextFocus":"下一步重点"}。score 是 0 到 100 的整数，只能依据评分要点和实际回答评分。
+                "questionFeedback":[{"question":"原题","feedback":"针对该回答的解释"}],
+                "nextFocus":"下一步重点","nextExercises":[{"question":"新题",
+                "type":"SHORT_ANSWER 或 MULTIPLE_CHOICE 或 SCENARIO",
+                "options":["选项一","选项二","选项三"],"rubric":["评分要点"]}]}。
+                score 是 0 到 100 的整数，只能依据评分要点和实际回答评分。
+                如果得分低于 80，必须根据薄弱点出 2 到 4 道不同于原题的新题，其中至少一道选择题；
+                如果得分达到 80，nextExercises 返回空数组。只有选择题需要 options。
                 """;
     }
 
