@@ -73,11 +73,11 @@ Ardor 可以从已有资料中找到上下文，帮你把准备拆成真正可�
 
 ## 开始体验
 
-当前版本为 **v0.2.0 自托管预览版**，仍在持续迭代，尚未提供公开在线演示。准备好 Docker Desktop 与 Maven 后，按 [启动指南](docs/SETUP.md) 配置环境并运行 `.\start.ps1`，即可在 `http://localhost:3000` 打开 Ardor。
+当前版本为 **v0.3.0 自托管预览版**，仍在持续迭代，尚未提供公开在线演示。Windows 用户可以从 [GitHub Releases](https://github.com/isCharles/project-ardor/releases/latest) 下载安装程序；本机使用仍需先按 [启动指南](docs/SETUP.md) 启动服务，然后双击桌面快捷方式打开 Ardor。也可以直接在 `http://localhost:3000` 使用网页。
 
 想了解项目如何设计？可以继续阅读 [产品范围](docs/PROJECT.md) · [架构说明](docs/ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [版本规则](docs/VERSIONING.md)。
 
-Windows 桌面客户端正在准备安装包与应用内更新；现阶段仍按上方启动指南使用网页。安装方式和发布限制见 [桌面版说明](docs/DESKTOP.md)。
+桌面版的安装、连接服务器与应用内更新见 [桌面版说明](docs/DESKTOP.md)。
 
 <div align="center">
   <br />
