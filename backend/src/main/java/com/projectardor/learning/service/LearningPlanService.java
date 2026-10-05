@@ -134,8 +134,13 @@ public class LearningPlanService {
             item.put("answer", answers.get(index));
             answeredItems.add(item);
         }
-        history.add(Map.of("items", answeredItems, "score", score,
-                "submittedAt", Instant.now().toString(), "feedback", node.path("feedback").asText("")));
+        Map<String, Object> recordedAttempt = new LinkedHashMap<>();
+        recordedAttempt.put("items", answeredItems);
+        recordedAttempt.put("score", score);
+        recordedAttempt.put("submittedAt", Instant.now().toString());
+        recordedAttempt.put("feedback", node.path("feedback").asText(""));
+        recordedAttempt.put("questionFeedback", evaluation.getOrDefault("questionFeedback", List.of()));
+        history.add(recordedAttempt);
         evaluation.put("attempts", history);
         List<Map<String, Object>> followUps = score >= 80 ? List.of() : optionalExercises(node.path("nextExercises"));
         plan.recordAttempt(score, evaluation, score >= 80 ? null : tomorrowMorning(userId), followUps);
