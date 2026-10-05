@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame, GraduationCap, MessageSquareText,
-  LayoutGrid, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Settings2, Target, Trash2, Upload, X,
+  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame, GraduationCap, LogOut, MessageSquareText,
+  MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Settings2, Target, Trash2, Upload, UserRound, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -119,7 +119,8 @@ export default function AgentHomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const typedHint = useTypewriter(locale === "en" ? typewriterExamples : typewriterExamplesZh, messages.length === 0);
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [account, setAccount] = useState<{ email: string; admin: boolean } | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
   const [selectedContexts, setSelectedContexts] = useState<SelectedContext[]>([]);
@@ -137,6 +138,19 @@ export default function AgentHomePage() {
   const runStartedAt = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
   const runningRunId = runningRun?.id;
+
+  useEffect(() => {
+    api<{ email: string; admin: boolean }>("/api/auth/me").then(setAccount).catch(() => undefined);
+  }, []);
+
+  async function logout() {
+    try {
+      await api<void>("/api/auth/logout", { method: "POST" });
+      router.replace("/login");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("Could not log out. Please try again.", "退出失败，请重试。"));
+    }
+  }
 
   const applyState = useCallback((result: AgentState) => {
     setState(result);
@@ -598,7 +612,27 @@ export default function AgentHomePage() {
           </div>
           <button type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium shadow-sm transition hover:border-stone-300 hover:shadow disabled:opacity-50"><Plus className="size-4" />{t("New chat", "新对话")}</button>
 
-          <div className="mt-5 flex-1 overflow-y-auto">
+          <nav aria-label={t("Workspaces", "工作区")} className="mt-5 max-h-[48vh] shrink-0 space-y-0.5 overflow-y-auto border-b border-stone-200/70 pb-4">
+            <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">{t("Workspaces", "工作区")}</p>
+            {([
+              { href: "/app/resumes", en: "Resumes", zh: "简历", icon: FileSearch, module: "resumes" },
+              { href: "/app/interviews", en: "Mock interviews", zh: "模拟面试", icon: MessageSquareText },
+              { href: "/app/recaps", en: "Interview notes", zh: "面经", icon: FileText, module: "recaps" },
+              { href: "/app/cards", en: "Flashcards", zh: "记忆卡", icon: BrainCircuit },
+              { href: "/app/knowledge", en: "Knowledge", zh: "知识库", icon: BookOpenText, module: "knowledge" },
+              { href: "/app/learning", en: "Learning", zh: "学习", icon: GraduationCap },
+              { href: "/app/calendar", en: "Calendar", zh: "日程", icon: CalendarDays },
+              { href: "/app/applications", en: "Applications", zh: "投递节奏", icon: Target },
+              { href: "/app/evidence", en: "Growth evidence", zh: "成长证据", icon: Brain },
+            ] as const).map((item) => (
+              <Link key={item.href} href={item.href} onClick={() => { setSidebarOpen(false); if ("module" in item) acknowledgeBackground(item.module); }} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-stone-600 transition hover:bg-white/75 hover:text-stone-900">
+                <item.icon className="size-4 shrink-0 text-stone-500" /><span className="min-w-0 flex-1 truncate">{t(item.en, item.zh)}</span>{"module" in item && backgroundReady[item.module] && <span className="size-2 shrink-0 rounded-full bg-red-500" />}
+              </Link>
+            ))}
+            <button type="button" onClick={() => { setSidebarOpen(false); setMemoryOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-stone-600 transition hover:bg-white/75 hover:text-stone-900"><Brain className="size-4 shrink-0 text-stone-500" /><span className="flex-1">{t("Memory", "总体记忆")}</span>{memoryDraft && <span className="size-1.5 rounded-full bg-violet-500" />}</button>
+          </nav>
+
+          <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
             <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">{t("Recent chats", "最近对话")}</p>
             <div className="space-y-1">
               {conversations.map((conversation) => (
@@ -633,6 +667,17 @@ export default function AgentHomePage() {
             )}
           </div>
 
+          <div className="relative mt-2 border-t border-stone-200/70 pt-2">
+            {accountOpen && <div className="absolute bottom-full left-0 right-0 z-30 mb-2 rounded-2xl border border-stone-200 bg-white p-2 shadow-[0_18px_50px_rgba(42,35,27,0.16)]">
+              <div className="truncate border-b border-stone-100 px-3 py-2 text-xs text-stone-500" title={account?.email}>{account?.email ?? t("Your account", "个人账户")}</div>
+              <Link href="/app/settings" onClick={() => { setAccountOpen(false); setSidebarOpen(false); }} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-stone-700 hover:bg-stone-50"><Settings2 className="size-4" />{t("Settings", "设置")}</Link>
+              {account?.admin && <Link href="/app/admin" onClick={() => { setAccountOpen(false); setSidebarOpen(false); }} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-stone-700 hover:bg-stone-50"><UserRound className="size-4" />{t("Admin", "管理员")}</Link>}
+              <div className="px-3 py-2"><LocaleSwitch /></div>
+              <button type="button" onClick={() => void logout()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-stone-700 hover:bg-stone-50"><LogOut className="size-4" />{t("Log out", "退出登录")}</button>
+            </div>}
+            <button type="button" aria-expanded={accountOpen} onClick={() => setAccountOpen((open) => !open)} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-white/70"><span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-rose-300 via-violet-300 to-blue-300 text-sm font-semibold text-stone-900">{(state?.displayName || account?.email || "A").trim().charAt(0).toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{state?.displayName || account?.email?.split("@")[0] || t("Account", "账户")}</span><span className="block truncate text-xs text-stone-500">{account?.email || t("Profile & settings", "个人资料与设置")}</span></span><ChevronDown className={`size-4 shrink-0 text-stone-400 transition-transform ${accountOpen ? "rotate-180" : ""}`} /></button>
+          </div>
+
         </aside>
 
         <section className="relative flex min-w-0 flex-1 flex-col">
@@ -642,25 +687,6 @@ export default function AgentHomePage() {
               {sidebarCollapsed && <button aria-label={t("Expand sidebar", "展开会话栏")} title={t("Expand sidebar", "展开侧栏")} onClick={() => setSidebarCollapsed(false)} className="hidden rounded-xl p-2 text-stone-500 hover:bg-white md:block"><PanelLeftOpen className="size-5" /></button>}
               <h1 className="truncate text-sm font-medium text-stone-600">{selected?.title ?? "Ardor"}</h1>
             </div>
-            <div className="flex items-center gap-2"><LocaleSwitch /><div className="relative">
-              <button type="button" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen((open) => !open)} className={`relative flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium transition ${workspaceOpen ? "border-stone-300 bg-white text-stone-900 shadow-sm" : "border-stone-200/80 bg-white/55 text-stone-600 hover:bg-white"}`}><LayoutGrid className="size-3.5" />{t("Workspace", "工作区")}<ChevronDown className={`size-3.5 transition-transform ${workspaceOpen ? "rotate-180" : ""}`} />{Object.values(backgroundReady).some(Boolean) && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-red-500 ring-2 ring-white" />}</button>
-              {workspaceOpen && <div className="absolute right-0 top-12 z-30 w-64 rounded-2xl border border-white/80 bg-[#f8f6f1]/95 p-2.5 shadow-[0_24px_70px_rgba(42,35,27,0.18)] backdrop-blur-xl">
-                <div className="mb-2 flex items-center justify-between px-1"><span className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-400">{t("Workspace", "工作区")}</span><button type="button" aria-label={t("Close workspace", "收起工作区")} onClick={() => setWorkspaceOpen(false)} className="grid size-7 place-items-center rounded-lg text-stone-400 hover:bg-white hover:text-stone-700"><X className="size-3.5" /></button></div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <Link href="/app/resumes" onClick={() => acknowledgeBackground("resumes")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileSearch className="size-4 text-blue-500" /><span>{t("Resume analysis", "简历分析")}</span>{backgroundReady.resumes && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
-                  <Link href="/app/interviews" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><MessageSquareText className="size-4 text-orange-500" /><span>{t("Mock interview", "模拟面试")}</span></Link>
-                  <Link href="/app/recaps" onClick={() => acknowledgeBackground("recaps")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><FileText className="size-4 text-emerald-600" /><span>{t("Interview notes", "面经")}</span>{backgroundReady.recaps && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
-                  <Link href="/app/cards" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BrainCircuit className="size-4 text-violet-500" /><span>{t("Flashcards", "记忆卡")}</span></Link>
-                  <Link href="/app/calendar" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><CalendarDays className="size-4 text-rose-500" /><span>{t("Calendar", "日历")}</span></Link>
-                  <Link href="/app/applications" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><Target className="size-4 text-violet-500" /><span>{t("Applications", "投递节奏")}</span></Link>
-                  <Link href="/app/knowledge" onClick={() => acknowledgeBackground("knowledge")} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BookOpenText className="size-4 text-cyan-600" /><span>{t("Knowledge", "知识库")}</span>{backgroundReady.knowledge && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500" />}</Link>
-                  <Link href="/app/learning" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><GraduationCap className="size-4 text-rose-500" /><span>{t("Learning", "学习")}</span></Link>
-                  <Link href="/app/evidence" className="flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-xs text-stone-700 transition hover:bg-white"><BrainCircuit className="size-4 text-fuchsia-500" /><span>{t("Growth evidence", "成长证据")}</span></Link>
-                  <button onClick={() => { setWorkspaceOpen(false); setMemoryOpen(true); }} className="relative flex min-h-16 flex-col justify-between rounded-xl bg-white/65 p-2.5 text-left text-xs text-stone-700 transition hover:bg-white"><Brain className="size-4 text-violet-500" /><span>{t("Memory", "总体记忆")}</span><span className={`absolute right-2.5 top-2.5 size-1.5 rounded-full ${memoryDraft ? "bg-violet-500" : "bg-stone-300"}`} /></button>
-                  <Link href="/app/settings" className="col-span-2 flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs text-stone-500 hover:bg-white/70 hover:text-stone-800"><Settings2 className="size-3.5" />{t("Settings", "设置")}</Link>
-                </div>
-              </div>}
-            </div></div>
           </header>
 
           {!state?.llmConfigured && <div className="mx-4 mt-2 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 md:mx-8"><span>{t("Connect a tool-capable model to get started.", "配置一个支持 Tool Calling 的模型后，Ardor 才能开始工作。")}</span><Link href="/app/settings" className="shrink-0 font-medium underline underline-offset-4">{t("Settings", "去设置")}</Link></div>}

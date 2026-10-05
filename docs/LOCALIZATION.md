@@ -7,8 +7,10 @@ Ardor's UI locale defaults to English. The user can switch to 简体中文; the 
 - Login and registration
 - Shared navigation and the main chat workspace (primary labels and actions)
 - Learning workspace (primary labels, answer controls, and attempt history)
+- Application rhythm, growth evidence, resume library/report, and flashcard interface text
+- Main chat sidebar workspaces and account menu
 
-This is a foundation, **not a complete bilingual application**. Settings, admin, most feature modules, desktop-native dialogs and offline/error screens still contain Chinese UI text. API and model-generated errors may also remain Chinese. Do not advertise those surfaces as translated until they are reviewed in both locales.
+This is a foundation, **not a complete bilingual application**. Settings, admin, calendar, interviews, knowledge, interview notes, replay, desktop-native dialogs and offline/error screens still contain Chinese UI text. API and model-generated errors may also remain Chinese. Stored report content is displayed verbatim. Do not advertise those surfaces as translated until they are reviewed in both locales.
 
 ## Next steps
 
