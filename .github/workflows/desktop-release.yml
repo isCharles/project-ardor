@@ -71,31 +71,70 @@ jobs:
             ./desktop/scripts/verify-signed-release.ps1 -DistDirectory desktop/dist
           }
       - name: Attach installer and update metadata to this release
-        shell: bash
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" desktop/dist/*.exe desktop/dist/*.exe.blockmap desktop/dist/latest.yml
+        run: |
+          $release = gh release view $env:RELEASE_TAG --json assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $assets = @(Get-ChildItem -LiteralPath desktop/dist -File | Where-Object { $_.Name -match '^Project-Ardor-Setup-.+-x64\.exe(\.blockmap)?$' -or $_.Name -eq 'latest.yml' })
+          if ($assets.Count -ne 3) { throw "Expected installer, blockmap and latest.yml; found $($assets.Count) assets." }
+          foreach ($asset in $assets) {
+            $existing = @($release.assets | Where-Object { $_.name -eq $asset.Name })
+            if ($existing.Count -gt 1 -or ($existing.Count -eq 1 -and $existing[0].size -le 0)) {
+              throw "Release asset is incomplete or duplicated: $($asset.Name)"
+            }
+            if ($existing.Count -eq 1) {
+              Write-Host "Already attached: $($asset.Name)"
+            } else {
+              gh release upload $env:RELEASE_TAG $asset.FullName
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+          }
       - name: Publish installer to public download repository
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.ARDOR_RELEASES_TOKEN }}
+          SOURCE_TOKEN: ${{ github.token }}
+          PUBLIC_TOKEN: ${{ secrets.ARDOR_RELEASES_TOKEN }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           SIGNED_BUILD: ${{ steps.signing.outputs.signed }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
-            throw 'ARDOR_RELEASES_TOKEN is required to publish desktop updates to the public download repository.'
-          }
           $repo = 'isCharles/project-ardor-releases'
+          $env:GH_TOKEN = $env:SOURCE_TOKEN
           $visibility = gh repo view $repo --json visibility --jq '.visibility'
           if ($LASTEXITCODE -ne 0 -or $visibility -ne 'PUBLIC') { throw 'Desktop download repository must be public.' }
+          $publishedJson = gh release view $env:RELEASE_TAG --repo $repo --json isDraft,assets 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $published = $publishedJson | ConvertFrom-Json
+            $expected = @('latest.yml', "Project-Ardor-Setup-$($env:RELEASE_TAG.TrimStart('v'))-x64.exe", "Project-Ardor-Setup-$($env:RELEASE_TAG.TrimStart('v'))-x64.exe.blockmap")
+            $complete = -not $published.isDraft -and @($published.assets).Count -eq 3
+            foreach ($name in $expected) {
+              $match = @($published.assets | Where-Object { $_.name -eq $name -and $_.size -gt 0 })
+              if ($match.Count -ne 1) { $complete = $false }
+            }
+            if ($complete) { Write-Host "Public installer release $env:RELEASE_TAG is already complete."; exit 0 }
+          }
+          if ([string]::IsNullOrWhiteSpace($env:PUBLIC_TOKEN)) {
+            throw 'ARDOR_RELEASES_TOKEN is required to publish a new or incomplete desktop update release.'
+          }
+          $env:GH_TOKEN = $env:PUBLIC_TOKEN
           $signatureNotice = if ($env:SIGNED_BUILD -eq 'true') { 'The installer was signed and verified before upload.' } else { 'The installer is unsigned. Windows may show a SmartScreen warning; verify this official download before choosing whether to keep it.' }
           $notes = "Project Ardor $env:RELEASE_TAG Windows x64 installer. This desktop client needs an Ardor server. $signatureNotice"
-          $assets = @(Get-ChildItem -LiteralPath desktop/dist -File | Where-Object { $_.Name -match '^Project-Ardor-Setup-.+-x64\.exe(\.blockmap)?$' -or $_.Name -eq 'latest.yml' } | ForEach-Object { $_.FullName })
+          $assets = @(Get-ChildItem -LiteralPath desktop/dist -File | Where-Object { $_.Name -match '^Project-Ardor-Setup-.+-x64\.exe(\.blockmap)?$' -or $_.Name -eq 'latest.yml' })
           if ($assets.Count -ne 3) { throw "Expected installer, blockmap and latest.yml; found $($assets.Count) assets." }
-          gh release create $env:RELEASE_TAG --repo $repo --target main --title "Project Ardor $env:RELEASE_TAG" --notes $notes --draft
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release upload $env:RELEASE_TAG @assets --repo $repo
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $existingJson = gh release view $env:RELEASE_TAG --repo $repo --json assets,isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $existing = $existingJson | ConvertFrom-Json
+          } else {
+            gh release create $env:RELEASE_TAG --repo $repo --target main --title "Project Ardor $env:RELEASE_TAG" --notes $notes --draft
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $existing = [pscustomobject]@{ assets = @(); isDraft = $true }
+          }
+          foreach ($asset in $assets) {
+            if (@($existing.assets | Where-Object { $_.name -eq $asset.Name -and $_.size -gt 0 }).Count -eq 1) { continue }
+            gh release upload $env:RELEASE_TAG $asset.FullName --repo $repo
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           gh release edit $env:RELEASE_TAG --repo $repo --draft=false
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
