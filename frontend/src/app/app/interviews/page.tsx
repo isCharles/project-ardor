@@ -55,7 +55,7 @@ export default function InterviewsPage() {
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [answerText, setAnswerText] = useState("");
-  const [selectedAnalysisId, setSelectedAnalysisId] = useState("");
+  const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -68,7 +68,7 @@ export default function InterviewsPage() {
       setResumes(resumeItems.filter((item) => item.analysisId));
       setSessions(interviewItems);
       const queryAnalysisId = new URLSearchParams(window.location.search).get("analysisId") ?? "";
-      setSelectedAnalysisId(queryAnalysisId || resumeItems.find((item) => item.analysisId)?.analysisId || "");
+      setSelectedAnalysisId((current) => current ?? (queryAnalysisId || resumeItems.find((item) => item.analysisId)?.analysisId || ""));
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) return router.replace("/login");
       setError(reason instanceof Error ? reason.message : t("Could not load interviews", "无法加载模拟面试"));
@@ -83,7 +83,7 @@ export default function InterviewsPage() {
         setResumes(resumeItems.filter((item) => item.analysisId));
         setSessions(interviewItems);
         const queryAnalysisId = new URLSearchParams(window.location.search).get("analysisId") ?? "";
-        setSelectedAnalysisId(queryAnalysisId || resumeItems.find((item) => item.analysisId)?.analysisId || "");
+        setSelectedAnalysisId((current) => current ?? (queryAnalysisId || resumeItems.find((item) => item.analysisId)?.analysisId || ""));
       })
       .catch((reason) => {
         if (!active) return;
@@ -204,7 +204,7 @@ export default function InterviewsPage() {
                   <label className="flex cursor-pointer items-center gap-3 rounded-2xl border bg-white/70 p-4 transition has-[:checked]:border-violet-400 has-[:checked]:bg-violet-50"><input type="radio" name="modality" value="VOICE" className="sr-only" /><Mic className="size-4" /><span className="text-sm font-medium">{t("Voice", "语音")}</span></label>
                 </div>
               </fieldset>
-              <label className="block text-sm font-medium">{t("Resume analysis", "简历分析")}<select className="field mt-2" name="resumeAnalysisId" value={selectedAnalysisId} onChange={(event) => setSelectedAnalysisId(event.target.value)}><option value="">{t("No resume", "不使用简历")}</option>{resumes.map((resume) => <option key={resume.id} value={resume.analysisId ?? ""}>{resume.originalFilename}</option>)}</select></label>
+              <label className="block text-sm font-medium">{t("Resume analysis", "简历分析")}<select className="field mt-2" name="resumeAnalysisId" value={selectedAnalysisId ?? ""} onChange={(event) => setSelectedAnalysisId(event.target.value)}><option value="">{t("No resume", "不使用简历")}</option>{resumes.map((resume) => <option key={resume.id} value={resume.analysisId ?? ""}>{resume.originalFilename}</option>)}</select></label>
               <label className="block text-sm font-medium">{t("Target company", "目标公司")}<input className="field mt-2" name="targetCompany" maxLength={160} placeholder={t("e.g. ByteDance (optional)", "例如：字节跳动（可选）")} /></label>
               <label className="block text-sm font-medium">{t("Target role", "目标岗位")}<input className="field mt-2" name="targetRole" maxLength={160} required placeholder={t("e.g. Java backend engineer", "例如：Java 后端工程师")} /></label>
               <label className="block text-sm font-medium">{t("Questions", "题目数量")}<select className="field mt-2" name="questionCount" defaultValue="5">{[3,4,5,6,7,8,9,10].map((count) => <option key={count}>{count}</option>)}</select></label>
