@@ -6,14 +6,30 @@ import { useRouter } from "next/navigation";
 import React, { FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { markBackgroundPending } from "@/lib/background-notifications";
-import { useLocale } from "@/lib/locale";
+import { useLocale, type Locale } from "@/lib/locale";
 import styles from "./recaps.module.css";
 
 type Performance = "STRONG" | "MIXED" | "WEAK" | "UNKNOWN";
 type Question = { id: string; sequenceNumber: number; questionText: string; candidateAnswer: string | null; followUps: string[]; assessment: string; performance: Performance; weaknessReason: string | null; betterAnswer: string | null; tags: string[] };
 type Recap = { id: string; title: string; company: string | null; targetRole: string | null; occurredAt: string | null; overview: string; strengths: string[]; weaknesses: string[]; createdAt: string; questions: Question[] };
-type RecapTask = { jobId: string | null; recapId: string | null; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"; attempts?: number; errorMessage?: string | null; createdAt?: string | null; finishedAt?: string | null };
+type RecapTask = { jobId: string | null; recapId: string | null; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"; attempts?: number; errorCode?: string | null; errorMessage?: string | null; createdAt?: string | null; finishedAt?: string | null };
 const performanceStyle: Record<Performance, string> = { STRONG: "bg-emerald-100 text-emerald-700", MIXED: "bg-amber-100 text-amber-700", WEAK: "bg-rose-100 text-rose-700", UNKNOWN: "bg-stone-100 text-stone-500" };
+
+function localizedError(reason: unknown, locale: Locale, english: string, chinese: string) {
+  if (locale === "zh-CN") return reason instanceof Error ? reason.message : chinese;
+  if (reason instanceof ApiError) {
+    const messages: Record<string, string> = {
+      NOT_FOUND: "These interview notes or this task could not be found.",
+      INVALID_REQUEST: "Please check the interview content or details and try again.",
+      INVALID_STATE: "This task can no longer be changed.",
+      VALIDATION_ERROR: "Please check the information and try again.",
+      QUOTA_EXCEEDED: "You have reached your current usage limit.",
+      EXTERNAL_DNS_TEMPORARY: "The model provider is temporarily unreachable. Please try again.",
+    };
+    return reason.body.code && messages[reason.body.code] ? messages[reason.body.code] : english;
+  }
+  return reason instanceof Error && !/[\u3400-\u9fff]/u.test(reason.message) ? reason.message : english;
+}
 
 /* Fans the recaps into a 3D stack around the focused one, draggable like a phone
    carousel.
@@ -158,7 +174,7 @@ export default function RecapsPage() {
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const load = useCallback(async () => { try { const [items, tasks] = await Promise.all([api<Recap[]>("/api/interview-recaps"), api<RecapTask[]>("/api/interview-recaps/jobs")]); setRecaps(items); setJobs(tasks); const params = new URLSearchParams(window.location.search); const requested = params.get("selected"); const source = params.get("source"); const sourceRecap = source ? items.find((item) => item.id === source || item.questions.some((question) => question.id === source)) : null; setSelectedId((id) => requested && items.some((x) => x.id === requested) ? requested : sourceRecap ? sourceRecap.id : id && items.some((x) => x.id === id) ? id : items[0]?.id ?? null); } catch (reason) { if (reason instanceof ApiError && reason.status === 401) router.replace("/login"); else setError(reason instanceof Error ? reason.message : t("Could not load interview notes", "无法加载面经")); } }, [router, t]);
+  const load = useCallback(async () => { try { const [items, tasks] = await Promise.all([api<Recap[]>("/api/interview-recaps"), api<RecapTask[]>("/api/interview-recaps/jobs")]); setRecaps(items); setJobs(tasks); const params = new URLSearchParams(window.location.search); const requested = params.get("selected"); const source = params.get("source"); const sourceRecap = source ? items.find((item) => item.id === source || item.questions.some((question) => question.id === source)) : null; setSelectedId((id) => id && items.some((x) => x.id === id) ? id : requested && items.some((x) => x.id === requested) ? requested : sourceRecap ? sourceRecap.id : items[0]?.id ?? null); } catch (reason) { if (reason instanceof ApiError && reason.status === 401) router.replace("/login"); else setError(localizedError(reason, locale, "Could not load interview notes", "无法加载面经")); } }, [router, locale]);
   useEffect(() => { const first = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(first); }, [load]);
   const selected = recaps.find((item) => item.id === selectedId) ?? null;
   const activeJobs = jobs.filter((job) => job.status === "QUEUED" || job.status === "RUNNING");
@@ -168,21 +184,21 @@ export default function RecapsPage() {
     const timer = window.setTimeout(() => void load(), 4000);
     return () => window.clearTimeout(timer);
   }, [activeJobs.length, load]);
-  async function organize(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError(""); try { const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content") }) }); setShowForm(false); if (task.status === "COMPLETED" && task.recapId) router.push(`/app/recaps?selected=${task.recapId}`); else { await markBackgroundPending("recaps"); router.push("/app?notice=recap-queued"); } } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not submit interview notes", "提交失败")); } finally { setBusy(false); } }
-  async function remove(recap: Recap) { if (!window.confirm(t(`Delete “${recap.title}”?`, `删除“${recap.title}”？`))) return; try { await api<void>(`/api/interview-recaps/${recap.id}`, { method: "DELETE" }); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not delete interview notes", "删除失败")); } }
-  async function updateMetadata(recap: Recap, company: string, targetRole: string, occurredOn: string) { setBusy(true); setError(""); try { const updated = await api<Recap>(`/api/interview-recaps/${recap.id}/metadata`, { method: "PATCH", body: JSON.stringify({ company, targetRole, occurredAt: occurredOn ? new Date(`${occurredOn}T00:00:00`).toISOString() : null }) }); setRecaps((items) => items.map((item) => item.id === updated.id ? updated : item)); } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not save interview details", "保存面试信息失败")); } finally { setBusy(false); } }
+  async function organize(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError(""); try { const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content") }) }); setShowForm(false); if (task.status === "COMPLETED" && task.recapId) router.push(`/app/recaps?selected=${task.recapId}`); else { await markBackgroundPending("recaps"); router.push("/app?notice=recap-queued"); } } catch (reason) { setError(localizedError(reason, locale, "Could not submit interview notes", "提交失败")); } finally { setBusy(false); } }
+  async function remove(recap: Recap) { if (!window.confirm(t(`Delete “${recap.title}”?`, `删除“${recap.title}”？`))) return; try { await api<void>(`/api/interview-recaps/${recap.id}`, { method: "DELETE" }); await load(); } catch (reason) { setError(localizedError(reason, locale, "Could not delete interview notes", "删除失败")); } }
+  async function updateMetadata(recap: Recap, company: string, targetRole: string, occurredOn: string) { setBusy(true); setError(""); try { const updated = await api<Recap>(`/api/interview-recaps/${recap.id}/metadata`, { method: "PATCH", body: JSON.stringify({ company, targetRole, occurredAt: occurredOn ? new Date(`${occurredOn}T00:00:00`).toISOString() : null }) }); setRecaps((items) => items.map((item) => item.id === updated.id ? updated : item)); } catch (reason) { setError(localizedError(reason, locale, "Could not save interview details", "保存面试信息失败")); } finally { setBusy(false); } }
 
   async function retryJob(jobId: string) {
     setBusy(true); setError("");
     try { await api<RecapTask>(`/api/interview-recaps/jobs/${jobId}/retry`, { method: "POST" }); await load(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : t("Retry failed", "重试失败")); }
+    catch (reason) { setError(localizedError(reason, locale, "Retry failed", "重试失败")); }
     finally { setBusy(false); }
   }
 
   async function dismissJob(jobId: string) {
     setBusy(true); setError("");
     try { await api<void>(`/api/interview-recaps/jobs/${jobId}`, { method: "DELETE" }); await load(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not dismiss this task", "无法忽略该任务")); }
+    catch (reason) { setError(localizedError(reason, locale, "Could not dismiss this task", "无法忽略该任务")); }
     finally { setBusy(false); }
   }
 
@@ -205,7 +221,7 @@ export default function RecapsPage() {
       {(activeJobs.length > 0 || failedJobs.length > 0) && <div className="mx-auto mb-6 max-w-2xl space-y-2">
         {activeJobs.map((job) => <div key={job.jobId} className={`${styles.panel} flex items-center gap-3 px-5 py-4`}><span className="size-2 animate-pulse rounded-full bg-[#ED7B46]" /><span className="text-sm text-slate-600">{t("Organizing in the background…", "正在后台整理…")}</span></div>)}
         {failedJobs.map((job) => <div key={job.jobId} className={`${styles.panel} flex flex-wrap items-center gap-3 px-5 py-4 text-sm`}>
-          <span className="min-w-0 flex-1 text-[#a33a32]">{t("Could not organize: ", "整理失败：")}{job.errorMessage ?? t("Please submit again", "请重新提交")}</span>
+          <span className="min-w-0 flex-1 text-[#a33a32]">{t("Could not organize: ", "整理失败：")}{locale === "en" ? `Please retry. If it keeps failing, check your model settings.${job.errorCode ? ` (${job.errorCode})` : ""}` : job.errorMessage ?? "请重新提交"}</span>
           {(job.finishedAt ?? job.createdAt) && <span className="font-mono text-[11px] text-slate-400">{new Date((job.finishedAt ?? job.createdAt) as string).toLocaleString(locale === "en" ? "en-US" : "zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}{job.attempts ? t(` · ${job.attempts} attempts`, ` · 已试 ${job.attempts} 次`) : ""}</span>}
           <span className="flex shrink-0 gap-2">
             <button type="button" disabled={busy || !job.jobId} onClick={() => job.jobId && void retryJob(job.jobId)} className={`${styles.buttonPrimary} px-4 py-1.5 text-xs`}>{t("Retry", "重试")}</button>
