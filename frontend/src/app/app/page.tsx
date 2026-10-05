@@ -359,6 +359,7 @@ export default function AgentHomePage() {
               setRunSteps((current) => [...current, { key: `${event.toolName}-${current.length}`, label: event.label ?? "调用工具", elapsedMs: 0, done: false }]);
             } else if (event.type === "tool_end" && event.toolName) {
               setRunSteps((current) => { const index = current.findLastIndex((step) => step.key.startsWith(`${event.toolName}-`) && !step.done); return index < 0 ? current : current.map((step, i) => i === index ? { ...step, label: event.label ?? step.label, elapsedMs: event.elapsedMs ?? 0, done: true } : step); });
+              if (["analyze_resume", "organize_interview_recap", "research_knowledge_from_web"].includes(event.toolName)) window.dispatchEvent(new Event("ardor:background-refresh"));
             } else if (event.type === "done" && event.messageId && event.conversationId) {
               assistant = { id: event.messageId, conversationId: event.conversationId, role: "ASSISTANT", content: event.content ?? "", createdAt: new Date().toISOString() };
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? assistant! : item));
@@ -559,7 +560,7 @@ export default function AgentHomePage() {
         {sidebarOpen && <button aria-label={t("Close conversations", "关闭会话栏")} className="fixed inset-0 z-20 bg-black/20" onClick={() => setSidebarOpen(false)} />}
         <aside aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={`fixed inset-y-0 left-16 z-40 flex flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl transition-transform duration-200 md:left-[4.25rem] ${sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+5rem)]"}`} style={{ width: "min(18rem, calc(100vw - 4rem))" }}>
           <div className="flex h-12 items-center justify-between px-2">
-            <Link href="/app" className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
+            <Link href="/app" onClick={(event) => { event.preventDefault(); setSidebarOpen(false); }} className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
               <span className="grid size-8 place-items-center rounded-xl bg-stone-950 text-white"><Flame className="size-4" /></span>Project Ardor
             </Link>
             <button aria-label={t("Close conversations", "关闭会话栏")} className="rounded-lg p-2 text-stone-500 hover:bg-white" onClick={() => setSidebarOpen(false)}><X className="size-4" /></button>

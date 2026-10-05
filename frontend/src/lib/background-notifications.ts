@@ -11,6 +11,7 @@ export async function markBackgroundPending(moduleName: BackgroundModule) {
     const user = await api<{ id: string }>("/api/auth/me");
     window.localStorage.setItem(backgroundNotificationKey(user.id, "pending", moduleName), "1");
   } catch {
-    // Badges are informational. The shared rail also observes running jobs.
+    // Badges are informational; a refresh can still discover the active job.
   }
+  window.dispatchEvent(new Event("ardor:background-refresh"));
 }

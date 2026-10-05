@@ -57,8 +57,20 @@ export function WorkspaceRail() {
   const [backgroundReady, setBackgroundReady] = useState<Record<BackgroundModule, boolean>>({ resumes: false, recaps: false, knowledge: false });
 
   useEffect(() => {
-    api<{ id: string; email: string; admin: boolean }>("/api/auth/me").then(setAccount).catch(() => undefined);
-  }, []);
+    if (account) return;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+    const loadAccount = () => {
+      api<{ id: string; email: string; admin: boolean }>("/api/auth/me")
+        .then((value) => { if (!cancelled) setAccount(value); })
+        .catch(() => {
+          if (!cancelled && ++attempts < 3) retryTimer = setTimeout(loadAccount, attempts * 3000);
+        });
+    };
+    loadAccount();
+    return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
+  }, [account, pathname]);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -98,8 +110,16 @@ export function WorkspaceRail() {
     if (!account?.id) return;
     const userId = account.id;
     let cancelled = false;
+    let refreshing = false;
+    let refreshAgain = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const modules: BackgroundModule[] = ["resumes", "recaps", "knowledge"];
     const refresh = async () => {
+      if (cancelled || document.hidden) return;
+      if (refreshing) { refreshAgain = true; return; }
+      refreshing = true;
+      if (timer) clearTimeout(timer);
+      let keepPolling = false;
       try {
         const [resumes, recaps, knowledge] = await Promise.all([
           api<ResumeBackgroundStatus[]>("/api/resumes"),
@@ -111,6 +131,7 @@ export function WorkspaceRail() {
           recaps: recaps.some((item) => item.status === "QUEUED" || item.status === "RUNNING"),
           knowledge: knowledge.pendingChunks > 0,
         } satisfies Record<BackgroundModule, boolean>;
+        keepPolling = Object.values(active).some(Boolean);
         for (const itemModule of modules) {
           const pendingKey = backgroundNotificationKey(userId, "pending", itemModule);
           const readyKey = backgroundNotificationKey(userId, "ready", itemModule);
@@ -128,11 +149,23 @@ export function WorkspaceRail() {
         if (!cancelled) setBackgroundReady(Object.fromEntries(modules.map((itemModule) => [itemModule, window.localStorage.getItem(backgroundNotificationKey(userId, "ready", itemModule)) === "1"])) as Record<BackgroundModule, boolean>);
       } catch {
         // Badges are informational; they must never interrupt navigation.
+        keepPolling = modules.some((itemModule) => window.localStorage.getItem(backgroundNotificationKey(userId, "pending", itemModule)) === "1");
+      } finally {
+        refreshing = false;
+        if (cancelled) return;
+        if (refreshAgain) { refreshAgain = false; void refresh(); }
+        else if (keepPolling && !document.hidden) timer = setTimeout(() => void refresh(), 10_000);
       }
     };
+    const onVisibilityChange = () => {
+      if (document.hidden) { if (timer) clearTimeout(timer); }
+      else void refresh();
+    };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 10_000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("ardor:background-refresh", refresh);
+    return () => { cancelled = true; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibilityChange); window.removeEventListener("focus", refresh); window.removeEventListener("ardor:background-refresh", refresh); };
   }, [account?.id, pathname]);
 
   function acknowledgeBackground(itemModule: BackgroundModule | null) {
@@ -165,7 +198,7 @@ export function WorkspaceRail() {
               href={item.href}
               aria-label={label}
               aria-current={active ? "page" : undefined}
-              onClick={() => { acknowledgeBackground(itemModule); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }}
+              onClick={(event) => { if (item.href === "/app" && pathname === "/app") event.preventDefault(); acknowledgeBackground(itemModule); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }}
               onMouseEnter={(event) => setTooltip({ label, top: event.currentTarget.getBoundingClientRect().top + 8 })}
               onMouseLeave={() => setTooltip(null)}
               onFocus={(event) => setTooltip({ label, top: event.currentTarget.getBoundingClientRect().top + 8 })}
