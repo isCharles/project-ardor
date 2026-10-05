@@ -2,6 +2,14 @@
 
 > 记录日期：2026-10-01，Asia/Shanghai。本文记录本机实测，不把临时恢复称为 Docker 的永久修复。后续 Agent 请先核对当前状态和日志，不要照搬旧结论。
 
+## 2026-10-05 本机端口转发中断与 Secrets Engine 再次复发
+
+本机 v0.5.0 前后端容器显示运行、后端/PostgreSQL/Redis 健康，但 Windows 访问 `127.0.0.1:3000` 和 `:8080` 时收到空响应；从前端容器内部访问自身为 200、访问后端为 401。监听端口属于 `com.docker.backend.exe`，因此这一次 Ardor 的“服务器无法连接”首先定位到 Windows 侧 Docker 端口转发，而非应用服务或数据库。正常执行 `docker desktop restart --timeout 120` 后，新后端日志在 11:26:16（Asia/Shanghai）报 `docker-secrets-engine/engine.sock` 无法移除，Engine 未能重新启动；CLI 重启等待未正常完成。
+
+随后 `docker desktop stop --timeout 90` 报告 Desktop 未运行，独立检查也确认 Docker Desktop/后端进程均退出。两处运行时目录均为普通目录，分别只含白名单内的 `dockerInference` 与 `engine.sock` 重解析点。**仅执行一次** `scripts/Start-DockerDesktopSafely.ps1`：它把两处目录原样改名保留为 `run.socket-backup-20261005-113327-19ede9a7` 与 `docker-secrets-engine.socket-backup-20261005-113327-99361dac`，11:33:35 Engine 29.5.3 恢复响应。没有删除备份、重置 Docker、清理镜像/卷或触碰 E 盘 VHDX。
+
+恢复后四个 Ardor 容器运行，后端/PostgreSQL/Redis 健康；Windows 访问登录页为 200、未认证后端为 401，Redis 返回 `PONG`，PostgreSQL `pg_isready` 接受连接。此记录只证明本次可逆恢复有效；端口转发为何先断开、Docker 4.77 为何仍遗留 AF_UNIX socket，均未证明上游根因。
+
 ## 2026-10-03 复发与启动脚本编码修复
 
 再次启动时 Engine 管道缺失，Docker Desktop 和后端进程均已退出。两处运行时目录中仅有本脚本白名单内的 socket 重解析点；数据盘 Junction 仍指向 `E:\AppDataMoves\DockerDisk`，VHDX 存在。第一次用 Windows PowerShell 5.1 直接运行恢复脚本时，在执行脚本主体前就因无 BOM 的 UTF-8 中文字符串解析失败。随后用 PowerShell 7 运行同一个脚本：它将 `Docker\run` 和 `docker-secrets-engine` 分别改名保留为 `.socket-backup-20261003-125100-981f6162`、`.socket-backup-20261003-125101-d918ee8e`，一次启动后 Engine 29.5.3 于 12:51:15 响应。四个 Ardor 容器正常，后端、Redis、PostgreSQL 健康，三卷仍在，3000 为 200、未认证 8080 为 401。没有删除备份或触碰 E 盘数据。
