@@ -112,6 +112,7 @@ export function WorkspaceRail() {
     let cancelled = false;
     let refreshing = false;
     let refreshAgain = false;
+    let consecutiveFailures = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const modules: BackgroundModule[] = ["resumes", "recaps", "knowledge"];
     const refresh = async () => {
@@ -131,6 +132,7 @@ export function WorkspaceRail() {
           recaps: recaps.some((item) => item.status === "QUEUED" || item.status === "RUNNING"),
           knowledge: knowledge.pendingChunks > 0,
         } satisfies Record<BackgroundModule, boolean>;
+        consecutiveFailures = 0;
         keepPolling = Object.values(active).some(Boolean);
         for (const itemModule of modules) {
           const pendingKey = backgroundNotificationKey(userId, "pending", itemModule);
@@ -149,23 +151,25 @@ export function WorkspaceRail() {
         if (!cancelled) setBackgroundReady(Object.fromEntries(modules.map((itemModule) => [itemModule, window.localStorage.getItem(backgroundNotificationKey(userId, "ready", itemModule)) === "1"])) as Record<BackgroundModule, boolean>);
       } catch {
         // Badges are informational; they must never interrupt navigation.
-        keepPolling = modules.some((itemModule) => window.localStorage.getItem(backgroundNotificationKey(userId, "pending", itemModule)) === "1");
+        consecutiveFailures += 1;
+        keepPolling = consecutiveFailures <= 2 || modules.some((itemModule) => window.localStorage.getItem(backgroundNotificationKey(userId, "pending", itemModule)) === "1");
       } finally {
         refreshing = false;
         if (cancelled) return;
         if (refreshAgain) { refreshAgain = false; void refresh(); }
-        else if (keepPolling && !document.hidden) timer = setTimeout(() => void refresh(), 10_000);
+        else if (keepPolling && !document.hidden) timer = setTimeout(() => void refresh(), consecutiveFailures ? Math.min(5000 * 2 ** (consecutiveFailures - 1), 30_000) : 10_000);
       }
     };
     const onVisibilityChange = () => {
       if (document.hidden) { if (timer) clearTimeout(timer); }
-      else void refresh();
+      else { consecutiveFailures = 0; void refresh(); }
     };
+    const wake = () => { consecutiveFailures = 0; void refresh(); };
     void refresh();
     document.addEventListener("visibilitychange", onVisibilityChange);
-    window.addEventListener("focus", refresh);
-    window.addEventListener("ardor:background-refresh", refresh);
-    return () => { cancelled = true; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibilityChange); window.removeEventListener("focus", refresh); window.removeEventListener("ardor:background-refresh", refresh); };
+    window.addEventListener("focus", wake);
+    window.addEventListener("ardor:background-refresh", wake);
+    return () => { cancelled = true; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibilityChange); window.removeEventListener("focus", wake); window.removeEventListener("ardor:background-refresh", wake); };
   }, [account?.id, pathname]);
 
   function acknowledgeBackground(itemModule: BackgroundModule | null) {

@@ -96,7 +96,7 @@ export default function KnowledgePage() {
       const created = await api<DocumentItem>("/api/knowledge/documents", {
         method: "POST", body: new FormData(form),
       });
-      await markBackgroundPending("knowledge");
+      markBackgroundPending("knowledge");
       form.reset();
       setNotice(`已加入“${created.title}”`);
       await load();
@@ -113,7 +113,7 @@ export default function KnowledgePage() {
       const response = await api<ResearchResponse>("/api/knowledge/research", {
         method: "POST", body: JSON.stringify({ query: data.get("query") }),
       });
-      if (response.imported.length > 0) await markBackgroundPending("knowledge");
+      if (response.imported.length > 0) markBackgroundPending("knowledge");
       form.reset();
       setNotice(`已收录 ${response.imported.length} 个来源`);
       await load();

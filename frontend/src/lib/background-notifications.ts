@@ -6,12 +6,13 @@ export function backgroundNotificationKey(userId: string, state: "pending" | "re
   return `ardor:background-${state}:${userId}:${moduleName}`;
 }
 
-export async function markBackgroundPending(moduleName: BackgroundModule) {
-  try {
-    const user = await api<{ id: string }>("/api/auth/me");
-    window.localStorage.setItem(backgroundNotificationKey(user.id, "pending", moduleName), "1");
-  } catch {
-    // Badges are informational; a refresh can still discover the active job.
-  }
+export function markBackgroundPending(moduleName: BackgroundModule) {
+  void api<{ id: string }>("/api/auth/me")
+    .then((user) => {
+      window.localStorage.setItem(backgroundNotificationKey(user.id, "pending", moduleName), "1");
+      window.dispatchEvent(new Event("ardor:background-refresh"));
+    })
+    .catch(() => undefined);
+  // Badge bookkeeping is best-effort and must never delay a successful job action.
   window.dispatchEvent(new Event("ardor:background-refresh"));
 }
