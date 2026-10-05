@@ -3,7 +3,7 @@
 import { ArrowLeft, ArrowRight, CalendarDays, RotateCcw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
 import { useLocale, type Locale } from "@/lib/locale";
@@ -33,6 +33,7 @@ type Replay = {
 type Draft = { answer: string; requestId: string | null };
 type ScheduledRetest = { id: string; attemptId: string; dueAt: string; challenge: string };
 type RetestOverview = { scheduled: ScheduledRetest | null };
+type ReplayError = { reason: unknown; english: string; chinese: string };
 
 function replayError(reason: unknown, locale: Locale, english: string, chinese: string) {
   if (locale === "zh-CN") return reason instanceof Error ? reason.message : chinese;
@@ -65,8 +66,6 @@ function defaultRetestDate() {
 export default function ReplayPage() {
   const router = useRouter();
   const { locale, t } = useLocale();
-  const localeRef = useRef(locale);
-  useEffect(() => { localeRef.current = locale; }, [locale]);
   const verdictLabel: Record<Attempt["verdict"], string> = {
     CLEARER: t("Clearer this time", "这次更清楚"), SIMILAR: t("Similar to last time", "与上次相近"),
     NEEDS_WORK: t("Still needs work", "仍需补强"), UNKNOWN: t("Not enough to compare", "无法可靠比较"),
@@ -80,14 +79,15 @@ export default function ReplayPage() {
   const [scheduling, setScheduling] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<ReplayError | null>(null);
+  const errorText = error ? replayError(error.reason, locale, error.english, error.chinese) : "";
 
   useEffect(() => {
     let active = true;
     const timer = window.setTimeout(() => {
       const questionId = new URLSearchParams(window.location.search).get("question");
       const retestId = new URLSearchParams(window.location.search).get("retest");
-      if (!questionId) { setError(localeRef.current === "en" ? "No interview question was selected. Open a replay from Growth evidence." : "没有指定面经问题。请从成长证据页进入。"); setLoading(false); return; }
+      if (!questionId) { setError({ reason: null, english: "No interview question was selected. Open a replay from Growth evidence.", chinese: "没有指定面经问题。请从成长证据页进入。" }); setLoading(false); return; }
       setRequestedRetestId(retestId);
       let draft: Draft | null = null;
       try {
@@ -114,7 +114,7 @@ export default function ReplayPage() {
         .catch((reason) => {
           if (!active) return;
           if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
-          else setError(replayError(reason, localeRef.current, "Could not load the interview replay", "无法加载面试回放"));
+          else setError({ reason, english: "Could not load the interview replay", chinese: "无法加载面试回放" });
         })
         .finally(() => { if (active) setLoading(false); });
     }, 0);
@@ -131,7 +131,7 @@ export default function ReplayPage() {
     event.preventDefault();
     if (!replay || !answer.trim() || busy) return;
     setBusy(true);
-    setError("");
+    setError(null);
     const id = requestId ?? crypto.randomUUID();
     setRequestId(id);
     window.sessionStorage.setItem(draftKey(replay.questionId, requestedRetestId), JSON.stringify({ answer, requestId: id }));
@@ -148,19 +148,19 @@ export default function ReplayPage() {
       window.sessionStorage.removeItem(draftKey(replay.questionId, requestedRetestId));
       if (activeRetestId) setScheduledRetest(null);
     } catch (reason) {
-      setError(replayError(reason, locale, "Submission failed. Please retry; your answer is saved in this session.", "提交失败，请稍后重试；你的回答已保留。"));
+      setError({ reason, english: "Submission failed. Please retry; your answer is saved in this session.", chinese: "提交失败，请稍后重试；你的回答已保留。" });
     } finally { setBusy(false); }
   }
 
   async function scheduleRetest() {
     if (!replay || !latest?.nextChallenge || scheduling) return;
-    setScheduling(true); setError("");
+    setScheduling(true); setError(null);
     try {
       const scheduled = await api<ScheduledRetest>(`/api/interview-replays/questions/${replay.questionId}/retest`, {
         method: "POST", body: JSON.stringify({ attemptId: latest.id, dueAt: new Date(retestDate).toISOString() }),
       });
       setScheduledRetest(scheduled);
-    } catch (reason) { setError(replayError(reason, locale, "Could not schedule the retest", "安排复测失败")); }
+    } catch (reason) { setError({ reason, english: "Could not schedule the retest", chinese: "安排复测失败" }); }
     finally { setScheduling(false); }
   }
 
@@ -171,7 +171,7 @@ export default function ReplayPage() {
     <div className="mx-auto max-w-5xl">
       <Link href="/app/evidence" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70"><ArrowLeft className="size-4" />{t("Back to Growth evidence", "返回成长证据")}</Link>
       <header className="pb-9 pt-12 md:pt-16"><p className="text-xs font-medium tracking-[0.16em] text-violet-600">INTERVIEW REPLAY</p><h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em] md:text-6xl">{t("Answer it again.", "再回答一次。")}</h1></header>
-      {error && !replay && <div role="alert" className="rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
+      {errorText && !replay && <div role="alert" className="rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{errorText}</div>}
       {loading ? <div className="ardor-panel h-72 animate-pulse rounded-[2.5rem]" aria-label={t("Loading interview replay", "正在加载面试回放")} /> : replay && <>
         <section className="relative overflow-hidden rounded-[2.5rem] border border-white/80 bg-white/75 p-6 shadow-[0_25px_80px_rgba(89,58,138,0.08)] backdrop-blur-xl md:p-10">
           <div className="pointer-events-none absolute -right-24 -top-40 size-[32rem] rounded-full bg-[radial-gradient(circle,rgba(251,153,151,0.38),rgba(168,143,255,0.18)_46%,transparent_72%)] blur-3xl" />
@@ -184,7 +184,7 @@ export default function ReplayPage() {
           <label htmlFor="replay-answer" className="text-sm font-medium">{t("How would you answer this time?", "这次你会怎么回答？")}</label>
           <textarea id="replay-answer" value={answer} onChange={(event) => changeAnswer(event.target.value)} maxLength={12000} rows={7} className="mt-4 w-full resize-y rounded-2xl border border-stone-200/80 bg-white/75 p-4 text-sm leading-7 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100" placeholder={t("Answer in your own words—no scripted response needed…", "用自己的话回答，不必追求标准话术…")} />
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-stone-400">{t("Draft saved for this browser session", "草稿会保留在这个浏览器会话中")} · {answer.length.toLocaleString(locale === "en" ? "en-US" : "zh-CN")} / 12,000</span><button type="submit" disabled={busy || !answer.trim()} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-stone-800 disabled:opacity-45">{busy ? t("Comparing…", "正在对比…") : t("Submit & compare", "提交并对比")}<ArrowRight className="size-4" /></button></div>
-          {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+          {errorText && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{errorText}</p>}
         </form>
 
         {latest && <section className="mt-8 space-y-5" aria-label={t("Latest replay result", "最新回放结果")}>
