@@ -4,6 +4,7 @@ import { LoaderCircle, Mic, Square, Volume2, Waves } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useLocale } from "@/lib/locale";
 
 type Props = {
   sessionId: string;
@@ -22,6 +23,10 @@ const MAX_RECORDING_MS = 5 * 60 * 1000;
 const LOCAL_VAD_THRESHOLD = 0.035;
 
 export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscript, onError }: Props) {
+  const { t } = useLocale();
+  const tRef = useRef(t);
+  tRef.current = t;
+  const tr = (english: string, chinese: string) => tRef.current(english, chinese);
   const socketRef = useRef<WebSocket | null>(null);
   const socketPromiseRef = useRef<Promise<WebSocket> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -37,7 +42,22 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
   const mountedRef = useRef(true);
   const [state, setState] = useState<VoiceState>("idle");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [status, setStatus] = useState("实时语音已就绪");
+  const [status, setStatus] = useState("ready");
+  const statusLabels: Record<string, string> = {
+    ready: t("Live voice is ready", "实时语音已就绪"),
+    connecting: t("Connecting to live voice…", "正在连接实时语音…"),
+    asrConnecting: t("Connecting to speech recognition…", "正在连接实时识别…"),
+    speaking: t("Reading aloud. Speak to interrupt.", "朗读中，可直接开口打断"),
+    listening: t("Listening to your answer…", "正在听你回答…"),
+    ttsConnecting: t("Preparing question audio…", "正在生成题目语音…"),
+    listeningAuto: t("Listening. A pause will start transcription.", "正在听你回答，停顿后自动转写"),
+    interrupted: t("Reading stopped. Listening to your answer…", "已停止朗读，正在听你回答…"),
+    recognizing: t("Recognizing speech…", "正在识别…"),
+    paused: t("Pause detected. Preparing transcript…", "检测到停顿，正在整理文字…"),
+    transcriptReady: t("Transcript ready. Edit it before submitting.", "已转成文字，可以修改后提交"),
+    speechInterrupted: t("You started speaking. Reading stopped.", "检测到你开口，已停止朗读"),
+    finishing: t("Finishing transcription…", "正在完成转写…"),
+  };
 
   useEffect(() => {
     if (state !== "listening" && state !== "speaking") return;
@@ -64,12 +84,12 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
     if (socketRef.current?.readyState === WebSocket.OPEN) return socketRef.current;
     if (socketPromiseRef.current) return socketPromiseRef.current;
     updateState("connecting");
-    setStatus("正在连接实时语音…");
+    setStatus("connecting");
     socketPromiseRef.current = new Promise<WebSocket>((resolve, reject) => {
       const socket = new WebSocket(realtimeUrl(sessionId));
       const timeout = window.setTimeout(() => {
         socket.close();
-        reject(new Error("实时语音连接超时"));
+        reject(new Error(tr("Live voice connection timed out", "实时语音连接超时")));
       }, 12_000);
       socket.onopen = () => {
         window.clearTimeout(timeout);
@@ -79,7 +99,7 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
           try {
             handleServerEvent(JSON.parse(String(event.data)) as RealtimeEvent);
           } catch {
-            onError("实时语音响应无法解析，请重新连接");
+            onError(tr("Could not read the live voice response. Reconnect and try again.", "实时语音响应无法解析，请重新连接"));
           }
         };
         socket.onclose = () => {
@@ -89,16 +109,16 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
             stopCapture();
             clearPlayback();
             updateState("idle");
-            onError("实时语音连接已断开，请重新开始回答");
+            onError(tr("Live voice disconnected. Start your answer again.", "实时语音连接已断开，请重新开始回答"));
           }
         };
-        socket.onerror = () => onError("实时语音网络波动，请稍后重试");
+        socket.onerror = () => onError(tr("Live voice connection is unstable. Try again shortly.", "实时语音网络波动，请稍后重试"));
         resolve(socket);
       };
       socket.onerror = () => {
         window.clearTimeout(timeout);
         socketPromiseRef.current = null;
-        reject(new Error("无法连接实时语音服务"));
+        reject(new Error(tr("Could not connect to live voice", "无法连接实时语音服务")));
       };
     });
     return socketPromiseRef.current;
@@ -106,37 +126,37 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
 
   function handleServerEvent(event: RealtimeEvent) {
     switch (event.type) {
-      case "ready": setStatus("实时语音已就绪"); break;
-      case "asr_connecting": setStatus("正在连接实时识别…"); break;
+      case "ready": setStatus("ready"); break;
+      case "asr_connecting": setStatus("asrConnecting"); break;
       case "asr_ready":
-        setStatus(stateRef.current === "speaking" ? "朗读中，可直接开口打断" : "正在听你回答…");
+        setStatus(stateRef.current === "speaking" ? "speaking" : "listening");
         break;
-      case "tts_connecting": setStatus("正在生成题目语音…"); break;
+      case "tts_connecting": setStatus("ttsConnecting"); break;
       case "tts_started":
         updateState("speaking");
-        setStatus("朗读中，可直接开口打断");
+        setStatus("speaking");
         break;
       case "audio_delta":
         if (event.audio && !interruptedRef.current) playPcm(event.audio);
         break;
       case "tts_done":
         if (stateRef.current === "speaking") updateState("listening");
-        setStatus("正在听你回答，停顿后自动转写");
+        setStatus("listeningAuto");
         break;
       case "tts_interrupted":
         clearPlayback();
         updateState("listening");
-        setStatus("已停止朗读，正在听你回答…");
+        setStatus("interrupted");
         break;
       case "speech_started":
         interruptQuestion();
         updateState("listening");
-        setStatus("正在识别…");
+        setStatus("recognizing");
         break;
       case "speech_stopped":
         stopCapture();
         updateState("processing");
-        setStatus("检测到停顿，正在整理文字…");
+        setStatus("paused");
         break;
       case "transcript_delta":
         if (event.text) onTranscript(event.text);
@@ -145,13 +165,13 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
         stopCapture();
         if (event.text) onTranscript(event.text);
         updateState("idle");
-        setStatus("已转成文字，可以修改后提交");
+        setStatus("transcriptReady");
         break;
       case "error":
         stopCapture();
         clearPlayback();
         updateState("idle");
-        onError(event.detail || "实时语音处理失败，请重试");
+        onError(event.detail || tr("Live voice processing failed. Try again.", "实时语音处理失败，请重试"));
         break;
     }
   }
@@ -159,7 +179,7 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
   async function startAnswer(readQuestion: boolean) {
     onError("");
     if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === "undefined") {
-      onError("当前浏览器不支持实时语音，请改用文字作答");
+      onError(tr("Live voice is not supported in this browser. Please answer in text.", "当前浏览器不支持实时语音，请改用文字作答"));
       return;
     }
     try {
@@ -171,11 +191,11 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
       if (readQuestion) {
         await ensurePlaybackContext();
         updateState("speaking");
-        setStatus("正在生成题目语音…");
+        setStatus("ttsConnecting");
         socket.send(JSON.stringify({ type: "speak_question", questionId }));
       } else {
         updateState("listening");
-        setStatus("正在听你回答，停顿后自动转写");
+        setStatus("listeningAuto");
       }
       stopTimerRef.current = setTimeout(() => finishAnswer(), MAX_RECORDING_MS);
     } catch (reason) {
@@ -183,8 +203,8 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
       clearPlayback();
       updateState("idle");
       onError(reason instanceof DOMException && reason.name === "NotAllowedError"
-        ? "没有麦克风权限，请在浏览器地址栏中允许访问"
-        : reason instanceof Error ? reason.message : "无法启动实时语音");
+        ? tr("Microphone access is blocked. Allow it in your browser settings.", "没有麦克风权限，请在浏览器地址栏中允许访问")
+        : reason instanceof Error ? reason.message : tr("Could not start live voice", "无法启动实时语音"));
     }
   }
 
@@ -226,7 +246,7 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
     clearPlayback();
     socket.send(JSON.stringify({ type: "interrupt_tts" }));
     updateState("listening");
-    setStatus("检测到你开口，已停止朗读");
+    setStatus("speechInterrupted");
   }
 
   function finishAnswer() {
@@ -239,7 +259,7 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
       socketRef.current.send(JSON.stringify({ type: "interrupt_tts" }));
     }
     updateState("processing");
-    setStatus("正在完成转写…");
+    setStatus("finishing");
   }
 
   function interruptQuestion() {
@@ -288,7 +308,7 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
       const startsAt = Math.max(context.currentTime + 0.02, nextPlaybackAtRef.current);
       source.start(startsAt);
       nextPlaybackAtRef.current = startsAt + buffer.duration;
-    }).catch(() => onError("题目语音播放失败，请直接阅读题目"));
+    }).catch(() => onError(tr("Question audio could not play. Please read the question instead.", "题目语音播放失败，请直接阅读题目")));
   }
 
   function clearPlayback() {
@@ -306,22 +326,22 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" variant="outline" disabled={locked || active} onClick={() => startAnswer(true)}>
           {state === "connecting" ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Volume2 className="mr-2 size-4" />}
-          朗读并开始
+          {t("Read aloud and start", "朗读并开始")}
         </Button>
         {active ? (
           <Button type="button" onClick={finishAnswer} className="bg-red-600 hover:bg-red-700">
-            <Square className="mr-2 size-4 fill-current" />结束 · {formatTime(elapsedSeconds)}
+            <Square className="mr-2 size-4 fill-current" />{t("Finish", "结束")} · {formatTime(elapsedSeconds)}
           </Button>
         ) : (
           <Button type="button" disabled={locked} onClick={() => startAnswer(false)}>
             {state === "processing" ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Mic className="mr-2 size-4" />}
-            {state === "processing" ? "正在转写…" : "直接回答"}
+            {state === "processing" ? t("Transcribing…", "正在转写…") : t("Answer directly", "直接回答")}
           </Button>
         )}
       </div>
       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
         <Waves className={`size-3.5 ${active ? "animate-pulse text-violet-600" : ""}`} />
-        <span>{status}</span>
+        <span>{statusLabels[status] ?? status}</span>
       </div>
     </div>
   );
