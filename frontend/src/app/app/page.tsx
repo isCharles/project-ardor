@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame, GraduationCap, LogOut, MessageSquareText,
-  MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Settings2, Target, Trash2, Upload, UserRound, X,
+  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame,
+  MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Target, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,7 +11,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
-import { LocaleSwitch } from "@/components/ardor/locale-switch";
 import { ApiError, api, streamApi } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 import { useTypewriter } from "@/lib/use-typewriter";
@@ -34,10 +33,6 @@ type RecapOption = { id: string; title: string };
 type KnowledgeOption = { id: string; title: string };
 type LearningOption = { id: string; concept: string };
 type ApplicationReminder = { weeklyCount: number; weeklyGoal: number; reminderDue: boolean };
-type BackgroundModule = "resumes" | "recaps" | "knowledge";
-type ResumeBackgroundStatus = { analysisId: string | null; analysisStatus: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | null };
-type RecapBackgroundStatus = { status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" };
-type KnowledgeBackgroundStatus = { pendingChunks: number };
 type AgentState = {
   conversationId: string | null;
   llmConfigured: boolean;
@@ -117,10 +112,7 @@ export default function AgentHomePage() {
   const [leavingEmptyState, setLeavingEmptyState] = useState(false);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const typedHint = useTypewriter(locale === "en" ? typewriterExamples : typewriterExamplesZh, messages.length === 0);
-  const [accountOpen, setAccountOpen] = useState(false);
-  const [account, setAccount] = useState<{ email: string; admin: boolean } | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
   const [selectedContexts, setSelectedContexts] = useState<SelectedContext[]>([]);
@@ -133,24 +125,22 @@ export default function AgentHomePage() {
   const [applicationReminder, setApplicationReminder] = useState<ApplicationReminder | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [backgroundReady, setBackgroundReady] = useState<Record<BackgroundModule, boolean>>({ resumes: false, recaps: false, knowledge: false });
   const endRef = useRef<HTMLDivElement>(null);
   const runStartedAt = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
   const runningRunId = runningRun?.id;
 
   useEffect(() => {
-    api<{ email: string; admin: boolean }>("/api/auth/me").then(setAccount).catch(() => undefined);
+    if (new URLSearchParams(window.location.search).has("memory")) setMemoryOpen(true);
+    const openMemory = () => setMemoryOpen(true);
+    const closeDrawer = () => setSidebarOpen(false);
+    window.addEventListener("ardor:open-memory", openMemory);
+    window.addEventListener("ardor:close-chat-drawer", closeDrawer);
+    return () => {
+      window.removeEventListener("ardor:open-memory", openMemory);
+      window.removeEventListener("ardor:close-chat-drawer", closeDrawer);
+    };
   }, []);
-
-  async function logout() {
-    try {
-      await api<void>("/api/auth/logout", { method: "POST" });
-      router.replace("/login");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t("Could not log out. Please try again.", "退出失败，请重试。"));
-    }
-  }
 
   const applyState = useCallback((result: AgentState) => {
     setState(result);
@@ -212,40 +202,6 @@ export default function AgentHomePage() {
     catch { /* Keep the reminder visible if the dismissal was not saved. */ }
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    const modules: BackgroundModule[] = ["resumes", "recaps", "knowledge"];
-    const refresh = async () => {
-      try {
-        const [resumes, recaps, knowledge] = await Promise.all([
-          api<ResumeBackgroundStatus[]>("/api/resumes"),
-          api<RecapBackgroundStatus[]>("/api/interview-recaps/jobs"),
-          api<KnowledgeBackgroundStatus>("/api/knowledge/index-status"),
-        ]);
-        const active = {
-          resumes: resumes.some((item) => item.analysisStatus === "QUEUED" || item.analysisStatus === "RUNNING"),
-          recaps: recaps.some((item) => item.status === "QUEUED" || item.status === "RUNNING"),
-          knowledge: knowledge.pendingChunks > 0,
-        } satisfies Record<BackgroundModule, boolean>;
-        for (const itemModule of modules) {
-          const pendingKey = `ardor:background-pending:${itemModule}`;
-          const readyKey = `ardor:background-ready:${itemModule}`;
-          if (active[itemModule]) window.localStorage.setItem(pendingKey, "1");
-          else if (window.localStorage.getItem(pendingKey) === "1") {
-            window.localStorage.removeItem(pendingKey);
-            window.localStorage.setItem(readyKey, "1");
-          }
-        }
-        if (!cancelled) setBackgroundReady(Object.fromEntries(modules.map((itemModule) => [itemModule, window.localStorage.getItem(`ardor:background-ready:${itemModule}`) === "1"])) as Record<BackgroundModule, boolean>);
-      } catch {
-        // Background badges are best-effort and must never interrupt the workspace.
-      }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 10_000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, []);
-
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
   useEffect(() => {
     const conversationId = state?.conversationId;
@@ -297,7 +253,8 @@ export default function AgentHomePage() {
   }, [busy, runningRunId]);
 
   async function selectConversation(conversationId: string) {
-    if (busy || conversationId === state?.conversationId) return;
+    if (busy) return;
+    if (conversationId === state?.conversationId) { setSidebarOpen(false); return; }
     setError(""); setRunningRun(null); setConfirmations([]); setMenuId(null); setSidebarOpen(false);
     try { await load(conversationId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入会话"); }
@@ -587,11 +544,6 @@ export default function AgentHomePage() {
     return <div className="relative"><input ref={uploadRef} type="file" accept=".pdf,.docx" className="hidden" onChange={(event) => void uploadResume(event.target.files?.[0])} /><button type="button" aria-label="添加资料" title="添加资料" onClick={() => void openAttachments()} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Plus className="size-4" /></button>{attachmentOpen && <div className="absolute bottom-11 left-0 z-30 max-h-96 w-80 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 text-sm shadow-2xl"><button type="button" onClick={() => uploadRef.current?.click()} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-stone-100"><Upload className="size-4" />上传简历</button>{resumeOptions.map((resume) => option({ type: "RESUME", id: resume.id, label: resume.originalFilename }, <FileSearch className="size-4 shrink-0 text-blue-500" />))}{recapOptions.map((recap) => option({ type: "RECAP", id: recap.id, label: recap.title }, <FileText className="size-4 shrink-0 text-violet-500" />))}{knowledgeOptions.map((document) => option({ type: "KNOWLEDGE", id: document.id, label: document.title }, <BookOpenText className="size-4 shrink-0 text-cyan-600" />))}{learningOptions.map((plan) => option({ type: "LEARNING", id: plan.id, label: plan.concept }, <BrainCircuit className="size-4 shrink-0 text-rose-500" />))}</div>}</div>;
   }
 
-  function acknowledgeBackground(module: BackgroundModule) {
-    window.localStorage.removeItem(`ardor:background-ready:${module}`);
-    setBackgroundReady((current) => ({ ...current, [module]: false }));
-  }
-
   if (!state && !error) return <main className="ardor-workbench grid min-h-screen place-items-center text-sm text-stone-500">{t("Waking Ardor…", "正在唤醒 Ardor…")}</main>;
   const selected = conversations.find((item) => item.id === state?.conversationId);
   const visibleError = error && !retryFailures.some((failure) =>
@@ -601,36 +553,15 @@ export default function AgentHomePage() {
   return (
     <main className="ardor-workbench h-screen overflow-hidden text-stone-900">
       <div className="flex h-full">
-        {sidebarOpen && <button aria-label={t("Close conversations", "关闭会话栏")} className="fixed inset-0 z-30 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} />}
-        <aside className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-stone-200/70 bg-[#f4f2ed] p-3 transition-[width,transform,padding] duration-200 md:static md:z-auto ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} ${sidebarCollapsed ? "md:w-0 md:-translate-x-full md:overflow-hidden md:border-0 md:p-0" : "md:w-72 md:translate-x-0"}`}>
+        {sidebarOpen && <button aria-label={t("Close conversations", "关闭会话栏")} className="fixed inset-0 z-20 bg-black/20" onClick={() => setSidebarOpen(false)} />}
+        <aside aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={`fixed inset-y-0 left-16 z-40 flex w-72 flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl transition-transform duration-200 md:left-[4.25rem] ${sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+5rem)]"}`}>
           <div className="flex h-12 items-center justify-between px-2">
             <Link href="/app" className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
               <span className="grid size-8 place-items-center rounded-xl bg-stone-950 text-white"><Flame className="size-4" /></span>Project Ardor
             </Link>
-            <button aria-label={t("Close conversations", "关闭会话栏")} className="rounded-lg p-2 text-stone-500 hover:bg-white md:hidden" onClick={() => setSidebarOpen(false)}><X className="size-4" /></button>
-            <button aria-label={t("Collapse sidebar", "收起会话栏")} title={t("Collapse sidebar", "收起侧栏")} className="hidden rounded-lg p-2 text-stone-400 hover:bg-white hover:text-stone-800 md:block" onClick={() => setSidebarCollapsed(true)}><PanelLeftClose className="size-4" /></button>
+            <button aria-label={t("Close conversations", "关闭会话栏")} className="rounded-lg p-2 text-stone-500 hover:bg-white" onClick={() => setSidebarOpen(false)}><X className="size-4" /></button>
           </div>
           <button type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium shadow-sm transition hover:border-stone-300 hover:shadow disabled:opacity-50"><Plus className="size-4" />{t("New chat", "新对话")}</button>
-
-          <nav aria-label={t("Workspaces", "工作区")} className="mt-5 max-h-[48vh] shrink-0 space-y-0.5 overflow-y-auto border-b border-stone-200/70 pb-4">
-            <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">{t("Workspaces", "工作区")}</p>
-            {([
-              { href: "/app/resumes", en: "Resumes", zh: "简历", icon: FileSearch, module: "resumes" },
-              { href: "/app/interviews", en: "Mock interviews", zh: "模拟面试", icon: MessageSquareText },
-              { href: "/app/recaps", en: "Interview notes", zh: "面经", icon: FileText, module: "recaps" },
-              { href: "/app/cards", en: "Flashcards", zh: "记忆卡", icon: BrainCircuit },
-              { href: "/app/knowledge", en: "Knowledge", zh: "知识库", icon: BookOpenText, module: "knowledge" },
-              { href: "/app/learning", en: "Learning", zh: "学习", icon: GraduationCap },
-              { href: "/app/calendar", en: "Calendar", zh: "日程", icon: CalendarDays },
-              { href: "/app/applications", en: "Applications", zh: "投递节奏", icon: Target },
-              { href: "/app/evidence", en: "Growth evidence", zh: "成长证据", icon: Brain },
-            ] as const).map((item) => (
-              <Link key={item.href} href={item.href} onClick={() => { setSidebarOpen(false); if ("module" in item) acknowledgeBackground(item.module); }} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-stone-600 transition hover:bg-white/75 hover:text-stone-900">
-                <item.icon className="size-4 shrink-0 text-stone-500" /><span className="min-w-0 flex-1 truncate">{t(item.en, item.zh)}</span>{"module" in item && backgroundReady[item.module] && <span className="size-2 shrink-0 rounded-full bg-red-500" />}
-              </Link>
-            ))}
-            <button type="button" onClick={() => { setSidebarOpen(false); setMemoryOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-stone-600 transition hover:bg-white/75 hover:text-stone-900"><Brain className="size-4 shrink-0 text-stone-500" /><span className="flex-1">{t("Memory", "总体记忆")}</span>{memoryDraft && <span className="size-1.5 rounded-full bg-violet-500" />}</button>
-          </nav>
 
           <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
             <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">{t("Recent chats", "最近对话")}</p>
@@ -667,24 +598,13 @@ export default function AgentHomePage() {
             )}
           </div>
 
-          <div className="relative mt-2 border-t border-stone-200/70 pt-2">
-            {accountOpen && <div className="absolute bottom-full left-0 right-0 z-30 mb-2 rounded-2xl border border-stone-200 bg-white p-2 shadow-[0_18px_50px_rgba(42,35,27,0.16)]">
-              <div className="truncate border-b border-stone-100 px-3 py-2 text-xs text-stone-500" title={account?.email}>{account?.email ?? t("Your account", "个人账户")}</div>
-              <Link href="/app/settings" onClick={() => { setAccountOpen(false); setSidebarOpen(false); }} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-stone-700 hover:bg-stone-50"><Settings2 className="size-4" />{t("Settings", "设置")}</Link>
-              {account?.admin && <Link href="/app/admin" onClick={() => { setAccountOpen(false); setSidebarOpen(false); }} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-stone-700 hover:bg-stone-50"><UserRound className="size-4" />{t("Admin", "管理员")}</Link>}
-              <div className="px-3 py-2"><LocaleSwitch /></div>
-              <button type="button" onClick={() => void logout()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-stone-700 hover:bg-stone-50"><LogOut className="size-4" />{t("Log out", "退出登录")}</button>
-            </div>}
-            <button type="button" aria-expanded={accountOpen} onClick={() => setAccountOpen((open) => !open)} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-white/70"><span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-rose-300 via-violet-300 to-blue-300 text-sm font-semibold text-stone-900">{(state?.displayName || account?.email || "A").trim().charAt(0).toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{state?.displayName || account?.email?.split("@")[0] || t("Account", "账户")}</span><span className="block truncate text-xs text-stone-500">{account?.email || t("Profile & settings", "个人资料与设置")}</span></span><ChevronDown className={`size-4 shrink-0 text-stone-400 transition-transform ${accountOpen ? "rotate-180" : ""}`} /></button>
-          </div>
-
         </aside>
 
         <section className="relative flex min-w-0 flex-1 flex-col">
           <header className="relative z-10 flex h-16 shrink-0 items-center justify-between px-4 md:px-6">
             <div className="flex min-w-0 items-center gap-2">
-              <button aria-label={t("Open conversations", "打开会话栏")} onClick={() => setSidebarOpen(true)} className="rounded-xl p-2 text-stone-500 hover:bg-white md:hidden"><PanelLeftOpen className="size-5" /></button>
-              {sidebarCollapsed && <button aria-label={t("Expand sidebar", "展开会话栏")} title={t("Expand sidebar", "展开侧栏")} onClick={() => setSidebarCollapsed(false)} className="hidden rounded-xl p-2 text-stone-500 hover:bg-white md:block"><PanelLeftOpen className="size-5" /></button>}
+              <button aria-label={t("Open conversations", "打开会话栏")} title={t("Recent chats", "最近对话")} onClick={() => setSidebarOpen(true)} className="rounded-xl p-2 text-stone-500 hover:bg-white"><PanelLeftOpen className="size-5" /></button>
+              <button type="button" onClick={newConversation} disabled={busy} className="rounded-xl p-2 text-stone-500 hover:bg-white disabled:opacity-50" aria-label={t("New chat", "新对话")} title={t("New chat", "新对话")}><Plus className="size-5" /></button>
               <h1 className="truncate text-sm font-medium text-stone-600">{selected?.title ?? "Ardor"}</h1>
             </div>
           </header>
