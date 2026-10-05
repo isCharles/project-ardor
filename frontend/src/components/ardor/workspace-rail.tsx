@@ -83,6 +83,7 @@ export function WorkspaceRail() {
     const top = moreButton.current?.getBoundingClientRect().top ?? 0;
     setMoreTop(Math.max(8, Math.min(top - 8, window.innerHeight - 320)));
     setTooltip(null);
+    window.dispatchEvent(new Event("ardor:close-chat-drawer"));
     setMoreOpen(true);
   }
 
