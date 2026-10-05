@@ -131,7 +131,10 @@ export default function AgentHomePage() {
   const runningRunId = runningRun?.id;
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).has("memory")) setMemoryOpen(true);
+    if (window.sessionStorage.getItem("ardor:open-memory") === "1") {
+      window.sessionStorage.removeItem("ardor:open-memory");
+      setMemoryOpen(true);
+    }
     const openMemory = () => setMemoryOpen(true);
     const closeDrawer = () => setSidebarOpen(false);
     window.addEventListener("ardor:open-memory", openMemory);
@@ -544,17 +547,17 @@ export default function AgentHomePage() {
     return <div className="relative"><input ref={uploadRef} type="file" accept=".pdf,.docx" className="hidden" onChange={(event) => void uploadResume(event.target.files?.[0])} /><button type="button" aria-label="添加资料" title="添加资料" onClick={() => void openAttachments()} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Plus className="size-4" /></button>{attachmentOpen && <div className="absolute bottom-11 left-0 z-30 max-h-96 w-80 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 text-sm shadow-2xl"><button type="button" onClick={() => uploadRef.current?.click()} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-stone-100"><Upload className="size-4" />上传简历</button>{resumeOptions.map((resume) => option({ type: "RESUME", id: resume.id, label: resume.originalFilename }, <FileSearch className="size-4 shrink-0 text-blue-500" />))}{recapOptions.map((recap) => option({ type: "RECAP", id: recap.id, label: recap.title }, <FileText className="size-4 shrink-0 text-violet-500" />))}{knowledgeOptions.map((document) => option({ type: "KNOWLEDGE", id: document.id, label: document.title }, <BookOpenText className="size-4 shrink-0 text-cyan-600" />))}{learningOptions.map((plan) => option({ type: "LEARNING", id: plan.id, label: plan.concept }, <BrainCircuit className="size-4 shrink-0 text-rose-500" />))}</div>}</div>;
   }
 
-  if (!state && !error) return <main className="ardor-workbench grid min-h-screen place-items-center text-sm text-stone-500">{t("Waking Ardor…", "正在唤醒 Ardor…")}</main>;
+  if (!state && !error) return <main className="ardor-workbench grid h-full place-items-center text-sm text-stone-500">{t("Waking Ardor…", "正在唤醒 Ardor…")}</main>;
   const selected = conversations.find((item) => item.id === state?.conversationId);
   const visibleError = error && !retryFailures.some((failure) =>
     failure.detail === error || failure.detail.endsWith(` · ${error}`)
   ) ? error : "";
 
   return (
-    <main className="ardor-workbench h-screen overflow-hidden text-stone-900">
+    <main className="ardor-workbench h-full overflow-hidden text-stone-900">
       <div className="flex h-full">
         {sidebarOpen && <button aria-label={t("Close conversations", "关闭会话栏")} className="fixed inset-0 z-20 bg-black/20" onClick={() => setSidebarOpen(false)} />}
-        <aside aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={`fixed inset-y-0 left-16 z-40 flex w-72 flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl transition-transform duration-200 md:left-[4.25rem] ${sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+5rem)]"}`}>
+        <aside aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={`fixed inset-y-0 left-16 z-40 flex flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl transition-transform duration-200 md:left-[4.25rem] ${sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+5rem)]"}`} style={{ width: "min(18rem, calc(100vw - 4rem))" }}>
           <div className="flex h-12 items-center justify-between px-2">
             <Link href="/app" className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
               <span className="grid size-8 place-items-center rounded-xl bg-stone-950 text-white"><Flame className="size-4" /></span>Project Ardor

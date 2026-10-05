@@ -9,6 +9,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import { backgroundNotificationKey, type BackgroundModule } from "@/lib/background-notifications";
 import { useLocale } from "@/lib/locale";
 import { LocaleSwitch } from "./locale-switch";
 
@@ -24,7 +25,6 @@ const workspaces = [
   { href: "/app/applications", en: "Applications", zh: "投递节奏", icon: Target },
   { href: "/app/evidence", en: "Growth evidence", zh: "成长证据", icon: TrendingUp },
 ] as const;
-type BackgroundModule = "resumes" | "recaps" | "knowledge";
 type ResumeBackgroundStatus = { analysisStatus: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | null };
 type RecapBackgroundStatus = { status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" };
 type KnowledgeBackgroundStatus = { pendingChunks: number };
@@ -40,17 +40,19 @@ export function WorkspaceRail() {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useLocale();
-  const [account, setAccount] = useState<{ email: string; admin: boolean } | null>(null);
+  const [account, setAccount] = useState<{ id: string; email: string; admin: boolean } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [error, setError] = useState("");
   const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null);
   const [backgroundReady, setBackgroundReady] = useState<Record<BackgroundModule, boolean>>({ resumes: false, recaps: false, knowledge: false });
 
   useEffect(() => {
-    api<{ email: string; admin: boolean }>("/api/auth/me").then(setAccount).catch(() => undefined);
+    api<{ id: string; email: string; admin: boolean }>("/api/auth/me").then(setAccount).catch(() => undefined);
   }, []);
 
   useEffect(() => {
+    if (!account?.id) return;
+    const userId = account.id;
     let cancelled = false;
     const modules: BackgroundModule[] = ["resumes", "recaps", "knowledge"];
     const refresh = async () => {
@@ -66,15 +68,15 @@ export function WorkspaceRail() {
           knowledge: knowledge.pendingChunks > 0,
         } satisfies Record<BackgroundModule, boolean>;
         for (const itemModule of modules) {
-          const pendingKey = `ardor:background-pending:${itemModule}`;
-          const readyKey = `ardor:background-ready:${itemModule}`;
+          const pendingKey = backgroundNotificationKey(userId, "pending", itemModule);
+          const readyKey = backgroundNotificationKey(userId, "ready", itemModule);
           if (active[itemModule]) window.localStorage.setItem(pendingKey, "1");
           else if (window.localStorage.getItem(pendingKey) === "1") {
             window.localStorage.removeItem(pendingKey);
             window.localStorage.setItem(readyKey, "1");
           }
         }
-        if (!cancelled) setBackgroundReady(Object.fromEntries(modules.map((itemModule) => [itemModule, window.localStorage.getItem(`ardor:background-ready:${itemModule}`) === "1"])) as Record<BackgroundModule, boolean>);
+        if (!cancelled) setBackgroundReady(Object.fromEntries(modules.map((itemModule) => [itemModule, window.localStorage.getItem(backgroundNotificationKey(userId, "ready", itemModule)) === "1"])) as Record<BackgroundModule, boolean>);
       } catch {
         // Badges are informational; they must never interrupt navigation.
       }
@@ -82,11 +84,11 @@ export function WorkspaceRail() {
     void refresh();
     const timer = window.setInterval(() => void refresh(), 10_000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, []);
+  }, [account?.id]);
 
   function acknowledgeBackground(itemModule: BackgroundModule | null) {
-    if (!itemModule) return;
-    window.localStorage.removeItem(`ardor:background-ready:${itemModule}`);
+    if (!itemModule || !account?.id) return;
+    window.localStorage.removeItem(backgroundNotificationKey(account.id, "ready", itemModule));
     setBackgroundReady((current) => ({ ...current, [itemModule]: false }));
   }
 
@@ -103,7 +105,7 @@ export function WorkspaceRail() {
 
   return (
     <aside className="relative z-30 flex h-dvh w-16 shrink-0 flex-col items-center border-r border-stone-200/70 bg-gradient-to-b from-white via-[#faf8ff] to-[#fff8f6] py-3 md:w-[4.25rem]" aria-label={t("Main navigation", "主导航")}>
-      <nav className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto px-2" aria-label={t("Workspaces", "工作区")}>
+      <nav className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto px-2" aria-label={t("Workspaces", "工作区")} onScroll={() => setTooltip(null)}>
         {workspaces.map((item, index) => {
           const active = item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
           const label = t(item.en, item.zh);
@@ -126,7 +128,7 @@ export function WorkspaceRail() {
             </Link>
           );
         })}
-        <Link href="/app?memory=1" onClick={() => { window.dispatchEvent(new Event("ardor:open-memory")); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} onMouseEnter={(event) => setTooltip({ label: t("Memory", "总体记忆"), top: event.currentTarget.getBoundingClientRect().top + 8 })} onMouseLeave={() => setTooltip(null)} onFocus={(event) => setTooltip({ label: t("Memory", "总体记忆"), top: event.currentTarget.getBoundingClientRect().top + 8 })} onBlur={() => setTooltip(null)} aria-label={t("Memory", "总体记忆")} className="grid size-11 shrink-0 place-items-center rounded-2xl text-stone-500 hover:bg-white hover:text-stone-900 hover:shadow-sm"><Brain className="size-5" aria-hidden="true" /></Link>
+        <Link href="/app" onClick={() => { if (pathname === "/app") window.dispatchEvent(new Event("ardor:open-memory")); else window.sessionStorage.setItem("ardor:open-memory", "1"); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} onMouseEnter={(event) => setTooltip({ label: t("Memory", "总体记忆"), top: event.currentTarget.getBoundingClientRect().top + 8 })} onMouseLeave={() => setTooltip(null)} onFocus={(event) => setTooltip({ label: t("Memory", "总体记忆"), top: event.currentTarget.getBoundingClientRect().top + 8 })} onBlur={() => setTooltip(null)} aria-label={t("Memory", "总体记忆")} className="grid size-11 shrink-0 place-items-center rounded-2xl text-stone-500 hover:bg-white hover:text-stone-900 hover:shadow-sm"><Brain className="size-5" aria-hidden="true" /></Link>
       </nav>
 
       <div className="mt-2 flex w-full shrink-0 flex-col items-center border-t border-stone-200/70 px-2 pt-3">
@@ -134,7 +136,7 @@ export function WorkspaceRail() {
           type="button"
           aria-label={t("Account", "个人账户")}
           aria-expanded={accountOpen}
-          onClick={() => { setTooltip(null); setAccountOpen((open) => !open); }}
+          onClick={() => { setTooltip(null); window.dispatchEvent(new Event("ardor:close-chat-drawer")); setAccountOpen((open) => !open); }}
           onMouseEnter={(event) => setTooltip({ label: t("Account", "个人账户"), top: event.currentTarget.getBoundingClientRect().top + 8 })}
           onMouseLeave={() => setTooltip(null)}
           onFocus={(event) => setTooltip({ label: t("Account", "个人账户"), top: event.currentTarget.getBoundingClientRect().top + 8 })}

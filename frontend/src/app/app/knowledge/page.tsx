@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
+import { markBackgroundPending } from "@/lib/background-notifications";
 import styles from "./knowledge.module.css";
 
 type DocumentItem = {
@@ -95,7 +96,7 @@ export default function KnowledgePage() {
       const created = await api<DocumentItem>("/api/knowledge/documents", {
         method: "POST", body: new FormData(form),
       });
-      window.localStorage.setItem("ardor:background-pending:knowledge", "1");
+      await markBackgroundPending("knowledge");
       form.reset();
       setNotice(`已加入“${created.title}”`);
       await load();
@@ -112,7 +113,7 @@ export default function KnowledgePage() {
       const response = await api<ResearchResponse>("/api/knowledge/research", {
         method: "POST", body: JSON.stringify({ query: data.get("query") }),
       });
-      if (response.imported.length > 0) window.localStorage.setItem("ardor:background-pending:knowledge", "1");
+      if (response.imported.length > 0) await markBackgroundPending("knowledge");
       form.reset();
       setNotice(`已收录 ${response.imported.length} 个来源`);
       await load();
