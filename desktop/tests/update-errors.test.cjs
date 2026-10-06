@@ -11,5 +11,9 @@ test("private GitHub feed errors never expose response headers or cookies", () =
 });
 
 test("network failures have an actionable, short message", () => {
-  assert.match(updateErrorMessage(new Error("getaddrinfo ENOTFOUND github.com")), /网络/);
+  assert.match(updateErrorMessage(new Error("getaddrinfo ENOTFOUND github.com"), "zh-CN"), /网络/);
+});
+
+test("update errors default to English like the rest of the desktop copy", () => {
+  assert.match(updateErrorMessage(new Error("getaddrinfo ENOTFOUND github.com")), /unreachable/);
 });

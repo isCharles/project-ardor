@@ -20,6 +20,13 @@ type DesktopBridge = {
 
 declare global { interface Window { ardorDesktop?: DesktopBridge } }
 
+// Electron wraps errors thrown by ipcMain handlers as
+// "Error invoking remote method '<channel>': Error: <message>"; show only the
+// already-localized message from the main process.
+function ipcErrorMessage(error: Error) {
+  return error.message.replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, "");
+}
+
 export function DesktopSettings() {
   const { t } = useLocale();
   const [info, setInfo] = useState<DesktopInfo | null>(null);
@@ -49,7 +56,7 @@ export function DesktopSettings() {
     try {
       const result = await bridge.setServer(server);
       if (result.changed && !result.connected) setNotice(t("Address saved, but the server is temporarily unreachable.", "地址已保存，但服务器暂时无法连接。"));
-    } catch (error) { setNotice(error instanceof Error ? error.message : t("Could not switch servers", "无法切换服务器")); }
+    } catch (error) { setNotice(error instanceof Error ? ipcErrorMessage(error) : t("Could not switch servers", "无法切换服务器")); }
     finally { setBusy(false); }
   }
 

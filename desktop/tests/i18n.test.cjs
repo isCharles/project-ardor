@@ -14,6 +14,8 @@ test("desktop locale is limited to supported languages and defaults to English",
 test("native prompts and update status follow the selected locale", () => {
   assert.equal(desktopText("en", "switchMessage", { server: "https://ardor.example" }), "Connect to https://ardor.example?");
   assert.equal(desktopText("zh-CN", "microphoneTitle"), "麦克风权限");
+  assert.match(desktopText("en", "operationDenied"), /not allowed/);
+  assert.match(desktopText("zh-CN", "operationDenied"), /不允许/);
   assert.match(updateStatusMessage("en", { state: "downloading", percent: 42 }), /42%/);
   assert.match(updateStatusMessage("zh-CN", { state: "ready", version: "0.5.1" }), /版本 0\.5\.1/);
 });

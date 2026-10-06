@@ -8,7 +8,9 @@ function updateErrorKind(error) {
   return "other";
 }
 
-function updateErrorMessage(error, locale = "zh-CN") {
+// Default to English, matching desktopText, so callers that omit the locale
+// do not silently fall back to Chinese copy.
+function updateErrorMessage(error, locale = "en") {
   const english = locale === "en";
   const kind = error?.kind ?? updateErrorKind(error);
   if (kind === "not-found") {
