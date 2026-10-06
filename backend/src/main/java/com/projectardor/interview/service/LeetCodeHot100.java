@@ -34,7 +34,7 @@ public class LeetCodeHot100 {
             new Problem(53, "maximum-subarray", "Maximum Subarray", "最大子数组和"),
             new Problem(56, "merge-intervals", "Merge Intervals", "合并区间"),
             new Problem(189, "rotate-array", "Rotate Array", "轮转数组"),
-            new Problem(238, "product-of-array-except-self", "Product of Array Except Self", "除自身以外数组的乘积"),
+            new Problem(238, "product-of-array-except-self", "Product of Array Except Self", "除了自身以外数组的乘积"),
             new Problem(41, "first-missing-positive", "First Missing Positive", "缺失的第一个正数"),
             new Problem(73, "set-matrix-zeroes", "Set Matrix Zeroes", "矩阵置零"),
             new Problem(54, "spiral-matrix", "Spiral Matrix", "螺旋矩阵"),
