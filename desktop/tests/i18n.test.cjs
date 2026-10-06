@@ -2,7 +2,8 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { normalizeLocale, desktopText, updateStatusMessage, serverErrorMessage } = require("../i18n.cjs");
+const { normalizeLocale, desktopText, updateStatusMessage, serverErrorKey, serverErrorMessage } = require("../i18n.cjs");
+const { ServerUrlError } = require("../server-config.cjs");
 
 test("desktop locale is limited to supported languages and defaults to English", () => {
   assert.equal(normalizeLocale("en"), "en");
@@ -27,8 +28,12 @@ test("update failures remain short and do not expose provider headers", () => {
   assert.doesNotMatch(JSON.stringify(status), /set-cookie|session/);
 });
 
-test("server URL validation failures are localized", () => {
-  const error = new Error("公网地址必须使用 HTTPS；HTTP 仅支持本机");
+test("server URL validation failures are localized from their code", () => {
+  const error = new ServerUrlError("httpsRequired");
   assert.match(serverErrorMessage("en", error), /HTTPS/);
   assert.match(serverErrorMessage("zh-CN", error), /公网地址/);
+  assert.equal(serverErrorKey(new ServerUrlError("rootOnly")), "rootOnly");
+  // Anything without a known code, including plain errors, falls back to the generic key.
+  assert.equal(serverErrorKey(new Error("公网地址必须使用 HTTPS")), "invalidServer");
+  assert.equal(serverErrorKey(undefined), "invalidServer");
 });

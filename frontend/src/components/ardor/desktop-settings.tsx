@@ -12,7 +12,7 @@ type DesktopInfo = { version: string; serverUrl: string; locale: Locale | null; 
 type DesktopBridge = {
   getInfo(): Promise<DesktopInfo>;
   setLocale(locale: Locale): Promise<{ locale: Locale }>;
-  setServer(url: string): Promise<{ changed: boolean; connected?: boolean }>;
+  setServer(url: string): Promise<{ changed: boolean; connected?: boolean; errorCode?: "invalidServer" | "httpsRequired" | "rootOnly"; message?: string }>;
   checkForUpdates(): Promise<UpdateStatus>;
   installUpdate(): Promise<{ installed: boolean }>;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
@@ -55,7 +55,8 @@ export function DesktopSettings() {
     setBusy(true); setNotice("");
     try {
       const result = await bridge.setServer(server);
-      if (result.changed && !result.connected) setNotice(t("Address saved, but the server is temporarily unreachable.", "地址已保存，但服务器暂时无法连接。"));
+      if (result.errorCode) setNotice(result.message ?? t("Enter a valid server address.", "请输入有效的服务器地址"));
+      else if (result.changed && !result.connected) setNotice(t("Address saved, but the server is temporarily unreachable.", "地址已保存，但服务器暂时无法连接。"));
     } catch (error) { setNotice(error instanceof Error ? ipcErrorMessage(error) : t("Could not switch servers", "无法切换服务器")); }
     finally { setBusy(false); }
   }

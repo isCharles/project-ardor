@@ -2,7 +2,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { DEFAULT_SERVER_URL, normalizeServerUrl, isTrustedAppUrl, isHealthyBackendStatus } = require("../server-config.cjs");
+const { DEFAULT_SERVER_URL, ServerUrlError, normalizeServerUrl, isTrustedAppUrl, isHealthyBackendStatus } = require("../server-config.cjs");
 
 test("local default and HTTPS deployments are accepted", () => {
   assert.equal(normalizeServerUrl(DEFAULT_SERVER_URL), DEFAULT_SERVER_URL);
@@ -15,6 +15,18 @@ test("insecure remote origins and URL decorations are rejected", () => {
     "http://example.com", "http://192.168.1.2:3000", "file:///C:/secret", "javascript:alert(1)",
     "https://user:pass@example.com", "https://example.com/app", "https://example.com/?token=abc",
   ]) assert.throws(() => normalizeServerUrl(value));
+});
+
+test("rejections carry a stable code instead of localized text", () => {
+  const codeOf = (value) => {
+    try { normalizeServerUrl(value); } catch (error) { assert.ok(error instanceof ServerUrlError); return error.code; }
+    assert.fail(`expected ${value} to be rejected`);
+  };
+  assert.equal(codeOf("not a url"), "invalidServer");
+  assert.equal(codeOf(42), "invalidServer");
+  assert.equal(codeOf("http://example.com"), "httpsRequired");
+  assert.equal(codeOf("https://example.com/app"), "rootOnly");
+  assert.equal(codeOf("https://user:pass@example.com"), "rootOnly");
 });
 
 test("navigation stays on the configured origin", () => {
