@@ -9,10 +9,13 @@ import { useLocale, type Locale } from "@/lib/locale";
 
 type UpdateStatus = { state: "idle" | "checking" | "downloading" | "current" | "ready" | "error" | "unavailable"; message: string; percent?: number; version?: string };
 type DesktopInfo = { version: string; serverUrl: string; locale: Locale | null; updateStatus: UpdateStatus; packaged: boolean };
+type SetServerResult = { changed: boolean; connected?: boolean; errorCode?: "invalidServer" | "httpsRequired" | "rootOnly"; message?: string };
 type DesktopBridge = {
   getInfo(): Promise<DesktopInfo>;
   setLocale(locale: Locale): Promise<{ locale: Locale }>;
-  setServer(url: string): Promise<{ changed: boolean; connected?: boolean; errorCode?: "invalidServer" | "httpsRequired" | "rootOnly"; message?: string }>;
+  setServer(url: string): Promise<SetServerResult>;
+  // Missing on desktop builds older than the structured server errors.
+  setServerResult?(url: string): Promise<SetServerResult>;
   checkForUpdates(): Promise<UpdateStatus>;
   installUpdate(): Promise<{ installed: boolean }>;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
@@ -54,7 +57,7 @@ export function DesktopSettings() {
     if (!bridge) return;
     setBusy(true); setNotice("");
     try {
-      const result = await bridge.setServer(server);
+      const result = bridge.setServerResult ? await bridge.setServerResult(server) : await bridge.setServer(server);
       if (result.errorCode) setNotice(result.message ?? t("Enter a valid server address.", "请输入有效的服务器地址"));
       else if (result.changed && !result.connected) setNotice(t("Address saved, but the server is temporarily unreachable.", "地址已保存，但服务器暂时无法连接。"));
     } catch (error) { setNotice(error instanceof Error ? ipcErrorMessage(error) : t("Could not switch servers", "无法切换服务器")); }

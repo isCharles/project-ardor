@@ -119,7 +119,7 @@ window.ardorDesktop.getInfo().then((info) => {
 window.ardorDesktop.onUpdateStatus(renderUpdate);
 languageEn.addEventListener("click", () => { void changeLocale("en"); });
 languageZh.addEventListener("click", () => { void changeLocale("zh-CN"); });
-form.addEventListener("submit", (event) => { event.preventDefault(); void run(() => window.ardorDesktop.setServer(input.value)); });
+form.addEventListener("submit", (event) => { event.preventDefault(); void run(() => window.ardorDesktop.setServerResult(input.value)); });
 retry.addEventListener("click", () => { void run(() => window.ardorDesktop.retry()); });
 checkUpdate.addEventListener("click", () => { void window.ardorDesktop.checkForUpdates().then(renderUpdate, () => { updateStatus.textContent = copy[locale].updateFailed; }); });
 installUpdate.addEventListener("click", () => { void window.ardorDesktop.installUpdate(); });
