@@ -38,7 +38,7 @@ PR 已创建/更新 ── 有写权限的维护者评论 @claude review
 
 1. `issue_comment` 在可信默认分支运行。独立前置任务先验证完整触发词、非 bot 作者和仓库写权限；只有授权通过的审阅任务才进入同 PR 并发组。审阅任务核验 PR 状态，再由 `actions/checkout` 检出默认分支。它仅以 Git 数据抓取 PR head，固定 API 返回的 base/head SHA 后计算三点 diff，**不执行 PR 代码**。`persist-credentials: false` 不把 GitHub 凭据留在 checkout；预处理还检查 Git remote URL 和 Git extraheader。
 2. 预处理从可信默认分支读取 `docs/REVIEW_GUIDE.md`，把它和有大小上限的 diff 写入临时沙盒 `prompt.md`。提示词明确把 diff 视为**不可信数据**，要求只报有证据、可执行的问题；没有足够上下文就说无法确认。Claude 步骤只在临时沙盒运行，没有仓库 checkout、没有预授权的读取/编辑/Bash/网络工具，也没有传入 GitHub Token。
-3. 发布步骤单独获得 GitHub Token。它读取 Claude Code 的 `execution_file`，检查模型没有调用工具、运行确实成功、结果非空且未超长，才通过 GitHub API 发布 PR 评论。失败时**不发布貌似完整的半成品**。
+3. 发布步骤单独获得 GitHub Token。它读取 Claude Code 的 `execution_file`，检查模型没有调用工具、运行确实成功、结果非空且未超长；再核对 PR 的 base/head SHA 未在审阅期间变化，才通过 GitHub API 发布注明被审 commit 的 PR 评论。失败或 PR 被更新时**不发布貌似完整的半成品**。
 
 注意：工作流为发表评论授予 job 级 `issues: write` / `pull-requests: write`，但模型调用步骤显式清空 `GITHUB_TOKEN` 和 `GH_TOKEN`，且只把供应商密钥传给 Claude Code。不要为了“省几行配置”让模型直接持有可写 GitHub Token，也不要让它执行 PR 中的代码。PR diff 可能含提示注入、恶意脚本和敏感业务内容。
 
