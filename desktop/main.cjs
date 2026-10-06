@@ -61,7 +61,7 @@ function trustedSender(event) {
 }
 
 function assertTrusted(event) {
-  if (!trustedSender(event) || event.sender !== window?.webContents) throw new Error("Desktop operation denied");
+  if (!trustedSender(event) || event.sender !== window?.webContents) throw new Error(desktopText(currentLocale(), "operationDenied"));
 }
 
 function sendUpdateStatus(state, details = {}) {

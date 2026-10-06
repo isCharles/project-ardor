@@ -25,6 +25,7 @@ const COPY = {
     invalidServer: "Enter a valid server address.",
     httpsRequired: "Public servers must use HTTPS; HTTP is allowed only for this device.",
     rootOnly: "Enter only the server's root address, without an account, path, or parameters.",
+    operationDenied: "This desktop operation is not allowed from the current page.",
   },
   "zh-CN": {
     idle: "可检查更新",
@@ -46,6 +47,7 @@ const COPY = {
     invalidServer: "请输入有效的服务器地址",
     httpsRequired: "公网地址必须使用 HTTPS；HTTP 仅支持本机",
     rootOnly: "只填写服务器根地址，不要包含账号、路径或参数",
+    operationDenied: "当前页面不允许执行此桌面操作",
   },
 };
 
