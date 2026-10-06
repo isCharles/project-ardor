@@ -27,6 +27,7 @@ public class InterviewQuestion {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "evaluation_criteria", nullable = false, columnDefinition = "jsonb")
     private List<String> evaluationCriteria = new ArrayList<>();
+    @Column(name = "leetcode_slug", length = 100) private String leetcodeSlug;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
@@ -34,7 +35,7 @@ public class InterviewQuestion {
 
     private InterviewQuestion(
             UUID userId, UUID interviewSessionId, int sequenceNumber,
-            String questionText, String questionType, List<String> criteria) {
+            String questionText, String questionType, List<String> criteria, String leetcodeSlug) {
         this.id = UUID.randomUUID();
         this.userId = userId;
         this.interviewSessionId = interviewSessionId;
@@ -42,12 +43,20 @@ public class InterviewQuestion {
         this.questionText = questionText;
         this.questionType = questionType;
         this.evaluationCriteria = new ArrayList<>(criteria);
+        this.leetcodeSlug = leetcodeSlug;
     }
 
     public static InterviewQuestion create(
             UUID userId, UUID interviewSessionId, int sequenceNumber,
             String questionText, String questionType, List<String> criteria) {
-        return new InterviewQuestion(userId, interviewSessionId, sequenceNumber, questionText, questionType, criteria);
+        return create(userId, interviewSessionId, sequenceNumber, questionText, questionType, criteria, null);
+    }
+
+    public static InterviewQuestion create(
+            UUID userId, UUID interviewSessionId, int sequenceNumber,
+            String questionText, String questionType, List<String> criteria, String leetcodeSlug) {
+        return new InterviewQuestion(userId, interviewSessionId, sequenceNumber,
+                questionText, questionType, criteria, leetcodeSlug);
     }
 
     @PrePersist void onCreate() { Instant now = Instant.now(); createdAt = now; updatedAt = now; }
@@ -59,4 +68,5 @@ public class InterviewQuestion {
     public String getQuestionText() { return questionText; }
     public String getQuestionType() { return questionType; }
     public List<String> getEvaluationCriteria() { return List.copyOf(evaluationCriteria); }
+    public String getLeetcodeSlug() { return leetcodeSlug; }
 }
