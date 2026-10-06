@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
+import { markBackgroundPending } from "@/lib/background-notifications";
 import styles from "./recaps.module.css";
 
 type Performance = "STRONG" | "MIXED" | "WEAK" | "UNKNOWN";
@@ -165,7 +166,7 @@ export default function RecapsPage() {
     const timer = window.setTimeout(() => void load(), 4000);
     return () => window.clearTimeout(timer);
   }, [activeJobs.length, load]);
-  async function organize(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError(""); try { const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content") }) }); setShowForm(false); if (task.status === "COMPLETED" && task.recapId) router.push(`/app/recaps?selected=${task.recapId}`); else { window.localStorage.setItem("ardor:background-pending:recaps", "1"); router.push("/app?notice=recap-queued"); } } catch (reason) { setError(reason instanceof Error ? reason.message : "提交失败"); } finally { setBusy(false); } }
+  async function organize(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError(""); try { const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content") }) }); setShowForm(false); if (task.status === "COMPLETED" && task.recapId) router.push(`/app/recaps?selected=${task.recapId}`); else { markBackgroundPending("recaps"); router.push("/app?notice=recap-queued"); } } catch (reason) { setError(reason instanceof Error ? reason.message : "提交失败"); } finally { setBusy(false); } }
   async function remove(recap: Recap) { if (!window.confirm(`删除“${recap.title}”？`)) return; try { await api<void>(`/api/interview-recaps/${recap.id}`, { method: "DELETE" }); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "删除失败"); } }
   async function updateMetadata(recap: Recap, company: string, targetRole: string, occurredOn: string) { setBusy(true); setError(""); try { const updated = await api<Recap>(`/api/interview-recaps/${recap.id}/metadata`, { method: "PATCH", body: JSON.stringify({ company, targetRole, occurredAt: occurredOn ? new Date(`${occurredOn}T00:00:00`).toISOString() : null }) }); setRecaps((items) => items.map((item) => item.id === updated.id ? updated : item)); } catch (reason) { setError(reason instanceof Error ? reason.message : "保存面试信息失败"); } finally { setBusy(false); } }
 

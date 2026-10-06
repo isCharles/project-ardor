@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
+import { markBackgroundPending } from "@/lib/background-notifications";
 import { useLocale } from "@/lib/locale";
 
 type ResumeItem = {
@@ -107,7 +108,7 @@ export default function ResumesPage() {
     try {
       const task = await api<AnalysisTask>(`/api/resumes/${resume.id}/analysis`, { method: "POST" });
       if (task.status === "COMPLETED" && task.analysisId) setAnalysis(await api<Analysis>(`/api/resumes/${resume.id}/analysis`));
-      else { window.localStorage.setItem("ardor:background-pending:resumes", "1"); setNotice(t("Ardor is analyzing this resume in the background. You can leave this page; the report will appear when ready.", "Ardor 正在后台分析这份简历。你可以离开页面，完成后报告会自动出现。")); }
+      else { markBackgroundPending("resumes"); setNotice(t("Ardor is analyzing this resume in the background. You can leave this page; the report will appear when ready.", "Ardor 正在后台分析这份简历。你可以离开页面，完成后报告会自动出现。")); }
       await load();
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("Analysis failed", "分析失败")); }
     finally { setBusy(""); }
