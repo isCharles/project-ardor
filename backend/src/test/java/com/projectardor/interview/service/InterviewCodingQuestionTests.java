@@ -2,6 +2,7 @@ package com.projectardor.interview.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -81,6 +82,20 @@ class InterviewCodingQuestionTests {
 
         assertThat(saved).extracting(InterviewQuestion::getLeetcodeSlug).containsOnlyNulls();
         assertThat(saved).extracting(InterviewQuestion::getQuestionType).doesNotContain("CODING");
+    }
+
+    @Test
+    void promptNeverAsksTheModelForPlaceholderQuestions() {
+        create("产品经理", """
+                {"questions":[
+                  {"questionText":"A","questionType":"BEHAVIORAL","evaluationCriteria":[]},
+                  {"questionText":"B","questionType":"PROJECT","evaluationCriteria":[]},
+                  {"questionText":"C","questionType":"TECHNICAL","evaluationCriteria":[]}]}
+                """);
+
+        // Non-technical roles never get a Hot 100 replacement, so a model-written placeholder
+        // would be saved as-is. The prompt must ask for complete questions only.
+        verify(llm).completeJson(any(), argThat(prompt -> prompt.contains("不要生成 CODING") && !prompt.contains("占位")), any());
     }
 
     @SuppressWarnings("unchecked")

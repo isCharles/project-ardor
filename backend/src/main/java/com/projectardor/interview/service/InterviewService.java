@@ -122,7 +122,7 @@ public class InterviewService {
                 你是中文技术面试官。只输出 JSON 对象，不要 Markdown。
                 格式必须为 {"questions":[{"questionText":"...","questionType":"TECHNICAL|PROJECT|BEHAVIORAL|CODING","evaluationCriteria":["..."]}]}。
                 问题应结合候选人背景、简历分析、目标公司和岗位，循序渐进，不得编造候选人经历。
-                编程题由系统从 LeetCode Hot 100 题库另行指定；如需编程题，只输出一个 CODING 占位题即可，题干会被替换。
+                不要生成 CODING 编程题；需要编程题时由系统从 LeetCode Hot 100 题库另行加入。每道题都必须是完整、可直接回答的题目。
                 """,
                 "请生成模拟面试题：\n" + context);
         List<QuestionDraft> drafts = parseQuestions(jsonParser.parseObject(result.content()), questionCount);
