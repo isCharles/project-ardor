@@ -16,14 +16,15 @@ Ardor's UI locale defaults to English. The user can switch to 简体中文; the 
 - Knowledge library upload, web import, search, indexing status, empty states, and deletion controls
 - Interview notes list, organization, metadata, failure states, and actions
 - Interview replay controls, retest scheduling, attempt history, and local error messages
+- Desktop offline screen, update-ready prompt, native confirmations, and microphone permission dialog
 
-This is a foundation, **not a complete bilingual application**. Desktop-native dialogs and offline/error screens still contain Chinese UI text. API and model-generated errors may also remain Chinese, including messages shown after a request. Interview questions, evaluations, knowledge documents, and other stored content are displayed verbatim. Do not advertise those surfaces as translated until they are reviewed in both locales.
+This is a foundation, **not a complete bilingual application**. Installer wizard copy and some error screens still require review. API and model-generated errors may also remain Chinese, including messages shown after a request. Interview questions, evaluations, knowledge documents, and other stored content are displayed verbatim. Do not advertise those surfaces as translated until they are reviewed in both locales.
 
 ## Next steps
 
 1. Translate each feature module and its empty, loading, error, and confirmation states.
 2. Add a locale-aware option for model-generated learning content and other generated reports while preserving existing user content unchanged.
-3. Localize desktop-native prompts, update status, installer/offline screens, and add a keyboard-accessible language choice where needed.
+3. Localize the installer wizard and remaining error screens; verify keyboard and screen-reader behavior of language controls.
 4. Test the complete route set in both locales at desktop and mobile widths, including locale persistence and switching mid-task without losing drafts or answers.
 
 Keep display text translation in the UI layer. Do not translate user-authored text, stored reports, or identifiers during locale switching.

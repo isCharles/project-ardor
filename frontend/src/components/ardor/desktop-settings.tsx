@@ -5,12 +5,13 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { describeDesktopUpdateError } from "@/lib/desktop-update-error";
-import { useLocale } from "@/lib/locale";
+import { useLocale, type Locale } from "@/lib/locale";
 
 type UpdateStatus = { state: "idle" | "checking" | "downloading" | "current" | "ready" | "error" | "unavailable"; message: string; percent?: number; version?: string };
-type DesktopInfo = { version: string; serverUrl: string; updateStatus: UpdateStatus; packaged: boolean };
+type DesktopInfo = { version: string; serverUrl: string; locale: Locale | null; updateStatus: UpdateStatus; packaged: boolean };
 type DesktopBridge = {
   getInfo(): Promise<DesktopInfo>;
+  setLocale(locale: Locale): Promise<{ locale: Locale }>;
   setServer(url: string): Promise<{ changed: boolean; connected?: boolean }>;
   checkForUpdates(): Promise<UpdateStatus>;
   installUpdate(): Promise<{ installed: boolean }>;

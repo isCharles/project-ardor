@@ -3,6 +3,8 @@
 import { ArrowDownToLine, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { useLocale } from "@/lib/locale";
+
 type UpdateStatus = { state: string; message: string; version?: string };
 type DesktopBridge = {
   getInfo(): Promise<{ updateStatus: UpdateStatus }>;
@@ -11,6 +13,7 @@ type DesktopBridge = {
 };
 
 export function DesktopUpdatePrompt() {
+  const { t } = useLocale();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
 
@@ -29,11 +32,11 @@ export function DesktopUpdatePrompt() {
     <aside role="status" aria-live="polite" className="fixed right-5 top-20 z-[60] flex max-w-[min(24rem,calc(100vw-2.5rem))] items-start gap-3 rounded-2xl border border-white/80 bg-white/95 p-4 shadow-[0_20px_70px_rgba(74,57,130,0.2)] backdrop-blur-xl">
       <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-fuchsia-100 to-sky-100 text-violet-700"><ArrowDownToLine className="size-5" /></span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-stone-900">新版本 {status.version} 已就绪</p>
-        <p className="mt-1 text-xs text-stone-500">已下载，安装后 Ardor 会重新启动。</p>
-        <button type="button" onClick={() => void (window as Window & { ardorDesktop?: DesktopBridge }).ardorDesktop?.installUpdate()} className="mt-3 rounded-full bg-stone-900 px-4 py-2 text-xs font-medium text-white hover:bg-stone-700">安装并重启</button>
+        <p className="text-sm font-semibold text-stone-900">{t(`Version ${status.version} is ready`, `新版本 ${status.version} 已就绪`)}</p>
+        <p className="mt-1 text-xs text-stone-500">{t("Downloaded. Ardor will restart after installation.", "已下载，安装后 Ardor 会重新启动。")}</p>
+        <button type="button" onClick={() => void (window as Window & { ardorDesktop?: DesktopBridge }).ardorDesktop?.installUpdate()} className="mt-3 rounded-full bg-stone-900 px-4 py-2 text-xs font-medium text-white hover:bg-stone-700">{t("Install and restart", "安装并重启")}</button>
       </div>
-      <button type="button" aria-label="稍后更新" onClick={() => setDismissedVersion(status.version ?? "unknown")} className="rounded-full p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><X className="size-4" /></button>
+      <button type="button" aria-label={t("Update later", "稍后更新")} onClick={() => setDismissedVersion(status.version ?? "unknown")} className="rounded-full p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><X className="size-4" /></button>
     </aside>
   );
 }

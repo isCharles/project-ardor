@@ -6,17 +6,39 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { DEFAULT_SERVER_URL, normalizeServerUrl, isTrustedAppUrl, isHealthyBackendStatus } = require("./server-config.cjs");
-const { updateErrorMessage } = require("./update-errors.cjs");
+const { updateErrorKind } = require("./update-errors.cjs");
+const { normalizeLocale, desktopText, updateStatusMessage, serverErrorMessage } = require("./i18n.cjs");
 
 let window;
 let serverUrl = DEFAULT_SERVER_URL;
-let updateStatus = { state: "idle", message: "可检查更新" };
+let desktopLocale = null;
+let updateStatus = { state: "idle", message: desktopText("en", "idle") };
 let updateCheckRunning = false;
 let offline = false;
 const offlineFile = path.join(__dirname, "offline.html");
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function configPath() { return path.join(app.getPath("userData"), "server.json"); }
+function localePath() { return path.join(app.getPath("userData"), "locale.json"); }
+function currentLocale() { return desktopLocale ?? "en"; }
+
+function readDesktopLocale() {
+  try { return normalizeLocale(JSON.parse(fs.readFileSync(localePath(), "utf8")).locale); }
+  catch { return null; }
+}
+
+function saveDesktopLocale(value) {
+  const locale = normalizeLocale(value);
+  if (!locale) throw new Error("Invalid locale");
+  const target = localePath();
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temporary = `${target}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify({ locale }), { encoding: "utf8", mode: 0o600 });
+  fs.renameSync(temporary, target);
+  desktopLocale = locale;
+  updateStatus = { ...updateStatus, message: updateStatusMessage(locale, updateStatus) };
+  if (window && !window.isDestroyed()) window.webContents.send("desktop:update-status", updateStatus);
+}
 
 function readServerUrl() {
   try { return normalizeServerUrl(JSON.parse(fs.readFileSync(configPath(), "utf8")).serverUrl); }
@@ -39,11 +61,12 @@ function trustedSender(event) {
 }
 
 function assertTrusted(event) {
-  if (!trustedSender(event) || event.sender !== window?.webContents) throw new Error("不允许从当前页面执行桌面操作");
+  if (!trustedSender(event) || event.sender !== window?.webContents) throw new Error("Desktop operation denied");
 }
 
-function sendUpdateStatus(state, message, details = {}) {
-  updateStatus = { state, message, ...details };
+function sendUpdateStatus(state, details = {}) {
+  updateStatus = { state, ...details };
+  updateStatus.message = updateStatusMessage(currentLocale(), updateStatus);
   if (window && !window.isDestroyed()) window.webContents.send("desktop:update-status", updateStatus);
 }
 
@@ -81,25 +104,25 @@ function openExternalSafe(url) {
 function configureUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.on("checking-for-update", () => sendUpdateStatus("checking", "正在检查更新…"));
+  autoUpdater.on("checking-for-update", () => sendUpdateStatus("checking"));
   autoUpdater.on("update-available", (info) => {
-    sendUpdateStatus("downloading", `发现 ${info.version}，正在下载…`, { version: info.version });
-    void autoUpdater.downloadUpdate().catch((error) => sendUpdateStatus("error", updateErrorMessage(error)));
+    sendUpdateStatus("downloading", { version: info.version });
+    void autoUpdater.downloadUpdate().catch((error) => sendUpdateStatus("error", { errorKind: updateErrorKind(error) }));
   });
-  autoUpdater.on("update-not-available", () => sendUpdateStatus("current", "已经是最新版本"));
+  autoUpdater.on("update-not-available", () => sendUpdateStatus("current"));
   autoUpdater.on("download-progress", (progress) => {
-    sendUpdateStatus("downloading", `正在下载更新 ${Math.round(progress.percent)}%…`, { percent: Math.round(progress.percent) });
+    sendUpdateStatus("downloading", { percent: Math.round(progress.percent) });
   });
-  autoUpdater.on("update-downloaded", (info) => sendUpdateStatus("ready", `版本 ${info.version} 已下载，可安装并重启`, { version: info.version }));
-  autoUpdater.on("error", (error) => sendUpdateStatus("error", updateErrorMessage(error)));
+  autoUpdater.on("update-downloaded", (info) => sendUpdateStatus("ready", { version: info.version }));
+  autoUpdater.on("error", (error) => sendUpdateStatus("error", { errorKind: updateErrorKind(error) }));
 }
 
 async function checkForUpdates() {
-  if (!app.isPackaged) return { state: "unavailable", message: "开发模式不能检查安装包更新" };
+  if (!app.isPackaged) return { state: "unavailable", message: desktopText(currentLocale(), "unavailable") };
   if (updateCheckRunning || ["downloading", "ready"].includes(updateStatus.state)) return updateStatus;
   updateCheckRunning = true;
   try { await autoUpdater.checkForUpdates(); return updateStatus; }
-  catch (error) { sendUpdateStatus("error", updateErrorMessage(error)); return updateStatus; }
+  catch (error) { sendUpdateStatus("error", { errorKind: updateErrorKind(error) }); return updateStatus; }
   finally { updateCheckRunning = false; }
 }
 
@@ -137,17 +160,24 @@ function createWindow() {
 function registerIpc() {
   ipcMain.handle("desktop:get-info", (event) => {
     assertTrusted(event);
-    return { version: app.getVersion(), serverUrl, updateStatus, packaged: app.isPackaged };
+    return { version: app.getVersion(), serverUrl, locale: desktopLocale, updateStatus, packaged: app.isPackaged };
+  });
+  ipcMain.handle("desktop:set-locale", (event, value) => {
+    assertTrusted(event);
+    saveDesktopLocale(value);
+    return { locale: desktopLocale };
   });
   ipcMain.handle("desktop:retry", async (event) => { assertTrusted(event); return connect(); });
   ipcMain.handle("desktop:set-server", async (event, value) => {
     assertTrusted(event);
-    const next = normalizeServerUrl(value);
+    let next;
+    try { next = normalizeServerUrl(value); }
+    catch (error) { throw new Error(serverErrorMessage(currentLocale(), error)); }
     if (next !== serverUrl) {
       const response = await dialog.showMessageBox(window, {
-        type: "question", buttons: ["取消", "切换"], defaultId: 0, cancelId: 0,
-        title: "切换服务器", message: `要连接到 ${next} 吗？`,
-        detail: "登录信息与数据留在各自服务器。请只连接你信任的 Ardor 服务。",
+        type: "question", buttons: [desktopText(currentLocale(), "cancel"), desktopText(currentLocale(), "switch")], defaultId: 0, cancelId: 0,
+        title: desktopText(currentLocale(), "switchTitle"), message: desktopText(currentLocale(), "switchMessage", { server: next }),
+        detail: desktopText(currentLocale(), "switchDetail"),
       });
       if (response.response !== 1) return { changed: false };
       saveServerUrl(next);
@@ -170,11 +200,13 @@ if (app.requestSingleInstanceLock()) {
   app.on("second-instance", () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });
   app.whenReady().then(() => {
     serverUrl = readServerUrl();
+    desktopLocale = readDesktopLocale();
+    updateStatus.message = updateStatusMessage(currentLocale(), updateStatus);
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
       if (permission !== "media" || !isTrustedAppUrl(details.requestingUrl, serverUrl) || webContents !== window?.webContents) return callback(false);
       void dialog.showMessageBox(window, {
-        type: "question", buttons: ["不允许", "允许"], defaultId: 0, cancelId: 0,
-        title: "麦克风权限", message: "允许 Ardor 使用麦克风进行语音面试吗？",
+        type: "question", buttons: [desktopText(currentLocale(), "deny"), desktopText(currentLocale(), "allow")], defaultId: 0, cancelId: 0,
+        title: desktopText(currentLocale(), "microphoneTitle"), message: desktopText(currentLocale(), "microphoneMessage"),
       }).then(({ response }) => callback(response === 1), () => callback(false));
     });
     configureUpdater();

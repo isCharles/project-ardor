@@ -1,27 +1,28 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; form-action 'none'" />
-  <title>Project Ardor · 连接服务器</title>
+  <title>Project Ardor · Connect to server</title>
   <link rel="stylesheet" href="offline.css" />
   <script src="offline.js" defer></script>
 </head>
 <body>
   <main class="card">
+    <div class="language" role="group" aria-label="Language"><button id="language-en" type="button" aria-pressed="true">EN</button><button id="language-zh" type="button" aria-pressed="false">中文</button></div>
     <div class="mark" aria-hidden="true">✦</div>
     <p class="eyebrow">PROJECT ARDOR</p>
-    <h1>等服务器就绪，<br />我们继续。</h1>
-    <p class="detail">当前无法连接 Ardor。本机使用时请先启动服务；连接公网部署时，填入服务器地址即可。</p>
+    <h1 id="headline">Wait for your server.<br />Then let's continue.</h1>
+    <p id="detail" class="detail">Ardor can't reach the server right now. Start your local service or enter the address of your hosted server.</p>
     <form id="server-form">
-      <label for="server-url">服务器地址</label>
-      <div class="field-row"><input id="server-url" type="url" required spellcheck="false" autocomplete="off" aria-describedby="hint" /><button type="submit">连接</button></div>
-      <p id="hint">本机默认 http://127.0.0.1:3000 · 公网地址须使用 HTTPS</p>
+      <label id="server-label" for="server-url">Server address</label>
+      <div class="field-row"><input id="server-url" type="url" required spellcheck="false" autocomplete="off" aria-describedby="hint" /><button id="connect" type="submit">Connect</button></div>
+      <p id="hint">Local default: http://127.0.0.1:3000 · Public servers require HTTPS</p>
     </form>
-    <div class="actions"><button id="retry" type="button">重新连接</button><span id="status" role="status" aria-live="polite"></span></div>
-    <div class="updates"><span id="version"></span><span id="update-status"></span><button id="check-update" type="button">检查更新</button><button id="install-update" type="button" hidden>安装并重启</button></div>
-    <p class="footer">桌面程序只负责连接。你的简历、模型与对话仍在所选服务器上。</p>
+    <div class="actions"><button id="retry" type="button">Try again</button><span id="status" role="status" aria-live="polite"></span></div>
+    <div class="updates"><span id="version"></span><span id="update-status"></span><button id="check-update" type="button">Check for updates</button><button id="install-update" type="button" hidden>Install and restart</button></div>
+    <p id="footer" class="footer">The desktop app only connects you. Your resumes, models, and chats stay on the selected server.</p>
   </main>
 </body>
 </html>
