@@ -11,8 +11,8 @@
     "dev": "electron .",
     "test": "node --test tests/*.test.cjs",
     "icons": "node scripts/generate-icons.mjs",
-    "dist:win": "npm run icons && electron-builder --win nsis --x64 --publish never",
-    "dist:win:signed": "npm run icons && electron-builder --win nsis --x64 --publish never --config.forceCodeSigning=true"
+    "dist:win": "npm run icons && node scripts/build-windows.mjs",
+    "dist:win:signed": "npm run icons && node scripts/build-windows.mjs --signed"
   },
   "dependencies": {
     "electron-updater": "6.8.9"
