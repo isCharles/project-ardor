@@ -14,7 +14,7 @@ jobs:
     if: >-
       github.event.issue.pull_request != null &&
       github.event.comment.user.type != 'Bot' &&
-      startsWith(github.event.comment.body, '@claude review')
+      contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
     outputs:
       allowed: ${{ steps.check.outputs.allowed }}
@@ -32,8 +32,10 @@ jobs:
           from pathlib import Path
 
           event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
-          if not re.fullmatch(r"@claude\s+review\s*", event["comment"]["body"], re.IGNORECASE):
-              raise SystemExit("Use a standalone @claude review comment")
+          # Any standalone @claude mention requests a review; @claudebot and similar do not.
+          if not re.search(r"(?<![\w-])@claude(?![\w-])", event["comment"]["body"], re.IGNORECASE):
+              print("Comment does not mention @claude; skipping")
+              raise SystemExit(0)
           author = event["comment"]["user"]["login"]
           repository = os.environ["GITHUB_REPOSITORY"]
           permission = json.loads(subprocess.run(
@@ -81,8 +83,8 @@ jobs:
           comment = event["comment"]
           if not event["issue"].get("pull_request") or comment["user"]["type"] == "Bot":
               raise SystemExit("Only a human PR comment can request a review")
-          if not re.fullmatch(r"@claude\s+review\s*", comment["body"], re.IGNORECASE):
-              raise SystemExit("Use a standalone @claude review comment")
+          if not re.search(r"(?<![\w-])@claude(?![\w-])", comment["body"], re.IGNORECASE):
+              raise SystemExit("Comment must mention @claude")
 
           repository = os.environ["GITHUB_REPOSITORY"]
           def api(path):
