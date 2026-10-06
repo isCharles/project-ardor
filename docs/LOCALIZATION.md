@@ -14,9 +14,10 @@ Ardor's UI locale defaults to English. The user can switch to 简体中文; the 
 - Calendar, including dates, holidays, task forms, recurring schedules, and task actions
 - Mock interview setup, history, question flow, evaluation labels, and live voice controls/status
 - Knowledge library upload, web import, search, indexing status, empty states, and deletion controls
+- Interview notes list, organization, metadata, failure states, and actions
 - Interview replay controls, retest scheduling, attempt history, and local error messages
 
-This is a foundation, **not a complete bilingual application**. Interview notes, desktop-native dialogs and offline/error screens still contain Chinese UI text. API and model-generated errors may also remain Chinese, including messages shown after a request. Interview questions, evaluations, knowledge documents, and other stored content are displayed verbatim. Do not advertise those surfaces as translated until they are reviewed in both locales.
+This is a foundation, **not a complete bilingual application**. Desktop-native dialogs and offline/error screens still contain Chinese UI text. API and model-generated errors may also remain Chinese, including messages shown after a request. Interview questions, evaluations, knowledge documents, and other stored content are displayed verbatim. Do not advertise those surfaces as translated until they are reviewed in both locales.
 
 ## Next steps
 
