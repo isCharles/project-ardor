@@ -6,12 +6,12 @@
 
 1. 打开需要审阅的 Pull Request。
 2. 有仓库写权限的维护者在 PR 对话里发一条提到 `@claude` 的评论，例如 `@claude` 或 `@codex @claude`。**只要评论里出现独立的 `@claude`（`@claudebot` 之类不算）就会触发一次付费审阅**，讨论中顺口提到也算；不想触发时写成 `Claude` 而不带 `@`。
-3. 等待 `Claude PR Review` 工作流完成，并查看 PR 中的审阅结果。评论作者显示为 `github-actions`，因为发布评论使用仓库的 GitHub Token；审阅内容由 Claude Code 生成。
+3. 等待 `Claude PR Review` 工作流完成，并查看 PR 中的审阅结果。本仓库已安装官方 Claude GitHub App，评论作者显示为 `claude[bot]`：只有发布步骤用工作流 OIDC 令牌向 Anthropic 换取该 App 的短期令牌。换取失败时退回 `github-actions` 发布，日志会写明原因。审阅内容由 Claude Code 生成。
 4. 修复后如需再次审阅，维护者再发一条提到 `@claude` 的评论。推送新 commit 不会自动触发付费复审。同一 PR 上新的触发会取消仍在运行的上一次审阅。
 
 工作流使用仓库 Actions Secret `PACKY_ANTHROPIC_TOKEN`，通过 PackyCode Anthropic 兼容端点调用 Claude Code。**本机 Claude Code / CC Switch 的 Key 与 Actions Secret 相互独立**；更换本机分组或密钥后，若旧密钥失效，需单独更新 GitHub Secret。密钥不得写入代码、工作流日志或 PR 内容。
 
-这是仓库自建的受限 Action，不是官方 Claude GitHub App 的交互模式。`@claude` 只是本工作流的触发词，**不会**让评论署名变为 Claude，也不会授权 Claude 修改代码。若将来要显示官方 Claude bot 身份，需要另行安装 GitHub App 并审核其仓库权限，不能只改触发词。
+这是仓库自建的受限 Action，不是官方 Claude GitHub App 的交互模式。`@claude` 只是本工作流的触发词，**不会**授权 Claude 修改代码。官方 App 仅用于发布署名：模型步骤不获得 App 令牌、GitHub Token 或 OIDC 请求凭据；换取的 App 令牌只申请 `issues`/`pull_requests` 写权限并在日志中屏蔽。令牌交换只发送 GitHub OIDC 令牌，与 PackyCode 端点和密钥无关。
 
 单次任务在 YAML 中默认使用 `claude-sonnet-5`；Ardor 仓库目前通过变量 `CLAUDE_REVIEW_MODEL=claude-opus-5-5` 覆盖。当前 `cc-sale` 密钥的只读模型列表已列出这一 ID，但实际推理仍需首次手动审阅验证。最多 20 轮，Claude Code 估算预算为 $5，工作流最长运行 15 分钟。切换本机 CC Switch 分组不会自动改变 CI 模型；其他仓库应先确认供应商支持的**准确模型标识**，不要凭展示名猜测。
 

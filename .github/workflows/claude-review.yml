@@ -56,6 +56,13 @@ jobs:
       cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # id-token lets only the publish step exchange an OIDC token for a Claude GitHub App
+    # token, so the review comment is authored by claude[bot].
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      id-token: write
 
     steps:
       # issue_comment runs the workflow from the default branch. Never run PR code.
@@ -166,6 +173,8 @@ jobs:
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.PACKY_ANTHROPIC_TOKEN }}
           GITHUB_TOKEN: ''
           GH_TOKEN: ''
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ''
+          ACTIONS_ID_TOKEN_REQUEST_URL: ''
         with:
           anthropic_api_key: ${{ secrets.PACKY_ANTHROPIC_TOKEN }}
           prompt_file: ${{ runner.temp }}/claude-review-sandbox/prompt.md
@@ -192,6 +201,7 @@ jobs:
           import json
           import os
           import subprocess
+          import urllib.request
           from pathlib import Path
 
           messages = json.loads(Path(os.environ["EXECUTION_FILE"]).read_text(encoding="utf-8"))
@@ -220,12 +230,44 @@ jobs:
                   or current["base"]["sha"] != target["base"]):
               raise SystemExit("PR changed during review; refusing to publish an obsolete result")
 
+          def claude_app_token():
+              # Same exchange the official claude-code-action uses: the GitHub OIDC token is
+              # the only credential sent, independent of ANTHROPIC_BASE_URL and the API key.
+              request_url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+              request_token = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+              if not request_url or not request_token:
+                  return None
+              try:
+                  oidc_request = urllib.request.Request(
+                      request_url + "&audience=claude-code-github-action",
+                      headers={"Authorization": f"Bearer {request_token}"},
+                  )
+                  with urllib.request.urlopen(oidc_request, timeout=20) as response:
+                      oidc = json.load(response)["value"]
+                  exchange = urllib.request.Request(
+                      "https://api.anthropic.com/api/github/github-app-token-exchange",
+                      data=json.dumps({"permissions": {"issues": "write", "pull_requests": "write"}}).encode(),
+                      headers={"Authorization": f"Bearer {oidc}", "Content-Type": "application/json"},
+                      method="POST",
+                  )
+                  with urllib.request.urlopen(exchange, timeout=20) as response:
+                      data = json.load(response)
+                  token = data.get("token") or data.get("app_token")
+              except Exception as error:
+                  print(f"Claude GitHub App token unavailable ({type(error).__name__}); posting as github-actions")
+                  return None
+              if token:
+                  print(f"::add-mask::{token}")
+              return token
+
           body = f"Claude Code 审阅结果（commit `{target['head']}`）：\n\n" + review
           endpoint = f"repos/{os.environ['GITHUB_REPOSITORY']}/issues/{os.environ['PR_NUMBER']}/comments"
+          app_token = claude_app_token()
+          env = dict(os.environ, GH_TOKEN=app_token) if app_token else os.environ
           subprocess.run(
               ["gh", "api", "--method", "POST", endpoint, "--input", "-"],
               input=json.dumps({"body": body}, ensure_ascii=False),
-              text=True, stdout=subprocess.DEVNULL, check=True,
+              text=True, stdout=subprocess.DEVNULL, check=True, env=env,
           )
-          print("Published completed Claude review")
+          print("Published completed Claude review as " + ("claude[bot]" if app_token else "github-actions"))
           PY
