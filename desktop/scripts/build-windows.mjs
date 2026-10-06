@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,10 +11,6 @@ const { version } = JSON.parse(await readFile(path.join(desktopDir, "package.jso
 const installerName = `Project-Ardor-Setup-${version}-x64.exe`;
 const outputDir = path.join(desktopDir, "dist");
 const tempRoot = path.resolve(os.tmpdir());
-
-if (process.platform !== "win32") {
-  throw new Error("The Windows installer must be built on Windows.");
-}
 
 // NSIS executes a temporary installer to generate its uninstaller. Some Windows
 // environments block that execution inside a development workspace, so build
@@ -62,7 +58,31 @@ try {
   }
 
   await mkdir(outputDir, { recursive: true });
-  await cp(path.join(buildDir, "win-unpacked"), path.join(outputDir, "win-unpacked"), { recursive: true, force: true });
+  const unpackedDir = path.join(outputDir, "win-unpacked");
+  const suffix = randomUUID();
+  const stagingDir = path.join(outputDir, `.win-unpacked-next-${suffix}`);
+  const previousDir = path.join(outputDir, `.win-unpacked-previous-${suffix}`);
+  for (const directory of [unpackedDir, stagingDir, previousDir]) {
+    if (path.dirname(path.resolve(directory)) !== path.resolve(outputDir)) {
+      throw new Error(`Refusing to move an unexpected build directory: ${directory}`);
+    }
+  }
+  await cp(path.join(buildDir, "win-unpacked"), stagingDir, { recursive: true });
+  let hadPrevious = false;
+  try {
+    await stat(unpackedDir);
+    await rename(unpackedDir, previousDir);
+    hadPrevious = true;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  try {
+    await rename(stagingDir, unpackedDir);
+  } catch (error) {
+    if (hadPrevious) await rename(previousDir, unpackedDir);
+    throw error;
+  }
+  if (hadPrevious) await rm(previousDir, { recursive: true });
   for (const name of [installerName, `${installerName}.blockmap`, "latest.yml"]) {
     await cp(path.join(buildDir, name), path.join(outputDir, name), { force: true });
   }
