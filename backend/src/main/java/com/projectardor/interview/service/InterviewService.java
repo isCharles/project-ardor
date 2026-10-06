@@ -54,6 +54,7 @@ public class InterviewService {
     private final LlmJsonParser jsonParser;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactions;
+    private final LeetCodeHot100 hot100;
 
     public InterviewService(
             InterviewSessionRepository sessionRepository,
@@ -65,7 +66,8 @@ public class InterviewService {
             LlmGateway llmGateway,
             LlmJsonParser jsonParser,
             ObjectMapper objectMapper,
-            org.springframework.transaction.PlatformTransactionManager transactionManager) {
+            org.springframework.transaction.PlatformTransactionManager transactionManager,
+            LeetCodeHot100 hot100) {
         this.sessionRepository = sessionRepository;
         this.questionRepository = questionRepository;
         this.answerRepository = answerRepository;
@@ -76,6 +78,7 @@ public class InterviewService {
         this.jsonParser = jsonParser;
         this.objectMapper = objectMapper;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.hot100 = hot100;
     }
 
     public InterviewSession create(
@@ -119,15 +122,25 @@ public class InterviewService {
                 你是中文技术面试官。只输出 JSON 对象，不要 Markdown。
                 格式必须为 {"questions":[{"questionText":"...","questionType":"TECHNICAL|PROJECT|BEHAVIORAL|CODING","evaluationCriteria":["..."]}]}。
                 问题应结合候选人背景、简历分析、目标公司和岗位，循序渐进，不得编造候选人经历。
-                技术岗位且题目数不少于 3 时，至少生成一道 CODING 编程题；题目要写清输入、输出、约束和示例，允许候选人用文字说明思路并给出代码，不要求在线运行。
+                不要生成 CODING 编程题；需要编程题时由系统从 LeetCode Hot 100 题库另行加入。每道题都必须是完整、可直接回答的题目。
                 """,
                 "请生成模拟面试题：\n" + context);
         List<QuestionDraft> drafts = parseQuestions(jsonParser.parseObject(result.content()), questionCount);
-        if (questionCount >= 3 && isTechnicalRole(normalizedRole)
-                && drafts.stream().noneMatch(draft -> "CODING".equals(draft.questionType()))) {
-            drafts.set(drafts.size() - 1, new QuestionDraft(
-                    "请用你熟悉的语言实现 twoSum：输入整数数组 nums 和整数 target，返回两个元素下标，使它们之和等于 target。假设恰有一个答案且同一元素不能重复使用。示例：nums=[2,7,11,15]，target=9，输出 [0,1]。请说明时间与空间复杂度。",
-                    "CODING", List.of("代码正确且覆盖边界情况", "能解释哈希表解法", "复杂度分析准确")));
+        if (questionCount >= 3 && isTechnicalRole(normalizedRole)) {
+            // Replace the model's first coding question (or the last question) with a random
+            // Hot 100 problem, so every technical interview has exactly one curated coding task.
+            int slot = drafts.size() - 1;
+            for (int index = 0; index < drafts.size(); index++) {
+                if ("CODING".equals(drafts.get(index).questionType())) { slot = index; break; }
+            }
+            drafts.set(slot, codingDraft(hot100.random()));
+        }
+        // Any other model-written CODING question becomes TECHNICAL so only Hot 100 tasks are coding.
+        for (int index = 0; index < drafts.size(); index++) {
+            QuestionDraft draft = drafts.get(index);
+            if ("CODING".equals(draft.questionType()) && draft.leetcodeSlug() == null) {
+                drafts.set(index, new QuestionDraft(draft.questionText(), "TECHNICAL", draft.evaluationCriteria(), null));
+            }
         }
 
         return transactions.execute(status -> {
@@ -138,7 +151,8 @@ public class InterviewService {
                 QuestionDraft draft = drafts.get(index);
                 questions.add(InterviewQuestion.create(
                         userId, session.getId(), index + 1,
-                        draft.questionText(), draft.questionType(), draft.evaluationCriteria()));
+                        draft.questionText(), draft.questionType(), draft.evaluationCriteria(),
+                        draft.leetcodeSlug()));
             }
             questionRepository.saveAll(questions);
             return session;
@@ -300,7 +314,7 @@ public class InterviewService {
                     if (!item.asText().isBlank()) criteria.add(item.asText().strip());
                 });
             }
-            drafts.add(new QuestionDraft(text, type, criteria));
+            drafts.add(new QuestionDraft(text, type, criteria, null));
             if (drafts.size() == expectedCount) break;
         }
         if (drafts.size() < 3) throw new IllegalStateException("LLM 返回的有效面试题少于 3 道");
@@ -343,7 +357,19 @@ public class InterviewService {
 
     private String valueOrEmpty(String value) { return value == null ? "" : value; }
 
-    private record QuestionDraft(String questionText, String questionType, List<String> evaluationCriteria) {}
+    private static QuestionDraft codingDraft(LeetCodeHot100.Problem problem) {
+        // The full statement lives on LeetCode; the stored text keeps the evaluator and replay
+        // prompts meaningful without the page.
+        return new QuestionDraft(
+                "LeetCode " + problem.id() + ". " + problem.titleZh() + "（" + problem.titleEn() + "）："
+                        + "请在 LeetCode 完成这道题，然后把代码贴回来，并说明思路、时间与空间复杂度。",
+                "CODING",
+                List.of("代码正确且覆盖边界情况", "思路清晰、解法选择有依据", "复杂度分析准确"),
+                problem.slug());
+    }
+
+    private record QuestionDraft(
+            String questionText, String questionType, List<String> evaluationCriteria, String leetcodeSlug) {}
 
     public record InterviewProgress(
             InterviewSession session,

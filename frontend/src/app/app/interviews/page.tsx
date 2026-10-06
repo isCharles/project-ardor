@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ExternalLink, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
@@ -20,7 +20,8 @@ type Session = {
   status: "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "CREATED";
   createdAt: string;
 };
-type Question = { id: string; sequenceNumber: number; questionText: string; questionType: string };
+type LeetCodeProblem = { id: number; slug: string; titleEn: string; titleZh: string };
+type Question = { id: string; sequenceNumber: number; questionText: string; questionType: string; leetcode: LeetCodeProblem | null };
 type Progress = {
   sessionId: string;
   status: Session["status"];
@@ -37,7 +38,7 @@ type Evaluation = {
 
 export default function InterviewsPage() {
   const router = useRouter();
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const evaluationLabels: Record<string, string> = {
     strengths: t("Strengths", "表现优势"),
     weaknesses: t("Areas to improve", "主要不足"),
@@ -226,7 +227,12 @@ export default function InterviewsPage() {
           {!progress && !evaluation && <p className="mt-4 text-sm text-muted-foreground">{t("Start a new interview or continue one from history.", "创建一场新面试，或从历史记录继续。")}</p>}
           {progress?.nextQuestion && <div className="mt-7">
             <p className="text-sm font-medium text-primary">{t(`Question ${progress.nextQuestion.sequenceNumber}`, `第 ${progress.nextQuestion.sequenceNumber} 题`)} · {questionTypeLabels[progress.nextQuestion.questionType] ?? progress.nextQuestion.questionType}</p>
-            <h3 className="mt-3 text-2xl font-semibold leading-9">{progress.nextQuestion.questionText}</h3>
+            {progress.nextQuestion.leetcode ? <>
+              <h3 className="mt-3 text-2xl font-semibold leading-9">{progress.nextQuestion.leetcode.id}. {locale === "en" ? progress.nextQuestion.leetcode.titleEn : progress.nextQuestion.leetcode.titleZh}</h3>
+              <p className="mt-2 text-sm text-muted-foreground">{t("Solve it on LeetCode, then paste your code here and explain your approach and complexity.", "在 LeetCode 完成这道题，再把代码贴回来，并说明思路与复杂度。")}</p>
+              {/* Slugs are shared by both sites, so only the host follows the UI language. */}
+              <a href={`https://${locale === "en" ? "leetcode.com" : "leetcode.cn"}/problems/${progress.nextQuestion.leetcode.slug}/`} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition hover:bg-muted">{t("Open on LeetCode", "在力扣打开")}<ExternalLink className="size-4" aria-hidden="true" /></a>
+            </> : <h3 className="mt-3 text-2xl font-semibold leading-9">{progress.nextQuestion.questionText}</h3>}
             <p className="mt-3 text-sm text-muted-foreground">{t(`Answered ${progress.answeredCount} / ${progress.totalQuestions}`, `已回答 ${progress.answeredCount} / ${progress.totalQuestions}`)}</p>
             <form className="mt-6 space-y-4" onSubmit={submitAnswer}>
               {activeSession?.modality === "VOICE" && <VoiceAnswerRecorder key={progress.nextQuestion.id} sessionId={progress.sessionId} questionId={progress.nextQuestion.id} disabled={busy} onTranscript={setAnswerText} onError={setError} />}
