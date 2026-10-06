@@ -1,3 +1,5 @@
+前端任务也先阅读仓库根目录的 `AGENTS.md`；此处只补充 Next.js 版本相关规则。审阅前端 PR 时同样遵守 `docs/REVIEW_GUIDE.md`，不要把下面的自动生成块当成全部项目约定。
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
