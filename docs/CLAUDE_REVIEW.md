@@ -1,17 +1,17 @@
 # Claude PR 审阅
 
-本仓库的 Claude Code 审阅采用 PR 评论中的独立指令触发，避免每次推送都自动产生模型费用。Codex 的 PR 自动审阅不受影响。
+本仓库的 Claude Code 审阅由 PR 评论中的 `@claude` 提及触发，避免每次推送都自动产生模型费用。Codex 的 PR 自动审阅不受影响。
 
 ## 使用方式
 
 1. 打开需要审阅的 Pull Request。
-2. 有仓库写权限的维护者在 PR 对话里单独发送一条 `@claude review`。不要把它嵌在普通评论中；每发送一次就可能产生一笔模型费用。
-3. 等待 `Claude PR Review` 工作流完成，并查看 PR 中的审阅结果。评论作者显示为 `github-actions`，因为发布评论使用仓库的 GitHub Token；审阅内容由 Claude Code 生成。
-4. 修复后如需再次审阅，维护者再发送一条 `@claude review`。推送新 commit 不会自动触发付费复审。
+2. 有仓库写权限的维护者在 PR 对话里发一条提到 `@claude` 的评论，例如 `@claude` 或 `@codex @claude`。**只要评论里出现独立的 `@claude`（`@claudebot` 之类不算）就会触发一次付费审阅**，讨论中顺口提到也算；不想触发时写成 `Claude` 而不带 `@`。
+3. 等待 `Claude PR Review` 工作流完成，并查看 PR 中的审阅结果。本仓库已安装官方 Claude GitHub App，评论作者显示为 `claude[bot]`：只有发布步骤用工作流 OIDC 令牌向 Anthropic 换取该 App 的短期令牌。换取失败时退回 `github-actions` 发布，日志会写明原因。审阅内容由 Claude Code 生成。
+4. 修复后如需再次审阅，维护者再发一条提到 `@claude` 的评论。推送新 commit 不会自动触发付费复审。同一 PR 上新的触发会取消仍在运行的上一次审阅。
 
 工作流使用仓库 Actions Secret `PACKY_ANTHROPIC_TOKEN`，通过 PackyCode Anthropic 兼容端点调用 Claude Code。**本机 Claude Code / CC Switch 的 Key 与 Actions Secret 相互独立**；更换本机分组或密钥后，若旧密钥失效，需单独更新 GitHub Secret。密钥不得写入代码、工作流日志或 PR 内容。
 
-这是仓库自建的受限 Action，不是官方 Claude GitHub App 的交互模式。`@claude review` 是本工作流的精确命令，**不会**让评论署名变为 Claude，也不会授权 Claude 修改代码。若将来要显示官方 Claude bot 身份，需要另行安装 GitHub App 并审核其仓库权限，不能只改触发词。
+这是仓库自建的受限 Action，不是官方 Claude GitHub App 的交互模式。`@claude` 只是本工作流的触发词，**不会**授权 Claude 修改代码。官方 App 仅用于发布署名：模型步骤不获得 App 令牌、GitHub Token 或 OIDC 请求凭据；换取的 App 令牌只申请 `issues`/`pull_requests` 写权限并在日志中屏蔽。令牌交换只发送 GitHub OIDC 令牌，与 PackyCode 端点和密钥无关。
 
 单次任务在 YAML 中默认使用 `claude-sonnet-5`；Ardor 仓库目前通过变量 `CLAUDE_REVIEW_MODEL=claude-opus-5-5` 覆盖。当前 `cc-sale` 密钥的只读模型列表已列出这一 ID，但实际推理仍需首次手动审阅验证。最多 20 轮，Claude Code 估算预算为 $5，工作流最长运行 15 分钟。切换本机 CC Switch 分组不会自动改变 CI 模型；其他仓库应先确认供应商支持的**准确模型标识**，不要凭展示名猜测。
 
@@ -25,7 +25,7 @@
 
 ## 私有仓库鉴权
 
-`issue_comment` 事件使用默认分支上的工作流。独立的前置任务先核验完整 `@claude review` 指令和请求人的仓库写权限；**只有通过后**才进入同一 PR 的互斥审阅任务，普通或无权限评论不会取消正在进行的审阅。审阅任务再次核对 PR 仍打开。Checkout 使用临时 GitHub Token 检出**可信默认分支**，不运行 PR 代码，也不把凭据留在工作区。随后将 PR head 仅作为 Git 数据抓取，固定 base/head SHA，生成有大小上限的 diff；从可信默认分支读取 `docs/REVIEW_GUIDE.md`。Claude Code 在临时目录中审阅这份内容；它只加载该临时目录的项目设置，未预先批准任何本地工具，也不接收 GitHub Token。Claude 结束后，独立发布步骤使用 GitHub Token 把结果发到 PR。
+`issue_comment` 事件使用默认分支上的工作流。独立的前置任务先核验评论中有独立的 `@claude` 提及和请求人的仓库写权限（评论正文不会进入模型提示词）；**只有通过后**才进入同一 PR 的互斥审阅任务，普通或无权限评论不会取消正在进行的审阅。审阅任务再次核对 PR 仍打开。Checkout 使用临时 GitHub Token 检出**可信默认分支**，不运行 PR 代码，也不把凭据留在工作区。随后将 PR head 仅作为 Git 数据抓取，固定 base/head SHA，生成有大小上限的 diff；从可信默认分支读取 `docs/REVIEW_GUIDE.md`。Claude Code 在临时目录中审阅这份内容；它只加载该临时目录的项目设置，未预先批准任何本地工具，也不接收 GitHub Token。Claude 结束后，独立发布步骤使用 GitHub Token 把结果发到 PR。
 
 发布前会再次核对 PR 的 base/head SHA；审阅期间若有人 push 或目标 PR 关闭，工作流会拒绝发布过期结论。成功评论会标明实际审阅的 commit ID。
 
