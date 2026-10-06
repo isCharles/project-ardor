@@ -25,6 +25,6 @@
 
 ## 私有仓库鉴权
 
-`issue_comment` 事件使用默认分支上的工作流，并先核验评论是 PR 上的完整 `@claude review` 指令、请求人拥有仓库写权限、PR 仍打开。Checkout 使用临时 GitHub Token 检出**可信默认分支**，不运行 PR 代码，也不把凭据留在工作区。随后将 PR head 仅作为 Git 数据抓取，固定 base/head SHA，生成有大小上限的 diff；从可信默认分支读取 `docs/REVIEW_GUIDE.md`。Claude Code 在临时目录中审阅这份内容；它只加载该临时目录的项目设置，未预先批准任何本地工具，也不接收 GitHub Token。Claude 结束后，独立发布步骤使用 GitHub Token 把结果发到 PR。
+`issue_comment` 事件使用默认分支上的工作流。独立的前置任务先核验完整 `@claude review` 指令和请求人的仓库写权限；**只有通过后**才进入同一 PR 的互斥审阅任务，普通或无权限评论不会取消正在进行的审阅。审阅任务再次核对 PR 仍打开。Checkout 使用临时 GitHub Token 检出**可信默认分支**，不运行 PR 代码，也不把凭据留在工作区。随后将 PR head 仅作为 Git 数据抓取，固定 base/head SHA，生成有大小上限的 diff；从可信默认分支读取 `docs/REVIEW_GUIDE.md`。Claude Code 在临时目录中审阅这份内容；它只加载该临时目录的项目设置，未预先批准任何本地工具，也不接收 GitHub Token。Claude 结束后，独立发布步骤使用 GitHub Token 把结果发到 PR。
 
 这一隔离也意味着审阅只覆盖提交的 diff：超出 120 KB 时工作流会停止，Claude 不会暗中截断后给出不完整结论。若判断问题需要 diff 之外的上下文，审阅者应明确说无法确认。Action 若失败，先查看日志，不要把失败当成“没有问题”；也不要为了试通就连续发送多条付费指令。

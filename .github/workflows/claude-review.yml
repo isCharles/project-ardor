@@ -4,21 +4,54 @@ on:
   issue_comment:
     types: [created]
 
-concurrency:
-  group: claude-review-${{ github.event.issue.number }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
   issues: write
   pull-requests: write
 
 jobs:
-  review:
+  authorize:
     if: >-
       github.event.issue.pull_request != null &&
       github.event.comment.user.type != 'Bot' &&
       startsWith(github.event.comment.body, '@claude review')
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - name: Authorize exact review request
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          if not re.fullmatch(r"@claude\s+review\s*", event["comment"]["body"], re.IGNORECASE):
+              raise SystemExit("Use a standalone @claude review comment")
+          author = event["comment"]["user"]["login"]
+          repository = os.environ["GITHUB_REPOSITORY"]
+          permission = json.loads(subprocess.run(
+              ["gh", "api", f"repos/{repository}/collaborators/{author}/permission"],
+              capture_output=True, text=True, check=True,
+          ).stdout)["permission"]
+          if permission not in {"admin", "maintain", "write"}:
+              raise SystemExit("Review requester must have repository write access")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write("allowed=true\n")
+          PY
+
+  review:
+    needs: authorize
+    if: needs.authorize.outputs.allowed == 'true'
+    concurrency:
+      group: claude-review-${{ github.event.issue.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -52,16 +85,12 @@ jobs:
               raise SystemExit("Use a standalone @claude review comment")
 
           repository = os.environ["GITHUB_REPOSITORY"]
-          author = comment["user"]["login"]
           def api(path):
               return json.loads(subprocess.run(
                   ["gh", "api", f"repos/{repository}/{path}"],
                   capture_output=True, text=True, check=True,
               ).stdout)
 
-          permission = api(f"collaborators/{author}/permission")["permission"]
-          if permission not in {"admin", "maintain", "write"}:
-              raise SystemExit("Review requester must have repository write access")
           number = int(event["issue"]["number"])
           pr = api(f"pulls/{number}")
           if pr["state"] != "open" or pr["base"]["repo"]["full_name"] != repository:

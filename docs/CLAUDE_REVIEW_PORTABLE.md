@@ -23,7 +23,7 @@ PR 已创建/更新 ── 有写权限的维护者评论 @claude review
 | 项目 | 当前值/行为 | 移植时要决定什么 |
 | --- | --- | --- |
 | 触发 | `issue_comment` 的 `created` 事件；完整评论必须**恰好**为 `@claude review`，且作者有仓库写权限 | 保留人工按需触发，避免每次 push 收费；不可让任意外部评论消费密钥 |
-| 并发 | 同一 PR 的审阅任务相互取消 | 通常可以沿用 |
+| 并发 | **授权通过后**同一 PR 的审阅任务相互取消；普通或无权限评论不进入该队列 | 不要把 `concurrency` 放在工作流顶层，否则无关评论也可能取消付费审阅 |
 | 模型 | YAML 默认 `claude-sonnet-5`；Ardor 仓库变量当前覆盖为 `claude-opus-5-5` | 在目标供应商处验证准确模型标识和可用性；本机 CC Switch 选择不影响 CI |
 | 服务地址 | `ANTHROPIC_BASE_URL=https://www.packyapi.ai` | 若也使用 PackyCode，可沿用；其他服务需换成其 Anthropic 兼容端点 |
 | 密钥 | 仓库 Actions Secret：`PACKY_ANTHROPIC_TOKEN` | 在**目标仓库**单独配置，不写入文件或聊天；本机 Claude Code / CC Switch Key 与 CI Secret 不自动同步，Claude Pro 订阅也不等于 API Key |
@@ -36,7 +36,7 @@ PR 已创建/更新 ── 有写权限的维护者评论 @claude review
 
 ## 工作流为何拆成三个步骤
 
-1. `issue_comment` 在可信默认分支运行。预处理先验证完整触发词、非 bot 作者、仓库写权限及 PR 状态，再由 `actions/checkout` 检出默认分支。它仅以 Git 数据抓取 PR head，固定 API 返回的 base/head SHA 后计算三点 diff，**不执行 PR 代码**。`persist-credentials: false` 不把 GitHub 凭据留在 checkout；预处理还检查 Git remote URL 和 Git extraheader。
+1. `issue_comment` 在可信默认分支运行。独立前置任务先验证完整触发词、非 bot 作者和仓库写权限；只有授权通过的审阅任务才进入同 PR 并发组。审阅任务核验 PR 状态，再由 `actions/checkout` 检出默认分支。它仅以 Git 数据抓取 PR head，固定 API 返回的 base/head SHA 后计算三点 diff，**不执行 PR 代码**。`persist-credentials: false` 不把 GitHub 凭据留在 checkout；预处理还检查 Git remote URL 和 Git extraheader。
 2. 预处理从可信默认分支读取 `docs/REVIEW_GUIDE.md`，把它和有大小上限的 diff 写入临时沙盒 `prompt.md`。提示词明确把 diff 视为**不可信数据**，要求只报有证据、可执行的问题；没有足够上下文就说无法确认。Claude 步骤只在临时沙盒运行，没有仓库 checkout、没有预授权的读取/编辑/Bash/网络工具，也没有传入 GitHub Token。
 3. 发布步骤单独获得 GitHub Token。它读取 Claude Code 的 `execution_file`，检查模型没有调用工具、运行确实成功、结果非空且未超长，才通过 GitHub API 发布 PR 评论。失败时**不发布貌似完整的半成品**。
 
