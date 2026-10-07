@@ -197,7 +197,28 @@ export default function ReplayPage() {
           {scheduledRetest ? <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-white/75 px-5 py-4 text-sm"><CalendarDays className="size-4 text-violet-600" /><span>{t("Scheduled for ", "已安排 ")}{new Date(scheduledRetest.dueAt).toLocaleString(locale === "en" ? "en-US" : "zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span><Link href="/app/calendar" className="ml-auto text-violet-700 hover:underline">{t("View calendar", "查看日历")}</Link></div> : latest.nextChallenge && <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-white/75 px-5 py-4"><label htmlFor="retest-date" className="text-sm font-medium">{t("Try again in three days?", "三天后再试？")}</label><input id="retest-date" type="datetime-local" min={dateInputValue(new Date())} value={retestDate} onChange={(event) => setRetestDate(event.target.value)} className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm" /><button type="button" onClick={scheduleRetest} disabled={scheduling || !retestDate} className="rounded-full bg-stone-950 px-4 py-2 text-sm text-white disabled:opacity-45">{scheduling ? t("Scheduling…", "安排中…") : t("Schedule retest", "安排复测")}</button></div>}
         </section>}
 
-        {replay.attempts.length > 1 && <section className="mt-10"><h2 className="mb-4 text-lg font-semibold">{t("Earlier attempts", "之前的回放")}</h2><div className="space-y-2">{replay.attempts.slice(1).map((item) => <details key={item.id} className="rounded-2xl bg-white/65 px-5 py-4"><summary className="cursor-pointer text-sm font-medium text-stone-700">{new Date(item.createdAt).toLocaleString(locale === "en" ? "en-US" : "zh-CN")} · {verdictLabel[item.verdict]}</summary>{item.challengeText && <p className="mt-4 text-sm text-violet-700">{t("Retest question: ", "复测题：")}{item.challengeText}</p>}<p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-stone-600">{item.answerText}</p><p className="mt-3 text-sm leading-6 text-stone-500">{item.comparison}</p></details>)}</div></section>}
+        {replay.attempts.length > 0 && <section className="mt-10" aria-label={t("Practice history", "练习历程")}>
+          <h2 className="text-lg font-semibold">{t("How your answers changed", "回答是怎样变化的")}</h2>
+          <p className="mt-2 text-sm text-stone-500">{t("Each comparison is against the original interview, not proof of mastery.", "每次对比都以原始面试为参照，不代表已经掌握。")}</p>
+          <ol className="mt-6 space-y-3 border-l border-violet-200/80 pl-5">
+            <li className="relative rounded-2xl bg-white/65 p-5 before:absolute before:-left-[1.69rem] before:top-6 before:size-3 before:rounded-full before:bg-rose-300">
+              <p className="text-sm font-medium text-stone-800">{t("Original interview", "原始面试")}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-600">{replay.originalAssessment || replay.weaknessReason || t("No original assessment was recorded.", "原始材料没有记录评价。")}</p>
+              {!replay.originalAnswer && <p className="mt-2 text-xs text-stone-500">{t("The original answer is missing; improvement cannot be verified.", "原始回答缺失，无法验证是否进步。")}</p>}
+            </li>
+            {[...replay.attempts].reverse().map((item, index) => <li key={item.id} className="relative rounded-2xl bg-white/65 p-5 before:absolute before:-left-[1.69rem] before:top-6 before:size-3 before:rounded-full before:bg-violet-400">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-sm font-medium text-stone-800">{t(`Answer ${index + 1}`, `第 ${index + 1} 次作答`)}</span>
+                <span className="text-xs text-stone-500">{item.challengeText ? t("Variation retest", "变式复测") : t("Practice", "自主练习")}</span>
+                <span className="text-xs text-stone-500">{new Date(item.createdAt).toLocaleString(locale === "en" ? "en-US" : "zh-CN")}</span>
+                <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs text-violet-700">{verdictLabel[item.verdict]}</span>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-stone-700">{item.comparison}</p>
+              {item.remainingGaps.length > 0 && <p className="mt-2 text-xs leading-5 text-stone-500">{t("Still to improve: ", "仍需补强：")}{item.remainingGaps.join(t(" · ", " · "))}</p>}
+              {item.id !== latest?.id && <details className="mt-3 text-sm text-stone-600"><summary className="cursor-pointer text-xs font-medium text-violet-700">{t("View answer", "查看当次回答")}</summary>{item.challengeText && <p className="mt-3 text-sm text-violet-700">{t("Retest question: ", "复测题：")}{item.challengeText}</p>}<p className="mt-3 whitespace-pre-wrap leading-6">{item.answerText}</p></details>}
+            </li>)}
+          </ol>
+        </section>}
         <Link href={`/app/recaps?selected=${replay.recapId}`} className="mt-10 inline-flex items-center gap-2 text-sm text-stone-500 hover:text-stone-900"><RotateCcw className="size-4" />{t("Back to interview notes", "回到原始面经")}</Link>
       </>}
     </div>
