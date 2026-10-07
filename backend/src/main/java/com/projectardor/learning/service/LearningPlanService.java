@@ -71,10 +71,24 @@ public class LearningPlanService {
 
     public LearningPlan create(UUID userId, UUID requestId, String rawConcept, String rawReason,
             LearningSourceType sourceType, UUID sourceId, Instant scheduledAt) {
+        return createInternal(userId, requestId, rawConcept, rawReason, sourceType, sourceId, scheduledAt, false);
+    }
+
+    public LearningPlan createForAgent(UUID userId, UUID requestId, String rawConcept, String rawReason,
+            LearningSourceType sourceType, UUID sourceId, Instant scheduledAt) {
+        return createInternal(userId, requestId, rawConcept, rawReason, sourceType, sourceId, scheduledAt, true);
+    }
+
+    private LearningPlan createInternal(UUID userId, UUID requestId, String rawConcept, String rawReason,
+            LearningSourceType sourceType, UUID sourceId, Instant scheduledAt, boolean agentRetry) {
         String concept = required(rawConcept, "学习概念不能为空", 160);
         String reason = optional(rawReason, 4000);
         LearningSourceType source = sourceType == null ? LearningSourceType.MANUAL : sourceType;
-        String requestHash = requestId == null ? null : requestHash(concept, reason, source, sourceId, scheduledAt);
+        // Agent retries can regenerate wording and schedule. Its trusted per-action slot is the identity;
+        // manual requests remain strict about every input field.
+        String requestHash = requestId == null ? null : agentRetry
+                ? requestHash(requestId.toString(), null, LearningSourceType.AGENT, null, null)
+                : requestHash(concept, reason, source, sourceId, scheduledAt);
         LearningPlan previous = creationStore.existing(userId, requestId, requestHash);
         if (previous != null) return previous;
         try (LearningPlanGenerationGate.Reservation ignored = generationGate.reserve(userId, requestId, requestHash)) {
@@ -172,7 +186,9 @@ public class LearningPlanService {
 
     @Transactional
     public void delete(UUID userId, UUID planId) {
-        repository.delete(get(userId, planId));
+        LearningPlan plan = get(userId, planId);
+        creationStore.markDeleted(plan);
+        repository.delete(plan);
     }
 
     private Map<String, Object> lesson(JsonNode node) {

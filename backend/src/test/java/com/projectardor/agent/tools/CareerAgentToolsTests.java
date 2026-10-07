@@ -36,22 +36,20 @@ import com.projectardor.websearch.service.WebSearchResult;
 class CareerAgentToolsTests {
 
     @Test
-    void learningPlanKeyDistinguishesDifferentAgentInputsWithinOneRun() {
+    void learningPlanKeyReusesAnActionSlotAcrossReplacementRuns() {
         UUID runId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
-        Instant firstDay = Instant.parse("2026-10-08T01:00:00Z");
-        Instant secondDay = Instant.parse("2026-10-09T01:00:00Z");
-        UUID first = CareerAgentTools.learningPlanRequestId(runId, " JVM ", " 面试薄弱点 ",
-                LearningSourceType.RECAP, sourceId, firstDay);
+        UUID first = CareerAgentTools.learningPlanRequestId(runId, " JVM ",
+                LearningSourceType.RECAP, sourceId, 1);
 
-        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM", "面试薄弱点",
-                LearningSourceType.RECAP, sourceId, firstDay)).isEqualTo(first);
-        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM", "岗位要求",
-                LearningSourceType.RECAP, sourceId, firstDay)).isNotEqualTo(first);
-        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM", "面试薄弱点",
-                LearningSourceType.RECAP, sourceId, secondDay)).isNotEqualTo(first);
-        assertThat(CareerAgentTools.learningPlanRequestId(null, "JVM", "面试薄弱点",
-                LearningSourceType.RECAP, sourceId, firstDay)).isNull();
+        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM",
+                LearningSourceType.RECAP, sourceId, 1)).isEqualTo(first);
+        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM",
+                LearningSourceType.RECAP, sourceId, 2)).isNotEqualTo(first);
+        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM",
+                LearningSourceType.KNOWLEDGE, sourceId, 1)).isNotEqualTo(first);
+        assertThat(CareerAgentTools.learningPlanRequestId(null, "JVM",
+                LearningSourceType.RECAP, sourceId, 1)).isNull();
     }
 
     @Test

@@ -8,6 +8,8 @@ import java.time.OffsetDateTime;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -120,14 +122,13 @@ public class CareerAgentTools {
         return new BoundCareerTools(trustedUserId, trustedUserRequest, runRequestId);
     }
 
-    static UUID learningPlanRequestId(UUID runRequestId, String concept, String reason,
-            LearningSourceType source, UUID sourceId, Instant scheduledAt) {
+    static UUID learningPlanRequestId(UUID runRequestId, String concept,
+            LearningSourceType source, UUID sourceId, int occurrence) {
         if (runRequestId == null) return null;
-        String normalizedReason = reason == null || reason.isBlank() ? null : reason.strip();
         String input = runRequestId + ":learning:" + framed(concept == null ? null : concept.strip())
-                + framed(normalizedReason) + framed(source.name())
+                + framed(source.name())
                 + framed(sourceId == null ? null : sourceId.toString())
-                + framed(scheduledAt == null ? null : scheduledAt.toString());
+                + framed(String.valueOf(occurrence));
         return UUID.nameUUIDFromBytes(input.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -176,6 +177,8 @@ public class CareerAgentTools {
         private final UUID userId;
         private final String trustedUserRequest;
         private final UUID runRequestId;
+        private final ConcurrentHashMap<String, AtomicInteger> learningOccurrences = new ConcurrentHashMap<>();
+        private final ConcurrentHashMap<String, Integer> learningCallSlots = new ConcurrentHashMap<>();
         /* Destructive tools no longer delete. They hand the user a button and
            record it here; the caller of the run turns these into stream
            events, and nothing is removed until the person presses one. */
@@ -272,8 +275,14 @@ public class CareerAgentTools {
             LearningSourceType source = enumValue(LearningSourceType.class, sourceType, LearningSourceType.AGENT);
             UUID sourceUuid = nullableUuid(sourceId, "来源 ID");
             Instant dueAt = nullableInstant(scheduledAt);
-            UUID idempotencyKey = learningPlanRequestId(runRequestId, concept, reason, source, sourceUuid, dueAt);
-            return LearningPlanResponse.from(learningPlanService.create(userId, idempotencyKey, concept, reason, source,
+            String slot = framed(concept == null ? null : concept.strip()) + framed(source.name())
+                    + framed(sourceUuid == null ? null : sourceUuid.toString());
+            String exactCall = slot + framed(reason == null ? null : reason.strip())
+                    + framed(dueAt == null ? null : dueAt.toString());
+            int occurrence = learningCallSlots.computeIfAbsent(exactCall,
+                    ignored -> learningOccurrences.computeIfAbsent(slot, key -> new AtomicInteger()).incrementAndGet());
+            UUID idempotencyKey = learningPlanRequestId(runRequestId, concept, source, sourceUuid, occurrence);
+            return LearningPlanResponse.from(learningPlanService.createForAgent(userId, idempotencyKey, concept, reason, source,
                     sourceUuid, dueAt));
         }
 

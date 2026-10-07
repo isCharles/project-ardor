@@ -18,6 +18,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.mockito.ArgumentCaptor;
 
 import com.projectardor.calendar.service.CalendarTaskService;
 import com.projectardor.common.json.LlmJsonParser;
@@ -44,7 +46,7 @@ class LearningPlanIdempotencyTests {
         when(repository.findByUserIdAndRequestId(userId, requestId))
                 .thenReturn(Optional.empty(), Optional.of(plan));
         when(repository.saveAndFlush(plan)).thenReturn(plan);
-        LearningPlanCreationStore store = new LearningPlanCreationStore(repository, calendar);
+        LearningPlanCreationStore store = new LearningPlanCreationStore(repository, calendar, mock(JdbcTemplate.class));
 
         assertThat(store.save(userId, requestId, plan)).isSameAs(plan);
         assertThat(store.save(userId, requestId, plan(userId, requestId, "same-input"))).isSameAs(plan);
@@ -62,7 +64,8 @@ class LearningPlanIdempotencyTests {
         LearningPlanRepository repository = mock(LearningPlanRepository.class);
         when(repository.findByUserIdAndRequestId(userId, requestId))
                 .thenReturn(Optional.of(plan(userId, requestId, "original-input")));
-        LearningPlanCreationStore store = new LearningPlanCreationStore(repository, mock(CalendarTaskService.class));
+        LearningPlanCreationStore store = new LearningPlanCreationStore(repository, mock(CalendarTaskService.class),
+                mock(JdbcTemplate.class));
 
         assertThatThrownBy(() -> store.existing(userId, requestId, "changed-input"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -79,10 +82,30 @@ class LearningPlanIdempotencyTests {
         when(repository.findByUserIdAndRequestId(owner, requestId))
                 .thenReturn(Optional.of(plan(owner, requestId, "same-input")));
         when(repository.findByUserIdAndRequestId(other, requestId)).thenReturn(Optional.empty());
-        LearningPlanCreationStore store = new LearningPlanCreationStore(repository, mock(CalendarTaskService.class));
+        LearningPlanCreationStore store = new LearningPlanCreationStore(repository, mock(CalendarTaskService.class),
+                mock(JdbcTemplate.class));
 
         assertThat(store.existing(other, requestId, "same-input")).isNull();
         verify(repository).findByUserIdAndRequestId(other, requestId);
+    }
+
+    @Test
+    void deletedPlanCannotBeRecreatedByDelayedRetry() {
+        UUID userId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        LearningPlanRepository repository = mock(LearningPlanRepository.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        LearningPlan original = plan(userId, requestId, "same-input");
+        when(repository.findByUserIdAndRequestId(userId, requestId)).thenReturn(Optional.empty());
+        when(jdbc.queryForList(anyString(), eq(String.class), eq(userId), eq(requestId)))
+                .thenReturn(List.of("same-input"));
+        LearningPlanCreationStore store = new LearningPlanCreationStore(repository,
+                mock(CalendarTaskService.class), jdbc);
+
+        store.markDeleted(original);
+        verify(jdbc).update(anyString(), eq(userId), eq(requestId), eq("same-input"));
+        assertThatThrownBy(() -> store.existing(userId, requestId, "same-input"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("已删除");
     }
 
     @Test
@@ -100,6 +123,29 @@ class LearningPlanIdempotencyTests {
 
         assertThat(service.create(userId, requestId, "JVM", "面试薄弱点",
                 LearningSourceType.MANUAL, null, DUE)).isSameAs(previous);
+        verify(llm, never()).completeJson(any(), any(), any());
+    }
+
+    @Test
+    void agentRetryIgnoresRegeneratedReasonAndSchedule() {
+        UUID userId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        LearningPlan previous = plan(userId, requestId, "saved-input");
+        LearningPlanCreationStore store = mock(LearningPlanCreationStore.class);
+        when(store.existing(eq(userId), eq(requestId), anyString())).thenReturn(previous);
+        LlmGateway llm = mock(LlmGateway.class);
+        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
+                mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
+                mock(ProfileService.class), mock(InterviewRecapRepository.class),
+                mock(InterviewRecapQuestionRepository.class), store, mock(LearningPlanGenerationGate.class));
+
+        assertThat(service.createForAgent(userId, requestId, "JVM", "第一次说明",
+                LearningSourceType.RECAP, null, DUE)).isSameAs(previous);
+        assertThat(service.createForAgent(userId, requestId, "JVM", "改写后的说明",
+                LearningSourceType.RECAP, null, DUE.plusSeconds(86_400))).isSameAs(previous);
+        ArgumentCaptor<String> hashes = ArgumentCaptor.forClass(String.class);
+        verify(store, times(2)).existing(eq(userId), eq(requestId), hashes.capture());
+        assertThat(hashes.getAllValues().get(0)).isEqualTo(hashes.getAllValues().get(1));
         verify(llm, never()).completeJson(any(), any(), any());
     }
 

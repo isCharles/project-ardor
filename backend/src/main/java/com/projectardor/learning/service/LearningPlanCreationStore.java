@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.projectardor.calendar.domain.CalendarTaskSource;
 import com.projectardor.calendar.service.CalendarTaskService;
@@ -17,17 +18,34 @@ import com.projectardor.learning.repository.LearningPlanRepository;
 public class LearningPlanCreationStore {
     private final LearningPlanRepository plans;
     private final CalendarTaskService calendar;
+    private final JdbcTemplate jdbc;
 
-    public LearningPlanCreationStore(LearningPlanRepository plans, CalendarTaskService calendar) {
+    public LearningPlanCreationStore(LearningPlanRepository plans, CalendarTaskService calendar, JdbcTemplate jdbc) {
         this.plans = plans;
         this.calendar = calendar;
+        this.jdbc = jdbc;
     }
 
     public LearningPlan existing(UUID userId, UUID requestId, String requestHash) {
         if (requestId == null) return null;
-        return plans.findByUserIdAndRequestId(userId, requestId)
+        LearningPlan existing = plans.findByUserIdAndRequestId(userId, requestId)
                 .map(plan -> sameRequest(plan, requestHash))
                 .orElse(null);
+        if (existing != null) return existing;
+        if (!jdbc.queryForList("""
+                SELECT request_hash FROM deleted_learning_requests WHERE user_id = ? AND request_id = ?
+                """, String.class, userId, requestId).isEmpty()) {
+            throw new IllegalStateException("这份学习计划已删除，旧请求不能将其恢复");
+        }
+        return null;
+    }
+
+    public void markDeleted(LearningPlan plan) {
+        if (plan.getRequestId() == null) return;
+        jdbc.update("""
+                INSERT INTO deleted_learning_requests (user_id, request_id, request_hash)
+                VALUES (?, ?, ?) ON CONFLICT (user_id, request_id) DO NOTHING
+                """, plan.getUserId(), plan.getRequestId(), plan.getRequestHash());
     }
 
     @Transactional
