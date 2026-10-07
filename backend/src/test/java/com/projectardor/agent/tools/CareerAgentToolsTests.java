@@ -23,6 +23,7 @@ import com.projectardor.interview.domain.InterviewSession;
 import com.projectardor.calendar.service.TaskSeriesService;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.knowledge.service.KnowledgeService;
+import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
@@ -33,6 +34,25 @@ import com.projectardor.websearch.service.TavilySearchService;
 import com.projectardor.websearch.service.WebSearchResult;
 
 class CareerAgentToolsTests {
+
+    @Test
+    void learningPlanKeyDistinguishesDifferentAgentInputsWithinOneRun() {
+        UUID runId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        Instant firstDay = Instant.parse("2026-10-08T01:00:00Z");
+        Instant secondDay = Instant.parse("2026-10-09T01:00:00Z");
+        UUID first = CareerAgentTools.learningPlanRequestId(runId, " JVM ", " 面试薄弱点 ",
+                LearningSourceType.RECAP, sourceId, firstDay);
+
+        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM", "面试薄弱点",
+                LearningSourceType.RECAP, sourceId, firstDay)).isEqualTo(first);
+        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM", "岗位要求",
+                LearningSourceType.RECAP, sourceId, firstDay)).isNotEqualTo(first);
+        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM", "面试薄弱点",
+                LearningSourceType.RECAP, sourceId, secondDay)).isNotEqualTo(first);
+        assertThat(CareerAgentTools.learningPlanRequestId(null, "JVM", "面试薄弱点",
+                LearningSourceType.RECAP, sourceId, firstDay)).isNull();
+    }
 
     @Test
     void deletingACalendarTaskOnlyProposesItForTheUserToConfirm() {

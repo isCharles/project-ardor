@@ -120,6 +120,21 @@ public class CareerAgentTools {
         return new BoundCareerTools(trustedUserId, trustedUserRequest, runRequestId);
     }
 
+    static UUID learningPlanRequestId(UUID runRequestId, String concept, String reason,
+            LearningSourceType source, UUID sourceId, Instant scheduledAt) {
+        if (runRequestId == null) return null;
+        String normalizedReason = reason == null || reason.isBlank() ? null : reason.strip();
+        String input = runRequestId + ":learning:" + framed(concept == null ? null : concept.strip())
+                + framed(normalizedReason) + framed(source.name())
+                + framed(sourceId == null ? null : sourceId.toString())
+                + framed(scheduledAt == null ? null : scheduledAt.toString());
+        return UUID.nameUUIDFromBytes(input.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String framed(String value) {
+        return value == null ? "-1:" : value.length() + ":" + value;
+    }
+
     public String contextHint(UUID userId, String rawType, UUID contextId) {
         if (rawType == null || contextId == null) return "";
         return switch (rawType.strip().toUpperCase(java.util.Locale.ROOT)) {
@@ -256,11 +271,10 @@ public class CareerAgentTools {
                 @P(value = "来源对象 UUID；针对面经某题时传问题 UUID，针对整场面试时传面经 UUID；没有则留空", required = false) String sourceId) {
             LearningSourceType source = enumValue(LearningSourceType.class, sourceType, LearningSourceType.AGENT);
             UUID sourceUuid = nullableUuid(sourceId, "来源 ID");
-            UUID idempotencyKey = runRequestId == null ? null : UUID.nameUUIDFromBytes(
-                    (runRequestId + ":learning:" + (concept == null ? "" : concept.strip()) + ":" + source + ":" + sourceUuid)
-                            .getBytes(StandardCharsets.UTF_8));
+            Instant dueAt = nullableInstant(scheduledAt);
+            UUID idempotencyKey = learningPlanRequestId(runRequestId, concept, reason, source, sourceUuid, dueAt);
             return LearningPlanResponse.from(learningPlanService.create(userId, idempotencyKey, concept, reason, source,
-                    sourceUuid, nullableInstant(scheduledAt)));
+                    sourceUuid, dueAt));
         }
 
         public AgentMemoryResponse updateUserMemory(@P("完整的新版总体记忆，使用简洁中文要点；要清空时传空字符串") String memory) {
