@@ -43,6 +43,23 @@ class LearningPlanAgentSlotsTests {
 
     @Test
     @SuppressWarnings("unchecked")
+    void changedArgumentsOnASecondAttemptReuseTheOnlyPersistedSlot() {
+        UUID user = UUID.randomUUID();
+        UUID logical = UUID.randomUUID();
+        UUID firstAttempt = UUID.randomUUID();
+        UUID retryAttempt = UUID.randomUUID();
+        UUID existingPlan = UUID.randomUUID();
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.query(anyString(), any(RowMapper.class), eq(user), eq(logical), anyString()))
+                .thenReturn(List.of(new LearningPlanAgentSlots.Slot(existingPlan,
+                        LearningPlanAgentSlots.signature("原来的理由", FIRST), firstAttempt)));
+
+        assertThat(new LearningPlanAgentSlots(jdbc).resolve(user, logical, retryAttempt, "JVM",
+                "重新措辞的理由", LearningSourceType.AGENT, null, SECOND)).isEqualTo(existingPlan);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void ambiguousRegeneratedCallIsRejectedInsteadOfReusingWrongPlan() {
         UUID user = UUID.randomUUID();
         UUID logical = UUID.randomUUID();

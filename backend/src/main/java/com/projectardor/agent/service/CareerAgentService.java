@@ -189,7 +189,10 @@ public class CareerAgentService {
                     .chatModel(modelFactory.create(userId))
                     .systemMessage(systemPrompt(userId))
                     .chatMemory(memory)
-                    .tools(tools.bind(userId, message, requestId))
+                    // A synchronous retry keeps the logical request but is a new tool-call attempt.
+                    // Reusing requestId as the run ID would make regenerated arguments create a second slot.
+                    .tools(tools.bind(userId, message, requestId,
+                            requestId == null ? null : UUID.randomUUID()))
                     .maxToolCallingRoundTrips(8)
                     .maxSequentialToolsInvocations(12)
                     .compensateOnToolErrors(true)
