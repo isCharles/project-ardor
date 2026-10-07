@@ -1,13 +1,13 @@
 # Claude PR 审阅
 
-本仓库的 Claude Code 审阅由 PR 评论中的 `@claude` 提及触发，避免每次推送都自动产生模型费用。Codex 的 PR 自动审阅不受影响。
+本仓库的 Claude Code 审阅由 PR 评论中的 `@claude` 提及触发。日常 PR 默认不触发；需要审阅大范围或高风险改动时才使用，并优先一次覆盖一批变化，避免每次推送都产生模型费用。Codex 的 PR 自动审阅不受本文档影响；审阅节奏见 `docs/REVIEW_GUIDE.md`。
 
 ## 使用方式
 
 1. 打开需要审阅的 Pull Request。
 2. 有仓库写权限的维护者在 PR 对话里发一条提到 `@claude` 的评论，例如 `@claude` 或 `@codex @claude`。**只要评论里出现独立的 `@claude`（`@claudebot` 之类不算）就会触发一次付费审阅**，讨论中顺口提到也算；不想触发时写成 `Claude` 而不带 `@`。
 3. 等待 `Claude PR Review` 工作流完成，并查看 PR 中的审阅结果。本仓库已安装官方 Claude GitHub App，评论作者显示为 `claude[bot]`：只有发布步骤用工作流 OIDC 令牌向 Anthropic 换取该 App 的短期令牌。换取失败时退回 `github-actions` 发布，日志会写明原因。审阅内容由 Claude Code 生成。
-4. 修复后如需再次审阅，维护者再发一条提到 `@claude` 的评论。推送新 commit 不会自动触发付费复审。同一 PR 上新的触发会取消仍在运行的上一次审阅。
+4. 修复后先验证；只有修复仍有显著风险、确实需要再次审阅时，维护者才再发一条提到 `@claude` 的评论。推送新 commit 不会自动触发付费复审。同一 PR 上新的触发会取消仍在运行的上一次审阅。
 
 工作流使用仓库 Actions Secret `PACKY_ANTHROPIC_TOKEN`，通过 PackyCode Anthropic 兼容端点调用 Claude Code。**本机 Claude Code / CC Switch 的 Key 与 Actions Secret 相互独立**；更换本机分组或密钥后，若旧密钥失效，需单独更新 GitHub Secret。密钥不得写入代码、工作流日志或 PR 内容。
 
