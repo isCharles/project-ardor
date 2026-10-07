@@ -11,7 +11,7 @@ consume() {
   idempotent=$5
   redis-cli --raw --eval "$script" \
     "$prefix:month" "$prefix:user-minute" "$prefix:global-minute" "$prefix:idempotency" \
-    , "$monthly" "$user_minute" "$global_minute" 60 60 "$idempotent"
+    , "$monthly" "$user_minute" "$global_minute" 60 60 "$idempotent" 3000
 }
 
 assert_equal() {
@@ -34,6 +34,10 @@ assert_equal "$(redis-cli --raw GET "$prefix:global-minute")" 2
 assert_equal "$(consume "$prefix:idem" 2 10 10 1)" 1
 assert_equal "$(consume "$prefix:idem" 2 10 10 1)" 2
 assert_equal "$(redis-cli --raw GET "$prefix:idem:month")" 1
+if [ "$(redis-cli --raw TTL "$prefix:idem:idempotency")" -lt 2990 ]; then
+  printf 'Idempotency marker expired too soon\n' >&2
+  exit 1
+fi
 
 results=/tmp/quota-results-"$$"
 for attempt in $(seq 1 24); do
