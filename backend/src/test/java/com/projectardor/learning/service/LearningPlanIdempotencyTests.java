@@ -119,7 +119,8 @@ class LearningPlanIdempotencyTests {
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
                 mock(ProfileService.class), mock(InterviewRecapRepository.class),
-                mock(InterviewRecapQuestionRepository.class), store, mock(LearningPlanGenerationGate.class));
+                mock(InterviewRecapQuestionRepository.class), store, mock(LearningPlanGenerationGate.class),
+                mock(LearningPlanAgentSlots.class));
 
         assertThat(service.create(userId, requestId, "JVM", "面试薄弱点",
                 LearningSourceType.MANUAL, null, DUE)).isSameAs(previous);
@@ -133,15 +134,19 @@ class LearningPlanIdempotencyTests {
         LearningPlan previous = plan(userId, requestId, "saved-input");
         LearningPlanCreationStore store = mock(LearningPlanCreationStore.class);
         when(store.existing(eq(userId), eq(requestId), anyString())).thenReturn(previous);
+        LearningPlanAgentSlots slots = mock(LearningPlanAgentSlots.class);
+        UUID runId = UUID.randomUUID();
+        when(slots.resolve(eq(userId), eq(requestId), eq(runId), eq("JVM"), anyString(),
+                eq(LearningSourceType.RECAP), eq(null), any(Instant.class))).thenReturn(requestId);
         LlmGateway llm = mock(LlmGateway.class);
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
                 mock(ProfileService.class), mock(InterviewRecapRepository.class),
-                mock(InterviewRecapQuestionRepository.class), store, mock(LearningPlanGenerationGate.class));
+                mock(InterviewRecapQuestionRepository.class), store, mock(LearningPlanGenerationGate.class), slots);
 
-        assertThat(service.createForAgent(userId, requestId, "JVM", "第一次说明",
+        assertThat(service.createForAgent(userId, requestId, runId, "JVM", "第一次说明",
                 LearningSourceType.RECAP, null, DUE)).isSameAs(previous);
-        assertThat(service.createForAgent(userId, requestId, "JVM", "改写后的说明",
+        assertThat(service.createForAgent(userId, requestId, runId, "JVM", "改写后的说明",
                 LearningSourceType.RECAP, null, DUE.plusSeconds(86_400))).isSameAs(previous);
         ArgumentCaptor<String> hashes = ArgumentCaptor.forClass(String.class);
         verify(store, times(2)).existing(eq(userId), eq(requestId), hashes.capture());

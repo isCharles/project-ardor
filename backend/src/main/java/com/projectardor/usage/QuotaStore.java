@@ -51,7 +51,8 @@ public class QuotaStore {
                 String.valueOf(policy.monthlyLimit(tier)),
                 String.valueOf(policy.userMinuteLimit()),
                 String.valueOf(policy.globalMinuteLimit()),
-                String.valueOf(monthlyTtl), "120", requestId == null ? "0" : "1");
+                String.valueOf(monthlyTtl), "120", requestId == null ? "0" : "1",
+                String.valueOf(Math.max(monthlyTtl, 35L * 86_400)));
         if (outcome == null) throw new IllegalStateException("额度计数器未返回结果");
         return switch (outcome.intValue()) {
             case 1 -> Decision.ALLOWED;

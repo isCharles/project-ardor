@@ -8,13 +8,10 @@ import java.time.OffsetDateTime;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.nio.charset.StandardCharsets;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -119,21 +116,12 @@ public class CareerAgentTools {
     }
 
     public BoundCareerTools bind(UUID trustedUserId, String trustedUserRequest, UUID runRequestId) {
-        return new BoundCareerTools(trustedUserId, trustedUserRequest, runRequestId);
+        return bind(trustedUserId, trustedUserRequest, runRequestId, runRequestId);
     }
 
-    static UUID learningPlanRequestId(UUID runRequestId, String concept,
-            LearningSourceType source, UUID sourceId, int occurrence) {
-        if (runRequestId == null) return null;
-        String input = runRequestId + ":learning:" + framed(concept == null ? null : concept.strip())
-                + framed(source.name())
-                + framed(sourceId == null ? null : sourceId.toString())
-                + framed(String.valueOf(occurrence));
-        return UUID.nameUUIDFromBytes(input.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private static String framed(String value) {
-        return value == null ? "-1:" : value.length() + ":" + value;
+    public BoundCareerTools bind(UUID trustedUserId, String trustedUserRequest,
+            UUID logicalActionId, UUID runRequestId) {
+        return new BoundCareerTools(trustedUserId, trustedUserRequest, logicalActionId, runRequestId);
     }
 
     public String contextHint(UUID userId, String rawType, UUID contextId) {
@@ -176,17 +164,18 @@ public class CareerAgentTools {
     public final class BoundCareerTools {
         private final UUID userId;
         private final String trustedUserRequest;
+        private final UUID logicalActionId;
         private final UUID runRequestId;
-        private final ConcurrentHashMap<String, AtomicInteger> learningOccurrences = new ConcurrentHashMap<>();
-        private final ConcurrentHashMap<String, Integer> learningCallSlots = new ConcurrentHashMap<>();
         /* Destructive tools no longer delete. They hand the user a button and
            record it here; the caller of the run turns these into stream
            events, and nothing is removed until the person presses one. */
         private final List<PendingConfirmation> pending = new CopyOnWriteArrayList<>();
 
-        private BoundCareerTools(UUID userId, String trustedUserRequest, UUID runRequestId) {
+        private BoundCareerTools(UUID userId, String trustedUserRequest,
+                UUID logicalActionId, UUID runRequestId) {
             this.userId = userId;
             this.trustedUserRequest = trustedUserRequest == null ? "" : trustedUserRequest.strip();
+            this.logicalActionId = logicalActionId;
             this.runRequestId = runRequestId;
         }
 
@@ -275,14 +264,8 @@ public class CareerAgentTools {
             LearningSourceType source = enumValue(LearningSourceType.class, sourceType, LearningSourceType.AGENT);
             UUID sourceUuid = nullableUuid(sourceId, "来源 ID");
             Instant dueAt = nullableInstant(scheduledAt);
-            String slot = framed(concept == null ? null : concept.strip()) + framed(source.name())
-                    + framed(sourceUuid == null ? null : sourceUuid.toString());
-            String exactCall = slot + framed(reason == null ? null : reason.strip())
-                    + framed(dueAt == null ? null : dueAt.toString());
-            int occurrence = learningCallSlots.computeIfAbsent(exactCall,
-                    ignored -> learningOccurrences.computeIfAbsent(slot, key -> new AtomicInteger()).incrementAndGet());
-            UUID idempotencyKey = learningPlanRequestId(runRequestId, concept, source, sourceUuid, occurrence);
-            return LearningPlanResponse.from(learningPlanService.createForAgent(userId, idempotencyKey, concept, reason, source,
+            return LearningPlanResponse.from(learningPlanService.createForAgent(userId,
+                    logicalActionId, runRequestId, concept, reason, source,
                     sourceUuid, dueAt));
         }
 

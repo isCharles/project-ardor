@@ -276,7 +276,7 @@ public class CareerAgentService {
             AtomicLong lastHeartbeatAt = new AtomicLong(System.nanoTime());
             // Held rather than inlined: after the run it is asked which deletions
             // the agent proposed, so each becomes a button in the transcript.
-            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId);
+            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId))
                     .systemMessage(systemPrompt(userId)).chatMemory(memory).tools(bound)

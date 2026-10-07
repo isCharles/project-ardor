@@ -48,7 +48,7 @@ class LearningFeedbackHistoryTests {
                 new LlmJsonParser(mapper), mapper, mock(CalendarTaskService.class),
                 mock(ProfileService.class), mock(InterviewRecapRepository.class),
                 mock(InterviewRecapQuestionRepository.class), mock(LearningPlanCreationStore.class),
-                mock(LearningPlanGenerationGate.class));
+                mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class));
 
         LearningPlan updated = service.submit(userId, plan.getId(), List.of("JVM 管理内存并执行字节码"));
 

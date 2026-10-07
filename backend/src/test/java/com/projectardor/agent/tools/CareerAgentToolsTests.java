@@ -23,7 +23,6 @@ import com.projectardor.interview.domain.InterviewSession;
 import com.projectardor.calendar.service.TaskSeriesService;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.knowledge.service.KnowledgeService;
-import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
@@ -34,23 +33,6 @@ import com.projectardor.websearch.service.TavilySearchService;
 import com.projectardor.websearch.service.WebSearchResult;
 
 class CareerAgentToolsTests {
-
-    @Test
-    void learningPlanKeyReusesAnActionSlotAcrossReplacementRuns() {
-        UUID runId = UUID.randomUUID();
-        UUID sourceId = UUID.randomUUID();
-        UUID first = CareerAgentTools.learningPlanRequestId(runId, " JVM ",
-                LearningSourceType.RECAP, sourceId, 1);
-
-        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM",
-                LearningSourceType.RECAP, sourceId, 1)).isEqualTo(first);
-        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM",
-                LearningSourceType.RECAP, sourceId, 2)).isNotEqualTo(first);
-        assertThat(CareerAgentTools.learningPlanRequestId(runId, "JVM",
-                LearningSourceType.KNOWLEDGE, sourceId, 1)).isNotEqualTo(first);
-        assertThat(CareerAgentTools.learningPlanRequestId(null, "JVM",
-                LearningSourceType.RECAP, sourceId, 1)).isNull();
-    }
 
     @Test
     void deletingACalendarTaskOnlyProposesItForTheUserToConfirm() {

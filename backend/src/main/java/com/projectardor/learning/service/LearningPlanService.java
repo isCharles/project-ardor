@@ -46,12 +46,14 @@ public class LearningPlanService {
     private final InterviewRecapQuestionRepository recapQuestionRepository;
     private final LearningPlanCreationStore creationStore;
     private final LearningPlanGenerationGate generationGate;
+    private final LearningPlanAgentSlots agentSlots;
 
     public LearningPlanService(LearningPlanRepository repository, LlmGateway llmGateway,
             LlmJsonParser jsonParser, ObjectMapper objectMapper,
             CalendarTaskService calendarTaskService, ProfileService profileService,
             InterviewRecapRepository recapRepository, InterviewRecapQuestionRepository recapQuestionRepository,
-            LearningPlanCreationStore creationStore, LearningPlanGenerationGate generationGate) {
+            LearningPlanCreationStore creationStore, LearningPlanGenerationGate generationGate,
+            LearningPlanAgentSlots agentSlots) {
         this.repository = repository;
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
@@ -62,6 +64,7 @@ public class LearningPlanService {
         this.recapQuestionRepository = recapQuestionRepository;
         this.creationStore = creationStore;
         this.generationGate = generationGate;
+        this.agentSlots = agentSlots;
     }
 
     public LearningPlan create(UUID userId, String rawConcept, String rawReason,
@@ -74,9 +77,14 @@ public class LearningPlanService {
         return createInternal(userId, requestId, rawConcept, rawReason, sourceType, sourceId, scheduledAt, false);
     }
 
-    public LearningPlan createForAgent(UUID userId, UUID requestId, String rawConcept, String rawReason,
-            LearningSourceType sourceType, UUID sourceId, Instant scheduledAt) {
-        return createInternal(userId, requestId, rawConcept, rawReason, sourceType, sourceId, scheduledAt, true);
+    public LearningPlan createForAgent(UUID userId, UUID logicalActionId, UUID runId,
+            String rawConcept, String rawReason, LearningSourceType sourceType, UUID sourceId, Instant scheduledAt) {
+        String concept = required(rawConcept, "学习概念不能为空", 160);
+        String reason = optional(rawReason, 4000);
+        LearningSourceType source = sourceType == null ? LearningSourceType.AGENT : sourceType;
+        UUID requestId = logicalActionId == null || runId == null ? null
+                : agentSlots.resolve(userId, logicalActionId, runId, concept, reason, source, sourceId, scheduledAt);
+        return createInternal(userId, requestId, concept, reason, source, sourceId, scheduledAt, true);
     }
 
     private LearningPlan createInternal(UUID userId, UUID requestId, String rawConcept, String rawReason,
