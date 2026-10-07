@@ -34,6 +34,34 @@ class AgentRunStoreTests {
     private final AgentRunStore runs = new AgentRunStore(jdbc, conversations, entityManager);
 
     @Test
+    void interruptedReplacementReusesLogicalToolActionId() {
+        UUID userId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID originalAction = UUID.randomUUID();
+        when(jdbc.queryForList(argThat(sql -> sql.contains("COALESCE(logical_action_id, id)")),
+                eq(UUID.class), anyString(), eq(requestId), eq(userId), eq(conversationId)))
+                .thenReturn(List.of(originalAction));
+        when(jdbc.update(argThat(sql -> sql.contains("logical_action_id")),
+                eq(requestId), eq(userId), eq(conversationId), anyString(), eq("学习 JVM"), eq(originalAction)))
+                .thenReturn(1);
+
+        UUID action = runs.logicalActionId(userId, requestId, conversationId, "学习 JVM", null, null, List.of());
+        assertThat(action).isEqualTo(originalAction);
+        assertThat(runs.begin(userId, requestId, conversationId, "学习 JVM", null, null,
+                List.of(), action)).isTrue();
+    }
+
+    @Test
+    void firstRunUsesItsOwnLogicalToolActionId() {
+        UUID userId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        assertThat(runs.logicalActionId(userId, requestId, conversationId, "学习 JVM", null, null, List.of()))
+                .isEqualTo(requestId);
+    }
+
+    @Test
     void repeatedRequestIdDoesNotInsertAnotherRun() {
         UUID userId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();

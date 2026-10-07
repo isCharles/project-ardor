@@ -255,9 +255,11 @@ public class CareerAgentService {
             acquired = true;
             llmConfigService.getRuntimeConfig(userId);
             Conversation conversation = conversationId == null ? store.create(userId) : store.requireActive(userId, conversationId);
+            UUID logicalActionId = requestId == null ? null : runStore.logicalActionId(userId, requestId,
+                    conversation.getId(), message, contextType, contextId, requestedReferences);
             if (requestId != null) {
                 if (!runStore.begin(userId, requestId, conversation.getId(), message,
-                        contextType, contextId, requestedReferences)) {
+                        contextType, contextId, requestedReferences, logicalActionId)) {
                     sink.send(AgentStreamEvent.error("RUN_ALREADY_STARTED",
                             "请求已被接收，请读取已有执行状态", false, elapsedMs(startedAt)));
                     sink.complete();
@@ -274,7 +276,7 @@ public class CareerAgentService {
             AtomicLong lastHeartbeatAt = new AtomicLong(System.nanoTime());
             // Held rather than inlined: after the run it is asked which deletions
             // the agent proposed, so each becomes a button in the transcript.
-            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, requestId);
+            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId))
                     .systemMessage(systemPrompt(userId)).chatMemory(memory).tools(bound)

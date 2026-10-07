@@ -96,7 +96,7 @@ class LearningPlanIdempotencyTests {
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
                 mock(ProfileService.class), mock(InterviewRecapRepository.class),
-                mock(InterviewRecapQuestionRepository.class), store);
+                mock(InterviewRecapQuestionRepository.class), store, mock(LearningPlanGenerationGate.class));
 
         assertThat(service.create(userId, requestId, "JVM", "面试薄弱点",
                 LearningSourceType.MANUAL, null, DUE)).isSameAs(previous);

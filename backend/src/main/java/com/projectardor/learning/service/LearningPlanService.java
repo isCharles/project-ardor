@@ -45,12 +45,13 @@ public class LearningPlanService {
     private final InterviewRecapRepository recapRepository;
     private final InterviewRecapQuestionRepository recapQuestionRepository;
     private final LearningPlanCreationStore creationStore;
+    private final LearningPlanGenerationGate generationGate;
 
     public LearningPlanService(LearningPlanRepository repository, LlmGateway llmGateway,
             LlmJsonParser jsonParser, ObjectMapper objectMapper,
             CalendarTaskService calendarTaskService, ProfileService profileService,
             InterviewRecapRepository recapRepository, InterviewRecapQuestionRepository recapQuestionRepository,
-            LearningPlanCreationStore creationStore) {
+            LearningPlanCreationStore creationStore, LearningPlanGenerationGate generationGate) {
         this.repository = repository;
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
@@ -60,6 +61,7 @@ public class LearningPlanService {
         this.recapRepository = recapRepository;
         this.recapQuestionRepository = recapQuestionRepository;
         this.creationStore = creationStore;
+        this.generationGate = generationGate;
     }
 
     public LearningPlan create(UUID userId, String rawConcept, String rawReason,
@@ -75,19 +77,25 @@ public class LearningPlanService {
         String requestHash = requestId == null ? null : requestHash(concept, reason, source, sourceId, scheduledAt);
         LearningPlan previous = creationStore.existing(userId, requestId, requestHash);
         if (previous != null) return previous;
-        if (source == LearningSourceType.RECAP && sourceId != null
-                && recapRepository.findByIdAndUserId(sourceId, userId).isEmpty()
-                && recapQuestionRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
-            throw new ResourceNotFoundException("面经来源不存在");
+        try (LearningPlanGenerationGate.Reservation ignored = generationGate.reserve(userId, requestId, requestHash)) {
+            // Another request may have committed between the first lookup and reservation.
+            previous = creationStore.existing(userId, requestId, requestHash);
+            if (previous != null) return previous;
+            if (source == LearningSourceType.RECAP && sourceId != null
+                    && recapRepository.findByIdAndUserId(sourceId, userId).isEmpty()
+                    && recapQuestionRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
+                throw new ResourceNotFoundException("面经来源不存在");
+            }
+            Instant schedule = scheduledAt == null ? tomorrowMorning(userId) : scheduledAt;
+            LlmGateway.LlmResult result = llmGateway.completeJson(userId, generationPrompt(),
+                    "学习主题：" + concept + "\n安排原因：" + (reason == null ? "用户主动学习" : reason));
+            JsonNode root = jsonParser.parseObject(result.content());
+            Map<String, Object> lesson = lesson(root.path("lesson"));
+            List<Map<String, Object>> exercises = exercises(root.path("exercises"));
+            return creationStore.save(userId, requestId, LearningPlan.create(
+                    userId, requestId, requestHash, concept, reason, source, sourceId,
+                    lesson, exercises, schedule, result.model()));
         }
-        Instant schedule = scheduledAt == null ? tomorrowMorning(userId) : scheduledAt;
-        LlmGateway.LlmResult result = llmGateway.completeJson(userId, generationPrompt(),
-                "学习主题：" + concept + "\n安排原因：" + (reason == null ? "用户主动学习" : reason));
-        JsonNode root = jsonParser.parseObject(result.content());
-        Map<String, Object> lesson = lesson(root.path("lesson"));
-        List<Map<String, Object>> exercises = exercises(root.path("exercises"));
-        return creationStore.save(userId, requestId, LearningPlan.create(
-                userId, requestId, requestHash, concept, reason, source, sourceId, lesson, exercises, schedule, result.model()));
     }
 
     @Transactional(readOnly = true)

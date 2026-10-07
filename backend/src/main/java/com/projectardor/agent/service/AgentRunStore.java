@@ -48,12 +48,36 @@ public class AgentRunStore {
     /** The UUID is supplied by the browser, but ownership and request contents are checked on every reuse. */
     public boolean begin(UUID userId, UUID requestId, UUID conversationId, String message,
             String contextType, UUID contextId, List<AgentContextReferenceRequest> references) {
+        return begin(userId, requestId, conversationId, message, contextType, contextId, references, null);
+    }
+
+    public UUID logicalActionId(UUID userId, UUID requestId, UUID conversationId, String message,
+            String contextType, UUID contextId, List<AgentContextReferenceRequest> references) {
         String hash = fingerprint(conversationId, message, contextType, contextId, references);
-        int inserted = jdbc.update("""
-                INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT (id) DO NOTHING
-                """, requestId, userId, conversationId, hash, message);
+        return jdbc.queryForList("""
+                SELECT CASE WHEN status IN ('INTERRUPTED', 'FAILED')
+                                 AND tool_started AND request_hash = ?
+                            THEN COALESCE(logical_action_id, id) ELSE ? END
+                FROM agent_runs WHERE user_id = ? AND conversation_id = ?
+                ORDER BY created_at DESC, id DESC LIMIT 1
+                """, UUID.class, hash, requestId, userId, conversationId).stream().findFirst().orElse(requestId);
+    }
+
+    public boolean begin(UUID userId, UUID requestId, UUID conversationId, String message,
+            String contextType, UUID contextId, List<AgentContextReferenceRequest> references,
+            UUID logicalActionId) {
+        String hash = fingerprint(conversationId, message, contextType, contextId, references);
+        int inserted = logicalActionId == null
+                ? jdbc.update("""
+                    INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT (id) DO NOTHING
+                    """, requestId, userId, conversationId, hash, message)
+                : jdbc.update("""
+                    INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message, logical_action_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (id) DO NOTHING
+                    """, requestId, userId, conversationId, hash, message, logicalActionId);
         if (inserted == 0) {
             List<String> hashes = jdbc.queryForList(
                     "SELECT request_hash FROM agent_runs WHERE id = ? AND user_id = ?", String.class,
