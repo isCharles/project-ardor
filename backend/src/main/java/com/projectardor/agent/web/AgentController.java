@@ -55,7 +55,7 @@ public class AgentController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody AgentMessageRequest request) {
         return agentService.chat(principal.userId(), request.conversationId(), request.message(), request.contextType(),
-                request.contextId(), request.contextReferences());
+                request.contextId(), request.contextReferences(), request.requestId());
     }
 
     @PostMapping(value = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

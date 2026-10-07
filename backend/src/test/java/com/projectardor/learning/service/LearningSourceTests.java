@@ -37,7 +37,7 @@ class LearningSourceTests {
         when(questions.findByIdAndUserId(foreignQuestionId, userId)).thenReturn(Optional.empty());
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), recaps, questions);
+                mock(ProfileService.class), recaps, questions, mock(LearningPlanCreationStore.class));
 
         assertThatThrownBy(() -> service.create(userId, "JVM", "面试薄弱点",
                 LearningSourceType.RECAP, foreignQuestionId, Instant.now()))

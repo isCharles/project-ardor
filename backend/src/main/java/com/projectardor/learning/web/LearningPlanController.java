@@ -41,11 +41,11 @@ public class LearningPlanController {
     }
 
     @PostMapping
-    @QuotaProtected(UsageFeature.LEARNING_PLAN)
+    @QuotaProtected(value = UsageFeature.LEARNING_PLAN, idempotentRequest = true, optionalRequestId = true)
     @ResponseStatus(HttpStatus.CREATED)
     public LearningPlanResponse create(@AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody LearningPlanCreateRequest request) {
-        return LearningPlanResponse.from(service.create(principal.userId(), request.concept(),
+        return LearningPlanResponse.from(service.create(principal.userId(), request.requestId(), request.concept(),
                 request.reason(), request.sourceType(), request.sourceId(), request.scheduledAt()));
     }
 

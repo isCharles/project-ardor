@@ -14,6 +14,7 @@ import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 import com.projectardor.agent.web.AgentMessageRequest;
 import com.projectardor.auth.domain.UserRole;
 import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.learning.web.LearningPlanCreateRequest;
 
 class QuotaAspectTests {
     @Test
@@ -69,6 +70,23 @@ class QuotaAspectTests {
         org.mockito.Mockito.verifyNoInteractions(quotas);
     }
 
+    @Test
+    void optionalRequestIdKeepsOldClientsAndDeduplicatesNewOnes() {
+        QuotaService quotas = mock(QuotaService.class);
+        var factory = new AspectJProxyFactory(new OptionalRequestOperation());
+        factory.addAspect(new QuotaAspect(quotas));
+        OptionalRequestOperation operation = factory.getProxy();
+        UUID userId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        var principal = new ArdorPrincipal(userId, "user@example.com", "", true, UserRole.USER);
+
+        operation.call(principal, new LearningPlanCreateRequest("JVM", null, null, null, null, null));
+        operation.call(principal, new LearningPlanCreateRequest("JVM", null, null, null, null, requestId));
+
+        verify(quotas).consume(userId, UsageFeature.LEARNING_PLAN, null);
+        verify(quotas).consume(userId, UsageFeature.LEARNING_PLAN, requestId);
+    }
+
     static class ProtectedOperation {
         int invocations;
 
@@ -77,5 +95,10 @@ class QuotaAspectTests {
             invocations++;
             return "ok";
         }
+    }
+
+    static class OptionalRequestOperation {
+        @QuotaProtected(value = UsageFeature.LEARNING_PLAN, idempotentRequest = true, optionalRequestId = true)
+        public void call(ArdorPrincipal principal, LearningPlanCreateRequest request) {}
     }
 }

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -112,7 +113,11 @@ public class CareerAgentTools {
     }
 
     public BoundCareerTools bind(UUID trustedUserId, String trustedUserRequest) {
-        return new BoundCareerTools(trustedUserId, trustedUserRequest);
+        return bind(trustedUserId, trustedUserRequest, null);
+    }
+
+    public BoundCareerTools bind(UUID trustedUserId, String trustedUserRequest, UUID runRequestId) {
+        return new BoundCareerTools(trustedUserId, trustedUserRequest, runRequestId);
     }
 
     public String contextHint(UUID userId, String rawType, UUID contextId) {
@@ -155,14 +160,16 @@ public class CareerAgentTools {
     public final class BoundCareerTools {
         private final UUID userId;
         private final String trustedUserRequest;
+        private final UUID runRequestId;
         /* Destructive tools no longer delete. They hand the user a button and
            record it here; the caller of the run turns these into stream
            events, and nothing is removed until the person presses one. */
         private final List<PendingConfirmation> pending = new CopyOnWriteArrayList<>();
 
-        private BoundCareerTools(UUID userId, String trustedUserRequest) {
+        private BoundCareerTools(UUID userId, String trustedUserRequest, UUID runRequestId) {
             this.userId = userId;
             this.trustedUserRequest = trustedUserRequest == null ? "" : trustedUserRequest.strip();
+            this.runRequestId = runRequestId;
         }
 
         public List<PendingConfirmation> pendingConfirmations() {
@@ -248,8 +255,12 @@ public class CareerAgentTools {
                 @P(value = "来源类型：AGENT、RESUME、RECAP 或 KNOWLEDGE；留空用 AGENT", required = false) String sourceType,
                 @P(value = "来源对象 UUID；针对面经某题时传问题 UUID，针对整场面试时传面经 UUID；没有则留空", required = false) String sourceId) {
             LearningSourceType source = enumValue(LearningSourceType.class, sourceType, LearningSourceType.AGENT);
-            return LearningPlanResponse.from(learningPlanService.create(userId, concept, reason, source,
-                    nullableUuid(sourceId, "来源 ID"), nullableInstant(scheduledAt)));
+            UUID sourceUuid = nullableUuid(sourceId, "来源 ID");
+            UUID idempotencyKey = runRequestId == null ? null : UUID.nameUUIDFromBytes(
+                    (runRequestId + ":learning:" + (concept == null ? "" : concept.strip()) + ":" + source + ":" + sourceUuid)
+                            .getBytes(StandardCharsets.UTF_8));
+            return LearningPlanResponse.from(learningPlanService.create(userId, idempotencyKey, concept, reason, source,
+                    sourceUuid, nullableInstant(scheduledAt)));
         }
 
         public AgentMemoryResponse updateUserMemory(@P("完整的新版总体记忆，使用简洁中文要点；要清空时传空字符串") String memory) {

@@ -159,6 +159,11 @@ public class CareerAgentService {
 
     public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences) {
+        return chat(userId, conversationId, rawMessage, contextType, contextId, requestedReferences, null);
+    }
+
+    public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
+            UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId) {
         String message = normalizeMessage(rawMessage);
         List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
         String agentInput = contextualMessage(userId, message, references);
@@ -184,7 +189,7 @@ public class CareerAgentService {
                     .chatModel(modelFactory.create(userId))
                     .systemMessage(systemPrompt(userId))
                     .chatMemory(memory)
-                    .tools(tools.bind(userId, message))
+                    .tools(tools.bind(userId, message, requestId))
                     .maxToolCallingRoundTrips(8)
                     .maxSequentialToolsInvocations(12)
                     .compensateOnToolErrors(true)
@@ -269,7 +274,7 @@ public class CareerAgentService {
             AtomicLong lastHeartbeatAt = new AtomicLong(System.nanoTime());
             // Held rather than inlined: after the run it is asked which deletions
             // the agent proposed, so each becomes a button in the transcript.
-            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message);
+            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, requestId);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId))
                     .systemMessage(systemPrompt(userId)).chatMemory(memory).tools(bound)
