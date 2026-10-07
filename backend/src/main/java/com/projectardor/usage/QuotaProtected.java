@@ -10,4 +10,6 @@ import java.lang.annotation.Target;
 public @interface QuotaProtected {
     UsageFeature value();
     boolean idempotentRequest() default false;
+    /** Allow older clients without request IDs to keep their non-idempotent behavior. */
+    boolean optionalRequestId() default false;
 }

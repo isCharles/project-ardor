@@ -159,6 +159,11 @@ public class CareerAgentService {
 
     public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences) {
+        return chat(userId, conversationId, rawMessage, contextType, contextId, requestedReferences, null);
+    }
+
+    public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
+            UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId) {
         String message = normalizeMessage(rawMessage);
         List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
         String agentInput = contextualMessage(userId, message, references);
@@ -184,7 +189,10 @@ public class CareerAgentService {
                     .chatModel(modelFactory.create(userId))
                     .systemMessage(systemPrompt(userId))
                     .chatMemory(memory)
-                    .tools(tools.bind(userId, message))
+                    // A synchronous retry keeps the logical request but is a new tool-call attempt.
+                    // Reusing requestId as the run ID would make regenerated arguments create a second slot.
+                    .tools(tools.bind(userId, message, requestId,
+                            requestId == null ? null : UUID.randomUUID()))
                     .maxToolCallingRoundTrips(8)
                     .maxSequentialToolsInvocations(12)
                     .compensateOnToolErrors(true)
@@ -250,9 +258,11 @@ public class CareerAgentService {
             acquired = true;
             llmConfigService.getRuntimeConfig(userId);
             Conversation conversation = conversationId == null ? store.create(userId) : store.requireActive(userId, conversationId);
+            UUID logicalActionId = requestId == null ? null : runStore.logicalActionId(userId, requestId,
+                    conversation.getId(), message, contextType, contextId, requestedReferences);
             if (requestId != null) {
                 if (!runStore.begin(userId, requestId, conversation.getId(), message,
-                        contextType, contextId, requestedReferences)) {
+                        contextType, contextId, requestedReferences, logicalActionId)) {
                     sink.send(AgentStreamEvent.error("RUN_ALREADY_STARTED",
                             "请求已被接收，请读取已有执行状态", false, elapsedMs(startedAt)));
                     sink.complete();
@@ -269,7 +279,7 @@ public class CareerAgentService {
             AtomicLong lastHeartbeatAt = new AtomicLong(System.nanoTime());
             // Held rather than inlined: after the run it is asked which deletions
             // the agent proposed, so each becomes a button in the transcript.
-            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message);
+            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId))
                     .systemMessage(systemPrompt(userId)).chatMemory(memory).tools(bound)

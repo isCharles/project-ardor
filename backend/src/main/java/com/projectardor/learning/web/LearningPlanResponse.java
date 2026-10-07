@@ -11,6 +11,7 @@ import com.projectardor.learning.domain.LearningStatus;
 
 public record LearningPlanResponse(
         UUID id,
+        UUID requestId,
         String concept,
         String reason,
         LearningSourceType sourceType,
@@ -34,7 +35,7 @@ public record LearningPlanResponse(
                         item.get("options") instanceof List<?> options
                                 ? options.stream().map(String::valueOf).toList() : List.of()))
                 .toList();
-        return new LearningPlanResponse(plan.getId(), plan.getConcept(), plan.getReason(),
+        return new LearningPlanResponse(plan.getId(), plan.getRequestId(), plan.getConcept(), plan.getReason(),
                 plan.getSourceType(), plan.getSourceId(), plan.getStatus(), plan.getLesson(),
                 exercises, plan.getLastEvaluation(), plan.getLastScore(), plan.getAttemptCount(),
                 plan.getScheduledAt(), plan.getNextReviewAt(), plan.getCompletedAt(),

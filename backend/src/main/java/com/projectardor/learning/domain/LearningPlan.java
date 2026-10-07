@@ -23,6 +23,8 @@ import jakarta.persistence.Table;
 public class LearningPlan {
     @Id private UUID id;
     @Column(name = "user_id", nullable = false) private UUID userId;
+    @Column(name = "request_id") private UUID requestId;
+    @Column(name = "request_hash", length = 64) private String requestHash;
     @Column(nullable = false, length = 160) private String concept;
     @Column(columnDefinition = "text") private String reason;
     @Enumerated(EnumType.STRING) @Column(name = "source_type", nullable = false, length = 32) private LearningSourceType sourceType;
@@ -64,6 +66,15 @@ public class LearningPlan {
         return new LearningPlan(userId, concept, reason, sourceType, sourceId, lesson, exercises, scheduledAt, modelName);
     }
 
+    public static LearningPlan create(UUID userId, UUID requestId, String requestHash, String concept, String reason,
+            LearningSourceType sourceType, UUID sourceId, Map<String, Object> lesson,
+            List<Map<String, Object>> exercises, Instant scheduledAt, String modelName) {
+        LearningPlan plan = create(userId, concept, reason, sourceType, sourceId, lesson, exercises, scheduledAt, modelName);
+        plan.requestId = requestId;
+        plan.requestHash = requestHash;
+        return plan;
+    }
+
     public void markInProgress() {
         if (status != LearningStatus.COMPLETED) status = LearningStatus.IN_PROGRESS;
     }
@@ -97,6 +108,8 @@ public class LearningPlan {
 
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
+    public UUID getRequestId() { return requestId; }
+    public String getRequestHash() { return requestHash; }
     public String getConcept() { return concept; }
     public String getReason() { return reason; }
     public LearningSourceType getSourceType() { return sourceType; }

@@ -35,7 +35,9 @@ public class QuotaAspect {
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("幂等额度接口缺少请求 ID 参数"));
             requestId = request.requestId();
-            if (requestId == null) throw new IllegalArgumentException("流式请求缺少 requestId");
+            if (requestId == null && !protectedFeature.optionalRequestId()) {
+                throw new IllegalArgumentException("流式请求缺少 requestId");
+            }
         }
         quotas.consume(principal.userId(), protectedFeature.value(), requestId);
         return joinPoint.proceed();

@@ -1,5 +1,8 @@
 package com.projectardor.learning.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -8,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HexFormat;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -40,11 +44,16 @@ public class LearningPlanService {
     private final ProfileService profileService;
     private final InterviewRecapRepository recapRepository;
     private final InterviewRecapQuestionRepository recapQuestionRepository;
+    private final LearningPlanCreationStore creationStore;
+    private final LearningPlanGenerationGate generationGate;
+    private final LearningPlanAgentSlots agentSlots;
 
     public LearningPlanService(LearningPlanRepository repository, LlmGateway llmGateway,
             LlmJsonParser jsonParser, ObjectMapper objectMapper,
             CalendarTaskService calendarTaskService, ProfileService profileService,
-            InterviewRecapRepository recapRepository, InterviewRecapQuestionRepository recapQuestionRepository) {
+            InterviewRecapRepository recapRepository, InterviewRecapQuestionRepository recapQuestionRepository,
+            LearningPlanCreationStore creationStore, LearningPlanGenerationGate generationGate,
+            LearningPlanAgentSlots agentSlots) {
         this.repository = repository;
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
@@ -53,28 +62,62 @@ public class LearningPlanService {
         this.profileService = profileService;
         this.recapRepository = recapRepository;
         this.recapQuestionRepository = recapQuestionRepository;
+        this.creationStore = creationStore;
+        this.generationGate = generationGate;
+        this.agentSlots = agentSlots;
     }
 
     public LearningPlan create(UUID userId, String rawConcept, String rawReason,
             LearningSourceType sourceType, UUID sourceId, Instant scheduledAt) {
+        return create(userId, null, rawConcept, rawReason, sourceType, sourceId, scheduledAt);
+    }
+
+    public LearningPlan create(UUID userId, UUID requestId, String rawConcept, String rawReason,
+            LearningSourceType sourceType, UUID sourceId, Instant scheduledAt) {
+        return createInternal(userId, requestId, rawConcept, rawReason, sourceType, sourceId, scheduledAt, false);
+    }
+
+    public LearningPlan createForAgent(UUID userId, UUID logicalActionId, UUID runId,
+            String rawConcept, String rawReason, LearningSourceType sourceType, UUID sourceId, Instant scheduledAt) {
         String concept = required(rawConcept, "学习概念不能为空", 160);
         String reason = optional(rawReason, 4000);
-        Instant schedule = scheduledAt == null ? tomorrowMorning(userId) : scheduledAt;
+        LearningSourceType source = sourceType == null ? LearningSourceType.AGENT : sourceType;
+        UUID requestId = logicalActionId == null || runId == null ? null
+                : agentSlots.resolve(userId, logicalActionId, runId, concept, reason, source, sourceId, scheduledAt);
+        return createInternal(userId, requestId, concept, reason, source, sourceId, scheduledAt, true);
+    }
+
+    private LearningPlan createInternal(UUID userId, UUID requestId, String rawConcept, String rawReason,
+            LearningSourceType sourceType, UUID sourceId, Instant scheduledAt, boolean agentRetry) {
+        String concept = required(rawConcept, "学习概念不能为空", 160);
+        String reason = optional(rawReason, 4000);
         LearningSourceType source = sourceType == null ? LearningSourceType.MANUAL : sourceType;
-        if (source == LearningSourceType.RECAP && sourceId != null
-                && recapRepository.findByIdAndUserId(sourceId, userId).isEmpty()
-                && recapQuestionRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
-            throw new ResourceNotFoundException("面经来源不存在");
+        // Agent retries can regenerate wording and schedule. Its trusted per-action slot is the identity;
+        // manual requests remain strict about every input field.
+        String requestHash = requestId == null ? null : agentRetry
+                ? requestHash(requestId.toString(), null, LearningSourceType.AGENT, null, null)
+                : requestHash(concept, reason, source, sourceId, scheduledAt);
+        LearningPlan previous = creationStore.existing(userId, requestId, requestHash);
+        if (previous != null) return previous;
+        try (LearningPlanGenerationGate.Reservation ignored = generationGate.reserve(userId, requestId, requestHash)) {
+            // Another request may have committed between the first lookup and reservation.
+            previous = creationStore.existing(userId, requestId, requestHash);
+            if (previous != null) return previous;
+            if (source == LearningSourceType.RECAP && sourceId != null
+                    && recapRepository.findByIdAndUserId(sourceId, userId).isEmpty()
+                    && recapQuestionRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
+                throw new ResourceNotFoundException("面经来源不存在");
+            }
+            Instant schedule = scheduledAt == null ? tomorrowMorning(userId) : scheduledAt;
+            LlmGateway.LlmResult result = llmGateway.completeJson(userId, generationPrompt(),
+                    "学习主题：" + concept + "\n安排原因：" + (reason == null ? "用户主动学习" : reason));
+            JsonNode root = jsonParser.parseObject(result.content());
+            Map<String, Object> lesson = lesson(root.path("lesson"));
+            List<Map<String, Object>> exercises = exercises(root.path("exercises"));
+            return creationStore.save(userId, requestId, LearningPlan.create(
+                    userId, requestId, requestHash, concept, reason, source, sourceId,
+                    lesson, exercises, schedule, result.model()));
         }
-        LlmGateway.LlmResult result = llmGateway.completeJson(userId, generationPrompt(),
-                "学习主题：" + concept + "\n安排原因：" + (reason == null ? "用户主动学习" : reason));
-        JsonNode root = jsonParser.parseObject(result.content());
-        Map<String, Object> lesson = lesson(root.path("lesson"));
-        List<Map<String, Object>> exercises = exercises(root.path("exercises"));
-        LearningPlan plan = repository.save(LearningPlan.create(
-                userId, concept, reason, source, sourceId, lesson, exercises, schedule, result.model()));
-        syncCalendar(plan);
-        return plan;
     }
 
     @Transactional(readOnly = true)
@@ -151,7 +194,9 @@ public class LearningPlanService {
 
     @Transactional
     public void delete(UUID userId, UUID planId) {
-        repository.delete(get(userId, planId));
+        LearningPlan plan = get(userId, planId);
+        creationStore.markDeleted(plan);
+        repository.delete(plan);
     }
 
     private Map<String, Object> lesson(JsonNode node) {
@@ -267,5 +312,22 @@ public class LearningPlanService {
         String normalized = value.strip();
         if (normalized.length() > maxLength) throw new IllegalArgumentException("学习原因过长");
         return normalized;
+    }
+
+    private String requestHash(String concept, String reason, LearningSourceType source,
+            UUID sourceId, Instant scheduledAt) {
+        String input = framed(concept) + framed(reason) + framed(source.name())
+                + framed(sourceId == null ? null : sourceId.toString())
+                + framed(scheduledAt == null ? null : scheduledAt.toString());
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(input.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 不可用", exception);
+        }
+    }
+
+    private String framed(String value) {
+        return value == null ? "-1:" : value.length() + ":" + value;
     }
 }

@@ -1,5 +1,5 @@
 -- KEYS: user month, user minute, global minute, optional idempotency key.
--- ARGV: corresponding limits, monthly TTL, minute TTL, idempotency enabled.
+-- ARGV: corresponding limits, monthly TTL, minute TTL, idempotency enabled, request-ID TTL.
 if ARGV[6] == '1' and redis.call('EXISTS', KEYS[4]) == 1 then return 2 end
 for i = 1, 3 do
   if tonumber(redis.call('GET', KEYS[i]) or '0') >= tonumber(ARGV[i]) then return -i end
@@ -11,5 +11,5 @@ for i = 1, 3 do
     redis.call('EXPIRE', KEYS[i], ttl)
   end
 end
-if ARGV[6] == '1' then redis.call('SET', KEYS[4], '1', 'EX', tonumber(ARGV[4])) end
+if ARGV[6] == '1' then redis.call('SET', KEYS[4], '1', 'EX', tonumber(ARGV[7])) end
 return 1

@@ -15,6 +15,22 @@ import org.springframework.data.redis.core.script.RedisScript;
 
 class QuotaStoreTests {
     @Test
+    void requestIdMarkerOutlivesTheSupportedThirtyFiveDayRetryWindow() {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenAnswer(invocation -> {
+                    Object[] arguments = invocation.getArguments();
+                    assertThat(Long.parseLong((String) arguments[8])).isGreaterThanOrEqualTo(35L * 86_400);
+                    return 1L;
+                });
+        var policy = new UsagePolicy(UsageFeature.LEARNING_PLAN, 5, 500, 8, 30, Instant.now());
+
+        assertThat(new QuotaStore(redis).consume(UUID.randomUUID(), policy, MembershipTier.MEMBER,
+                UUID.randomUUID(), Instant.parse("2026-10-31T23:59:59Z")))
+                .isEqualTo(QuotaStore.Decision.ALLOWED);
+    }
+
+    @Test
     void monthlyKeysUseUtcCalendarMonth() {
         UUID user = UUID.randomUUID();
         assertThat(QuotaStore.monthKey(user, UsageFeature.AGENT_CHAT,
@@ -29,7 +45,8 @@ class QuotaStoreTests {
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenAnswer(invocation -> {
                     RedisScript<?> script = invocation.getArgument(0);
-                    assertThat(script.getScriptAsString()).contains("redis.call('INCR'", "return -i");
+                    assertThat(script.getScriptAsString()).contains("redis.call('INCR'", "return -i",
+                            "tonumber(ARGV[7])");
                     return -2L;
                 });
         var store = new QuotaStore(redis);

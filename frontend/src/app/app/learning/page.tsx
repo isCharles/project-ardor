@@ -3,7 +3,7 @@
 import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, CircleAlert, Plus, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
 import { LocaleSwitch } from "@/components/ardor/locale-switch";
@@ -15,6 +15,7 @@ type LearningAttempt = { items: Array<Exercise & { answer: string }>; score: num
 type Evaluation = { feedback?: string; strengths?: string[]; gaps?: string[]; nextFocus?: string; questionFeedback?: Array<{ question: string; feedback: string }>; attempts?: LearningAttempt[] };
 type LearningPlan = {
   id: string;
+  requestId: string | null;
   concept: string;
   reason: string | null;
   sourceType: "MANUAL" | "AGENT" | "RESUME" | "RECAP" | "KNOWLEDGE";
@@ -69,6 +70,19 @@ function answersForPlan(plan: LearningPlan | null) {
       ? previous[index].answer : "");
 }
 
+const createRequestKey = "ardor:learning-create-request";
+
+function clearCompletedCreateRequest(items: LearningPlan[]) {
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(createRequestKey) ?? "null") as { requestId?: string } | null;
+    if (saved?.requestId && items.some((plan) => plan.requestId === saved.requestId)) {
+      window.sessionStorage.removeItem(createRequestKey);
+      return saved.requestId;
+    }
+  } catch { /* A damaged draft must not block loading. */ }
+  return null;
+}
+
 export default function LearningPage() {
   const router = useRouter();
   const { locale, t } = useLocale();
@@ -79,10 +93,12 @@ export default function LearningPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const pendingCreate = useRef<{ fingerprint: string; requestId: string } | null>(null);
 
   const load = useCallback(async (preferred?: string | null) => {
     try {
       const items = await api<LearningPlan[]>("/api/learning-plans");
+      if (clearCompletedCreateRequest(items)) pendingCreate.current = null;
       setPlans(items);
       const requested = preferred ?? new URLSearchParams(window.location.search).get("id");
       const next = items.find((item) => item.id === requested) ?? nextPlan(items);
@@ -102,6 +118,7 @@ export default function LearningPage() {
     void api<LearningPlan[]>("/api/learning-plans")
       .then((items) => {
         if (!active) return;
+        if (clearCompletedCreateRequest(items)) pendingCreate.current = null;
         setPlans(items);
         const requested = new URLSearchParams(window.location.search).get("id");
         const next = items.find((item) => item.id === requested) ?? nextPlan(items);
@@ -137,14 +154,30 @@ export default function LearningPage() {
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
+    const input = { concept: String(data.get("concept") ?? ""), reason: String(data.get("reason") ?? ""), sourceType: "MANUAL" };
+    const draftKey = createRequestKey;
+    const fingerprint = JSON.stringify(input);
+    let pending = pendingCreate.current;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(draftKey) ?? "null") as { fingerprint?: string; requestId?: string } | null;
+      if (!pending && saved?.fingerprint === fingerprint && typeof saved.requestId === "string"
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(saved.requestId)) {
+        pending = { fingerprint, requestId: saved.requestId };
+      }
+    } catch { /* A damaged draft must not prevent creation. */ }
+    if (pending?.fingerprint !== fingerprint) pending = { fingerprint, requestId: crypto.randomUUID() };
+    pendingCreate.current = pending;
+    try { window.sessionStorage.setItem(draftKey, JSON.stringify(pending)); } catch { /* In-memory retry still works. */ }
     setBusy(true); setError("");
     try {
       const created = await api<LearningPlan>("/api/learning-plans", {
         method: "POST",
-        body: JSON.stringify({ concept: data.get("concept"), reason: data.get("reason"), sourceType: "MANUAL" }),
+        body: JSON.stringify({ ...input, requestId: pending.requestId }),
       });
       setShowCreate(false);
       await load(created.id);
+      pendingCreate.current = null;
+      try { window.sessionStorage.removeItem(draftKey); } catch { /* Storage may be disabled. */ }
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not create the learning plan", "无法生成学习内容")); }
     finally { setBusy(false); }
   }
