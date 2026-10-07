@@ -92,13 +92,6 @@ function renderUpdate(next) {
   checkUpdate.disabled = !packaged || next.state === "checking" || next.state === "downloading";
 }
 
-function connectionErrorKey(error) {
-  const message = String(error?.message ?? "");
-  if (message.includes("HTTPS")) return "httpsRequired";
-  if (/root address|根地址/.test(message)) return "rootOnly";
-  if (/valid server address|有效的服务器地址/.test(message)) return "invalidServer";
-  return "failed";
-}
 
 async function run(action) {
   retry.disabled = true;
@@ -107,10 +100,11 @@ async function run(action) {
   status.textContent = copy[locale][statusKey];
   try {
     const result = await action();
-    if (!result.connected && result.changed !== false) statusKey = "unavailable";
-    if (result.changed === false) statusKey = "canceled";
+    if (result.errorCode && copy[locale][result.errorCode]) statusKey = result.errorCode;
+    else if (result.changed === false) statusKey = "canceled";
+    else if (!result.connected) statusKey = "unavailable";
     status.textContent = copy[locale][statusKey] ?? "";
-  } catch (error) { statusKey = connectionErrorKey(error); status.textContent = copy[locale][statusKey]; }
+  } catch { statusKey = "failed"; status.textContent = copy[locale].failed; }
   finally { retry.disabled = false; form.querySelector("button").disabled = false; }
 }
 
@@ -125,7 +119,7 @@ window.ardorDesktop.getInfo().then((info) => {
 window.ardorDesktop.onUpdateStatus(renderUpdate);
 languageEn.addEventListener("click", () => { void changeLocale("en"); });
 languageZh.addEventListener("click", () => { void changeLocale("zh-CN"); });
-form.addEventListener("submit", (event) => { event.preventDefault(); void run(() => window.ardorDesktop.setServer(input.value)); });
+form.addEventListener("submit", (event) => { event.preventDefault(); void run(() => window.ardorDesktop.setServerResult(input.value)); });
 retry.addEventListener("click", () => { void run(() => window.ardorDesktop.retry()); });
 checkUpdate.addEventListener("click", () => { void window.ardorDesktop.checkForUpdates().then(renderUpdate, () => { updateStatus.textContent = copy[locale].updateFailed; }); });
 installUpdate.addEventListener("click", () => { void window.ardorDesktop.installUpdate(); });

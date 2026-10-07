@@ -66,11 +66,14 @@ function updateStatusMessage(locale, status) {
   return desktopText(locale, key, status);
 }
 
-function serverErrorMessage(locale, error) {
-  const message = String(error?.message ?? error ?? "");
-  const key = message.includes("公网地址必须使用 HTTPS") ? "httpsRequired"
-    : message.includes("只填写服务器根地址") ? "rootOnly" : "invalidServer";
-  return desktopText(locale, key);
+const SERVER_ERROR_KEYS = new Set(["invalidServer", "httpsRequired", "rootOnly"]);
+
+function serverErrorKey(error) {
+  return SERVER_ERROR_KEYS.has(error?.code) ? error.code : "invalidServer";
 }
 
-module.exports = { normalizeLocale, desktopText, updateStatusMessage, serverErrorMessage };
+function serverErrorMessage(locale, error) {
+  return desktopText(locale, serverErrorKey(error));
+}
+
+module.exports = { normalizeLocale, desktopText, updateStatusMessage, serverErrorKey, serverErrorMessage };

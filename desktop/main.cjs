@@ -7,7 +7,7 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { DEFAULT_SERVER_URL, normalizeServerUrl, isTrustedAppUrl, isHealthyBackendStatus } = require("./server-config.cjs");
 const { updateErrorKind } = require("./update-errors.cjs");
-const { normalizeLocale, desktopText, updateStatusMessage, serverErrorMessage } = require("./i18n.cjs");
+const { normalizeLocale, desktopText, updateStatusMessage, serverErrorKey, serverErrorMessage } = require("./i18n.cjs");
 
 let window;
 let serverUrl = DEFAULT_SERVER_URL;
@@ -171,8 +171,10 @@ function registerIpc() {
   ipcMain.handle("desktop:set-server", async (event, value) => {
     assertTrusted(event);
     let next;
+    // Return the code instead of throwing: IPC keeps only an error's message, so renderers
+    // would otherwise have to parse localized text to know what went wrong.
     try { next = normalizeServerUrl(value); }
-    catch (error) { throw new Error(serverErrorMessage(currentLocale(), error)); }
+    catch (error) { return { changed: false, errorCode: serverErrorKey(error), message: serverErrorMessage(currentLocale(), error) }; }
     if (next !== serverUrl) {
       const response = await dialog.showMessageBox(window, {
         type: "question", buttons: [desktopText(currentLocale(), "cancel"), desktopText(currentLocale(), "switch")], defaultId: 0, cancelId: 0,
