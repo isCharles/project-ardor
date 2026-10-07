@@ -56,7 +56,8 @@ public class AgentRunStore {
         String hash = fingerprint(conversationId, message, contextType, contextId, references);
         return jdbc.queryForList("""
                 SELECT CASE WHEN status IN ('INTERRUPTED', 'FAILED')
-                                 AND tool_started AND request_hash = ?
+                                 AND (tool_started OR (logical_action_id IS NOT NULL AND logical_action_id <> id))
+                                 AND request_hash = ?
                             THEN COALESCE(logical_action_id, id) ELSE ? END
                 FROM agent_runs WHERE user_id = ? AND conversation_id = ?
                 ORDER BY created_at DESC, id DESC LIMIT 1

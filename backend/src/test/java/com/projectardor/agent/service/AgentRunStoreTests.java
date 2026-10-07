@@ -53,6 +53,21 @@ class AgentRunStoreTests {
     }
 
     @Test
+    void inheritedActionSurvivesAReplacementFailureBeforeItsFirstTool() {
+        UUID userId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID originalAction = UUID.randomUUID();
+        when(jdbc.queryForList(argThat(sql -> sql.contains("logical_action_id <> id")
+                        && sql.contains("tool_started OR")),
+                eq(UUID.class), anyString(), eq(requestId), eq(userId), eq(conversationId)))
+                .thenReturn(List.of(originalAction));
+
+        assertThat(runs.logicalActionId(userId, requestId, conversationId,
+                "学习 JVM", null, null, List.of())).isEqualTo(originalAction);
+    }
+
+    @Test
     void firstRunUsesItsOwnLogicalToolActionId() {
         UUID userId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
