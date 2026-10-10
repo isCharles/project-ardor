@@ -45,11 +45,47 @@ const recap = {
   ],
 };
 
+const lesson = {
+  lesson: {
+    summary: "理解 Redis 持久化的取舍",
+    keyPoints: ["RDB 快照", "AOF 日志", "恢复与性能取舍"],
+    explanation: "RDB 定期保存快照，AOF 记录写命令；需要结合恢复目标和性能预算选择。",
+    example: "对容忍少量数据丢失的缓存可偏重 RDB。",
+    pitfalls: ["不要把 AOF 重写当作立即持久化"],
+  },
+  exercises: [
+    { question: "哪项描述 AOF？", type: "MULTIPLE_CHOICE", options: ["记录写命令", "只保存快照", "不支持重写"], rubric: ["记录写命令"] },
+    { question: "如何选择 RDB 与 AOF？", type: "SCENARIO", rubric: ["说明恢复目标和性能取舍"] },
+  ],
+};
+
+const replay = {
+  verdict: "CLEARER",
+  comparison: "这次补充了 AOF 的机制，但仍需要说明恢复取舍。",
+  improvements: ["解释了 AOF 写命令日志"],
+  remainingGaps: ["缺少恢复时间取舍"],
+  nextChallenge: "故障恢复时如何选择 RDB 与 AOF？",
+};
+
 const transientAttempts = new Map();
 
 function completionFor(payload) {
   const input = JSON.stringify(payload);
   if (input.includes("面试复盘编辑")) return recap;
+  if (input.includes("面试复盘教练")) return replay;
+  if (input.includes("严谨的中文技术导师")) return lesson;
+  if (input.includes("严格但有建设性的中文技术教练")) {
+    const improved = input.includes("二轮修订");
+    return {
+      score: improved ? 85 : 65,
+      feedback: improved ? "已经说明关键取舍。" : "还需要解释恢复目标。",
+      strengths: ["能区分快照与日志"],
+      gaps: improved ? [] : ["缺少恢复目标"],
+      questionFeedback: [{ question: "如何选择 RDB 与 AOF？", feedback: "结合恢复目标说明即可。" }],
+      nextFocus: improved ? "保持练习" : "恢复时间与数据丢失窗口",
+      nextExercises: improved ? [] : lesson.exercises,
+    };
+  }
   if (input.includes("简历分析器")) return analysis;
   if (input.includes("技术面试官")) return questions;
   if (input.includes("面试评价官")) return evaluation;

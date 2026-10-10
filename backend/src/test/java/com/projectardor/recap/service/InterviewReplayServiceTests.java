@@ -33,8 +33,9 @@ class InterviewReplayServiceTests {
     private final InterviewReplayAttemptRepository attempts = mock(InterviewReplayAttemptRepository.class);
     private final LlmGateway llm = mock(LlmGateway.class);
     private final InterviewRetestService retests = mock(InterviewRetestService.class);
+    private final InterviewReplayCommitter committer = new InterviewReplayCommitter(questions, attempts, retests);
     private final InterviewReplayService service = new InterviewReplayService(questions,
-            mock(InterviewRecapRepository.class), attempts, llm, mock(LlmJsonParser.class), retests);
+            mock(InterviewRecapRepository.class), attempts, llm, mock(LlmJsonParser.class), retests, committer);
 
     @Test
     void foreignQuestionNeverReachesModel() {
@@ -67,6 +68,7 @@ class InterviewReplayServiceTests {
         InterviewRecapQuestion source = question(userId);
         UUID requestId = UUID.randomUUID();
         when(questions.findByIdAndUserId(source.getId(), userId)).thenReturn(Optional.of(source));
+        when(questions.findOwnedForUpdate(source.getId(), userId)).thenReturn(Optional.of(source));
         when(attempts.findByUserIdAndRequestId(userId, requestId)).thenReturn(Optional.empty());
         when(llm.completeJson(any(), any(), any())).thenReturn(new LlmGateway.LlmResult("""
                 {"verdict":"CLEARER","comparison":"这次解释了内存区域，但缺少示例。",
@@ -76,7 +78,7 @@ class InterviewReplayServiceTests {
         when(attempts.save(any())).thenAnswer(call -> call.getArgument(0));
         InterviewReplayService realParserService = new InterviewReplayService(questions,
                 mock(InterviewRecapRepository.class), attempts, llm,
-                new LlmJsonParser(new ObjectMapper()), retests);
+                new LlmJsonParser(new ObjectMapper()), retests, committer);
 
         InterviewReplayAttempt saved = realParserService.submit(userId, source.getId(), requestId,
                 "堆存对象，栈存局部变量和调用帧。概念有区别，但我还没有举例。");
@@ -94,6 +96,7 @@ class InterviewReplayServiceTests {
         UUID requestId = UUID.randomUUID();
         String challenge = "结合一次线上故障，解释 JVM 堆内存诊断过程";
         when(questions.findByIdAndUserId(source.getId(), userId)).thenReturn(Optional.of(source));
+        when(questions.findOwnedForUpdate(source.getId(), userId)).thenReturn(Optional.of(source));
         when(attempts.findByUserIdAndRequestId(userId, requestId)).thenReturn(Optional.empty());
         when(retests.challenge(userId, source.getId(), taskId)).thenReturn(challenge);
         when(llm.completeJson(any(), any(), any())).thenReturn(new LlmGateway.LlmResult("""
@@ -103,7 +106,7 @@ class InterviewReplayServiceTests {
         when(attempts.save(any())).thenAnswer(call -> call.getArgument(0));
         InterviewReplayService realParserService = new InterviewReplayService(questions,
                 mock(InterviewRecapRepository.class), attempts, llm,
-                new LlmJsonParser(new ObjectMapper()), retests);
+                new LlmJsonParser(new ObjectMapper()), retests, committer);
 
         InterviewReplayAttempt saved = realParserService.submit(userId, source.getId(), requestId,
                 "先看内存曲线，再获取堆转储。", taskId);
@@ -145,6 +148,30 @@ class InterviewReplayServiceTests {
         assertThat(service.submit(userId, source.getId(), requestId, "回答", taskId)).isSameAs(saved);
         verify(retests).complete(userId, source.getId(), taskId, challenge);
         verify(llm, never()).completeJson(any(), any(), any());
+    }
+
+    @Test
+    void completedParallelRequestIsRecheckedAfterModelCall() {
+        UUID userId = UUID.randomUUID();
+        InterviewRecapQuestion source = question(userId);
+        UUID requestId = UUID.randomUUID();
+        String answer = "堆存放对象；排查时先看指标，再分析堆转储。";
+        InterviewReplayAttempt winner = InterviewReplayAttempt.create(userId, source.getId(), requestId,
+                answer, ReplayVerdict.SIMILAR, "已有结果", List.of(), List.of(), null, "model");
+        when(questions.findByIdAndUserId(source.getId(), userId)).thenReturn(Optional.of(source));
+        when(questions.findOwnedForUpdate(source.getId(), userId)).thenReturn(Optional.of(source));
+        when(attempts.findByUserIdAndRequestId(userId, requestId))
+                .thenReturn(Optional.empty(), Optional.of(winner));
+        when(llm.completeJson(any(), any(), any())).thenReturn(new LlmGateway.LlmResult("""
+                {"verdict":"SIMILAR","comparison":"回答有所补充","improvements":[],
+                 "remainingGaps":[],"nextChallenge":"怎么分析堆转储？"}
+                """, "test-model"));
+        InterviewReplayService realParserService = new InterviewReplayService(questions,
+                mock(InterviewRecapRepository.class), attempts, llm,
+                new LlmJsonParser(new ObjectMapper()), retests, committer);
+
+        assertThat(realParserService.submit(userId, source.getId(), requestId, answer)).isSameAs(winner);
+        verify(attempts, never()).save(any());
     }
 
     @Test

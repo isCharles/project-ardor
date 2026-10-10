@@ -2,7 +2,6 @@ package com.projectardor.recap.service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -45,16 +44,19 @@ public class InterviewReplayService {
     private final LlmGateway llmGateway;
     private final LlmJsonParser jsonParser;
     private final InterviewRetestService retests;
+    private final InterviewReplayCommitter committer;
 
     public InterviewReplayService(InterviewRecapQuestionRepository questions,
             InterviewRecapRepository recaps, InterviewReplayAttemptRepository attempts,
-            LlmGateway llmGateway, LlmJsonParser jsonParser, InterviewRetestService retests) {
+            LlmGateway llmGateway, LlmJsonParser jsonParser, InterviewRetestService retests,
+            InterviewReplayCommitter committer) {
         this.questions = questions;
         this.recaps = recaps;
         this.attempts = attempts;
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
         this.retests = retests;
+        this.committer = committer;
     }
 
     @Transactional(readOnly = true)
@@ -77,20 +79,8 @@ public class InterviewReplayService {
         String answer = rawAnswer.strip();
         if (answer.length() > 12000) throw new IllegalArgumentException("回答不能超过 12000 字");
         InterviewRecapQuestion question = ownedQuestion(userId, questionId);
-        var existing = attempts.findByUserIdAndRequestId(userId, requestId);
-        if (existing.isPresent()) {
-            InterviewReplayAttempt attempt = existing.get();
-            if (!attempt.getRecapQuestionId().equals(questionId) || !attempt.getAnswerText().equals(answer)) {
-                throw new IllegalArgumentException("请求 ID 已用于另一份回答");
-            }
-            if (!Objects.equals(attempt.getRetestTaskId(), retestTaskId)) {
-                throw new IllegalArgumentException("请求 ID 已用于另一项复测或练习");
-            }
-            if (retestTaskId != null) {
-                retests.complete(userId, questionId, retestTaskId, attempt.getChallengeText());
-            }
-            return attempt;
-        }
+        InterviewReplayAttempt existing = committer.existing(userId, questionId, requestId, answer, retestTaskId);
+        if (existing != null) return existing;
         String challenge = retestTaskId == null ? null : retests.challenge(userId, questionId, retestTaskId);
         LlmGateway.LlmResult result = llmGateway.completeJson(userId, PROMPT,
                 "面试题：\n" + clip(question.getQuestionText(), 4000)
@@ -101,12 +91,11 @@ public class InterviewReplayService {
                         + "\n本次回答：\n" + answer);
         Assessment assessment = parseAssessment(jsonParser.parseObject(result.content()),
                 question.getCandidateAnswer() != null && !question.getCandidateAnswer().isBlank());
-        InterviewReplayAttempt saved = attempts.save(InterviewReplayAttempt.create(userId, questionId, requestId, answer,
+        InterviewReplayAttempt candidate = InterviewReplayAttempt.create(userId, questionId, requestId, answer,
                 assessment.verdict(), assessment.comparison(), assessment.improvements(),
                 assessment.remainingGaps(), assessment.nextChallenge(), clip(result.model(), 119),
-                challenge, retestTaskId));
-        if (retestTaskId != null) retests.complete(userId, questionId, retestTaskId, challenge);
-        return saved;
+                challenge, retestTaskId);
+        return committer.save(userId, questionId, candidate);
     }
 
     private InterviewRecapQuestion ownedQuestion(UUID userId, UUID questionId) {
