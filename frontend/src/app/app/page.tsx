@@ -27,7 +27,7 @@ type AgentRun = { id: string; conversationId: string; message: string; status: "
    model never gets to destroy anything on its own say-so. */
 type LearningPlanProposal = { concept: string; reason: string | null; sourceType: string; sourceId: string | null; scheduledAt: string | null; requestId: string };
 type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; learningPlan?: LearningPlanProposal | null };
-type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "DONE" | "DISMISSED" | "FAILED"; error?: string; createdPlanId?: string };
+type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "DONE" | "DISMISSED" | "FAILED" | "EXPIRED" | "REMOVED"; error?: string; createdPlanId?: string };
 type RunStep = { key: string; label: string; elapsedMs: number; done: boolean };
 type ResumeOption = { id: string; originalFilename: string };
 type RecapOption = { id: string; title: string };
@@ -62,6 +62,10 @@ function confirmationKey(value: AgentConfirmation) {
 
 function dismissedProposalKey(value: AgentConfirmation) {
   return `ardor:learning-proposal-dismissed:${confirmationKey(value)}`;
+}
+
+function proposalExpired(value: AgentConfirmation) {
+  return !!value.learningPlan?.scheduledAt && Date.parse(value.learningPlan.scheduledAt) <= Date.now();
 }
 
 const typewriterExamples = [
@@ -159,14 +163,23 @@ export default function AgentHomePage() {
     setMessages(result.messages);
     const proposals = [...new Map<string, AgentConfirmation>(result.messages.flatMap((message) => savedRunTrace(message.runTrace)?.proposals ?? [])
       .filter((item) => item.kind === "learning_plan" && item.learningPlan?.requestId)
-      .map((item): [string, AgentConfirmation] => [confirmationKey(item), item])).values()];
-    setConfirmations(proposals.map((item) => ({ ...item, state: window.sessionStorage.getItem(dismissedProposalKey(item)) === "1" ? "DISMISSED" as const : "PENDING" as const })));
+      .map((item): [string, AgentConfirmation] => [confirmationKey(item), item])).values()].slice(-50);
+    const restoredLearning = proposals.map((item) => ({ ...item, state: window.sessionStorage.getItem(dismissedProposalKey(item)) === "1"
+      ? "DISMISSED" as const : proposalExpired(item) ? "EXPIRED" as const : "PENDING" as const }));
+    // A completed stream may immediately reload state. Keep its live deletion buttons;
+    // only learning proposals are recoverable from the saved assistant trace.
+    setConfirmations((current) => [...current.filter((item) => item.kind !== "learning_plan"), ...restoredLearning]);
     if (proposals.length) {
-      void api<Array<{ id: string; requestId: string | null }>>("/api/learning-plans")
-        .then((plans) => {
-          const created = new Map(plans.map((plan) => [plan.requestId, plan.id]));
-          setConfirmations((current) => current.map((item) => item.learningPlan && created.has(item.learningPlan.requestId)
-            ? { ...item, state: "DONE", createdPlanId: created.get(item.learningPlan.requestId) } : item));
+      const query = new URLSearchParams();
+      proposals.forEach((item) => query.append("requestIds", item.learningPlan!.requestId));
+      void api<Array<{ requestId: string; status: "CREATED" | "DELETED" | "MISSING"; planId: string | null }>>(`/api/learning-plans/request-status?${query}`)
+        .then((statuses) => {
+          const byId = new Map(statuses.map((status) => [status.requestId, status]));
+          setConfirmations((current) => current.map((item) => {
+            const status = item.learningPlan && byId.get(item.learningPlan.requestId);
+            return status?.status === "CREATED" ? { ...item, state: "DONE", createdPlanId: status.planId ?? undefined }
+              : status?.status === "DELETED" ? { ...item, state: "REMOVED", createdPlanId: undefined } : item;
+          }));
         }).catch(() => undefined);
     }
     setConversations(result.conversations);
@@ -318,6 +331,10 @@ export default function AgentHomePage() {
   async function confirmLearning(pending: PendingConfirmation) {
     if (!pending.learningPlan) return;
     const key = confirmationKey(pending);
+    if (proposalExpired(pending)) {
+      setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "EXPIRED" } : item));
+      return;
+    }
     setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DELETING", error: undefined } : item));
     try {
       const plan = await api<{ id: string }>("/api/learning-plans", { method: "POST", body: JSON.stringify(pending.learningPlan) });
@@ -686,14 +703,15 @@ export default function AgentHomePage() {
                   </article>
                 ))}
                 {confirmations.length > 0 && <section className="space-y-2">
-                  {confirmations.map((pending) => <div key={confirmationKey(pending)} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : pending.state === "DISMISSED" ? "border-stone-200 bg-white/50" : pending.kind === "learning_plan" ? "border-violet-100 bg-white/80" : "border-rose-100 bg-white/80"}`}>
+                  {confirmations.map((pending) => <div key={confirmationKey(pending)} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : ["DISMISSED", "REMOVED", "EXPIRED"].includes(pending.state) ? "border-stone-200 bg-white/50" : pending.kind === "learning_plan" ? "border-violet-100 bg-white/80" : "border-rose-100 bg-white/80"}`}>
                     <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : pending.kind === "learning_plan" ? "bg-violet-50 text-violet-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : pending.kind === "learning_plan" ? <BookOpenText className="size-4" /> : <Trash2 className="size-4" />}</span>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-stone-800">{pending.kind === "learning_plan"
-                        ? pending.state === "DONE" ? (locale === "en" ? "Learning plan created" : "学习计划已创建") : pending.state === "DISMISSED" ? (locale === "en" ? "Not now" : "暂不安排") : pending.state === "DELETING" ? (locale === "en" ? "Creating plan" : "正在生成计划") : (locale === "en" ? "Suggested learning" : "建议学习")
+                        ? pending.state === "DONE" ? (locale === "en" ? "Learning plan created" : "学习计划已创建") : pending.state === "REMOVED" ? (locale === "en" ? "Plan removed" : "计划已移除") : pending.state === "EXPIRED" ? (locale === "en" ? "Suggested time has passed" : "建议时间已过") : pending.state === "DISMISSED" ? (locale === "en" ? "Not now" : "暂不安排") : pending.state === "DELETING" ? (locale === "en" ? "Creating plan" : "正在生成计划") : (locale === "en" ? "Suggested learning" : "建议学习")
                         : pending.state === "DONE" ? "已删除" : pending.state === "DISMISSED" ? "已保留" : pending.state === "DELETING" ? "正在删除" : "确认删除"}<span className="ml-1 font-normal">「{pending.label}」</span></p>
                       {pending.detail && pending.state === "PENDING" && <p className="mt-1 text-xs leading-5 text-stone-500">{pending.detail}</p>}
                       {pending.kind === "learning_plan" && pending.learningPlan?.scheduledAt && pending.state === "PENDING" && <p className="mt-1 text-xs text-stone-400">{new Date(pending.learningPlan.scheduledAt).toLocaleString(locale === "en" ? "en-US" : "zh-CN")}</p>}
+                      {pending.kind === "learning_plan" && pending.state === "EXPIRED" && <p className="mt-1 text-xs text-stone-500">{locale === "en" ? "Ask Ardor to suggest a new time." : "请 Ardor 重新建议一个时间。"}</p>}
                       {pending.error && <p className="mt-1 text-xs leading-5 text-rose-600">{pending.error}</p>}
                       {pending.kind === "learning_plan" && pending.createdPlanId && <Link className="mt-1 inline-block text-xs font-medium text-violet-600 hover:underline" href={`/app/learning?id=${pending.createdPlanId}`}>{locale === "en" ? "Open lesson" : "打开学习"}</Link>}
                     </div>

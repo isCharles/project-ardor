@@ -181,6 +181,8 @@ async function main() {
     "Proposal must survive a conversation reload");
   assert.equal((await owner.request("/api/learning-plans")).length, before.length,
     "Agent tool must not create learning plans or calendar tasks before confirmation");
+  const statusPath = `/api/learning-plans/request-status?requestIds=${proposal.learningPlan.requestId}`;
+  assert.equal((await owner.request(statusPath))[0].status, "MISSING");
   const confirmed = await owner.request("/api/learning-plans", {
     method: "POST", expected: 201, body: proposal.learningPlan,
   });
@@ -188,7 +190,20 @@ async function main() {
     method: "POST", expected: 201, body: proposal.learningPlan,
   });
   assert.equal(confirmedRetry.id, confirmed.id, "Confirmation retry must not duplicate the plan");
+  assert.equal((await owner.request(statusPath))[0].status, "CREATED");
+  assert.equal((await stranger.request(statusPath))[0].status, "MISSING",
+    "Request-status lookup must be scoped to the current user");
   calendarTask(await owner.request("/api/calendar/tasks"), `/app/learning?id=${confirmed.id}`);
+  await owner.request(`/api/learning-plans/${confirmed.id}`, { method: "DELETE", expected: 204 });
+  assert.equal((await owner.request(statusPath))[0].status, "DELETED",
+    "A confirmed-then-deleted proposal must not reappear as pending");
+  await owner.request("/api/learning-plans", {
+    method: "POST", expected: 409, body: proposal.learningPlan,
+  });
+  await owner.request("/api/learning-plans", {
+    method: "POST", expected: 400,
+    body: { concept: "过期计划", scheduledAt: new Date(Date.now() - 60_000).toISOString() },
+  });
   console.log("Golden Path passed: recap → replay → learning and retest → calendar completion; Agent learning requires a persisted user confirmation; cross-user reads denied.");
 }
 

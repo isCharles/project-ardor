@@ -123,6 +123,9 @@ public class LearningPlanService {
                     && knowledgeRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
                 throw new ResourceNotFoundException("知识库来源不存在");
             }
+            if (scheduledAt != null && !scheduledAt.isAfter(Instant.now())) {
+                throw new IllegalArgumentException("学习时间已过，请重新安排");
+            }
             Instant schedule = scheduledAt == null ? tomorrowMorning(userId) : scheduledAt;
             LlmGateway.LlmResult result = llmGateway.completeJson(userId, generationPrompt(),
                     "学习主题：" + concept + "\n安排原因：" + (reason == null ? "用户主动学习" : reason));
@@ -138,6 +141,15 @@ public class LearningPlanService {
     @Transactional(readOnly = true)
     public List<LearningPlan> list(UUID userId) {
         return repository.findAllByUserIdOrderByScheduledAtAscCreatedAtDesc(userId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<LearningPlanCreationStore.RequestStatus> requestStatuses(UUID userId, List<UUID> requestIds) {
+        if (requestIds == null || requestIds.isEmpty() || requestIds.size() > 50) {
+            throw new IllegalArgumentException("一次可查询 1 到 50 个学习请求");
+        }
+        return requestIds.stream().distinct()
+                .map(requestId -> creationStore.requestStatus(userId, requestId)).toList();
     }
 
     @Transactional(readOnly = true)
