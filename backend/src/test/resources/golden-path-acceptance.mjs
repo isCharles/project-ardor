@@ -68,6 +68,16 @@ async function waitForJobStatus(client, jobId, expectedStatus) {
   throw new Error(`Recap job did not reach ${expectedStatus} within 40 seconds`);
 }
 
+async function waitForReplayRequest(previousCount) {
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const response = await fetch(new URL("/__probe/replay-started", modelBase));
+    const probe = await response.json();
+    if (probe.count > previousCount) return probe.count;
+    await sleep(100);
+  }
+  throw new Error("Delayed replay request did not reach the fake model");
+}
+
 function calendarTask(tasks, actionPath) {
   const matches = tasks.filter((task) => task.actionPath === actionPath);
   assert.equal(matches.length, 1, `Expected one calendar task for ${actionPath}`);
@@ -250,7 +260,55 @@ async function main() {
   assert.equal(duplicateSubmission.recapId, recovered.recapId,
     "Submitting the same material after recovery must reuse the completed recap");
   assert.equal((await recoveryOwner.request("/api/interview-recaps")).length, recapsBeforeFailure.length + 1);
-  console.log("Golden Path passed: recap → replay → learning and retest → calendar completion; Agent proposal confirmation; failed recap job recovery; cross-user isolation.");
+
+  // Cancel a retest after its LLM request starts but before the answer returns.
+  // The rejected completion must roll back the replay attempt and leave the
+  // same request ID available for an intentional retry after re-opening.
+  const recoveredRecap = await recoveryOwner.request(`/api/interview-recaps/${recovered.recapId}`);
+  const recoveredWeak = recoveredRecap.questions.find((question) => question.performance === "WEAK");
+  assert.ok(recoveredWeak?.id);
+  const practice = await recoveryOwner.request(`/api/interview-replays/questions/${recoveredWeak.id}`, {
+    method: "POST", expected: 201,
+    body: { requestId: randomUUID(), answer: "RDB 保存快照，AOF 记录写命令。" },
+  });
+  const raceRetest = await recoveryOwner.request(`/api/interview-replays/questions/${recoveredWeak.id}/retest`, {
+    method: "POST", expected: 201,
+    body: { attemptId: practice.id, dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() },
+  });
+  const raceTask = calendarTask(await recoveryOwner.request("/api/calendar/tasks"),
+    `/app/replay?question=${recoveredWeak.id}&retest=${raceRetest.id}`);
+  const beforeRace = await recoveryOwner.request(`/api/interview-replays/questions/${recoveredWeak.id}`);
+  await recoveryOwner.request("/api/settings/llm", {
+    method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+      model: "delayed-replay-model", apiKey: "disposable-fake-model-key" },
+  });
+  const probe = await (await fetch(new URL("/__probe/replay-started", modelBase))).json();
+  const raceRequest = { requestId: randomUUID(), answer: "我会先确定数据丢失窗口，再组合 RDB 和 AOF。",
+    retestTaskId: raceRetest.id };
+  const inFlight = recoveryOwner.request(`/api/interview-replays/questions/${recoveredWeak.id}`, {
+    method: "POST", expected: 400, body: raceRequest,
+  });
+  await waitForReplayRequest(probe.count);
+  await recoveryOwner.request(`/api/calendar/tasks/${raceTask.id}`, {
+    method: "PUT", body: { title: raceTask.title, description: raceTask.description,
+      dueAt: raceTask.dueAt, priority: raceTask.priority, status: "CANCELLED" },
+  });
+  await inFlight;
+  assert.equal((await recoveryOwner.request(`/api/interview-replays/questions/${recoveredWeak.id}`)).attempts.length,
+    beforeRace.attempts.length, "Canceled retest must not leave an orphan replay attempt");
+  await recoveryOwner.request(`/api/calendar/tasks/${raceTask.id}`, {
+    method: "PUT", body: { title: raceTask.title, description: raceTask.description,
+      dueAt: raceTask.dueAt, priority: raceTask.priority, status: "TODO" },
+  });
+  const replayAfterReopen = await recoveryOwner.request(`/api/interview-replays/questions/${recoveredWeak.id}`, {
+    method: "POST", expected: 201, body: raceRequest,
+  });
+  assert.equal(replayAfterReopen.requestId, raceRequest.requestId);
+  assert.equal((await recoveryOwner.request(`/api/interview-replays/questions/${recoveredWeak.id}`)).attempts.length,
+    beforeRace.attempts.length + 1);
+  assert.equal(calendarTask(await recoveryOwner.request("/api/calendar/tasks"),
+    `/app/replay?question=${recoveredWeak.id}&retest=${raceRetest.id}`).status, "COMPLETED");
+  console.log("Golden Path passed: recap → replay → learning/retest → calendar; Agent confirmation; failed recap recovery; canceled in-flight retest rolls back; cross-user isolation.");
 }
 
 await main();

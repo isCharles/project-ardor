@@ -68,6 +68,7 @@ const replay = {
 };
 
 const transientAttempts = new Map();
+let delayedReplayRequests = 0;
 
 function completionFor(payload) {
   const input = JSON.stringify(payload);
@@ -100,11 +101,18 @@ function completionFor(payload) {
 }
 
 http.createServer((request, response) => {
+  if (request.url === "/__probe/replay-started") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({ count: delayedReplayRequests }));
+    return;
+  }
   let body = "";
   request.setEncoding("utf8");
   request.on("data", (chunk) => { body += chunk; });
   request.on("end", () => {
     const payload = JSON.parse(body || "{}");
+    const delayedReplay = payload.model === "delayed-replay-model" && body.includes("面试复盘教练");
+    if (delayedReplay) delayedReplayRequests++;
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
@@ -208,7 +216,11 @@ http.createServer((request, response) => {
     const result = request.url.endsWith("/v1/messages")
       ? { model: payload.model, content: [{ type: "text", text: content }] }
       : { model: payload.model, choices: [{ message: { role: "assistant", content } }] };
-    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    response.end(JSON.stringify(result));
+    const respond = () => {
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify(result));
+    };
+    if (delayedReplay) setTimeout(respond, 1500);
+    else respond();
   });
 }).listen(8090, "0.0.0.0");
