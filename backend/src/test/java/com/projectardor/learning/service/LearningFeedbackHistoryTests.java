@@ -12,6 +12,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import com.projectardor.calendar.service.CalendarTaskService;
 import com.projectardor.common.json.LlmJsonParser;
@@ -37,6 +39,7 @@ class LearningFeedbackHistoryTests {
         LearningPlanRepository repository = mock(LearningPlanRepository.class);
         LlmGateway llm = mock(LlmGateway.class);
         when(repository.findByIdAndUserId(plan.getId(), userId)).thenReturn(Optional.of(plan));
+        when(repository.findOwnedForUpdate(plan.getId(), userId)).thenReturn(Optional.of(plan));
         when(repository.save(any(LearningPlan.class))).thenAnswer(call -> call.getArgument(0));
         when(llm.completeJson(any(), any(), any())).thenReturn(new LlmGateway.LlmResult("""
                 {"score":85,"feedback":"理解到位","questionFeedback":[
@@ -44,13 +47,15 @@ class LearningFeedbackHistoryTests {
                  "nextExercises":[]}
                 """, "test-model"));
         ObjectMapper mapper = new ObjectMapper();
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         LearningPlanService service = new LearningPlanService(repository, llm,
                 new LlmJsonParser(mapper), mapper, mock(CalendarTaskService.class),
                 mock(ProfileService.class), mock(InterviewRecapRepository.class),
                 mock(InterviewRecapQuestionRepository.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
                 mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class),
                 mock(LearningPlanCreationStore.class),
-                mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class));
+                mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class), transactionManager);
 
         LearningPlan updated = service.submit(userId, plan.getId(), List.of("JVM 管理内存并执行字节码"));
 

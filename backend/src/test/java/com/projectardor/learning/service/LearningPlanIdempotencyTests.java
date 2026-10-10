@@ -122,7 +122,8 @@ class LearningPlanIdempotencyTests {
                 mock(InterviewRecapQuestionRepository.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
                 mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class),
                 store, mock(LearningPlanGenerationGate.class),
-                mock(LearningPlanAgentSlots.class));
+                mock(LearningPlanAgentSlots.class),
+                mock(org.springframework.transaction.PlatformTransactionManager.class));
 
         assertThat(service.create(userId, requestId, "JVM", "面试薄弱点",
                 LearningSourceType.MANUAL, null, DUE)).isSameAs(previous);
@@ -146,7 +147,8 @@ class LearningPlanIdempotencyTests {
                 mock(ProfileService.class), mock(InterviewRecapRepository.class),
                 mock(InterviewRecapQuestionRepository.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
                 mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class),
-                store, mock(LearningPlanGenerationGate.class), slots);
+                store, mock(LearningPlanGenerationGate.class), slots,
+                mock(org.springframework.transaction.PlatformTransactionManager.class));
 
         assertThat(service.createForAgent(userId, requestId, runId, "JVM", "第一次说明",
                 LearningSourceType.RECAP, null, DUE)).isSameAs(previous);

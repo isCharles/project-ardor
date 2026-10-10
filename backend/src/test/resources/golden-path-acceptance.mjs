@@ -308,7 +308,34 @@ async function main() {
     beforeRace.attempts.length + 1);
   assert.equal(calendarTask(await recoveryOwner.request("/api/calendar/tasks"),
     `/app/replay?question=${recoveredWeak.id}&retest=${raceRetest.id}`).status, "COMPLETED");
-  console.log("Golden Path passed: recap → replay → learning/retest → calendar; Agent confirmation; failed recap recovery; canceled in-flight retest rolls back; cross-user isolation.");
+
+  // Both evaluations read the same exercise round before the fake model
+  // releases either response. Only one may commit feedback and calendar state.
+  await recoveryOwner.request("/api/settings/llm", {
+    method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+      model: "golden-path-model", apiKey: "disposable-fake-model-key" },
+  });
+  const concurrentPlan = await recoveryOwner.request("/api/learning-plans", {
+    method: "POST", expected: 201,
+    body: { concept: "Redis 持久化", sourceType: "RECAP", sourceId: recoveredWeak.id },
+  });
+  await recoveryOwner.request("/api/settings/llm", {
+    method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+      model: "concurrent-learning-model", apiKey: "disposable-fake-model-key" },
+  });
+  const concurrentAnswers = { answers: concurrentPlan.exercises.map(() => "第一次回答：RDB 是快照。") };
+  const submissions = await Promise.allSettled([1, 2].map(() => recoveryOwner.request(
+    `/api/learning-plans/${concurrentPlan.id}/attempts`, { method: "POST", body: concurrentAnswers })));
+  assert.equal(submissions.filter((item) => item.status === "fulfilled").length, 1,
+    "Exactly one concurrent learning attempt should commit");
+  const rejected = submissions.find((item) => item.status === "rejected");
+  assert.match(String(rejected?.reason), /got 409:/,
+    "The stale evaluation should ask for a refresh instead of overwriting feedback");
+  const afterConcurrent = await recoveryOwner.request(`/api/learning-plans/${concurrentPlan.id}`);
+  assert.equal(afterConcurrent.attemptCount, 1);
+  assert.equal(calendarTask(await recoveryOwner.request("/api/calendar/tasks"),
+    `/app/learning?id=${concurrentPlan.id}`).status, "TODO");
+  console.log("Golden Path passed: recap → replay → learning/retest → calendar; Agent confirmation; failed recap recovery; canceled in-flight retest rollback; concurrent learning isolation.");
 }
 
 await main();
