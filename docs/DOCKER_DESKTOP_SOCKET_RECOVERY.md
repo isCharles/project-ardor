@@ -2,6 +2,14 @@
 
 > 记录日期：2026-10-01，Asia/Shanghai。本文记录本机实测，不把临时恢复称为 Docker 的永久修复。后续 Agent 请先核对当前状态和日志，不要照搬旧结论。
 
+## 2026-10-10 可逆恢复也未能启动：新 Secrets socket 再次阻断
+
+这次 Ardor Golden Path 的本机验收前，`docker info` 找不到 Engine 管道。依照本仓库边界，**只运行一次** `scripts/Start-DockerDesktopSafely.ps1`。其独立日志记录：23:44:47、23:44:48（Asia/Shanghai）分别将 `Docker\run` 和 `docker-secrets-engine` 两个旧运行目录改名保留为 `.socket-backup-20261010-234447-953dbff8`、`.socket-backup-20261010-234448-9bfc5575`，随即启动 Docker Desktop；23:46:52 因 Engine 仍未响应而中止，不再自动尝试。旧目录是保留副本，**没有删除**。
+
+Docker 后端日志在 2026-10-10 15:44:55 UTC（本地 23:44:55）显示启动失败：初始化 Secrets Engine 时，移除**新建** `docker-secrets-engine\engine.sock` 返回 `The file cannot be accessed by the system`，随后后端退出。次日只读复核中，Docker Desktop/后端进程均未运行，`docker info` 仍提示缺少 `docker_engine` 管道；两个新运行目录都是普通目录，分别含 `dockerInference`、`engine.sock` 重解析点。这说明“启动前同时移开两处旧 socket”**这次也不足以恢复**，不能再把脚本视作必定成功的修复；但现有证据不能证明是谁或什么顺序造成新 socket 再次阻断。
+
+本次没有运行第二次恢复脚本、Factory Reset、`prune`，没有删除备份，也没有改动 Docker 数据盘 Junction、E 盘 VHDX、Ardor 镜像/卷或项目数据。Ardor 的本机容器与端口因此**未能验收**；同一轮代码改动仅在 GitHub Actions 的一次性 PostgreSQL/Redis/假模型环境通过端到端测试。后续排查应先核对当前进程、最新后端日志和两处运行目录，不要机械重复改名；如需升级 Docker 或做更深层系统干预，应另行制定备份与回退办法。
+
 ## 2026-10-05 本机端口转发中断与 Secrets Engine 再次复发
 
 本机 v0.5.0 前后端容器显示运行、后端/PostgreSQL/Redis 健康，但 Windows 访问 `127.0.0.1:3000` 和 `:8080` 时收到空响应；从前端容器内部访问自身为 200、访问后端为 401。监听端口属于 `com.docker.backend.exe`，因此这一次 Ardor 的“服务器无法连接”首先定位到 Windows 侧 Docker 端口转发，而非应用服务或数据库。正常执行 `docker desktop restart --timeout 120` 后，新后端日志在 11:26:16（Asia/Shanghai）报 `docker-secrets-engine/engine.sock` 无法移除，Engine 未能重新启动；CLI 重启等待未正常完成。
