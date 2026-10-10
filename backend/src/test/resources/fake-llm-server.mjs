@@ -71,6 +71,13 @@ const transientAttempts = new Map();
 
 function completionFor(payload) {
   const input = JSON.stringify(payload);
+  if (payload.model === "recap-recovery-probe" && input.includes("面试复盘编辑")) {
+    const attempt = (transientAttempts.get(payload.model) ?? 0) + 1;
+    transientAttempts.set(payload.model, attempt);
+    // A structurally valid but unusable first answer exercises the queue's
+    // FAILED state and user-initiated retry, not the gateway's HTTP retries.
+    if (attempt === 1) return { ...recap, questions: [] };
+  }
   if (input.includes("面试复盘编辑")) return recap;
   if (input.includes("面试复盘教练")) return replay;
   if (input.includes("严谨的中文技术导师")) return lesson;

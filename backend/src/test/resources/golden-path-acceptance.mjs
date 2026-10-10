@@ -55,6 +55,19 @@ async function waitForRecap(client, jobId) {
   throw new Error("Recap worker did not finish within 40 seconds");
 }
 
+async function waitForJobStatus(client, jobId, expectedStatus) {
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const jobs = await client.request("/api/interview-recaps/jobs");
+    const job = jobs.find((item) => item.jobId === jobId);
+    if (job?.status === expectedStatus) return job;
+    if (job?.status === "FAILED" && expectedStatus !== "FAILED") {
+      throw new Error(`Recap worker failed: ${job.errorCode}`);
+    }
+    await sleep(500);
+  }
+  throw new Error(`Recap job did not reach ${expectedStatus} within 40 seconds`);
+}
+
 function calendarTask(tasks, actionPath) {
   const matches = tasks.filter((task) => task.actionPath === actionPath);
   assert.equal(matches.length, 1, `Expected one calendar task for ${actionPath}`);
@@ -204,7 +217,39 @@ async function main() {
     method: "POST", expected: 400,
     body: { concept: "过期计划", scheduledAt: new Date(Date.now() - 60_000).toISOString() },
   });
-  console.log("Golden Path passed: recap → replay → learning and retest → calendar completion; Agent learning requires a persisted user confirmation; cross-user reads denied.");
+
+  // The first model answer has no usable questions. The worker must fail the
+  // job without persisting a partial recap; only its owner may retry it.
+  await owner.request("/api/settings/llm", {
+    method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+      model: "recap-recovery-probe", apiKey: "disposable-fake-model-key" },
+  });
+  const recoveryInput = "在另一次 Ardor Labs Java 后端面试中，面试官追问 Redis 持久化的恢复窗口。我只回答了 RDB 是快照，没说清 AOF 重写和取舍。";
+  const recapsBeforeFailure = await owner.request("/api/interview-recaps");
+  const failedSubmission = await owner.request("/api/interview-recaps", {
+    method: "POST", expected: 202, body: { content: recoveryInput },
+  });
+  const failedJob = await waitForJobStatus(owner, failedSubmission.jobId, "FAILED");
+  assert.equal(failedJob.recapId, null);
+  assert.equal((await owner.request("/api/interview-recaps")).length, recapsBeforeFailure.length,
+    "An unusable model answer must not leave a partial recap");
+  await stranger.request(`/api/interview-recaps/jobs/${failedJob.jobId}/retry`, {
+    method: "POST", expected: 404,
+  });
+  const retried = await owner.request(`/api/interview-recaps/jobs/${failedJob.jobId}/retry`, {
+    method: "POST",
+  });
+  assert.equal(retried.jobId, failedJob.jobId, "Manual retry must reuse the original job");
+  assert.equal(retried.status, "QUEUED");
+  const recovered = await waitForJobStatus(owner, failedJob.jobId, "COMPLETED");
+  assert.ok(recovered.recapId);
+  const duplicateSubmission = await owner.request("/api/interview-recaps", {
+    method: "POST", expected: 202, body: { content: recoveryInput },
+  });
+  assert.equal(duplicateSubmission.recapId, recovered.recapId,
+    "Submitting the same material after recovery must reuse the completed recap");
+  assert.equal((await owner.request("/api/interview-recaps")).length, recapsBeforeFailure.length + 1);
+  console.log("Golden Path passed: recap → replay → learning and retest → calendar completion; Agent proposal confirmation; failed recap job recovery; cross-user isolation.");
 }
 
 await main();
