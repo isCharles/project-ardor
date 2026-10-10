@@ -131,6 +131,20 @@ http.createServer((request, response) => {
       response.end(JSON.stringify({ model: payload.model, choices: [{ message: { role: "assistant", content: "已把面试安排到 9 月 10 日 14:00。" } }] }));
       return;
     }
+    if (payload.model === "learning-proposal-probe" && isAgentRequest) {
+      const message = toolResults.length === 0
+        ? { role: "assistant", content: null, tool_calls: [{
+          id: "learning-proposal-1", type: "function",
+          function: { name: "create_learning_plan", arguments: JSON.stringify({
+            concept: "Redis 持久化", reason: "面试中没有说明 AOF 的恢复取舍",
+            scheduledAt: null, sourceType: "AGENT", sourceId: null,
+          }) },
+        }] }
+        : { role: "assistant", content: "建议安排 Redis 持久化学习；请点击卡片确认后再生成。" };
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ model: payload.model, choices: [{ message }] }));
+      return;
+    }
     if (payload.model === "tool-serialization-probe" && isAgentRequest && toolResults.length < 2) {
       const toolName = toolResults.length === 0 ? "list_resumes" : "list_interviews";
       response.writeHead(200, { "content-type": "application/json; charset=utf-8" });

@@ -119,7 +119,9 @@ class LearningPlanIdempotencyTests {
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
                 mock(ProfileService.class), mock(InterviewRecapRepository.class),
-                mock(InterviewRecapQuestionRepository.class), store, mock(LearningPlanGenerationGate.class),
+                mock(InterviewRecapQuestionRepository.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
+                mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class),
+                store, mock(LearningPlanGenerationGate.class),
                 mock(LearningPlanAgentSlots.class));
 
         assertThat(service.create(userId, requestId, "JVM", "面试薄弱点",
@@ -142,7 +144,9 @@ class LearningPlanIdempotencyTests {
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
                 mock(ProfileService.class), mock(InterviewRecapRepository.class),
-                mock(InterviewRecapQuestionRepository.class), store, mock(LearningPlanGenerationGate.class), slots);
+                mock(InterviewRecapQuestionRepository.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
+                mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class),
+                store, mock(LearningPlanGenerationGate.class), slots);
 
         assertThat(service.createForAgent(userId, requestId, runId, "JVM", "第一次说明",
                 LearningSourceType.RECAP, null, DUE)).isSameAs(previous);

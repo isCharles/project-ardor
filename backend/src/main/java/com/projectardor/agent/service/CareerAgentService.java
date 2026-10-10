@@ -84,9 +84,9 @@ public class CareerAgentService {
             24. 用户询问最新、当前、今天、近期、官网、新闻、招聘、公司动态、政策、价格或其他可能变化的公开信息时，必须调用 search_web，不得仅凭模型训练知识作答。综合结果时附上关键来源链接，不编造搜索结果中没有的事实。若 Tavily 未配置，明确引导用户到“设置 → 联网搜索”填写 API Key。
             25. 用户要求基于知识库回答、出题或制定学习计划时，先调用 search_knowledge，把命中的相关片段作为依据；没有命中时明确说明，不得假装知识库包含答案。
             26. 用户要求把某个主题补充进知识库，或你判断一组公开资料会被长期复用时，可调用 research_knowledge_from_web 主动搜索并保存。保存后说明新增来源；不要把一次性闲聊、低可信或无关搜索结果塞入知识库。
-            27. 当岗位要求、面经弱项、记忆卡练习或用户描述暴露出明确且稳定的知识缺口时，可建议学习；用户同意或明确要求安排后调用 create_learning_plan，而不是创建普通日历待办。学习主题要简短，原因必须来自真实材料。
+            27. 当岗位要求、面经弱项、记忆卡练习或用户描述暴露出明确且稳定的知识缺口时，可调用 create_learning_plan 提议学习，而不是创建普通日历待办。学习主题要简短，原因必须来自真实材料。工具只展示确认按钮，不创建计划或日程；即使用户在聊天里同意，也要请其点击按钮。
             27a. 如果学习计划针对某道面经问题，sourceType=RECAP，sourceId 使用该问题的 UUID；针对整场面试才使用面经 UUID。不要把学习分数当成已通过真实面试的证明。
-            28. 学习计划会自动生成讲解、练习并进入日历。创建后告诉用户安排的主题和时间，引导从日历或“学习”进入；不要在聊天中代替学习模块伪造练习分数。
+            28. 用户点击确认按钮后才会生成讲解、练习并进入日历。按钮出现时只说“建议安排”，不得声称已经创建；不要在聊天中代替学习模块伪造练习分数。
             29. 用户说“今天投了 N 份”“昨天投了 N 份”时调用 record_application_count 记录当天总数，不要把它当成新增 N 份，也不要写入长期记忆。查询投递进度先调用 get_application_rhythm。
             30. 用户明确提出每周投递目标或提醒时间时，先了解已有设置，再调用 set_application_rhythm；提醒只在用户打开工作台时显示，不要声称关闭应用后也会推送。面试准备优先时，不要机械催促投递。
             """;
@@ -184,6 +184,8 @@ public class CareerAgentService {
                     memory.add(AiMessage.from(historyMessage.getContent()));
                 }
             }
+            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, requestId,
+                    requestId == null ? null : UUID.randomUUID());
 
             CareerAssistant assistant = AiServices.builder(CareerAssistant.class)
                     .chatModel(modelFactory.create(userId))
@@ -191,8 +193,7 @@ public class CareerAgentService {
                     .chatMemory(memory)
                     // A synchronous retry keeps the logical request but is a new tool-call attempt.
                     // Reusing requestId as the run ID would make regenerated arguments create a second slot.
-                    .tools(tools.bind(userId, message, requestId,
-                            requestId == null ? null : UUID.randomUUID()))
+                    .tools(bound)
                     .maxToolCallingRoundTrips(8)
                     .maxSequentialToolsInvocations(12)
                     .compensateOnToolErrors(true)
@@ -202,7 +203,9 @@ public class CareerAgentService {
                 throw new LlmCallException("AGENT_EMPTY_RESPONSE", "Agent 没有返回可用内容", true, null);
             }
             List<ConversationMessage> saved = store.appendExchange(
-                    userId, conversation, message, answer.strip(), null, references);
+                    userId, conversation, message, answer.strip(),
+                    bound.pendingConfirmations().isEmpty() ? null
+                            : runTrace(1, List.of(), bound.pendingConfirmations()), references);
             return AgentMessageResponse.from(saved.get(1));
         } catch (LlmCallException exception) {
             throw exception;
@@ -318,7 +321,7 @@ public class CareerAgentService {
                             String answer = response.aiMessage().text();
                             if (answer == null || answer.isBlank()) throw new IllegalStateException("Agent 没有返回可用内容");
                             long totalElapsed = elapsedMs(startedAt);
-                            String trace = runTrace(totalElapsed, persistedSteps);
+                            String trace = runTrace(totalElapsed, persistedSteps, bound.pendingConfirmations());
                             List<ConversationMessage> saved = requestId == null
                                     ? store.appendExchange(userId, conversation, message, answer.strip(), trace, references)
                                     : runStore.complete(userId, requestId, conversation, message, answer.strip(), trace, references);
@@ -395,19 +398,24 @@ public class CareerAgentService {
 
     private long elapsedMs(long startedAt) { return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt); }
 
-    private String runTrace(long elapsedMs, List<RunStep> toolSteps) {
+    private String runTrace(long elapsedMs, List<RunStep> toolSteps,
+            List<CareerAgentTools.PendingConfirmation> pending) {
         List<RunStep> steps = new java.util.ArrayList<>();
         long toolElapsed = toolSteps.stream().mapToLong(RunStep::elapsedMs).sum();
         steps.add(new RunStep("理解请求与生成回复", Math.max(1, elapsedMs - toolElapsed), "COMPLETED"));
         steps.addAll(toolSteps);
-        try { return objectMapper.writeValueAsString(new RunTrace(elapsedMs, "COMPLETED", steps)); }
+        List<AgentStreamEvent.AgentConfirmation> proposals = pending.stream()
+                .filter(item -> "learning_plan".equals(item.kind()))
+                .map(AgentStreamEvent.AgentConfirmation::from).toList();
+        try { return objectMapper.writeValueAsString(new RunTrace(elapsedMs, "COMPLETED", steps, proposals)); }
         catch (tools.jackson.core.JacksonException exception) {
             log.warn("Could not serialize agent run trace: {}", exception.getMessage());
             return null;
         }
     }
 
-    private record RunTrace(long elapsedMs, String status, List<RunStep> steps) {}
+    private record RunTrace(long elapsedMs, String status, List<RunStep> steps,
+            List<AgentStreamEvent.AgentConfirmation> proposals) {}
     private record RunStep(String label, long elapsedMs, String status) {}
 
     private String toolLabel(String name, boolean failed) {

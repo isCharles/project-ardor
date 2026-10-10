@@ -11,11 +11,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.learning.service.LearningPlanService;
+import com.projectardor.learning.service.LearningPlanCreationStore;
 import com.projectardor.usage.QuotaProtected;
 import com.projectardor.usage.UsageFeature;
 
@@ -33,6 +35,13 @@ public class LearningPlanController {
     @GetMapping
     public List<LearningPlanResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) {
         return service.list(principal.userId()).stream().map(LearningPlanResponse::from).toList();
+    }
+
+    @GetMapping("/request-status")
+    public List<LearningPlanCreationStore.RequestStatus> requestStatus(
+            @AuthenticationPrincipal ArdorPrincipal principal,
+            @RequestParam List<UUID> requestIds) {
+        return service.requestStatuses(principal.userId(), requestIds);
     }
 
     @GetMapping("/{id}")

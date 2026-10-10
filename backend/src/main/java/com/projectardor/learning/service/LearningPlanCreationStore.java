@@ -40,6 +40,19 @@ public class LearningPlanCreationStore {
         return null;
     }
 
+    /** Restores a historical confirmation without reviving a deleted plan. */
+    public RequestStatus requestStatus(UUID userId, UUID requestId) {
+        var plan = plans.findByUserIdAndRequestId(userId, requestId);
+        if (plan.isPresent()) return new RequestStatus(requestId, "CREATED", plan.get().getId());
+        Boolean deleted = jdbc.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM deleted_learning_requests
+                WHERE user_id = ? AND request_id = ?)
+                """, Boolean.class, userId, requestId);
+        return new RequestStatus(requestId, Boolean.TRUE.equals(deleted) ? "DELETED" : "MISSING", null);
+    }
+
+    public record RequestStatus(UUID requestId, String status, UUID planId) {}
+
     public void markDeleted(LearningPlan plan) {
         if (plan.getRequestId() == null) return;
         jdbc.update("""
