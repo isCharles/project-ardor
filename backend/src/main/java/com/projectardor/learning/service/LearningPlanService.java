@@ -29,6 +29,8 @@ import com.projectardor.llm.service.LlmGateway;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.repository.InterviewRecapQuestionRepository;
 import com.projectardor.recap.repository.InterviewRecapRepository;
+import com.projectardor.resume.repository.ResumeRepository;
+import com.projectardor.knowledge.repository.KnowledgeDocumentRepository;
 
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
@@ -44,6 +46,8 @@ public class LearningPlanService {
     private final ProfileService profileService;
     private final InterviewRecapRepository recapRepository;
     private final InterviewRecapQuestionRepository recapQuestionRepository;
+    private final ResumeRepository resumeRepository;
+    private final KnowledgeDocumentRepository knowledgeRepository;
     private final LearningPlanCreationStore creationStore;
     private final LearningPlanGenerationGate generationGate;
     private final LearningPlanAgentSlots agentSlots;
@@ -52,6 +56,7 @@ public class LearningPlanService {
             LlmJsonParser jsonParser, ObjectMapper objectMapper,
             CalendarTaskService calendarTaskService, ProfileService profileService,
             InterviewRecapRepository recapRepository, InterviewRecapQuestionRepository recapQuestionRepository,
+            ResumeRepository resumeRepository, KnowledgeDocumentRepository knowledgeRepository,
             LearningPlanCreationStore creationStore, LearningPlanGenerationGate generationGate,
             LearningPlanAgentSlots agentSlots) {
         this.repository = repository;
@@ -62,6 +67,8 @@ public class LearningPlanService {
         this.profileService = profileService;
         this.recapRepository = recapRepository;
         this.recapQuestionRepository = recapQuestionRepository;
+        this.resumeRepository = resumeRepository;
+        this.knowledgeRepository = knowledgeRepository;
         this.creationStore = creationStore;
         this.generationGate = generationGate;
         this.agentSlots = agentSlots;
@@ -107,6 +114,14 @@ public class LearningPlanService {
                     && recapRepository.findByIdAndUserId(sourceId, userId).isEmpty()
                     && recapQuestionRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
                 throw new ResourceNotFoundException("面经来源不存在");
+            }
+            if (source == LearningSourceType.RESUME && sourceId != null
+                    && resumeRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
+                throw new ResourceNotFoundException("简历来源不存在");
+            }
+            if (source == LearningSourceType.KNOWLEDGE && sourceId != null
+                    && knowledgeRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
+                throw new ResourceNotFoundException("知识库来源不存在");
             }
             Instant schedule = scheduledAt == null ? tomorrowMorning(userId) : scheduledAt;
             LlmGateway.LlmResult result = llmGateway.completeJson(userId, generationPrompt(),

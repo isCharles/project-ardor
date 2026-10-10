@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -33,6 +34,38 @@ import com.projectardor.websearch.service.TavilySearchService;
 import com.projectardor.websearch.service.WebSearchResult;
 
 class CareerAgentToolsTests {
+
+    @Test
+    void learningToolOnlyProposesAStableUserConfirmedAction() {
+        LearningPlanService learningPlanService = mock(LearningPlanService.class);
+        CareerAgentTools tools = new CareerAgentTools(
+                mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
+                mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class), mock(KnowledgeService.class), learningPlanService,
+                mock(ApplicationRhythmService.class));
+        UUID userId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID questionId = UUID.randomUUID();
+        var bound = tools.bind(userId, "帮我复习 Redis", runId);
+
+        Map<String, Object> result = bound.createLearningPlan(
+                "Redis 持久化", "面试中没有说明 AOF", null, "RECAP", questionId.toString());
+
+        verifyNoInteractions(learningPlanService);
+        assertThat(result).containsEntry("status", "CONFIRMATION_REQUIRED");
+        assertThat(bound.pendingConfirmations()).singleElement().satisfies(pending -> {
+            assertThat(pending.kind()).isEqualTo("learning_plan");
+            assertThat(pending.endpoint()).isEqualTo("/api/learning-plans");
+            assertThat(pending.learningPlan().concept()).isEqualTo("Redis 持久化");
+            assertThat(pending.learningPlan().sourceId()).isEqualTo(questionId);
+            assertThat(pending.learningPlan().requestId()).isNotNull();
+        });
+        var again = tools.bind(userId, "帮我复习 Redis", runId);
+        again.createLearningPlan("Redis 持久化", "面试中没有说明 AOF", null, "RECAP", questionId.toString());
+        assertThat(again.pendingConfirmations().getFirst().learningPlan().requestId())
+                .isEqualTo(bound.pendingConfirmations().getFirst().learningPlan().requestId());
+    }
 
     @Test
     void deletingACalendarTaskOnlyProposesItForTheUserToConfirm() {

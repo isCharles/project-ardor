@@ -25,8 +25,9 @@ type AgentRun = { id: string; conversationId: string; message: string; status: "
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
    button, and pressing it is an ordinary authenticated DELETE from here — the
    model never gets to destroy anything on its own say-so. */
-type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string };
-type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "DONE" | "DISMISSED" | "FAILED"; error?: string };
+type LearningPlanProposal = { concept: string; reason: string | null; sourceType: string; sourceId: string | null; scheduledAt: string | null; requestId: string };
+type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; learningPlan?: LearningPlanProposal | null };
+type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "DONE" | "DISMISSED" | "FAILED"; error?: string; createdPlanId?: string };
 type RunStep = { key: string; label: string; elapsedMs: number; done: boolean };
 type ResumeOption = { id: string; originalFilename: string };
 type RecapOption = { id: string; title: string };
@@ -51,8 +52,16 @@ function formatElapsed(milliseconds: number) {
 
 function savedRunTrace(raw?: string | null) {
   if (!raw) return null;
-  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<{ label: string; elapsedMs: number; status: string }> }; }
+  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<{ label: string; elapsedMs: number; status: string }>; proposals?: AgentConfirmation[] }; }
   catch { return null; }
+}
+
+function confirmationKey(value: AgentConfirmation) {
+  return value.learningPlan?.requestId ?? `${value.kind}:${value.endpoint}`;
+}
+
+function dismissedProposalKey(value: AgentConfirmation) {
+  return `ardor:learning-proposal-dismissed:${confirmationKey(value)}`;
 }
 
 const typewriterExamples = [
@@ -148,6 +157,18 @@ export default function AgentHomePage() {
   const applyState = useCallback((result: AgentState) => {
     setState(result);
     setMessages(result.messages);
+    const proposals = [...new Map<string, AgentConfirmation>(result.messages.flatMap((message) => savedRunTrace(message.runTrace)?.proposals ?? [])
+      .filter((item) => item.kind === "learning_plan" && item.learningPlan?.requestId)
+      .map((item): [string, AgentConfirmation] => [confirmationKey(item), item])).values()];
+    setConfirmations(proposals.map((item) => ({ ...item, state: window.sessionStorage.getItem(dismissedProposalKey(item)) === "1" ? "DISMISSED" as const : "PENDING" as const })));
+    if (proposals.length) {
+      void api<Array<{ id: string; requestId: string | null }>>("/api/learning-plans")
+        .then((plans) => {
+          const created = new Map(plans.map((plan) => [plan.requestId, plan.id]));
+          setConfirmations((current) => current.map((item) => item.learningPlan && created.has(item.learningPlan.requestId)
+            ? { ...item, state: "DONE", createdPlanId: created.get(item.learningPlan.requestId) } : item));
+        }).catch(() => undefined);
+    }
     setConversations(result.conversations);
     setArchivedConversations(result.archivedConversations);
     setMemoryDraft(result.memory.content);
@@ -282,13 +303,29 @@ export default function AgentHomePage() {
   /* The button calls the same REST endpoint the corresponding page would call.
      No agent round trip, no confirmation phrase to retype. */
   async function confirmDeletion(pending: PendingConfirmation) {
-    setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint ? { ...item, state: "DELETING", error: undefined } : item));
+    const key = confirmationKey(pending);
+    setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DELETING", error: undefined } : item));
     try {
       await api<void>(pending.endpoint, { method: "DELETE" });
-      setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint ? { ...item, state: "DONE" } : item));
+      setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DONE" } : item));
     } catch (reason) {
-      setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint
+      setConfirmations((current) => current.map((item) => confirmationKey(item) === key
         ? { ...item, state: "FAILED", error: reason instanceof Error ? reason.message : "删除失败" }
+        : item));
+    }
+  }
+
+  async function confirmLearning(pending: PendingConfirmation) {
+    if (!pending.learningPlan) return;
+    const key = confirmationKey(pending);
+    setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DELETING", error: undefined } : item));
+    try {
+      const plan = await api<{ id: string }>("/api/learning-plans", { method: "POST", body: JSON.stringify(pending.learningPlan) });
+      setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DONE", createdPlanId: plan.id } : item));
+      window.dispatchEvent(new Event("ardor:background-refresh"));
+    } catch (reason) {
+      setConfirmations((current) => current.map((item) => confirmationKey(item) === key
+        ? { ...item, state: "FAILED", error: reason instanceof Error ? reason.message : "创建学习计划失败" }
         : item));
     }
   }
@@ -305,7 +342,9 @@ export default function AgentHomePage() {
     let acceptedRun = false;
     let savedDraftKey = draftStorageKey(conversationId);
     window.sessionStorage.setItem(savedDraftKey, message);
-    setError(""); setRetryFailures([]); setRunSteps([]); setConfirmations([]); setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setBusy(true);
+    setError(""); setRetryFailures([]); setRunSteps([]);
+    setConfirmations((current) => current.filter((item) => item.kind === "learning_plan"));
+    setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setBusy(true);
     try {
       if (!conversationId) {
         const conversation = await api<Conversation>("/api/agent/conversations", { method: "POST" });
@@ -375,7 +414,7 @@ export default function AgentHomePage() {
               });
             } else if (event.type === "confirm" && event.confirmation) {
               const proposal = event.confirmation;
-              setConfirmations((current) => current.some((item) => item.endpoint === proposal.endpoint)
+              setConfirmations((current) => current.some((item) => confirmationKey(item) === confirmationKey(proposal))
                 ? current
                 : [...current, { ...proposal, state: "PENDING" }]);
             } else if (event.type === "error") streamFailure = event;
@@ -647,16 +686,20 @@ export default function AgentHomePage() {
                   </article>
                 ))}
                 {confirmations.length > 0 && <section className="space-y-2">
-                  {confirmations.map((pending) => <div key={pending.endpoint} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : pending.state === "DISMISSED" ? "border-stone-200 bg-white/50" : "border-rose-100 bg-white/80"}`}>
-                    <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : <Trash2 className="size-4" />}</span>
+                  {confirmations.map((pending) => <div key={confirmationKey(pending)} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : pending.state === "DISMISSED" ? "border-stone-200 bg-white/50" : pending.kind === "learning_plan" ? "border-violet-100 bg-white/80" : "border-rose-100 bg-white/80"}`}>
+                    <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : pending.kind === "learning_plan" ? "bg-violet-50 text-violet-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : pending.kind === "learning_plan" ? <BookOpenText className="size-4" /> : <Trash2 className="size-4" />}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-stone-800">{pending.state === "DONE" ? "已删除" : pending.state === "DISMISSED" ? "已保留" : pending.state === "DELETING" ? "正在删除" : "确认删除"}<span className="ml-1 font-normal">「{pending.label}」</span></p>
+                      <p className="font-medium text-stone-800">{pending.kind === "learning_plan"
+                        ? pending.state === "DONE" ? (locale === "en" ? "Learning plan created" : "学习计划已创建") : pending.state === "DISMISSED" ? (locale === "en" ? "Not now" : "暂不安排") : pending.state === "DELETING" ? (locale === "en" ? "Creating plan" : "正在生成计划") : (locale === "en" ? "Suggested learning" : "建议学习")
+                        : pending.state === "DONE" ? "已删除" : pending.state === "DISMISSED" ? "已保留" : pending.state === "DELETING" ? "正在删除" : "确认删除"}<span className="ml-1 font-normal">「{pending.label}」</span></p>
                       {pending.detail && pending.state === "PENDING" && <p className="mt-1 text-xs leading-5 text-stone-500">{pending.detail}</p>}
+                      {pending.kind === "learning_plan" && pending.learningPlan?.scheduledAt && pending.state === "PENDING" && <p className="mt-1 text-xs text-stone-400">{new Date(pending.learningPlan.scheduledAt).toLocaleString(locale === "en" ? "en-US" : "zh-CN")}</p>}
                       {pending.error && <p className="mt-1 text-xs leading-5 text-rose-600">{pending.error}</p>}
+                      {pending.kind === "learning_plan" && pending.createdPlanId && <Link className="mt-1 inline-block text-xs font-medium text-violet-600 hover:underline" href={`/app/learning?id=${pending.createdPlanId}`}>{locale === "en" ? "Open lesson" : "打开学习"}</Link>}
                     </div>
                     {(pending.state === "PENDING" || pending.state === "FAILED") && <div className="flex shrink-0 items-center gap-2">
-                      <button type="button" onClick={() => setConfirmations((current) => current.map((item) => item.endpoint === pending.endpoint ? { ...item, state: "DISMISSED" } : item))} className="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 transition hover:bg-white hover:text-stone-800">保留</button>
-                      <button type="button" onClick={() => void confirmDeletion(pending)} className="rounded-full bg-rose-600 px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-rose-700">{pending.state === "FAILED" ? "重试删除" : "删除"}</button>
+                      <button type="button" onClick={() => { if (pending.kind === "learning_plan") window.sessionStorage.setItem(dismissedProposalKey(pending), "1"); setConfirmations((current) => current.map((item) => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item)); }} className="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 transition hover:bg-white hover:text-stone-800">{pending.kind === "learning_plan" ? (locale === "en" ? "Not now" : "暂不安排") : "保留"}</button>
+                      <button type="button" onClick={() => void (pending.kind === "learning_plan" ? confirmLearning(pending) : confirmDeletion(pending))} className={`rounded-full px-3.5 py-1.5 text-xs font-medium text-white transition ${pending.kind === "learning_plan" ? "bg-violet-600 hover:bg-violet-700" : "bg-rose-600 hover:bg-rose-700"}`}>{pending.kind === "learning_plan" ? (locale === "en" ? "Create plan" : "生成计划") : pending.state === "FAILED" ? "重试删除" : "删除"}</button>
                     </div>}
                   </div>)}
                 </section>}

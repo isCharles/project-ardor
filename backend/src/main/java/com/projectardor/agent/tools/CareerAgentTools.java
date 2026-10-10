@@ -2,6 +2,7 @@ package com.projectardor.agent.tools;
 
 import java.time.DayOfWeek;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
@@ -42,6 +43,7 @@ import com.projectardor.knowledge.web.KnowledgeSearchResult;
 import com.projectardor.learning.domain.LearningPlan;
 import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.service.LearningPlanService;
+import com.projectardor.learning.web.LearningPlanCreateRequest;
 import com.projectardor.learning.web.LearningPlanResponse;
 import com.projectardor.agent.AgentContextReference;
 import com.projectardor.profile.domain.UserProfile;
@@ -254,8 +256,8 @@ public class CareerAgentTools {
             return LearningPlanResponse.from(learningPlanService.get(userId, uuid(planId, "学习计划 ID")));
         }
 
-        @Tool(name = "create_learning_plan", value = "为用户生成一个概念学习计划，并把它作为一条日程安排。适用于岗位要求或练习表现暴露出明确知识薄弱点时")
-        public LearningPlanResponse createLearningPlan(
+        @Tool(name = "create_learning_plan", value = "向用户提议一项概念学习计划和日程；只有用户点击确认后才生成，不能声称已创建")
+        public Map<String, Object> createLearningPlan(
                 @P("简洁明确的学习概念，例如 JVM 或数据库索引") String concept,
                 @P(value = "为什么需要学习；引用用户真实表现，不得虚构", required = false) String reason,
                 @P(value = "带时区的 ISO-8601 学习时间；留空则安排明天 09:00", required = false) String scheduledAt,
@@ -264,9 +266,29 @@ public class CareerAgentTools {
             LearningSourceType source = enumValue(LearningSourceType.class, sourceType, LearningSourceType.AGENT);
             UUID sourceUuid = nullableUuid(sourceId, "来源 ID");
             Instant dueAt = nullableInstant(scheduledAt);
-            return LearningPlanResponse.from(learningPlanService.createForAgent(userId,
-                    logicalActionId, runRequestId, concept, reason, source,
-                    sourceUuid, dueAt));
+            if (concept == null || concept.isBlank() || concept.strip().length() > 160) {
+                throw new IllegalArgumentException("学习概念须在 1 到 160 字之间");
+            }
+            if (reason != null && reason.strip().length() > 4000) {
+                throw new IllegalArgumentException("学习原因过长");
+            }
+            if (dueAt != null && !dueAt.isAfter(Instant.now())) {
+                throw new IllegalArgumentException("学习时间必须在未来");
+            }
+            String topic = concept.strip();
+            String why = blankToNull(reason);
+            UUID runId = logicalActionId == null ? runRequestId : logicalActionId;
+            String identity = userId + ":" + runId + ":" + topic + ":" + why + ":"
+                    + source + ":" + sourceUuid + ":" + dueAt;
+            UUID requestId = runId == null ? UUID.randomUUID()
+                    : UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8));
+            LearningPlanCreateRequest input = new LearningPlanCreateRequest(
+                    topic, why, source, sourceUuid, dueAt, requestId);
+            pending.add(new PendingConfirmation("learning_plan", null, topic,
+                    why == null ? "请确认后生成讲解、练习和日历安排" : why,
+                    "/api/learning-plans", input));
+            return Map.of("status", "CONFIRMATION_REQUIRED", "kind", "learning_plan",
+                    "target", topic, "message", "已向用户展示学习计划确认按钮；尚未创建计划或日程。请说明建议原因，等待用户点击，不要再次调用本工具。");
         }
 
         public AgentMemoryResponse updateUserMemory(@P("完整的新版总体记忆，使用简洁中文要点；要清空时传空字符串") String memory) {
@@ -721,5 +743,10 @@ public class CareerAgentTools {
      * {@code endpoint} is the ordinary REST path the confirmation button calls.
      */
     public record PendingConfirmation(
-            String kind, UUID targetId, String label, String detail, String endpoint) {}
+            String kind, UUID targetId, String label, String detail, String endpoint,
+            LearningPlanCreateRequest learningPlan) {
+        public PendingConfirmation(String kind, UUID targetId, String label, String detail, String endpoint) {
+            this(kind, targetId, label, detail, endpoint, null);
+        }
+    }
 }

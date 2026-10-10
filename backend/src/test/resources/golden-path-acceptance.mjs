@@ -26,8 +26,8 @@ class Client {
     if (this.cookies.size) {
       headers.Cookie = [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
     }
-    if (body !== undefined) {
-      headers["Content-Type"] = "application/json";
+    if (body !== undefined || !["GET", "HEAD"].includes(method)) {
+      if (body !== undefined) headers["Content-Type"] = "application/json";
       const csrf = await this.request("/api/auth/csrf");
       headers[csrf.headerName] = csrf.token;
       headers.Cookie = [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
@@ -123,6 +123,9 @@ async function main() {
   });
   assert.equal(planRetry.id, plan.id, "Learning creation retry must reuse its plan");
   await stranger.request(`/api/learning-plans/${plan.id}`, { expected: 404 });
+  await stranger.request("/api/learning-plans", {
+    method: "POST", expected: 404, body: { concept: "Redis 持久化", sourceType: "RECAP", sourceId: weak.id },
+  });
 
   let tasks = await owner.request("/api/calendar/tasks");
   assert.equal(calendarTask(tasks, `/app/learning?id=${plan.id}`).status, "TODO");
@@ -157,7 +160,36 @@ async function main() {
   assert.equal(calendarTask(tasks, `/app/learning?id=${plan.id}`).status, "COMPLETED");
   assert.equal(calendarTask(tasks, `/app/replay?question=${weak.id}&retest=${retest.id}`).status, "COMPLETED");
   await stranger.request(`/api/interview-replays/questions/${weak.id}/retest`, { expected: 404 });
-  console.log("Golden Path passed: recap → weak question → replay → dated learning and retest → completed calendar tasks; cross-user reads denied.");
+
+  // An Agent suggestion must survive as a user-visible proposal without writing a plan.
+  await owner.request("/api/settings/llm", {
+    method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+      model: "learning-proposal-probe", apiKey: "disposable-fake-model-key" },
+  });
+  const before = await owner.request("/api/learning-plans");
+  const conversation = await owner.request("/api/agent/conversations", { method: "POST", expected: 201 });
+  const suggestion = await owner.request("/api/agent/messages", {
+    method: "POST", body: { conversationId: conversation.id, requestId: randomUUID(),
+      message: "根据我的面试弱项，建议安排 Redis 持久化学习。" },
+  });
+  const trace = JSON.parse(suggestion.runTrace);
+  const proposal = trace.proposals.find((item) => item.kind === "learning_plan");
+  assert.ok(proposal?.learningPlan?.requestId, "Agent must persist a click-to-confirm proposal");
+  const restored = await owner.request(`/api/agent?conversationId=${conversation.id}`);
+  const restoredTrace = JSON.parse(restored.messages.at(-1).runTrace);
+  assert.equal(restoredTrace.proposals[0].learningPlan.requestId, proposal.learningPlan.requestId,
+    "Proposal must survive a conversation reload");
+  assert.equal((await owner.request("/api/learning-plans")).length, before.length,
+    "Agent tool must not create learning plans or calendar tasks before confirmation");
+  const confirmed = await owner.request("/api/learning-plans", {
+    method: "POST", expected: 201, body: proposal.learningPlan,
+  });
+  const confirmedRetry = await owner.request("/api/learning-plans", {
+    method: "POST", expected: 201, body: proposal.learningPlan,
+  });
+  assert.equal(confirmedRetry.id, confirmed.id, "Confirmation retry must not duplicate the plan");
+  calendarTask(await owner.request("/api/calendar/tasks"), `/app/learning?id=${confirmed.id}`);
+  console.log("Golden Path passed: recap → replay → learning and retest → calendar completion; Agent learning requires a persisted user confirmation; cross-user reads denied.");
 }
 
 await main();

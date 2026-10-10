@@ -22,6 +22,8 @@ import com.projectardor.llm.service.LlmGateway;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.repository.InterviewRecapQuestionRepository;
 import com.projectardor.recap.repository.InterviewRecapRepository;
+import com.projectardor.resume.repository.ResumeRepository;
+import com.projectardor.knowledge.repository.KnowledgeDocumentRepository;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -37,12 +39,39 @@ class LearningSourceTests {
         when(questions.findByIdAndUserId(foreignQuestionId, userId)).thenReturn(Optional.empty());
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), recaps, questions, mock(LearningPlanCreationStore.class),
+                mock(ProfileService.class), recaps, questions,
+                mock(ResumeRepository.class), mock(KnowledgeDocumentRepository.class),
+                mock(LearningPlanCreationStore.class),
                 mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class));
 
         assertThatThrownBy(() -> service.create(userId, "JVM", "面试薄弱点",
                 LearningSourceType.RECAP, foreignQuestionId, Instant.now()))
                 .isInstanceOf(ResourceNotFoundException.class);
+        verify(llm, never()).completeJson(any(), any(), any());
+    }
+
+    @Test
+    void foreignResumeAndKnowledgeCannotBeClaimedAsLearningEvidence() {
+        UUID userId = UUID.randomUUID();
+        UUID foreignId = UUID.randomUUID();
+        LlmGateway llm = mock(LlmGateway.class);
+        ResumeRepository resumes = mock(ResumeRepository.class);
+        KnowledgeDocumentRepository knowledge = mock(KnowledgeDocumentRepository.class);
+        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
+                mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
+                mock(ProfileService.class), mock(InterviewRecapRepository.class),
+                mock(InterviewRecapQuestionRepository.class), resumes, knowledge,
+                mock(LearningPlanCreationStore.class), mock(LearningPlanGenerationGate.class),
+                mock(LearningPlanAgentSlots.class));
+
+        assertThatThrownBy(() -> service.create(userId, "JVM", "需要补强",
+                LearningSourceType.RESUME, foreignId, Instant.now()))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.create(userId, "JVM", "需要补强",
+                LearningSourceType.KNOWLEDGE, foreignId, Instant.now()))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(resumes).findByIdAndUserId(foreignId, userId);
+        verify(knowledge).findByIdAndUserId(foreignId, userId);
         verify(llm, never()).completeJson(any(), any(), any());
     }
 }
