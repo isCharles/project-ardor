@@ -42,7 +42,8 @@ class LearningSourceTests {
                 mock(ProfileService.class), recaps, questions,
                 mock(ResumeRepository.class), mock(KnowledgeDocumentRepository.class),
                 mock(LearningPlanCreationStore.class),
-                mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class));
+                mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class),
+                mock(org.springframework.transaction.PlatformTransactionManager.class));
 
         assertThatThrownBy(() -> service.create(userId, "JVM", "面试薄弱点",
                 LearningSourceType.RECAP, foreignQuestionId, Instant.now()))
@@ -62,7 +63,8 @@ class LearningSourceTests {
                 mock(ProfileService.class), mock(InterviewRecapRepository.class),
                 mock(InterviewRecapQuestionRepository.class), resumes, knowledge,
                 mock(LearningPlanCreationStore.class), mock(LearningPlanGenerationGate.class),
-                mock(LearningPlanAgentSlots.class));
+                mock(LearningPlanAgentSlots.class),
+                mock(org.springframework.transaction.PlatformTransactionManager.class));
 
         assertThatThrownBy(() -> service.create(userId, "JVM", "需要补强",
                 LearningSourceType.RESUME, foreignId, Instant.now()))

@@ -16,6 +16,8 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.projectardor.calendar.domain.CalendarTaskSource;
 import com.projectardor.calendar.service.CalendarTaskService;
@@ -51,6 +53,7 @@ public class LearningPlanService {
     private final LearningPlanCreationStore creationStore;
     private final LearningPlanGenerationGate generationGate;
     private final LearningPlanAgentSlots agentSlots;
+    private final TransactionTemplate transactions;
 
     public LearningPlanService(LearningPlanRepository repository, LlmGateway llmGateway,
             LlmJsonParser jsonParser, ObjectMapper objectMapper,
@@ -58,7 +61,7 @@ public class LearningPlanService {
             InterviewRecapRepository recapRepository, InterviewRecapQuestionRepository recapQuestionRepository,
             ResumeRepository resumeRepository, KnowledgeDocumentRepository knowledgeRepository,
             LearningPlanCreationStore creationStore, LearningPlanGenerationGate generationGate,
-            LearningPlanAgentSlots agentSlots) {
+            LearningPlanAgentSlots agentSlots, PlatformTransactionManager transactionManager) {
         this.repository = repository;
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
@@ -72,6 +75,7 @@ public class LearningPlanService {
         this.creationStore = creationStore;
         this.generationGate = generationGate;
         this.agentSlots = agentSlots;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
     public LearningPlan create(UUID userId, String rawConcept, String rawReason,
@@ -175,6 +179,7 @@ public class LearningPlanService {
         if (answers.size() != plan.getExercises().size() || answers.stream().anyMatch(String::isBlank)) {
             throw new IllegalArgumentException("请完成全部练习后再提交");
         }
+        int expectedAttemptCount = plan.getAttemptCount();
         List<Map<String, Object>> attempts = new ArrayList<>();
         for (int index = 0; index < answers.size(); index++) {
             Map<String, Object> exercise = plan.getExercises().get(index);
@@ -186,6 +191,19 @@ public class LearningPlanService {
         JsonNode node = jsonParser.parseObject(result.content());
         int score = node.path("score").asInt(-1);
         if (score < 0 || score > 100) throw new IllegalStateException("模型没有返回有效练习分数");
+        // The model call runs without a database lock. Recheck under a row lock and
+        // commit the feedback together with its calendar state in one transaction.
+        return transactions.execute(status -> commitAttempt(userId, planId, expectedAttemptCount,
+                answers, node, score));
+    }
+
+    private LearningPlan commitAttempt(UUID userId, UUID planId, int expectedAttemptCount,
+            List<String> answers, JsonNode node, int score) {
+        LearningPlan plan = repository.findOwnedForUpdate(planId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("学习计划不存在"));
+        if (plan.getStatus() == LearningStatus.COMPLETED || plan.getAttemptCount() != expectedAttemptCount) {
+            throw new IllegalStateException("学习内容已更新，请刷新后重新提交");
+        }
         Map<String, Object> evaluation = new LinkedHashMap<>(
                 objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() {}));
         // The next round's rubric is for grading only; never expose it through lastEvaluation.

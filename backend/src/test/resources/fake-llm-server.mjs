@@ -69,6 +69,16 @@ const replay = {
 
 const transientAttempts = new Map();
 let delayedReplayRequests = 0;
+let pendingLearningResponses = [];
+let learningFallbackTimer;
+
+function releaseLearningResponses() {
+  if (learningFallbackTimer) clearTimeout(learningFallbackTimer);
+  learningFallbackTimer = undefined;
+  const responses = pendingLearningResponses;
+  pendingLearningResponses = [];
+  responses.forEach((respond) => respond());
+}
 
 function completionFor(payload) {
   const input = JSON.stringify(payload);
@@ -112,6 +122,8 @@ http.createServer((request, response) => {
   request.on("end", () => {
     const payload = JSON.parse(body || "{}");
     const delayedReplay = payload.model === "delayed-replay-model" && body.includes("面试复盘教练");
+    const concurrentLearning = payload.model === "concurrent-learning-model"
+      && body.includes("严格但有建设性的中文技术教练");
     if (delayedReplay) delayedReplayRequests++;
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
@@ -220,7 +232,11 @@ http.createServer((request, response) => {
       response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       response.end(JSON.stringify(result));
     };
-    if (delayedReplay) setTimeout(respond, 1500);
+    if (concurrentLearning) {
+      pendingLearningResponses.push(respond);
+      if (pendingLearningResponses.length === 2) releaseLearningResponses();
+      else learningFallbackTimer = setTimeout(releaseLearningResponses, 5000);
+    } else if (delayedReplay) setTimeout(respond, 1500);
     else respond();
   });
 }).listen(8090, "0.0.0.0");
