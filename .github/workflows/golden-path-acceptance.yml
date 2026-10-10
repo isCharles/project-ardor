@@ -1,0 +1,84 @@
+name: Golden Path acceptance
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/golden-path-acceptance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  golden-path:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      DATABASE_URL: jdbc:postgresql://127.0.0.1:5432/ardor
+      DATABASE_USER: ardor
+      DATABASE_PASSWORD: acceptance-only
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "6379"
+      ARDOR_ALLOW_PRIVATE_API_BASE_URLS: "true"
+      ARDOR_ACCEPTANCE_DISPOSABLE_DB: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Start disposable database and Redis
+        shell: bash
+        run: |
+          docker run -d --name ardor-acceptance-postgres -p 5432:5432 \
+            -e POSTGRES_USER=ardor -e POSTGRES_PASSWORD=acceptance-only \
+            -e POSTGRES_DB=ardor pgvector/pgvector:pg17
+          docker run -d --name ardor-acceptance-redis -p 6379:6379 redis:7-alpine
+          for attempt in {1..40}; do
+            if docker exec ardor-acceptance-postgres pg_isready -U ardor -d ardor \
+                && docker exec ardor-acceptance-redis redis-cli ping | grep -q PONG; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs ardor-acceptance-postgres
+          exit 1
+
+      - name: Build backend and start isolated services
+        shell: bash
+        run: |
+          cd backend
+          mvn -B -q -DskipTests package
+          echo "ARDOR_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+          node src/test/resources/fake-llm-server.mjs > "$RUNNER_TEMP/fake-llm.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/fake-llm.pid"
+
+      - name: Run end-to-end Golden Path
+        shell: bash
+        run: |
+          java -jar backend/target/ardor-backend-0.5.0.jar > "$RUNNER_TEMP/backend.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/backend.pid"
+          for attempt in {1..90}; do
+            if curl --silent --fail http://127.0.0.1:8080/actuator/health \
+                | grep -q '"status":"UP"'; then
+              node backend/src/test/resources/golden-path-acceptance.mjs
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend did not become healthy"
+          exit 1
+
+      - name: Show service logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          tail -n 150 "$RUNNER_TEMP/backend.log" 2>/dev/null || true
+          tail -n 80 "$RUNNER_TEMP/fake-llm.log" 2>/dev/null || true
