@@ -61,7 +61,7 @@ try {
 
   await page.getByRole("link", { name: /Open lesson|打开学习/ }).click();
   await page.waitForURL(new RegExp(`${createdPlanPath.replace("?", "\\?")}$`));
-  await page.getByRole("button", { name: /Start learning|开始学习/ }).click();
+  await page.getByRole("button", { name: /^(Start learning|开始学习)$/ }).click();
   await page.getByRole("radio", { name: "记录写命令" }).check();
   await page.locator("#learning-practice textarea").fill("第一次回答：RDB 是快照。");
   await page.getByRole("button", { name: /Submit answers|提交练习/ }).click();
