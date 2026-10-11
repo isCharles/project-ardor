@@ -131,6 +131,13 @@ try {
     return response.json();
   });
   assert.equal(recapsBeforeRetry.length, 0, "The recovery account must not see another user's notes");
+  const failedJobs = await recoveryPage.evaluate(async () => {
+    const response = await fetch("/api/interview-recaps/jobs");
+    if (!response.ok) throw new Error(`Interview jobs returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(failedJobs.length, 1);
+  assert.equal(failedJobs[0].status, "FAILED");
   await recoveryPage.getByRole("button", { name: /^(Retry|重试)$/ }).click();
   await recoveryPage.getByRole("heading", { level: 2, name: "Java 后端一面复盘" }).waitFor({ timeout: 40_000 });
   const recoveredJobs = await recoveryPage.evaluate(async () => {
@@ -139,7 +146,10 @@ try {
     return response.json();
   });
   assert.equal(recoveredJobs.filter((job) => job.status === "COMPLETED").length, 1);
-  assert.ok(recoveredJobs[0].attempts >= 2, "The browser must retry the original job");
+  assert.equal(recoveredJobs[0].jobId, failedJobs[0].jobId,
+    "The browser must retry the original job, not submit a duplicate");
+  assert.ok(recoveredJobs[0].attempts >= 1,
+    "A user-initiated retry resets its attempt budget before the new run");
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");
   console.log("Browser Golden Path passed: Agent confirmation → two learning rounds → interview report and replay → calendar → failed recap retry in an isolated user session.");
 } catch (error) {
