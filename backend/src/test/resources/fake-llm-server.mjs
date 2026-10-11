@@ -82,7 +82,8 @@ function releaseLearningResponses() {
 
 function completionFor(payload) {
   const input = JSON.stringify(payload);
-  if (payload.model === "recap-recovery-probe" && input.includes("面试复盘编辑")) {
+  if (["recap-recovery-probe", "recap-ui-recovery-probe"].includes(payload.model)
+    && input.includes("面试复盘编辑")) {
     const attempt = (transientAttempts.get(payload.model) ?? 0) + 1;
     transientAttempts.set(payload.model, attempt);
     // A structurally valid but unusable first answer exercises the queue's

@@ -349,6 +349,26 @@ async function main() {
   assert.equal(afterConcurrent.attemptCount, 1);
   assert.equal(calendarTask(await recoveryOwner.request("/api/calendar/tasks"),
     `/app/learning?id=${concurrentPlan.id}`).status, "TODO");
+
+  // Leave a separate user's first recap job failed for the on-demand browser
+  // test. No real user data or existing account is touched by this fixture.
+  const uiRecoveryOwner = new Client();
+  await uiRecoveryOwner.request("/api/auth/register", {
+    method: "POST", expected: 201,
+    body: { email: `golden-ui-recovery-${suffix}@ardor.invalid`, password,
+      displayName: "Golden Path Recovery" },
+  });
+  await uiRecoveryOwner.request("/api/settings/llm", {
+    method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+      model: "recap-ui-recovery-probe", apiKey: "disposable-fake-model-key" },
+  });
+  const uiFailedSubmission = await uiRecoveryOwner.request("/api/interview-recaps", {
+    method: "POST", expected: 202,
+    body: { content: "我在 Ardor Labs 的 Java 后端面试被追问 Redis 持久化。我只回答了 RDB 是快照，没有解释 AOF 重写和恢复时的数据丢失窗口。" },
+  });
+  await waitForJobStatus(uiRecoveryOwner, uiFailedSubmission.jobId, "FAILED");
+  assert.equal((await uiRecoveryOwner.request("/api/interview-recaps")).length, 0,
+    "A failed recap must not expose partial notes to the browser user");
   console.log("Golden Path passed: recap → replay → learning/retest → calendar; Agent confirmation; failed recap recovery; canceled in-flight retest rollback; concurrent learning isolation.");
 }
 
