@@ -58,6 +58,13 @@ function formatInterviewDate(recap: Recap, locale: "en" | "zh-CN") {
   return stated ? text : locale === "en" ? `${text} · filed` : `${text}（整理于）`;
 }
 
+function localInterviewDateInput(occurredAt: string | null) {
+  if (!occurredAt) return "";
+  const date = new Date(occurredAt);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function RecapStack({
   recaps, selectedId, onSelect,
 }: { recaps: Recap[]; selectedId: string | null; onSelect: (id: string) => void }) {
@@ -258,7 +265,7 @@ export default function RecapsPage() {
 function Report({ recap, busy, onMetadata, onDelete }: { recap: Recap; busy: boolean; onMetadata: (company: string, role: string, date: string) => void; onDelete: () => void }) {
   const { t } = useLocale();
   const missingMetadata = !recap.company || !recap.targetRole || !recap.occurredAt;
-  if (missingMetadata) return <div><form key={`${recap.id}-${recap.company}-${recap.targetRole}-${recap.occurredAt}`} onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); onMetadata(String(data.get("company") ?? ""), String(data.get("targetRole") ?? ""), String(data.get("occurredOn") ?? "")); }} className={`${styles.panel} mb-7 border border-amber-200/70 bg-amber-50/65 p-5`}><p className="text-sm font-medium text-amber-900">{t("Complete interview details", "补全面试信息")}</p><div className="mt-4 grid gap-3 md:grid-cols-3"><input name="company" defaultValue={recap.company ?? ""} maxLength={160} className="field" placeholder={t("Company", "公司")} /><input name="targetRole" defaultValue={recap.targetRole ?? ""} maxLength={160} className="field" placeholder={t("Role", "岗位")} /><input name="occurredOn" type="date" aria-label={t("Interview date", "面试日期")} defaultValue={recap.occurredAt ? recap.occurredAt.slice(0, 10) : ""} className="field" /></div><button disabled={busy} className={`${styles.buttonPrimary} mt-4 px-5 py-2 text-sm`}>{busy ? t("Saving…", "保存中…") : t("Save", "保存")}</button></form><CompleteReport recap={recap} onDelete={onDelete} /></div>;
+  if (missingMetadata) return <div><form key={`${recap.id}-${recap.company}-${recap.targetRole}-${recap.occurredAt}`} onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); onMetadata(String(data.get("company") ?? ""), String(data.get("targetRole") ?? ""), String(data.get("occurredOn") ?? "")); }} className={`${styles.panel} mb-7 border border-amber-200/70 bg-amber-50/65 p-5`}><p className="text-sm font-medium text-amber-900">{t("Complete interview details", "补全面试信息")}</p><div className="mt-4 grid gap-3 md:grid-cols-3"><input name="company" defaultValue={recap.company ?? ""} maxLength={160} className="field" placeholder={t("Company", "公司")} /><input name="targetRole" defaultValue={recap.targetRole ?? ""} maxLength={160} className="field" placeholder={t("Role", "岗位")} /><input name="occurredOn" type="date" aria-label={t("Interview date", "面试日期")} defaultValue={localInterviewDateInput(recap.occurredAt)} className="field" /></div><button disabled={busy} className={`${styles.buttonPrimary} mt-4 px-5 py-2 text-sm`}>{busy ? t("Saving…", "保存中…") : t("Save", "保存")}</button></form><CompleteReport recap={recap} onDelete={onDelete} /></div>;
   return <CompleteReport recap={recap} onDelete={onDelete} />;
 }
 

@@ -82,6 +82,9 @@ function releaseLearningResponses() {
 
 function completionFor(payload) {
   const input = JSON.stringify(payload);
+  if (payload.model === "recap-metadata-probe" && input.includes("面试复盘编辑")) {
+    return { ...recap, company: "", targetRole: "", occurredAt: "" };
+  }
   if (["recap-recovery-probe", "recap-ui-recovery-probe"].includes(payload.model)
     && input.includes("面试复盘编辑")) {
     const attempt = (transientAttempts.get(payload.model) ?? 0) + 1;
