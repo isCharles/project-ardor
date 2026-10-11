@@ -23,13 +23,41 @@ try {
   await page.locator('button[type="submit"]').click();
   await page.waitForURL(`${origin}/app`, { timeout: 15_000 });
 
-  // The latest synthetic conversation contains a confirmed learning suggestion
-  // whose plan was later deleted. Reloading must not offer to create it again.
+  // The latest synthetic conversation contains both a deleted proposal and a
+  // distinct pending one. Only the pending one may still offer creation.
   await page.getByText(/Plan removed|计划已移除/).waitFor();
-  assert.equal(await page.getByRole("button", { name: /Create plan|生成计划/ }).count(), 0);
+  await page.getByRole("button", { name: /Create plan|生成计划/ }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /Create plan|生成计划/ }).count(), 1);
   await page.reload();
   await page.getByText(/Plan removed|计划已移除/).waitFor();
+  assert.equal(await page.getByRole("button", { name: /Create plan|生成计划/ }).count(), 1);
+
+  const plansBeforeConfirmation = await page.evaluate(async () => {
+    const response = await fetch("/api/learning-plans");
+    if (!response.ok) throw new Error(`Learning plans returned ${response.status}`);
+    return response.json();
+  });
+  await page.getByRole("button", { name: /Create plan|生成计划/ }).click();
+  await page.getByText(/Learning plan created|学习计划已创建/).waitFor();
+  const createdPlanPath = await page.getByRole("link", { name: /Open lesson|打开学习/ }).getAttribute("href");
+  assert.match(createdPlanPath, /^\/app\/learning\?id=[0-9a-f-]{36}$/i);
+  await page.reload();
+  await page.getByText(/Plan removed|计划已移除/).waitFor();
+  await page.getByText(/Learning plan created|学习计划已创建/).waitFor();
   assert.equal(await page.getByRole("button", { name: /Create plan|生成计划/ }).count(), 0);
+  const plansAfterConfirmation = await page.evaluate(async () => {
+    const response = await fetch("/api/learning-plans");
+    if (!response.ok) throw new Error(`Learning plans returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(plansAfterConfirmation.length, plansBeforeConfirmation.length + 1);
+  assert.equal(plansAfterConfirmation.filter((item) => `/app/learning?id=${item.id}` === createdPlanPath).length, 1);
+  const calendarTasks = await page.evaluate(async () => {
+    const response = await fetch("/api/calendar/tasks");
+    if (!response.ok) throw new Error(`Calendar tasks returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(calendarTasks.filter((item) => item.actionPath === createdPlanPath).length, 1);
 
   const recaps = await page.evaluate(async () => {
     const response = await fetch("/api/interview-recaps");
@@ -64,7 +92,7 @@ try {
   await page.goto(`${origin}/app/calendar`);
   await page.getByRole("heading", { level: 1, name: /Make today count|把目标，放进今天/ }).waitFor();
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");
-  console.log("Browser Golden Path passed: login → removed Agent proposal survives reload → interview report → weak-question replay → learning → calendar.");
+  console.log("Browser Golden Path passed: login → deleted proposal stays removed → confirm new proposal once → interview report → weak-question replay → learning → calendar.");
 } catch (error) {
   const screenshot = join(process.env.RUNNER_TEMP ?? ".", "ardor-ui-failure.png");
   await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});

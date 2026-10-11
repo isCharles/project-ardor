@@ -15,7 +15,7 @@
 
 `.github/workflows/golden-path-acceptance.yml` 在一次性 PostgreSQL、Redis 和假模型服务中运行 `backend/src/test/resources/golden-path-acceptance.mjs`。它已覆盖异步面经整理、弱题回放、学习复练、日历联动、跨用户访问拒绝、Agent 计划确认、失败任务重试、取消中的复测回滚以及并发学习评分。假模型有意返回固定数据和可控故障，所以该检查**不证明**真实模型质量、外部网络、浏览器页面观感或本机 Docker 正常。
 
-手动触发同一工作流时，还会启动一次性前端并用 Chromium 运行 `frontend/tests/golden-path-ui.mjs`：检查登录、删除后的 Agent 学习建议在刷新后仍显示为已移除且没有重复创建入口、面经报告、弱题重答、学习计划与日历页面。浏览器检查覆盖这条合成数据路径的页面行为，但仍不证明真实模型质量、所有页面的视觉效果或本机服务状态。
+手动触发同一工作流时，还会启动一次性前端并用 Chromium 运行 `frontend/tests/golden-path-ui.mjs`：检查登录、删除后的 Agent 学习建议在刷新后仍显示为已移除、另一条待确认建议须由用户点击才创建且刷新后不重复、面经报告、弱题重答、学习计划与日历页面。浏览器检查覆盖这条合成数据路径的页面行为，但仍不证明真实模型质量、所有页面的视觉效果或本机服务状态。
 
 `backend/src/test/resources/golden-path-acceptance.mjs` 会创建用户与记录，且要求 `ARDOR_ACCEPTANCE_DISPOSABLE_DB=true`；**只可在可丢弃的隔离数据库运行，严禁指向日常或生产数据库**。前端 PR 另由 `.github/workflows/frontend-quality.yml` 执行干净安装、Next 类型生成、类型检查、lint 与正式构建；这也不是浏览器端到端验收。
 
