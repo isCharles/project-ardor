@@ -228,6 +228,20 @@ async function main() {
     body: { concept: "过期计划", scheduledAt: new Date(Date.now() - 60_000).toISOString() },
   });
 
+  // Leave a second, distinct proposal pending for the on-demand browser run.
+  // The browser must create this one through the visible confirmation button.
+  const pendingSuggestion = await owner.request("/api/agent/messages", {
+    method: "POST", body: { conversationId: conversation.id, requestId: randomUUID(),
+      message: "再建议我安排一次 Redis 持久化学习，等我点确认。" },
+  });
+  const pendingProposal = JSON.parse(pendingSuggestion.runTrace).proposals.find(
+    (item) => item.kind === "learning_plan");
+  assert.ok(pendingProposal?.learningPlan?.requestId);
+  assert.notEqual(pendingProposal.learningPlan.requestId, proposal.learningPlan.requestId);
+  assert.equal((await owner.request(
+    `/api/learning-plans/request-status?requestIds=${pendingProposal.learningPlan.requestId}`))[0].status,
+  "MISSING", "The new proposal must remain uncreated until the browser confirms it");
+
   // The first model answer has no usable questions. The worker must fail the
   // job without persisting a partial recap; only its owner may retry it.
   const recoveryOwner = stranger;
