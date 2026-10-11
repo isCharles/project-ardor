@@ -151,8 +151,30 @@ async function main() {
   });
 
   let tasks = await owner.request("/api/calendar/tasks");
-  assert.equal(calendarTask(tasks, `/app/learning?id=${plan.id}`).status, "TODO");
+  const ownerLearningTask = calendarTask(tasks, `/app/learning?id=${plan.id}`);
+  assert.equal(ownerLearningTask.status, "TODO");
   assert.equal(calendarTask(tasks, `/app/replay?question=${weak.id}&retest=${retest.id}`).status, "TODO");
+  await stranger.request(`/api/learning-plans/${plan.id}/begin`, {
+    method: "POST", expected: 404,
+  });
+  await stranger.request(`/api/learning-plans/${plan.id}/attempts`, {
+    method: "POST", expected: 404,
+    body: { answers: plan.exercises.map(() => "未经授权的回答") },
+  });
+  await stranger.request(`/api/learning-plans/${plan.id}`, {
+    method: "DELETE", expected: 404,
+  });
+  await stranger.request(`/api/calendar/tasks/${ownerLearningTask.id}`, {
+    method: "PUT", expected: 404,
+    body: { title: ownerLearningTask.title, description: ownerLearningTask.description,
+      dueAt: ownerLearningTask.dueAt, priority: ownerLearningTask.priority, status: "COMPLETED" },
+  });
+  await stranger.request(`/api/calendar/tasks/${ownerLearningTask.id}`, {
+    method: "DELETE", expected: 404,
+  });
+  assert.equal((await owner.request(`/api/learning-plans/${plan.id}`)).status, "SCHEDULED");
+  assert.equal(calendarTask(await owner.request("/api/calendar/tasks"),
+    `/app/learning?id=${plan.id}`).status, "TODO");
 
   const first = await owner.request(`/api/learning-plans/${plan.id}/attempts`, {
     method: "POST", body: { answers: plan.exercises.map(() => "第一次回答：RDB 是快照。") },
