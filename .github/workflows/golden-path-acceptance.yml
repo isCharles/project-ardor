@@ -57,6 +57,7 @@ jobs:
           cd backend
           mvn -B -q -DskipTests package
           echo "ARDOR_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+          echo "ARDOR_ACCEPTANCE_UI_SUFFIX=$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')" >> "$GITHUB_ENV"
           node src/test/resources/fake-llm-server.mjs > "$RUNNER_TEMP/fake-llm.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/fake-llm.pid"
 
@@ -76,9 +77,37 @@ jobs:
           echo "Backend did not become healthy"
           exit 1
 
+      - name: Run browser Golden Path on demand
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          cd frontend
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run build
+          npm run start > "$RUNNER_TEMP/frontend.log" 2>&1 &
+          for attempt in {1..45}; do
+            if curl --silent --fail http://127.0.0.1:3000/login > /dev/null; then
+              node tests/golden-path-ui.mjs
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Frontend did not become healthy"
+          exit 1
+
+      - name: Upload browser screenshot on failure
+        if: failure() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-path-browser-failure
+          path: ${{ runner.temp }}/ardor-ui-failure.png
+          if-no-files-found: ignore
+
       - name: Show service logs on failure
         if: failure()
         shell: bash
         run: |
           tail -n 150 "$RUNNER_TEMP/backend.log" 2>/dev/null || true
           tail -n 80 "$RUNNER_TEMP/fake-llm.log" 2>/dev/null || true
+          tail -n 80 "$RUNNER_TEMP/frontend.log" 2>/dev/null || true
