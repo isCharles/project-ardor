@@ -59,6 +59,30 @@ try {
   });
   assert.equal(calendarTasks.filter((item) => item.actionPath === createdPlanPath).length, 1);
 
+  await page.getByRole("link", { name: /Open lesson|打开学习/ }).click();
+  await page.waitForURL(new RegExp(`${createdPlanPath.replace("?", "\\?")}$`));
+  await page.getByRole("button", { name: /Start learning|开始学习/ }).click();
+  await page.getByRole("radio", { name: "记录写命令" }).check();
+  await page.locator("#learning-practice textarea").fill("第一次回答：RDB 是快照。");
+  await page.getByRole("button", { name: /Submit answers|提交练习/ }).click();
+  await page.getByLabel(/Latest score 65|最近得分 65 分/).waitFor();
+  await page.locator("#learning-practice details").first().locator("summary").click();
+  await page.getByText("第一次回答：RDB 是快照。").last().waitFor();
+
+  await page.locator("#learning-practice textarea").fill("二轮修订：RDB 快照和 AOF 日志的恢复目标不同。");
+  await page.getByRole("button", { name: /Submit answers|提交练习/ }).click();
+  await page.getByLabel(/Latest score 85|最近得分 85 分/).waitFor();
+  await page.getByText(/Topic complete\. The calendar task|本次学习已完成，日历任务/).waitFor();
+  await page.reload();
+  await page.getByLabel(/Latest score 85|最近得分 85 分/).waitFor();
+  assert.equal(await page.locator("#learning-practice details").count(), 2);
+  const completedCalendarTasks = await page.evaluate(async () => {
+    const response = await fetch("/api/calendar/tasks");
+    if (!response.ok) throw new Error(`Calendar tasks returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(completedCalendarTasks.find((item) => item.actionPath === createdPlanPath)?.status, "COMPLETED");
+
   const recaps = await page.evaluate(async () => {
     const response = await fetch("/api/interview-recaps");
     if (!response.ok) throw new Error(`Interview notes returned ${response.status}`);
@@ -92,7 +116,7 @@ try {
   await page.goto(`${origin}/app/calendar`);
   await page.getByRole("heading", { level: 1, name: /Make today count|把目标，放进今天/ }).waitFor();
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");
-  console.log("Browser Golden Path passed: login → deleted proposal stays removed → confirm new proposal once → interview report → weak-question replay → learning → calendar.");
+  console.log("Browser Golden Path passed: login → Agent confirmation → two learning rounds and calendar completion → interview report → weak-question replay → calendar.");
 } catch (error) {
   const screenshot = join(process.env.RUNNER_TEMP ?? ".", "ardor-ui-failure.png");
   await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
