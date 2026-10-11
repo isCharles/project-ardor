@@ -13,6 +13,7 @@ if (!suffix || !/^[0-9a-f-]{36}$/i.test(suffix)) {
 const origin = "http://127.0.0.1:3000";
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+let activePage = page;
 const pageErrors = [];
 page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -115,11 +116,47 @@ try {
 
   await page.goto(`${origin}/app/calendar`);
   await page.getByRole("heading", { level: 1, name: /Make today count|把目标，放进今天/ }).waitFor();
+
+  const recoveryPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  activePage = recoveryPage;
+  recoveryPage.on("pageerror", (error) => pageErrors.push(error.message));
+  await recoveryPage.goto(`${origin}/login`);
+  await recoveryPage.locator('input[name="email"]').fill(`golden-ui-recovery-${suffix}@ardor.invalid`);
+  await recoveryPage.locator('input[name="password"]').fill(`Ardor-Acceptance-${suffix}!`);
+  await recoveryPage.locator('button[type="submit"]').click();
+  await recoveryPage.waitForURL(`${origin}/app`, { timeout: 15_000 });
+  await recoveryPage.goto(`${origin}/app/recaps`);
+  await recoveryPage.getByText(/Could not organize:|整理失败：/).waitFor();
+  const recapsBeforeRetry = await recoveryPage.evaluate(async () => {
+    const response = await fetch("/api/interview-recaps");
+    if (!response.ok) throw new Error(`Interview notes returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(recapsBeforeRetry.length, 0, "The recovery account must not see another user's notes");
+  const failedJobs = await recoveryPage.evaluate(async () => {
+    const response = await fetch("/api/interview-recaps/jobs");
+    if (!response.ok) throw new Error(`Interview jobs returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(failedJobs.length, 1);
+  assert.equal(failedJobs[0].status, "FAILED");
+  await recoveryPage.getByRole("button", { name: /^(Retry|重试)$/ }).click();
+  await recoveryPage.getByRole("heading", { level: 2, name: "Java 后端一面复盘" }).waitFor({ timeout: 40_000 });
+  const recoveredJobs = await recoveryPage.evaluate(async () => {
+    const response = await fetch("/api/interview-recaps/jobs");
+    if (!response.ok) throw new Error(`Interview jobs returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(recoveredJobs.filter((job) => job.status === "COMPLETED").length, 1);
+  assert.equal(recoveredJobs[0].jobId, failedJobs[0].jobId,
+    "The browser must retry the original job, not submit a duplicate");
+  assert.ok(recoveredJobs[0].attempts >= 1,
+    "A user-initiated retry resets its attempt budget before the new run");
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");
-  console.log("Browser Golden Path passed: login → Agent confirmation → two learning rounds and calendar completion → interview report → weak-question replay → calendar.");
+  console.log("Browser Golden Path passed: Agent confirmation → two learning rounds → interview report and replay → calendar → failed recap retry in an isolated user session.");
 } catch (error) {
   const screenshot = join(process.env.RUNNER_TEMP ?? ".", "ardor-ui-failure.png");
-  await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
+  await activePage.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
   console.error(`Browser screenshot on failure: ${screenshot}`);
   throw error;
 } finally {
