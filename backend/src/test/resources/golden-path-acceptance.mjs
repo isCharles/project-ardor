@@ -87,7 +87,7 @@ function calendarTask(tasks, actionPath) {
 async function main() {
   const owner = new Client();
   const stranger = new Client();
-  const suffix = randomUUID();
+  const suffix = process.env.ARDOR_ACCEPTANCE_UI_SUFFIX ?? randomUUID();
   const password = `Ardor-Acceptance-${suffix}!`;
   await owner.request("/api/auth/register", {
     method: "POST", expected: 201,
