@@ -23,6 +23,14 @@ try {
   await page.locator('button[type="submit"]').click();
   await page.waitForURL(`${origin}/app`, { timeout: 15_000 });
 
+  // The latest synthetic conversation contains a confirmed learning suggestion
+  // whose plan was later deleted. Reloading must not offer to create it again.
+  await page.getByText(/Plan removed|计划已移除/).waitFor();
+  assert.equal(await page.getByRole("button", { name: /Create plan|生成计划/ }).count(), 0);
+  await page.reload();
+  await page.getByText(/Plan removed|计划已移除/).waitFor();
+  assert.equal(await page.getByRole("button", { name: /Create plan|生成计划/ }).count(), 0);
+
   const recaps = await page.evaluate(async () => {
     const response = await fetch("/api/interview-recaps");
     if (!response.ok) throw new Error(`Interview notes returned ${response.status}`);
@@ -56,7 +64,7 @@ try {
   await page.goto(`${origin}/app/calendar`);
   await page.getByRole("heading", { level: 1, name: /Make today count|把目标，放进今天/ }).waitFor();
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");
-  console.log("Browser Golden Path passed: login → interview report → weak-question replay → learning → calendar.");
+  console.log("Browser Golden Path passed: login → removed Agent proposal survives reload → interview report → weak-question replay → learning → calendar.");
 } catch (error) {
   const screenshot = join(process.env.RUNNER_TEMP ?? ".", "ardor-ui-failure.png");
   await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
