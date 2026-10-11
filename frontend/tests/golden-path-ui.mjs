@@ -13,6 +13,7 @@ if (!suffix || !/^[0-9a-f-]{36}$/i.test(suffix)) {
 const origin = "http://127.0.0.1:3000";
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+let activePage = page;
 const pageErrors = [];
 page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -117,6 +118,7 @@ try {
   await page.getByRole("heading", { level: 1, name: /Make today count|把目标，放进今天/ }).waitFor();
 
   const recoveryPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  activePage = recoveryPage;
   recoveryPage.on("pageerror", (error) => pageErrors.push(error.message));
   await recoveryPage.goto(`${origin}/login`);
   await recoveryPage.locator('input[name="email"]').fill(`golden-ui-recovery-${suffix}@ardor.invalid`);
@@ -154,7 +156,7 @@ try {
   console.log("Browser Golden Path passed: Agent confirmation → two learning rounds → interview report and replay → calendar → failed recap retry in an isolated user session.");
 } catch (error) {
   const screenshot = join(process.env.RUNNER_TEMP ?? ".", "ardor-ui-failure.png");
-  await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
+  await activePage.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
   console.error(`Browser screenshot on failure: ${screenshot}`);
   throw error;
 } finally {
