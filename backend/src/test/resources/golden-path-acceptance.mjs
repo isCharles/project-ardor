@@ -113,6 +113,12 @@ async function main() {
   assert.ok(weak?.id, "Expected a weak recap question");
   await stranger.request(`/api/interview-recaps/${recapId}`, { expected: 404 });
   await stranger.request(`/api/interview-replays/questions/${weak.id}`, { expected: 404 });
+  await stranger.request(`/api/interview-replays/questions/${weak.id}`, {
+    method: "POST", expected: 404,
+    body: { requestId: randomUUID(), answer: "未经授权的回放回答" },
+  });
+  assert.equal((await owner.request(`/api/interview-replays/questions/${weak.id}`)).attempts.length, 0,
+    "A stranger must not create an attempt on the owner's question");
 
   const replayRequestId = randomUUID();
   const replayAnswer = "RDB 保存快照，AOF 记录写命令；要按恢复目标和性能成本选择。";
@@ -133,6 +139,17 @@ async function main() {
     method: "POST", expected: 201, body: { attemptId: replay.id, dueAt },
   });
   assert.equal(retestRetry.id, retest.id, "Retest scheduling must not duplicate its task");
+  await stranger.request(`/api/interview-replays/questions/${weak.id}/retest`, {
+    method: "POST", expected: 404, body: { attemptId: replay.id, dueAt },
+  });
+  await stranger.request(`/api/interview-replays/questions/${weak.id}`, {
+    method: "POST", expected: 404,
+    body: { requestId: randomUUID(), answer: "未经授权的复测回答", retestTaskId: retest.id },
+  });
+  assert.equal((await owner.request(`/api/interview-replays/questions/${weak.id}`)).attempts.length, 1,
+    "Cross-user retest attempts must not appear in the owner's history");
+  assert.equal(calendarTask(await owner.request("/api/calendar/tasks"),
+    `/app/replay?question=${weak.id}&retest=${retest.id}`).status, "TODO");
 
   const planRequestId = randomUUID();
   const planInput = { requestId: planRequestId, concept: "Redis 持久化",
@@ -152,8 +169,9 @@ async function main() {
 
   let tasks = await owner.request("/api/calendar/tasks");
   const ownerLearningTask = calendarTask(tasks, `/app/learning?id=${plan.id}`);
+  const ownerRetestTask = calendarTask(tasks, `/app/replay?question=${weak.id}&retest=${retest.id}`);
   assert.equal(ownerLearningTask.status, "TODO");
-  assert.equal(calendarTask(tasks, `/app/replay?question=${weak.id}&retest=${retest.id}`).status, "TODO");
+  assert.equal(ownerRetestTask.status, "TODO");
   await stranger.request(`/api/learning-plans/${plan.id}/begin`, {
     method: "POST", expected: 404,
   });
@@ -172,9 +190,19 @@ async function main() {
   await stranger.request(`/api/calendar/tasks/${ownerLearningTask.id}`, {
     method: "DELETE", expected: 404,
   });
+  await stranger.request(`/api/calendar/tasks/${ownerRetestTask.id}`, {
+    method: "PUT", expected: 404,
+    body: { title: ownerRetestTask.title, description: ownerRetestTask.description,
+      dueAt: ownerRetestTask.dueAt, priority: ownerRetestTask.priority, status: "COMPLETED" },
+  });
+  await stranger.request(`/api/calendar/tasks/${ownerRetestTask.id}`, {
+    method: "DELETE", expected: 404,
+  });
   assert.equal((await owner.request(`/api/learning-plans/${plan.id}`)).status, "SCHEDULED");
   assert.equal(calendarTask(await owner.request("/api/calendar/tasks"),
     `/app/learning?id=${plan.id}`).status, "TODO");
+  assert.equal(calendarTask(await owner.request("/api/calendar/tasks"),
+    `/app/replay?question=${weak.id}&retest=${retest.id}`).status, "TODO");
 
   const first = await owner.request(`/api/learning-plans/${plan.id}/attempts`, {
     method: "POST", body: { answers: plan.exercises.map(() => "第一次回答：RDB 是快照。") },
