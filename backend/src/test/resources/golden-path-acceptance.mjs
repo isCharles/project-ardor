@@ -523,6 +523,7 @@ async function main() {
   const queuedAssessment = await asyncOwner.request(assessmentPath, { method: "POST", expected: 202, body: asyncInput });
   assert.ok(["QUEUED", "RUNNING"].includes(queuedAssessment.status));
   assert.equal((await asyncOwner.request(`/api/learning-plans/${asyncPlanId}`)).attemptCount, 0);
+  await asyncOwner.request(assessmentPath, { method: "POST", expected: 409, body: { ...asyncInput, requestId: randomUUID() } });
   await stranger.request(assessmentPath, { method: "POST", expected: 404, body: { ...asyncInput, requestId: randomUUID() } });
   assert.equal((await stranger.request(`/api/ai-jobs?resourceId=${asyncPlanId}`)).length, 0);
   const failedAssessment = await waitForAiJob(asyncOwner, queuedAssessment.id, "FAILED");
@@ -551,6 +552,27 @@ async function main() {
     method: "POST", expected: 404, body: { requestId: randomUUID() } });
   await waitForAiJob(asyncOwner, queuedInterview.id);
   assert.equal((await asyncOwner.request(`/api/interviews/${interview.id}/evaluation`)).overallScore, 86);
+  const canceledInterview = await asyncOwner.request("/api/interviews", { method: "POST", expected: 201,
+    body: { targetRole: "Java 后端工程师", questionCount: 3, modality: "TEXT" } });
+  for (let index = 0; index < 3; index++) {
+    const progress = await asyncOwner.request(`/api/interviews/${canceledInterview.id}/next-question`);
+    await asyncOwner.request(`/api/interviews/${canceledInterview.id}/answers`, { method: "POST",
+      body: { questionId: progress.nextQuestion.id, answerText: "本题答案", durationSeconds: 20 } });
+  }
+  const interviewProbe = await (await fetch(new URL("/__probe/interview-started", modelBase))).json();
+  const canceledJob = await asyncOwner.request(`/api/interviews/${canceledInterview.id}/evaluation-jobs`, {
+    method: "POST", expected: 202, body: { requestId: randomUUID() } });
+  let evaluationStarted = false;
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const now = await (await fetch(new URL("/__probe/interview-started", modelBase))).json();
+    if (now.count > interviewProbe.count) { evaluationStarted = true; break; }
+    await sleep(100);
+  }
+  assert.ok(evaluationStarted, "Cancellation test must reach the delayed model call");
+  await asyncOwner.request(`/api/interviews/${canceledInterview.id}/cancel`, { method: "POST" });
+  await waitForAiJob(asyncOwner, canceledJob.id, "FAILED");
+  assert.equal((await asyncOwner.request(`/api/interviews/${canceledInterview.id}`)).status, "CANCELLED");
+  await asyncOwner.request(`/api/interviews/${canceledInterview.id}/evaluation`, { expected: 404 });
   console.log("Golden Path passed: persistent async generation/evaluation/retry/ownership; recap → replay → learning/retest → calendar; Agent confirmation; recovery; concurrent isolation.");
 }
 

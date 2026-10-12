@@ -119,6 +119,7 @@ export default function ReplayPage() {
           setScheduledRetest(overview.scheduled);
           if (draft?.requestId && value.attempts.some((item) => item.requestId === draft?.requestId)) {
             setAnswer(""); setRequestId(null);
+            draftRequestId.current = null;
             window.sessionStorage.removeItem(draftKey(questionId, retestId));
           }
         })

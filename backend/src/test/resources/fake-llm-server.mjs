@@ -69,6 +69,7 @@ const replay = {
 
 const transientAttempts = new Map();
 let delayedReplayRequests = 0;
+let delayedInterviewRequests = 0;
 let pendingLearningResponses = [];
 let learningFallbackTimer;
 
@@ -124,6 +125,11 @@ function completionFor(payload) {
 }
 
 http.createServer((request, response) => {
+  if (request.url === "/__probe/interview-started") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({ count: delayedInterviewRequests }));
+    return;
+  }
   if (request.url === "/__probe/replay-started") {
     response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
     response.end(JSON.stringify({ count: delayedReplayRequests }));
@@ -138,6 +144,7 @@ http.createServer((request, response) => {
     const concurrentLearning = payload.model === "concurrent-learning-model"
       && body.includes("严格但有建设性的中文技术教练");
     if (delayedReplay) delayedReplayRequests++;
+    if (payload.model === "async-evaluation-probe" && body.includes("面试评价官")) delayedInterviewRequests++;
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
