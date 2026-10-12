@@ -16,7 +16,7 @@ export function jobPending(job: AiJob | null) { return job?.status === "QUEUED" 
 export function useAiJob(type: AiJobType, resourceId: string | null, enabled = true) {
   const [job, setJob] = useState<AiJob | null>(null);
   const [pollFailed, setPollFailed] = useState(false);
-  const pending = jobPending(job);
+  const pending = jobPending(job) || pollFailed;
   useEffect(() => {
     if (!enabled) return;
     let active = true;

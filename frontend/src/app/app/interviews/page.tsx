@@ -74,7 +74,8 @@ export default function InterviewsPage() {
       if (!active) return;
       handledJobs.current.add(evaluationJobId);
       setEvaluation(value); setProgress(null);
-      void api<Session[]>("/api/interviews").then((items) => { if (active) setSessions(items); });
+      void api<Session[]>("/api/interviews").then((items) => { if (active) setSessions(items); })
+        .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("Could not load interviews", "无法加载模拟面试")); });
     }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("Could not load evaluation", "无法加载评价")); });
     return () => { active = false; };
   }, [activeSessionId, evaluationJobId, evaluationJobStatus, t]);

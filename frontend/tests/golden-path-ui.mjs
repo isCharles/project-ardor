@@ -77,6 +77,9 @@ try {
   await page.locator("#learning-practice textarea").waitFor();
   assert.equal(await page.locator("#learning-practice textarea").inputValue(), "第一次回答：RDB 是快照。");
   await page.getByRole("button", { name: /Submit answers|提交练习/ }).click();
+  await page.getByText(/Queued for assessment|Assessing in the background|已提交，等待评估|正在后台评估/).waitFor();
+  await page.goto(`${origin}/app/calendar`);
+  await page.goto(`${origin}${createdPlanPath}`);
   await page.getByLabel(/Latest score 65|最近得分 65 分/).waitFor();
   assert.equal(await page.locator("#learning-practice textarea").inputValue(), "",
     "A new practice round must not inherit an unsent answer from the old round");
@@ -241,7 +244,7 @@ try {
   await replayPage.getByText(replayWeak.questionText).first().waitFor();
   await replayPage.locator("#replay-answer").fill("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。");
   await replayPage.getByRole("button", { name: /Submit & compare|提交并对比/ }).click();
-  await replayPage.getByRole("alert").last().waitFor();
+  await replayPage.getByText(/Assessment paused|评估未完成/).waitFor({ timeout: 40_000 });
   assert.equal(await replayPage.locator("#replay-answer").inputValue(),
     "我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。");
   const failedReplay = await replayPage.evaluate(async (questionId) => {
@@ -257,7 +260,7 @@ try {
   assert.equal(await replayPage.locator("#replay-answer").inputValue(),
     "我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。",
     "The unsent answer must survive navigation after a provider error");
-  await replayPage.getByRole("button", { name: /Submit & compare|提交并对比/ }).click();
+  await replayPage.getByRole("button", { name: /Retry assessment|重试评估/ }).click();
   await replayPage.getByRole("region", { name: /Latest replay result|最新回放结果/ }).waitFor();
   await replayPage.getByText("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。").first().waitFor();
   const recoveredReplay = await replayPage.evaluate(async (questionId) => {

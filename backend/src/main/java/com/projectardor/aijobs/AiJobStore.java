@@ -33,7 +33,12 @@ public class AiJobStore {
                 """, id, userId, type.name(), resourceId, hash, payload);
         if (inserted == 0) {
             var existing = jdbc.query("SELECT * FROM ai_jobs WHERE id = ? AND user_id = ?", MAPPER, id, userId);
-            if (existing.isEmpty()) throw new IllegalStateException("该内容已有评估任务，请查看任务状态");
+            if (existing.isEmpty()) {
+                boolean ownPending = !list(userId, type, resourceId).stream()
+                        .filter(job -> "QUEUED".equals(job.status()) || "RUNNING".equals(job.status())).toList().isEmpty();
+                if (ownPending) throw new IllegalStateException("该内容已有评估任务，请查看任务状态");
+                throw new ResourceNotFoundException("评估任务不存在");
+            }
             if (!existing.getFirst().requestHash().equals(hash)) throw new IllegalArgumentException("请求 ID 已用于另一份提交");
             return existing.getFirst();
         }

@@ -27,7 +27,7 @@ public class AiJobWorker {
             if (next.isEmpty()) { slots.release(); return; }
             var job = next.get();
             active.put(job.id(), job);
-            executor.execute(() -> {
+            try { executor.execute(() -> {
                 try { store.complete(job, service.perform(job)); }
                 catch (RuntimeException failure) {
                     String code = failure instanceof LlmCallException llm ? llm.getCode() : "AI_EVALUATION_FAILED";
@@ -35,7 +35,11 @@ public class AiJobWorker {
                             ? failure.getMessage() : "评估未完成，原提交已保留，请重试";
                     store.fail(job, code, message == null ? "评估未完成，请重试" : message);
                 } finally { active.remove(job.id()); slots.release(); }
-            });
+            }); } catch (RuntimeException rejected) {
+                active.remove(job.id());
+                store.fail(job, "AI_JOB_INTERRUPTED", "评估未启动，原提交已保留，可重试");
+                throw rejected;
+            }
         } catch (RuntimeException failure) { slots.release(); throw failure; }
     }
 

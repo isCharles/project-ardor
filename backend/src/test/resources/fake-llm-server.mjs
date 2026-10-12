@@ -98,6 +98,11 @@ function completionFor(payload) {
   if (input.includes("面试复盘教练")) return replay;
   if (input.includes("严谨的中文技术导师")) return lesson;
   if (input.includes("严格但有建设性的中文技术教练")) {
+    if (payload.model === "async-evaluation-probe") {
+      const attempts = (transientAttempts.get(payload.model) ?? 0) + 1;
+      transientAttempts.set(payload.model, attempts);
+      if (attempts === 1) return { score: -1, feedback: "invalid score" };
+    }
     const improved = input.includes("二轮修订");
     return {
       score: improved ? 85 : 65,
@@ -259,7 +264,7 @@ http.createServer((request, response) => {
       pendingLearningResponses.push(respond);
       if (pendingLearningResponses.length === 2) releaseLearningResponses();
       else learningFallbackTimer = setTimeout(releaseLearningResponses, 5000);
-    } else if (delayedReplay) setTimeout(respond, 1500);
+    } else if (delayedReplay || payload.model === "async-evaluation-probe") setTimeout(respond, 1500);
     else respond();
   });
 }).listen(8090, "0.0.0.0");
