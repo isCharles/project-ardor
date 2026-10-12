@@ -18,6 +18,9 @@ import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.usage.QuotaProtected;
 import com.projectardor.usage.UsageFeature;
+import com.projectardor.aijobs.AiJobService;
+import com.projectardor.aijobs.AiJobResponse;
+import com.projectardor.aijobs.AiJobRequest;
 
 import jakarta.validation.Valid;
 
@@ -26,9 +29,11 @@ import jakarta.validation.Valid;
 public class InterviewController {
 
     private final InterviewService interviewService;
+    private final AiJobService jobs;
 
-    public InterviewController(InterviewService interviewService) {
+    public InterviewController(InterviewService interviewService, AiJobService jobs) {
         this.interviewService = interviewService;
+        this.jobs = jobs;
     }
 
     @PostMapping
@@ -80,6 +85,14 @@ public class InterviewController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID sessionId) {
         return InterviewEvaluationResponse.from(interviewService.finish(principal.userId(), sessionId));
+    }
+
+    @PostMapping("/{sessionId}/evaluation-jobs")
+    @QuotaProtected(value = UsageFeature.INTERVIEW_EVALUATION, idempotentRequest = true)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AiJobResponse queueEvaluation(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable UUID sessionId, @Valid @RequestBody AiJobRequest request) {
+        return jobs.evaluateInterview(principal.userId(), sessionId, request.requestId());
     }
 
     @PostMapping("/{sessionId}/cancel")

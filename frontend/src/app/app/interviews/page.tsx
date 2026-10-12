@@ -3,12 +3,14 @@
 import { ArrowLeft, CheckCircle2, ExternalLink, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { VoiceAnswerRecorder } from "@/components/interview/voice-answer-recorder";
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
+import { type AiJob, jobPending, useAiJob } from "@/lib/ai-jobs";
+import { AiJobStatus } from "@/components/ardor/ai-job-status";
 
 type ResumeItem = { id: string; originalFilename: string; analysisId: string | null };
 type Session = {
@@ -59,6 +61,23 @@ export default function InterviewsPage() {
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const assessment = useAiJob("INTERVIEW_EVALUATE", activeSession?.id ?? null, !!activeSession);
+  const handledJobs = useRef(new Set<string>());
+  const evaluationJobId = assessment.job?.id;
+  const evaluationJobStatus = assessment.job?.status;
+  const activeSessionId = activeSession?.id;
+
+  useEffect(() => {
+    if (!activeSessionId || !evaluationJobId || evaluationJobStatus !== "COMPLETED" || handledJobs.current.has(evaluationJobId)) return;
+    let active = true;
+    void api<Evaluation>(`/api/interviews/${activeSessionId}/evaluation`).then((value) => {
+      if (!active) return;
+      handledJobs.current.add(evaluationJobId);
+      setEvaluation(value); setProgress(null);
+      void api<Session[]>("/api/interviews").then((items) => { if (active) setSessions(items); });
+    }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("Could not load evaluation", "无法加载评价")); });
+    return () => { active = false; };
+  }, [activeSessionId, evaluationJobId, evaluationJobStatus, t]);
 
   async function loadLists() {
     try {
@@ -156,12 +175,13 @@ export default function InterviewsPage() {
   }
 
   async function finishInterview() {
-    if (!progress) return;
+    if (!progress || jobPending(assessment.job)) return;
     setBusy(true); setError("");
     try {
-      setEvaluation(await api<Evaluation>(`/api/interviews/${progress.sessionId}/finish`, { method: "POST" }));
-      setProgress(null);
-      await loadLists();
+      const key = `ardor:interview-evaluation:${progress.sessionId}`;
+      let requestId = crypto.randomUUID();
+      try { requestId = window.sessionStorage.getItem(key) ?? requestId; window.sessionStorage.setItem(key, requestId); } catch { /* The server serializes evaluation commits. */ }
+      assessment.setJob(await api<AiJob>(`/api/interviews/${progress.sessionId}/evaluation-jobs`, { method: "POST", body: JSON.stringify({ requestId }) }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("Could not generate evaluation", "生成评价失败"));
     } finally { setBusy(false); }
@@ -240,7 +260,8 @@ export default function InterviewsPage() {
               <Button disabled={busy}><Send className="mr-2 size-4" />{busy ? t("Submitting…", "提交中…") : t("Submit and continue", "提交并进入下一题")}</Button>
             </form>
           </div>}
-          {progress?.readyToFinish && <div className="mt-7 rounded-2xl bg-emerald-50 p-6"><div className="flex items-center gap-2 font-semibold text-emerald-800"><CheckCircle2 className="size-5" />{t("All questions answered", "全部题目已回答")}</div><p className="mt-2 text-sm text-emerald-800">{t("Finishing will use your LLM to generate a structured evaluation.", "结束后将调用你的 LLM 生成结构化评价。")}</p><Button className="mt-5" disabled={busy} onClick={finishInterview}>{busy ? t("Generating evaluation…", "生成评价中…") : t("Finish and evaluate", "结束面试并生成评价")}</Button></div>}
+          <AiJobStatus job={assessment.job} retry={assessment.retry} pollFailed={assessment.pollFailed} />
+          {progress?.readyToFinish && <div className="mt-7 rounded-2xl bg-emerald-50 p-6"><div className="flex items-center gap-2 font-semibold text-emerald-800"><CheckCircle2 className="size-5" />{t("All questions answered", "全部题目已回答")}</div><p className="mt-2 text-sm text-emerald-800">{t("Your evaluation will run in the background.", "评价会在后台生成，可以稍后回来查看。")}</p><Button className="mt-5" disabled={busy || jobPending(assessment.job)} onClick={finishInterview}>{busy ? t("Submitting…", "正在提交…") : jobPending(assessment.job) ? t("Submitted for assessment", "已提交后台评估") : t("Finish and evaluate", "结束面试并生成评价")}</Button></div>}
           {evaluation && <div className="mt-7"><div className="rounded-2xl bg-primary p-6 text-primary-foreground"><p className="text-sm opacity-80">{t("Overall score", "综合得分")}</p><p className="mt-1 text-5xl font-semibold">{evaluation.overallScore}</p></div><div className="mt-6 space-y-5">{Object.entries(evaluation.evaluation).map(([key, value]) => <div key={key}><h3 className="font-semibold">{evaluationLabels[key] ?? key}</h3><pre className="mt-2 whitespace-pre-wrap rounded-2xl bg-muted p-4 text-sm leading-6">{JSON.stringify(value, null, 2)}</pre></div>)}</div></div>}
         </section>
       </div>

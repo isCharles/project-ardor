@@ -3,10 +3,12 @@
 import { ArrowLeft, ArrowRight, CalendarDays, RotateCcw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
 import { useLocale, type Locale } from "@/lib/locale";
+import { type AiJob, jobPending, useAiJob } from "@/lib/ai-jobs";
+import { AiJobStatus } from "@/components/ardor/ai-job-status";
 
 type Attempt = {
   id: string;
@@ -74,6 +76,7 @@ export default function ReplayPage() {
   const [replay, setReplay] = useState<Replay | null>(null);
   const [answer, setAnswer] = useState("");
   const [requestId, setRequestId] = useState<string | null>(null);
+  const draftRequestId = useRef<string | null>(null);
   const [requestedRetestId, setRequestedRetestId] = useState<string | null>(null);
   const [scheduledRetest, setScheduledRetest] = useState<ScheduledRetest | null>(null);
   const [retestDate, setRetestDate] = useState(defaultRetestDate);
@@ -81,6 +84,12 @@ export default function ReplayPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ReplayError | null>(null);
+  const assessment = useAiJob("REPLAY_EVALUATE", replay?.questionId ?? null, !!replay);
+  const assessing = jobPending(assessment.job);
+  const handledJobs = useRef(new Set<string>());
+  const replayQuestionId = replay?.questionId;
+  const completedJobId = assessment.job?.id;
+  const completedJobStatus = assessment.job?.status;
   const errorText = error ? replayError(error.reason, locale, error.english, error.chinese) : "";
 
   useEffect(() => {
@@ -97,6 +106,7 @@ export default function ReplayPage() {
           draft = JSON.parse(saved) as Draft;
           setAnswer(typeof draft.answer === "string" ? draft.answer : "");
           setRequestId(typeof draft.requestId === "string" ? draft.requestId : null);
+          draftRequestId.current = typeof draft.requestId === "string" ? draft.requestId : null;
         }
       } catch { window.sessionStorage.removeItem(draftKey(questionId, retestId)); }
       Promise.all([
@@ -122,32 +132,46 @@ export default function ReplayPage() {
     return () => { active = false; window.clearTimeout(timer); };
   }, [router]);
 
+  useEffect(() => {
+    if (!replayQuestionId || !completedJobId || completedJobStatus !== "COMPLETED" || handledJobs.current.has(completedJobId)) return;
+    let active = true;
+    void Promise.all([api<Replay>(`/api/interview-replays/questions/${replayQuestionId}`),
+      api<RetestOverview>(`/api/interview-replays/questions/${replayQuestionId}/retest`)])
+      .then(([value, overview]) => {
+        if (!active) return;
+        handledJobs.current.add(completedJobId);
+        setReplay(value); setScheduledRetest(overview.scheduled);
+        if (draftRequestId.current === completedJobId) {
+          setAnswer(""); setRequestId(null);
+          draftRequestId.current = null;
+          window.sessionStorage.removeItem(draftKey(value.questionId, requestedRetestId));
+        }
+      }).catch((reason) => { if (active) setError({ reason, english: "Could not load the saved comparison. Refresh to retry.", chinese: "无法加载已保存的对比，请刷新重试。" }); });
+    return () => { active = false; };
+  }, [completedJobId, completedJobStatus, replayQuestionId, requestedRetestId]);
+
   function changeAnswer(value: string) {
     setAnswer(value);
     setRequestId(null);
+    draftRequestId.current = null;
     if (replay) window.sessionStorage.setItem(draftKey(replay.questionId, requestedRetestId), JSON.stringify({ answer: value, requestId: null }));
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!replay || !answer.trim() || busy) return;
+    if (!replay || !answer.trim() || busy || assessing) return;
     setBusy(true);
     setError(null);
     const id = requestId ?? crypto.randomUUID();
     setRequestId(id);
+    draftRequestId.current = id;
     window.sessionStorage.setItem(draftKey(replay.questionId, requestedRetestId), JSON.stringify({ answer, requestId: id }));
     const activeRetestId = scheduledRetest?.id === requestedRetestId ? requestedRetestId : null;
     try {
-      const saved = await api<Attempt>(`/api/interview-replays/questions/${replay.questionId}`, {
+      const queued = await api<AiJob>(`/api/interview-replays/questions/${replay.questionId}/jobs`, {
         method: "POST", body: JSON.stringify({ requestId: id, answer, retestTaskId: activeRetestId }),
       });
-      setReplay((current) => current ? {
-        ...current, attempts: [saved, ...current.attempts.filter((item) => item.id !== saved.id)],
-      } : current);
-      setAnswer("");
-      setRequestId(null);
-      window.sessionStorage.removeItem(draftKey(replay.questionId, requestedRetestId));
-      if (activeRetestId) setScheduledRetest(null);
+      assessment.setJob(queued);
     } catch (reason) {
       setError({ reason, english: "Submission failed. Please retry; your answer is saved in this session.", chinese: "提交失败，请稍后重试；你的回答已保留。" });
     } finally { setBusy(false); }
@@ -182,9 +206,10 @@ export default function ReplayPage() {
         {requestedRetestId && !activeRetest && <p className="mt-4 text-sm text-stone-500">{t("This retest was completed or canceled. You can keep practicing freely.", "这项复测已完成或取消；现在可以继续自由练习。")}</p>}
 
         <form onSubmit={submit} className="mt-6 rounded-[2rem] border border-white/80 bg-white/80 p-5 shadow-[0_16px_55px_rgba(73,57,122,0.06)] md:p-7">
+          <AiJobStatus job={assessment.job} retry={assessment.retry} pollFailed={assessment.pollFailed} />
           <label htmlFor="replay-answer" className="text-sm font-medium">{t("How would you answer this time?", "这次你会怎么回答？")}</label>
-          <textarea id="replay-answer" value={answer} onChange={(event) => changeAnswer(event.target.value)} maxLength={12000} rows={7} className="mt-4 w-full resize-y rounded-2xl border border-stone-200/80 bg-white/75 p-4 text-sm leading-7 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100" placeholder={t("Answer in your own words—no scripted response needed…", "用自己的话回答，不必追求标准话术…")} />
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-stone-400">{t("Draft saved for this browser session", "草稿会保留在这个浏览器会话中")} · {answer.length.toLocaleString(locale === "en" ? "en-US" : "zh-CN")} / 12,000</span><button type="submit" disabled={busy || !answer.trim()} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-stone-800 disabled:opacity-45">{busy ? t("Comparing…", "正在对比…") : t("Submit & compare", "提交并对比")}<ArrowRight className="size-4" /></button></div>
+          <textarea id="replay-answer" value={answer} disabled={assessing} onChange={(event) => changeAnswer(event.target.value)} maxLength={12000} rows={7} className="mt-4 w-full resize-y rounded-2xl border border-stone-200/80 bg-white/75 p-4 text-sm leading-7 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100 disabled:opacity-75" placeholder={t("Answer in your own words—no scripted response needed…", "用自己的话回答，不必追求标准话术…")} />
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-stone-400">{t("Draft saved for this browser session", "草稿会保留在这个浏览器会话中")} · {answer.length.toLocaleString(locale === "en" ? "en-US" : "zh-CN")} / 12,000</span><button type="submit" disabled={busy || assessing || !answer.trim()} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-stone-800 disabled:opacity-45">{busy ? t("Submitting…", "正在提交…") : assessing ? t("Submitted for comparison", "已提交后台对比") : t("Submit & compare", "提交并对比")}<ArrowRight className="size-4" /></button></div>
           {errorText && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{errorText}</p>}
         </form>
 

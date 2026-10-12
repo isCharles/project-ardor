@@ -9,6 +9,8 @@ import { ApiError, api } from "@/lib/api";
 import { LocaleSwitch } from "@/components/ardor/locale-switch";
 import { MarkdownContent } from "@/components/ardor/markdown-content";
 import { clearLearningDraft, readLearningDraft, saveLearningDraft } from "@/lib/learning-drafts";
+import { type AiJob, jobPending, useAiJob } from "@/lib/ai-jobs";
+import { AiJobStatus } from "@/components/ardor/ai-job-status";
 import { useLocale } from "@/lib/locale";
 
 type Lesson = { summary?: string; keyPoints?: string[]; explanation?: string; example?: string; pitfalls?: string[] };
@@ -99,15 +101,22 @@ export default function LearningPage() {
   const [error, setError] = useState("");
   const pendingCreate = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const userId = useRef<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  const assessment = useAiJob("LEARNING_EVALUATE", selectedId, !!selectedId);
+  const creation = useAiJob("LEARNING_CREATE", null);
+  const handledJobs = useRef(new Set<string>());
+  const watchedCreations = useRef(new Set<string>());
+  const submittedPlan = useRef<{ jobId: string; plan: LearningPlan } | null>(null);
 
   const load = useCallback(async (preferred?: string | null) => {
     try {
       const items = await api<LearningPlan[]>("/api/learning-plans");
       if (clearCompletedCreateRequest(items)) pendingCreate.current = null;
       setPlans(items);
-      const requested = preferred ?? new URLSearchParams(window.location.search).get("id");
+      const requested = selectedRef.current ?? preferred ?? new URLSearchParams(window.location.search).get("id");
       const next = items.find((item) => item.id === requested) ?? nextPlan(items);
       setSelectedId(next?.id ?? null);
+      selectedRef.current = next?.id ?? null;
       setAnswers(answersForPlan(next, userId.current));
       window.history.replaceState(null, "", next ? `/app/learning?id=${next.id}` : "/app/learning");
     } catch (reason) {
@@ -129,6 +138,7 @@ export default function LearningPage() {
         const requested = new URLSearchParams(window.location.search).get("id");
         const next = items.find((item) => item.id === requested) ?? nextPlan(items);
         setSelectedId(next?.id ?? null);
+        selectedRef.current = next?.id ?? null;
         setAnswers(answersForPlan(next, account.id));
         window.history.replaceState(null, "", next ? `/app/learning?id=${next.id}` : "/app/learning");
       })
@@ -142,6 +152,7 @@ export default function LearningPage() {
   }, [router]);
 
   const selected = plans.find((plan) => plan.id === selectedId) ?? null;
+  const assessing = jobPending(assessment.job);
   const previousAttempts = selected?.lastEvaluation?.attempts ?? [];
   const activeCount = plans.filter((plan) => plan.status !== "COMPLETED").length;
   const orderedPlans = [...plans].sort((left, right) => {
@@ -150,7 +161,24 @@ export default function LearningPage() {
       - new Date(right.nextReviewAt ?? right.scheduledAt).getTime();
   });
 
+  useEffect(() => {
+    for (const job of [assessment.job, creation.job]) {
+      if (job?.type === "LEARNING_CREATE" && jobPending(job)) watchedCreations.current.add(job.id);
+      if (job?.status !== "COMPLETED" || handledJobs.current.has(job.id)) continue;
+      handledJobs.current.add(job.id);
+      if (job.type === "LEARNING_CREATE" && !watchedCreations.current.has(job.id)) continue;
+      if (submittedPlan.current?.jobId === job.id) {
+        clearLearningDraft(userId.current, submittedPlan.current.plan);
+        submittedPlan.current = null;
+      }
+      const planId = job.type === "LEARNING_CREATE" && job.resultPath
+        ? new URL(job.resultPath, window.location.origin).searchParams.get("id") : selectedId;
+      void load(planId);
+    }
+  }, [assessment.job, creation.job, selectedId, load]);
+
   function selectPlan(plan: LearningPlan) {
+    selectedRef.current = plan.id;
     setSelectedId(plan.id);
     setAnswers(answersForPlan(plan, userId.current));
     setError("");
@@ -183,14 +211,13 @@ export default function LearningPage() {
     try { window.sessionStorage.setItem(draftKey, JSON.stringify(pending)); } catch { /* In-memory retry still works. */ }
     setBusy(true); setError("");
     try {
-      const created = await api<LearningPlan>("/api/learning-plans", {
+      const created = await api<AiJob>("/api/learning-plans/jobs", {
         method: "POST",
         body: JSON.stringify({ ...input, requestId: pending.requestId }),
       });
       setShowCreate(false);
-      await load(created.id);
-      pendingCreate.current = null;
-      try { window.sessionStorage.removeItem(draftKey); } catch { /* Storage may be disabled. */ }
+      watchedCreations.current.add(created.id);
+      creation.setJob(created);
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not create the learning plan", "无法生成学习内容")); }
     finally { setBusy(false); }
   }
@@ -207,18 +234,22 @@ export default function LearningPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || busy) return;
+    if (!selected || busy || assessing) return;
     setBusy(true); setError("");
     try {
-      const updated = await api<LearningPlan>(`/api/learning-plans/${selected.id}/attempts`, {
-        method: "POST", body: JSON.stringify({ answers }),
+      const requestKey = `ardor:learning-evaluation:${userId.current}:${selected.id}:${selected.attemptCount}`;
+      const fingerprint = JSON.stringify(answers);
+      let requestId = crypto.randomUUID();
+      try {
+        const saved = JSON.parse(window.sessionStorage.getItem(requestKey) ?? "null");
+        if (saved?.fingerprint === fingerprint && typeof saved.requestId === "string") requestId = saved.requestId;
+        window.sessionStorage.setItem(requestKey, JSON.stringify({ fingerprint, requestId }));
+      } catch { /* Server-side round and job constraints still prevent duplicate grading. */ }
+      const queued = await api<AiJob>(`/api/learning-plans/${selected.id}/evaluation-jobs`, {
+        method: "POST", body: JSON.stringify({ answers, requestId, expectedAttemptCount: selected.attemptCount }),
       });
-      clearLearningDraft(userId.current, selected);
-      setPlans((items) => items.map((item) => item.id === updated.id ? updated : item));
-      const changed = updated.exercises.some((exercise, index) =>
-        exercise.question !== selected.exercises[index]?.question)
-        || updated.exercises.length !== selected.exercises.length;
-      if (changed) setAnswers(updated.exercises.map(() => ""));
+      submittedPlan.current = { jobId: queued.id, plan: selected };
+      assessment.setJob(queued);
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not review the answers", "练习评分失败")); }
     finally { setBusy(false); }
   }
@@ -234,6 +265,7 @@ export default function LearningPage() {
             <Plus className="size-4" />{t("New topic", "新学习")}
           </button>}</div>
         </div>
+        <AiJobStatus job={creation.job} retry={creation.retry} pollFailed={creation.pollFailed} />
 
         <header className="pb-8 pt-12 md:pb-10 md:pt-16">
           <h1 className="text-4xl font-semibold tracking-[-0.055em] md:text-6xl">{t("From uncertain to confident.", "从薄弱，到自如。")}</h1>
@@ -292,6 +324,7 @@ export default function LearningPage() {
                 </section>
 
                 <section id="learning-practice" className="ardor-panel scroll-mt-6 rounded-[2.5rem] p-7 md:p-10" aria-labelledby="practice-title">
+                  <AiJobStatus job={assessment.job} retry={assessment.retry} pollFailed={assessment.pollFailed} />
                   <div className="flex items-end justify-between gap-4"><h2 id="practice-title" className="text-2xl font-semibold">{t("Practice", "检验理解")}</h2>{selected.lastScore !== null && <strong className="text-3xl tracking-tight">{selected.lastScore}<span className="text-base text-stone-400"> / 100</span></strong>}</div>
                   {selected.lastEvaluation && <div className={`mt-6 rounded-2xl p-5 ${selected.status === "COMPLETED" ? "bg-emerald-50/75" : "bg-amber-50/75"}`}>
                     {selected.status === "COMPLETED" && <CheckCircle2 className="mb-2 size-5 text-emerald-600" />}
@@ -307,12 +340,12 @@ export default function LearningPage() {
                     </div></details>)}</div>}
                   {selected.status !== "COMPLETED" && previousAttempts.length > 0 && <p className="mt-7 text-sm font-medium text-violet-700">{t("Next practice", "下一轮练习")}</p>}
                   {selected.status === "COMPLETED" ? <div className="mt-7 flex items-center gap-3 rounded-2xl bg-emerald-50/75 p-5 text-sm text-emerald-800"><CheckCircle2 className="size-5" />{t("Topic complete. The calendar task is complete too.", "本次学习已完成，日历任务也已同步完成。")}</div> : <form onSubmit={submit} className="mt-7 space-y-6">
-                    {selected.exercises.map((exercise, index) => <fieldset key={`${exercise.question}-${index}`} disabled={busy} className="block">
+                    {selected.exercises.map((exercise, index) => <fieldset key={`${exercise.question}-${index}`} disabled={busy || assessing} className="block disabled:opacity-75">
                       <legend className="text-sm font-medium">{index + 1}. {exercise.question}</legend>
                       {exercise.type === "MULTIPLE_CHOICE" && exercise.options && exercise.options.length > 0 ? <div className="mt-3 grid gap-2">{exercise.options.map((option) => <label key={option} className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${answers[index] === option ? "border-violet-400 bg-violet-50/80" : "border-stone-200 bg-white/60 hover:bg-white"}`}><input type="radio" name={`exercise-${index}`} value={option} checked={answers[index] === option} onChange={() => changeAnswer(index, option)} required />{option}</label>)}</div> : <textarea required rows={exercise.type === "SCENARIO" ? 5 : 2} value={answers[index] ?? ""} onChange={(event) => changeAnswer(index, event.target.value)} className="field mt-3 resize-y" placeholder={exercise.type === "SCENARIO" ? t("Explain your approach and steps", "说明你的思路和步骤") : t("Answer in your own words", "用自己的话回答")} />}
                     </fieldset>)}
                     <p className="text-xs text-stone-400">{t("Draft saved in this browser session", "草稿已保留在当前浏览器会话")}</p>
-                    <button disabled={busy || selected.status === "SCHEDULED" || answers.some((answer) => !answer.trim())} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Ardor is reviewing…", "Ardor 正在评估…") : selected.status === "SCHEDULED" ? t("Start learning to practice", "开始学习后可练习") : t("Submit answers", "提交练习")}</button>
+                    <button disabled={busy || assessing || selected.status === "SCHEDULED" || answers.some((answer) => !answer.trim())} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Submitting…", "正在提交…") : assessing ? t("Submitted for assessment", "已提交后台评估") : selected.status === "SCHEDULED" ? t("Start learning to practice", "开始学习后可练习") : t("Submit answers", "提交练习")}</button>
                   </form>}
                 </section>
               </article>

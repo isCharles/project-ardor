@@ -16,6 +16,8 @@ import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.recap.service.InterviewReplayService;
 import com.projectardor.usage.QuotaProtected;
 import com.projectardor.usage.UsageFeature;
+import com.projectardor.aijobs.AiJobService;
+import com.projectardor.aijobs.AiJobResponse;
 
 import jakarta.validation.Valid;
 
@@ -23,8 +25,17 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/interview-replays/questions/{questionId}")
 public class InterviewReplayController {
     private final InterviewReplayService service;
+    private final AiJobService jobs;
 
-    public InterviewReplayController(InterviewReplayService service) { this.service = service; }
+    public InterviewReplayController(InterviewReplayService service, AiJobService jobs) { this.service = service; this.jobs = jobs; }
+
+    @PostMapping("/jobs")
+    @QuotaProtected(value = UsageFeature.INTERVIEW_REPLAY, idempotentRequest = true)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AiJobResponse queue(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID questionId,
+            @Valid @RequestBody InterviewReplaySubmitRequest request) {
+        return jobs.evaluateReplay(principal.userId(), questionId, request);
+    }
 
     @GetMapping
     public InterviewReplayResponse view(@AuthenticationPrincipal ArdorPrincipal principal,

@@ -262,10 +262,15 @@ public class InterviewService {
         }
         Map<String, Object> evaluation = normalizedEvaluation(root);
         return transactions.execute(status -> {
+            InterviewSession current = sessionRepository.findOwnedForUpdate(sessionId, userId)
+                    .orElseThrow(() -> new ResourceNotFoundException("面试不存在"));
+            var savedEvaluation = evaluationRepository.findByInterviewSessionIdAndUserId(sessionId, userId);
+            if (savedEvaluation.isPresent()) return savedEvaluation.get();
+            if (current.getStatus() != InterviewStatus.IN_PROGRESS) throw new IllegalStateException("面试已取消，评价未保存");
             InterviewEvaluation saved = evaluationRepository.save(
                     InterviewEvaluation.create(userId, sessionId, score, evaluation, result.model()));
-            session.complete();
-            sessionRepository.save(session);
+            current.complete();
+            sessionRepository.save(current);
             return saved;
         });
     }
@@ -279,7 +284,8 @@ public class InterviewService {
 
     @Transactional
     public InterviewSession cancel(UUID userId, UUID sessionId) {
-        InterviewSession session = get(userId, sessionId);
+        InterviewSession session = sessionRepository.findOwnedForUpdate(sessionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("面试不存在"));
         session.cancel();
         return sessionRepository.save(session);
     }
