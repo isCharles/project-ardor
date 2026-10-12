@@ -20,6 +20,8 @@ import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.learning.service.LearningPlanCreationStore;
 import com.projectardor.usage.QuotaProtected;
 import com.projectardor.usage.UsageFeature;
+import com.projectardor.aijobs.AiJobService;
+import com.projectardor.aijobs.AiJobResponse;
 
 import jakarta.validation.Valid;
 
@@ -27,9 +29,11 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/learning-plans")
 public class LearningPlanController {
     private final LearningPlanService service;
+    private final AiJobService jobs;
 
-    public LearningPlanController(LearningPlanService service) {
+    public LearningPlanController(LearningPlanService service, AiJobService jobs) {
         this.service = service;
+        this.jobs = jobs;
     }
 
     @GetMapping
@@ -56,6 +60,22 @@ public class LearningPlanController {
             @Valid @RequestBody LearningPlanCreateRequest request) {
         return LearningPlanResponse.from(service.create(principal.userId(), request.requestId(), request.concept(),
                 request.reason(), request.sourceType(), request.sourceId(), request.scheduledAt()));
+    }
+
+    @PostMapping("/jobs")
+    @QuotaProtected(value = UsageFeature.LEARNING_PLAN, idempotentRequest = true, optionalRequestId = true)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AiJobResponse queueCreate(@AuthenticationPrincipal ArdorPrincipal principal,
+            @Valid @RequestBody LearningPlanCreateRequest request) {
+        return jobs.createLearning(principal.userId(), request);
+    }
+
+    @PostMapping("/{id}/evaluation-jobs")
+    @QuotaProtected(value = UsageFeature.LEARNING_ATTEMPT, idempotentRequest = true)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AiJobResponse queueEvaluation(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable UUID id, @Valid @RequestBody LearningEvaluationQueueRequest request) {
+        return jobs.evaluateLearning(principal.userId(), id, request);
     }
 
     @PostMapping("/{id}/begin")

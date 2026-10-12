@@ -69,6 +69,7 @@ const replay = {
 
 const transientAttempts = new Map();
 let delayedReplayRequests = 0;
+let delayedInterviewRequests = 0;
 let pendingLearningResponses = [];
 let learningFallbackTimer;
 
@@ -98,6 +99,11 @@ function completionFor(payload) {
   if (input.includes("面试复盘教练")) return replay;
   if (input.includes("严谨的中文技术导师")) return lesson;
   if (input.includes("严格但有建设性的中文技术教练")) {
+    if (payload.model === "async-evaluation-probe") {
+      const attempts = (transientAttempts.get(payload.model) ?? 0) + 1;
+      transientAttempts.set(payload.model, attempts);
+      if (attempts === 1) return { score: -1, feedback: "invalid score" };
+    }
     const improved = input.includes("二轮修订");
     return {
       score: improved ? 85 : 65,
@@ -119,6 +125,11 @@ function completionFor(payload) {
 }
 
 http.createServer((request, response) => {
+  if (request.url === "/__probe/interview-started") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({ count: delayedInterviewRequests }));
+    return;
+  }
   if (request.url === "/__probe/replay-started") {
     response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
     response.end(JSON.stringify({ count: delayedReplayRequests }));
@@ -133,6 +144,7 @@ http.createServer((request, response) => {
     const concurrentLearning = payload.model === "concurrent-learning-model"
       && body.includes("严格但有建设性的中文技术教练");
     if (delayedReplay) delayedReplayRequests++;
+    if (payload.model === "async-evaluation-probe" && body.includes("面试评价官")) delayedInterviewRequests++;
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
@@ -259,7 +271,7 @@ http.createServer((request, response) => {
       pendingLearningResponses.push(respond);
       if (pendingLearningResponses.length === 2) releaseLearningResponses();
       else learningFallbackTimer = setTimeout(releaseLearningResponses, 5000);
-    } else if (delayedReplay) setTimeout(respond, 1500);
+    } else if (delayedReplay || payload.model === "async-evaluation-probe") setTimeout(respond, 1500);
     else respond();
   });
 }).listen(8090, "0.0.0.0");

@@ -170,7 +170,14 @@ public class LearningPlanService {
     }
 
     public LearningPlan submit(UUID userId, UUID planId, List<String> rawAnswers) {
+        return submit(userId, planId, rawAnswers, null, null);
+    }
+
+    public LearningPlan submit(UUID userId, UUID planId, List<String> rawAnswers, Integer requestedRound, UUID requestId) {
         LearningPlan plan = get(userId, planId);
+        if (hasSubmission(plan, requestId)) return plan;
+        if (requestedRound != null && requestedRound != plan.getAttemptCount())
+            throw new IllegalStateException("学习轮次已更新，请刷新后重新提交");
         if (plan.getStatus() == LearningStatus.COMPLETED) {
             throw new IllegalStateException("这项学习已经完成");
         }
@@ -194,13 +201,20 @@ public class LearningPlanService {
         // The model call runs without a database lock. Recheck under a row lock and
         // commit the feedback together with its calendar state in one transaction.
         return transactions.execute(status -> commitAttempt(userId, planId, expectedAttemptCount,
-                answers, node, score));
+                answers, node, score, requestId));
+    }
+
+    private boolean hasSubmission(LearningPlan plan, UUID requestId) {
+        if (requestId == null || !(plan.getLastEvaluation().get("attempts") instanceof List<?> attempts)) return false;
+        return attempts.stream().anyMatch(item -> item instanceof Map<?, ?> map
+                && requestId.toString().equals(map.get("requestId")));
     }
 
     private LearningPlan commitAttempt(UUID userId, UUID planId, int expectedAttemptCount,
-            List<String> answers, JsonNode node, int score) {
+            List<String> answers, JsonNode node, int score, UUID requestId) {
         LearningPlan plan = repository.findOwnedForUpdate(planId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("学习计划不存在"));
+        if (hasSubmission(plan, requestId)) return plan;
         if (plan.getStatus() == LearningStatus.COMPLETED || plan.getAttemptCount() != expectedAttemptCount) {
             throw new IllegalStateException("学习内容已更新，请刷新后重新提交");
         }
@@ -224,6 +238,7 @@ public class LearningPlanService {
         }
         Map<String, Object> recordedAttempt = new LinkedHashMap<>();
         recordedAttempt.put("items", answeredItems);
+        if (requestId != null) recordedAttempt.put("requestId", requestId.toString());
         recordedAttempt.put("score", score);
         recordedAttempt.put("submittedAt", Instant.now().toString());
         recordedAttempt.put("feedback", node.path("feedback").asText(""));

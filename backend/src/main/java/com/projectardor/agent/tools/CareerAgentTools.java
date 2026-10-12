@@ -83,6 +83,7 @@ public class CareerAgentTools {
     private final KnowledgeService knowledgeService;
     private final LearningPlanService learningPlanService;
     private final ApplicationRhythmService applicationRhythmService;
+    private final com.projectardor.aijobs.AiJobService aiJobs;
 
     public CareerAgentTools(
             ResumeService resumeService,
@@ -97,7 +98,7 @@ public class CareerAgentTools {
             TavilySearchService tavilySearchService,
             KnowledgeService knowledgeService,
             LearningPlanService learningPlanService,
-            ApplicationRhythmService applicationRhythmService) {
+            ApplicationRhythmService applicationRhythmService, com.projectardor.aijobs.AiJobService aiJobs) {
         this.resumeService = resumeService;
         this.resumeAnalysisQueueService = resumeAnalysisQueueService;
         this.interviewService = interviewService;
@@ -111,6 +112,7 @@ public class CareerAgentTools {
         this.knowledgeService = knowledgeService;
         this.learningPlanService = learningPlanService;
         this.applicationRhythmService = applicationRhythmService;
+        this.aiJobs = aiJobs;
     }
 
     public BoundCareerTools bind(UUID trustedUserId, String trustedUserRequest) {
@@ -286,7 +288,7 @@ public class CareerAgentTools {
                     topic, why, source, sourceUuid, dueAt, requestId);
             pending.add(new PendingConfirmation("learning_plan", null, topic,
                     why == null ? "请确认后生成讲解、练习和日历安排" : why,
-                    "/api/learning-plans", input));
+                    "/api/learning-plans/jobs", input));
             return Map.of("status", "CONFIRMATION_REQUIRED", "kind", "learning_plan",
                     "target", topic, "message", "已向用户展示学习计划确认按钮；尚未创建计划或日程。请说明建议原因，等待用户点击，不要再次调用本工具。");
         }
@@ -506,10 +508,18 @@ public class CareerAgentTools {
                     null));
         }
 
-        @Tool(name = "finish_interview", value = "全部题目回答完毕后结束面试并生成结构化评价")
-        public InterviewEvaluationResponse finishInterview(@P("面试 UUID") String interviewId) {
-            return InterviewEvaluationResponse.from(
-                    interviewService.finish(userId, uuid(interviewId, "面试 ID")));
+        @Tool(name = "finish_interview", value = "全部题目回答完毕后提交后台评价任务；返回任务 UUID，可以稍后查看，不能声称已生成评价")
+        public com.projectardor.aijobs.AiJobResponse finishInterview(@P("面试 UUID") String interviewId) {
+            UUID id = uuid(interviewId, "面试 ID");
+            UUID action = logicalActionId == null ? runRequestId : logicalActionId;
+            UUID request = action == null ? UUID.randomUUID()
+                    : UUID.nameUUIDFromBytes((userId + ":interview-evaluation:" + id + ":" + action).getBytes(StandardCharsets.UTF_8));
+            return aiJobs.evaluateInterview(userId, id, request);
+        }
+
+        @Tool(name = "get_ai_job", value = "读取当前用户的后台学习生成、练习评分或面试评估任务状态；完成后用对应业务工具读取报告")
+        public com.projectardor.aijobs.AiJobResponse getAiJob(@P("后台任务 UUID") String jobId) {
+            return aiJobs.status(userId, uuid(jobId, "任务 ID"));
         }
 
         @Tool(name = "get_interview_evaluation", value = "读取当前用户某场已完成面试的结构化评价")

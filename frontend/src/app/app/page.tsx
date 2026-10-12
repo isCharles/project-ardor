@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { type AiJob } from "@/lib/ai-jobs";
 
 import { Button } from "@/components/ui/button";
 import { ApiError, api, streamApi } from "@/lib/api";
@@ -27,7 +28,7 @@ type AgentRun = { id: string; conversationId: string; message: string; status: "
    model never gets to destroy anything on its own say-so. */
 type LearningPlanProposal = { concept: string; reason: string | null; sourceType: string; sourceId: string | null; scheduledAt: string | null; requestId: string };
 type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; learningPlan?: LearningPlanProposal | null };
-type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "DONE" | "DISMISSED" | "FAILED" | "EXPIRED" | "REMOVED"; error?: string; createdPlanId?: string };
+type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "GENERATING" | "DONE" | "DISMISSED" | "FAILED" | "EXPIRED" | "REMOVED"; error?: string; createdPlanId?: string };
 type RunStep = { key: string; label: string; elapsedMs: number; done: boolean };
 type ResumeOption = { id: string; originalFilename: string };
 type RecapOption = { id: string; title: string };
@@ -148,6 +149,31 @@ export default function AgentHomePage() {
   const runStartedAt = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
   const runningRunId = runningRun?.id;
+  const learningRequestIds = confirmations.filter((item) => item.kind === "learning_plan" && ["PENDING", "GENERATING", "FAILED", "EXPIRED"].includes(item.state)).map((item) => item.learningPlan?.requestId).filter(Boolean).join(",");
+  const generatingLearning = confirmations.some((item) => item.state === "GENERATING");
+
+  useEffect(() => {
+    if (!learningRequestIds) return;
+    let active = true;
+    const refresh = () => {
+      void api<AiJob[]>("/api/ai-jobs?type=LEARNING_CREATE").then((jobs) => {
+        if (!active) return;
+        const byId = new Map(jobs.map((job) => [job.id, job]));
+        setConfirmations((current) => current.map((item) => {
+          if (!item.learningPlan || ["REMOVED", "DISMISSED", "DONE"].includes(item.state)) return item;
+          const job = byId.get(item.learningPlan.requestId);
+          if (!job) return item;
+          if (job.status === "COMPLETED" && job.resultPath) return { ...item, state: "DONE", error: undefined,
+            createdPlanId: new URL(job.resultPath, window.location.origin).searchParams.get("id") ?? undefined };
+          if (job.status === "FAILED") return { ...item, state: "FAILED", error: job.errorMessage ?? "学习生成未完成，可以重试" };
+          return { ...item, state: "GENERATING", error: undefined };
+        }));
+      }).catch(() => undefined);
+    };
+    refresh();
+    const timer = generatingLearning ? window.setInterval(refresh, 3000) : null;
+    return () => { active = false; if (timer) window.clearInterval(timer); };
+  }, [learningRequestIds, generatingLearning]);
 
   useEffect(() => {
     let active = true;
@@ -389,8 +415,13 @@ export default function AgentHomePage() {
     }
     setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DELETING", error: undefined } : item));
     try {
-      const plan = await api<{ id: string }>("/api/learning-plans", { method: "POST", body: JSON.stringify(pending.learningPlan) });
-      setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DONE", createdPlanId: plan.id } : item));
+      let job = await api<AiJob>("/api/learning-plans/jobs", { method: "POST", body: JSON.stringify(pending.learningPlan) });
+      if (job.status === "FAILED" && pending.state === "FAILED") job = await api<AiJob>(`/api/ai-jobs/${job.id}/retry`, { method: "POST" });
+      setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? {
+        ...item, state: job.status === "COMPLETED" ? "DONE" : job.status === "FAILED" ? "FAILED" : "GENERATING",
+        error: job.status === "FAILED" ? job.errorMessage ?? "学习生成未完成" : undefined,
+        createdPlanId: job.status === "COMPLETED" && job.resultPath ? new URL(job.resultPath, window.location.origin).searchParams.get("id") ?? undefined : undefined,
+      } : item));
       window.dispatchEvent(new Event("ardor:background-refresh"));
     } catch (reason) {
       setConfirmations((current) => current.map((item) => confirmationKey(item) === key
@@ -761,9 +792,10 @@ export default function AgentHomePage() {
                     <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : pending.kind === "learning_plan" ? "bg-violet-50 text-violet-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : pending.kind === "learning_plan" ? <BookOpenText className="size-4" /> : <Trash2 className="size-4" />}</span>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-stone-800">{pending.kind === "learning_plan"
-                        ? pending.state === "DONE" ? (locale === "en" ? "Learning plan created" : "学习计划已创建") : pending.state === "REMOVED" ? (locale === "en" ? "Plan removed" : "计划已移除") : pending.state === "EXPIRED" ? (locale === "en" ? "Suggested time has passed" : "建议时间已过") : pending.state === "DISMISSED" ? (locale === "en" ? "Not now" : "暂不安排") : pending.state === "DELETING" ? (locale === "en" ? "Creating plan" : "正在生成计划") : (locale === "en" ? "Suggested learning" : "建议学习")
+                        ? pending.state === "DONE" ? (locale === "en" ? "Learning plan created" : "学习计划已创建") : pending.state === "GENERATING" ? (locale === "en" ? "Preparing lesson in the background" : "正在后台准备学习内容") : pending.state === "REMOVED" ? (locale === "en" ? "Plan removed" : "计划已移除") : pending.state === "EXPIRED" ? (locale === "en" ? "Suggested time has passed" : "建议时间已过") : pending.state === "DISMISSED" ? (locale === "en" ? "Not now" : "暂不安排") : pending.state === "DELETING" ? (locale === "en" ? "Submitting plan" : "正在提交计划") : (locale === "en" ? "Suggested learning" : "建议学习")
                         : pending.state === "DONE" ? "已删除" : pending.state === "DISMISSED" ? "已保留" : pending.state === "DELETING" ? "正在删除" : "确认删除"}<span className="ml-1 font-normal">「{pending.label}」</span></p>
                       {pending.detail && pending.state === "PENDING" && <p className="mt-1 text-xs leading-5 text-stone-500">{pending.detail}</p>}
+                      {pending.state === "GENERATING" && <p className="mt-1 text-xs text-stone-500">{t("Usually 30–120 seconds. You can continue chatting or come back later.", "通常约 30–120 秒，可以继续聊天或稍后回来。")}</p>}
                       {pending.kind === "learning_plan" && pending.learningPlan?.scheduledAt && pending.state === "PENDING" && <p className="mt-1 text-xs text-stone-400">{new Date(pending.learningPlan.scheduledAt).toLocaleString(locale === "en" ? "en-US" : "zh-CN")}</p>}
                       {pending.kind === "learning_plan" && pending.state === "EXPIRED" && <p className="mt-1 text-xs text-stone-500">{locale === "en" ? "Ask Ardor to suggest a new time." : "请 Ardor 重新建议一个时间。"}</p>}
                       {pending.error && <p className="mt-1 text-xs leading-5 text-rose-600">{pending.error}</p>}
