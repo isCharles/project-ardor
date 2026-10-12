@@ -7,6 +7,8 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
 import { LocaleSwitch } from "@/components/ardor/locale-switch";
+import { MarkdownContent } from "@/components/ardor/markdown-content";
+import { clearLearningDraft, readLearningDraft, saveLearningDraft } from "@/lib/learning-drafts";
 import { useLocale } from "@/lib/locale";
 
 type Lesson = { summary?: string; keyPoints?: string[]; explanation?: string; example?: string; pitfalls?: string[] };
@@ -62,8 +64,10 @@ function journeySteps(plan: LearningPlan, t: (en: string, zh: string) => string)
   ];
 }
 
-function answersForPlan(plan: LearningPlan | null) {
+function answersForPlan(plan: LearningPlan | null, userId: string | null) {
   if (!plan) return [];
+  const draft = readLearningDraft(userId, plan);
+  if (draft) return draft;
   const previous = plan.lastEvaluation?.attempts?.at(-1)?.items ?? [];
   return plan.exercises.map((exercise, index) =>
     previous[index]?.question === exercise.question && previous[index]?.type === (exercise.type ?? "SHORT_ANSWER")
@@ -94,6 +98,7 @@ export default function LearningPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const pendingCreate = useRef<{ fingerprint: string; requestId: string } | null>(null);
+  const userId = useRef<string | null>(null);
 
   const load = useCallback(async (preferred?: string | null) => {
     try {
@@ -103,7 +108,7 @@ export default function LearningPage() {
       const requested = preferred ?? new URLSearchParams(window.location.search).get("id");
       const next = items.find((item) => item.id === requested) ?? nextPlan(items);
       setSelectedId(next?.id ?? null);
-      setAnswers(answersForPlan(next));
+      setAnswers(answersForPlan(next, userId.current));
       window.history.replaceState(null, "", next ? `/app/learning?id=${next.id}` : "/app/learning");
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
@@ -115,15 +120,16 @@ export default function LearningPage() {
 
   useEffect(() => {
     let active = true;
-    void api<LearningPlan[]>("/api/learning-plans")
-      .then((items) => {
+    void Promise.all([api<LearningPlan[]>("/api/learning-plans"), api<{ id: string }>("/api/auth/me")])
+      .then(([items, account]) => {
         if (!active) return;
+        userId.current = account.id;
         if (clearCompletedCreateRequest(items)) pendingCreate.current = null;
         setPlans(items);
         const requested = new URLSearchParams(window.location.search).get("id");
         const next = items.find((item) => item.id === requested) ?? nextPlan(items);
         setSelectedId(next?.id ?? null);
-        setAnswers(answersForPlan(next));
+        setAnswers(answersForPlan(next, account.id));
         window.history.replaceState(null, "", next ? `/app/learning?id=${next.id}` : "/app/learning");
       })
       .catch((reason) => {
@@ -146,9 +152,16 @@ export default function LearningPage() {
 
   function selectPlan(plan: LearningPlan) {
     setSelectedId(plan.id);
-    setAnswers(answersForPlan(plan));
+    setAnswers(answersForPlan(plan, userId.current));
     setError("");
     window.history.replaceState(null, "", `/app/learning?id=${plan.id}`);
+  }
+
+  function changeAnswer(index: number, value: string) {
+    if (!selected) return;
+    const next = answers.map((answer, answerIndex) => answerIndex === index ? value : answer);
+    setAnswers(next);
+    saveLearningDraft(userId.current, selected, next);
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -200,6 +213,7 @@ export default function LearningPage() {
       const updated = await api<LearningPlan>(`/api/learning-plans/${selected.id}/attempts`, {
         method: "POST", body: JSON.stringify({ answers }),
       });
+      clearLearningDraft(userId.current, selected);
       setPlans((items) => items.map((item) => item.id === updated.id ? updated : item));
       const changed = updated.exercises.some((exercise, index) =>
         exercise.question !== selected.exercises[index]?.question)
@@ -270,19 +284,36 @@ export default function LearningPage() {
                 <section className="ardor-panel rounded-[2.5rem] p-7 md:p-10" aria-labelledby="lesson-title">
                   <h2 id="lesson-title" className="text-2xl font-semibold">{t("Understand", "理解")}</h2>
                   {selected.reason && <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-600">{selected.reason}</p>}
-                  {selected.lesson.summary && <p className="mt-8 text-xl font-medium leading-8">{selected.lesson.summary}</p>}
-                  {selected.lesson.keyPoints && selected.lesson.keyPoints.length > 0 && <div className="mt-7 grid gap-3 sm:grid-cols-2">{selected.lesson.keyPoints.map((point) => <div key={point} className="rounded-2xl bg-white/65 p-4 text-sm leading-6"><Sparkles className="mb-3 size-4 text-violet-500" />{point}</div>)}</div>}
-                  {selected.lesson.explanation && <div className="mt-9 whitespace-pre-wrap text-[15px] leading-8 text-stone-700">{selected.lesson.explanation}</div>}
-                  {selected.lesson.example && <div className="mt-7 rounded-2xl bg-blue-50/65 p-5"><p className="text-xs font-medium text-blue-600">{t("Example", "例子")}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-stone-700">{selected.lesson.example}</p></div>}
-                  {selected.lesson.pitfalls && selected.lesson.pitfalls.length > 0 && <div className="mt-5 rounded-2xl bg-amber-50/70 p-5"><p className="flex items-center gap-2 text-xs font-medium text-amber-700"><CircleAlert className="size-4" />{t("Common pitfalls", "容易踩坑")}</p><ul className="mt-3 space-y-2 text-sm leading-6 text-stone-700">{selected.lesson.pitfalls.map((item) => <li key={item}>· {item}</li>)}</ul></div>}
+                  {selected.lesson.summary && <MarkdownContent className="mt-8 text-xl font-medium leading-8">{selected.lesson.summary}</MarkdownContent>}
+                  {selected.lesson.keyPoints && selected.lesson.keyPoints.length > 0 && <div className="mt-7 grid gap-3 sm:grid-cols-2">{selected.lesson.keyPoints.map((point) => <div key={point} className="rounded-2xl bg-white/65 p-4 text-sm leading-6"><Sparkles className="mb-3 size-4 text-violet-500" /><MarkdownContent>{point}</MarkdownContent></div>)}</div>}
+                  {selected.lesson.explanation && <MarkdownContent className="mt-9 text-[15px] leading-8 text-stone-700">{selected.lesson.explanation}</MarkdownContent>}
+                  {selected.lesson.example && <div className="mt-7 rounded-2xl bg-blue-50/65 p-5"><p className="text-xs font-medium text-blue-600">{t("Example", "例子")}</p><MarkdownContent className="mt-2 text-sm leading-7 text-stone-700">{selected.lesson.example}</MarkdownContent></div>}
+                  {selected.lesson.pitfalls && selected.lesson.pitfalls.length > 0 && <div className="mt-5 rounded-2xl bg-amber-50/70 p-5"><p className="flex items-center gap-2 text-xs font-medium text-amber-700"><CircleAlert className="size-4" />{t("Common pitfalls", "容易踩坑")}</p><ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-stone-700">{selected.lesson.pitfalls.map((item) => <li key={item}><MarkdownContent>{item}</MarkdownContent></li>)}</ul></div>}
                 </section>
 
                 <section id="learning-practice" className="ardor-panel scroll-mt-6 rounded-[2.5rem] p-7 md:p-10" aria-labelledby="practice-title">
                   <div className="flex items-end justify-between gap-4"><h2 id="practice-title" className="text-2xl font-semibold">{t("Practice", "检验理解")}</h2>{selected.lastScore !== null && <strong className="text-3xl tracking-tight">{selected.lastScore}<span className="text-base text-stone-400"> / 100</span></strong>}</div>
-                  {selected.lastEvaluation && <div className={`mt-6 rounded-2xl p-5 ${selected.status === "COMPLETED" ? "bg-emerald-50/75" : "bg-amber-50/75"}`}><p className="flex items-center gap-2 font-medium">{selected.status === "COMPLETED" && <CheckCircle2 className="size-5 text-emerald-600" />}{selected.lastEvaluation.feedback}</p>{selected.lastEvaluation.nextFocus && <p className="mt-2 text-sm text-stone-600">{t("Next focus", "下一步")}：{selected.lastEvaluation.nextFocus}</p>}{selected.lastEvaluation.gaps && selected.lastEvaluation.gaps.length > 0 && <ul className="mt-3 space-y-1 text-sm text-stone-700">{selected.lastEvaluation.gaps.map((gap, index) => <li key={index}>· {gap}</li>)}</ul>}{selected.lastEvaluation.questionFeedback && selected.lastEvaluation.questionFeedback.length > 0 && <div className="mt-4 space-y-3 border-t border-stone-200/70 pt-4">{selected.lastEvaluation.questionFeedback.map((item, index) => <div key={index} className="text-sm"><p className="font-medium">{item.question}</p><p className="mt-1 leading-6 text-stone-600">{item.feedback}</p></div>)}</div>}</div>}
-                  {previousAttempts.length > 0 && <div className="mt-5 space-y-2">{[...previousAttempts].reverse().map((attempt, index) => <details key={`${attempt.submittedAt}-${index}`} className="rounded-2xl border border-stone-200/75 bg-white/60 p-4"><summary className="cursor-pointer text-sm font-medium">{t(`Attempt ${previousAttempts.length - index} · ${attempt.score} points`, `第 ${previousAttempts.length - index} 次回答 · ${attempt.score} 分`)}</summary><div className="mt-4 space-y-4">{attempt.feedback && <p className="text-sm leading-6 text-stone-700">{attempt.feedback}</p>}{attempt.items.map((item, itemIndex) => <div key={itemIndex} className="text-sm"><p className="font-medium">{itemIndex + 1}. {item.question}</p><p className="mt-1 whitespace-pre-wrap leading-6 text-stone-600">{t("Your answer", "你的回答")}：{item.answer}</p>{attempt.questionFeedback?.filter((feedback) => feedback.question === item.question).map((feedback, feedbackIndex) => <p key={feedbackIndex} className="mt-2 rounded-xl bg-violet-50/70 px-3 py-2 leading-6 text-violet-900">{feedback.feedback}</p>)}</div>)}</div></details>)}</div>}
+                  {selected.lastEvaluation && <div className={`mt-6 rounded-2xl p-5 ${selected.status === "COMPLETED" ? "bg-emerald-50/75" : "bg-amber-50/75"}`}>
+                    {selected.status === "COMPLETED" && <CheckCircle2 className="mb-2 size-5 text-emerald-600" />}
+                    {selected.lastEvaluation.feedback && <MarkdownContent className="font-medium">{selected.lastEvaluation.feedback}</MarkdownContent>}
+                    {selected.lastEvaluation.nextFocus && <MarkdownContent className="mt-2 text-sm text-stone-600">{`${t("Next focus", "下一步")}: ${selected.lastEvaluation.nextFocus}`}</MarkdownContent>}
+                    {selected.lastEvaluation.gaps && <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-700">{selected.lastEvaluation.gaps.map((gap, index) => <li key={index}><MarkdownContent>{gap}</MarkdownContent></li>)}</ul>}
+                    {selected.lastEvaluation.questionFeedback && <div className="mt-4 space-y-3 border-t border-stone-200/70 pt-4">{selected.lastEvaluation.questionFeedback.map((item, index) => <div key={index} className="text-sm"><p className="font-medium">{item.question}</p><MarkdownContent className="mt-1 leading-6 text-stone-600">{item.feedback}</MarkdownContent></div>)}</div>}
+                  </div>}
+                  {previousAttempts.length > 0 && <div className="mt-5 space-y-2">{[...previousAttempts].reverse().map((attempt, index) => <details key={`${attempt.submittedAt}-${index}`} className="rounded-2xl border border-stone-200/75 bg-white/60 p-4">
+                    <summary className="cursor-pointer text-sm font-medium">{t(`Attempt ${previousAttempts.length - index} · ${attempt.score} points`, `第 ${previousAttempts.length - index} 次回答 · ${attempt.score} 分`)}</summary>
+                    <div className="mt-4 space-y-4">{attempt.feedback && <MarkdownContent className="text-sm leading-6 text-stone-700">{attempt.feedback}</MarkdownContent>}
+                      {attempt.items.map((item, itemIndex) => <div key={itemIndex} className="text-sm"><p className="font-medium">{itemIndex + 1}. {item.question}</p><p className="mt-1 whitespace-pre-wrap leading-6 text-stone-600">{t("Your answer", "你的回答")}：{item.answer}</p>{attempt.questionFeedback?.filter((feedback) => feedback.question === item.question).map((feedback, feedbackIndex) => <MarkdownContent key={feedbackIndex} className="mt-2 rounded-xl bg-violet-50/70 px-3 py-2 leading-6 text-violet-900">{feedback.feedback}</MarkdownContent>)}</div>)}
+                    </div></details>)}</div>}
                   {selected.status !== "COMPLETED" && previousAttempts.length > 0 && <p className="mt-7 text-sm font-medium text-violet-700">{t("Next practice", "下一轮练习")}</p>}
-                  {selected.status === "COMPLETED" ? <div className="mt-7 flex items-center gap-3 rounded-2xl bg-emerald-50/75 p-5 text-sm text-emerald-800"><CheckCircle2 className="size-5" />{t("Topic complete. The calendar task is complete too.", "本次学习已完成，日历任务也已同步完成。")}</div> : <form onSubmit={submit} className="mt-7 space-y-6">{selected.exercises.map((exercise, index) => <fieldset key={`${exercise.question}-${index}`} className="block"><legend className="text-sm font-medium">{index + 1}. {exercise.question}</legend>{exercise.type === "MULTIPLE_CHOICE" && exercise.options && exercise.options.length > 0 ? <div className="mt-3 grid gap-2">{exercise.options.map((option) => <label key={option} className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${answers[index] === option ? "border-violet-400 bg-violet-50/80" : "border-stone-200 bg-white/60 hover:bg-white"}`}><input type="radio" name={`exercise-${index}`} value={option} checked={answers[index] === option} onChange={() => setAnswers((items) => items.map((item, answerIndex) => answerIndex === index ? option : item))} required />{option}</label>)}</div> : <textarea required rows={exercise.type === "SCENARIO" ? 5 : 2} value={answers[index] ?? ""} onChange={(event) => setAnswers((items) => items.map((item, answerIndex) => answerIndex === index ? event.target.value : item))} className="field mt-3 resize-y" placeholder={exercise.type === "SCENARIO" ? t("Explain your approach and steps", "说明你的思路和步骤") : t("Answer in your own words", "用自己的话回答")} />}</fieldset>)}<button disabled={busy || selected.status === "SCHEDULED" || answers.some((answer) => !answer.trim())} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Ardor is reviewing…", "Ardor 正在评估…") : selected.status === "SCHEDULED" ? t("Start learning to practice", "开始学习后可练习") : t("Submit answers", "提交练习")}</button></form>}
+                  {selected.status === "COMPLETED" ? <div className="mt-7 flex items-center gap-3 rounded-2xl bg-emerald-50/75 p-5 text-sm text-emerald-800"><CheckCircle2 className="size-5" />{t("Topic complete. The calendar task is complete too.", "本次学习已完成，日历任务也已同步完成。")}</div> : <form onSubmit={submit} className="mt-7 space-y-6">
+                    {selected.exercises.map((exercise, index) => <fieldset key={`${exercise.question}-${index}`} className="block">
+                      <legend className="text-sm font-medium">{index + 1}. {exercise.question}</legend>
+                      {exercise.type === "MULTIPLE_CHOICE" && exercise.options && exercise.options.length > 0 ? <div className="mt-3 grid gap-2">{exercise.options.map((option) => <label key={option} className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${answers[index] === option ? "border-violet-400 bg-violet-50/80" : "border-stone-200 bg-white/60 hover:bg-white"}`}><input type="radio" name={`exercise-${index}`} value={option} checked={answers[index] === option} onChange={() => changeAnswer(index, option)} required />{option}</label>)}</div> : <textarea required rows={exercise.type === "SCENARIO" ? 5 : 2} value={answers[index] ?? ""} onChange={(event) => changeAnswer(index, event.target.value)} className="field mt-3 resize-y" placeholder={exercise.type === "SCENARIO" ? t("Explain your approach and steps", "说明你的思路和步骤") : t("Answer in your own words", "用自己的话回答")} />}
+                    </fieldset>)}
+                    <p className="text-xs text-stone-400">{t("Draft saved in this browser session", "草稿已保留在当前浏览器会话")}</p>
+                    <button disabled={busy || selected.status === "SCHEDULED" || answers.some((answer) => !answer.trim())} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Ardor is reviewing…", "Ardor 正在评估…") : selected.status === "SCHEDULED" ? t("Start learning to practice", "开始学习后可练习") : t("Submit answers", "提交练习")}</button>
+                  </form>}
                 </section>
               </article>
             </div>

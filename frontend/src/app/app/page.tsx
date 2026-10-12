@@ -97,6 +97,7 @@ function sortConversations(items: Conversation[]) {
 
 const MAX_MESSAGE_RETRIES = 5;
 const MAX_MESSAGE_LENGTH = 50_000;
+type ReasoningDepth = "AUTO" | "QUICK" | "STANDARD" | "DEEP";
 
 function draftStorageKey(conversationId?: string | null) {
   return `ardor:conversation-draft:${conversationId ?? "new"}`;
@@ -115,6 +116,9 @@ export default function AgentHomePage() {
   const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reasoningDepth, setReasoningDepth] = useState<ReasoningDepth>("AUTO");
+  const [nativeReasoning, setNativeReasoning] = useState(false);
+  const reasoningAccount = useRef<string | null>(null);
   const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retryFailures, setRetryFailures] = useState<RetryFailure[]>([]);
@@ -142,6 +146,46 @@ export default function AgentHomePage() {
   const runStartedAt = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
   const runningRunId = runningRun?.id;
+  const latestAssistantId = messages.filter((message) => message.role === "ASSISTANT").at(-1)?.id;
+
+  useEffect(() => {
+    let active = true;
+    void api<{ id: string }>("/api/auth/me").then((account) => {
+      if (!active) return;
+      reasoningAccount.current = account.id;
+      const saved = window.sessionStorage.getItem(`ardor:reasoning-depth:${account.id}`);
+      if (saved && ["AUTO", "QUICK", "STANDARD", "DEEP"].includes(saved)) setReasoningDepth(saved as ReasoningDepth);
+    }).catch(() => undefined);
+    void api<{ nativeControl: boolean }>("/api/agent/reasoning")
+      .then((result) => { if (active) setNativeReasoning(result.nativeControl); }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (busy || !latestAssistantId || latestAssistantId.startsWith("pending-")) return;
+    let active = true;
+    let remaining = 12;
+    const timer = window.setInterval(() => {
+      if (--remaining <= 0) window.clearInterval(timer);
+      void api<Conversation[]>("/api/agent/conversations")
+        .then((items) => { if (active) setConversations(sortConversations(items)); }).catch(() => undefined);
+    }, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [busy, latestAssistantId]);
+
+  function reasoningPicker() {
+    return <select aria-label={t("Thinking depth", "思考深度")} value={reasoningDepth} disabled={busy || !!runningRun}
+      title={nativeReasoning ? t("Controls the model's reasoning effort", "调节模型原生思考深度") : t("Adapts through instructions for this model", "当前模型通过分析指引适配")}
+      onChange={(event) => {
+        const value = event.target.value as ReasoningDepth;
+        setReasoningDepth(value);
+        try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:reasoning-depth:${reasoningAccount.current}`, value); }
+        catch { /* The current selection remains usable when browser storage is unavailable. */ }
+      }} className="max-w-36 rounded-full bg-transparent px-2 py-1.5 text-xs text-stone-500 outline-none hover:bg-violet-50 disabled:opacity-50">
+      <option value="AUTO">{t("Auto", "自动")}</option><option value="QUICK">{t("Quick", "快速")}</option>
+      <option value="STANDARD">{t("Standard", "标准")}</option><option value="DEEP">{t("Deep", "深入")}</option>
+    </select>;
+  }
 
   useEffect(() => {
     if (window.sessionStorage.getItem("ardor:open-memory") === "1") {
@@ -404,7 +448,7 @@ export default function AgentHomePage() {
         try {
           let streamFailure: AgentStreamEvent | null = null;
           if (retry > 0) setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: "" } : item));
-          await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { requestId, conversationId: activeConversationId, message, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
+          await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { requestId, conversationId: activeConversationId, message, reasoningDepth, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
             if (event.type === "delta" && event.content) {
               receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
@@ -684,7 +728,7 @@ export default function AgentHomePage() {
                   <form onSubmit={submit} className="mx-auto mt-10 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
                     {selectedContexts.length > 0 && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
                     <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !!runningRun || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-                    <div className="flex items-center justify-between gap-3 px-2 pb-1">{attachmentPicker()}<div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
+                    <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}</div><div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
                   </form>
                 </div>
               </div>
@@ -744,7 +788,7 @@ export default function AgentHomePage() {
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {selectedContexts.length > 0 && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !!runningRun || !state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label="发送" disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
+              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label={t("Send", "发送")} disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
             </form>
           </div>}
         </section>

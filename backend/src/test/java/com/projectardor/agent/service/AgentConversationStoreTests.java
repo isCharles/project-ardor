@@ -21,7 +21,8 @@ class AgentConversationStoreTests {
 
     private final ConversationRepository conversationRepository = mock(ConversationRepository.class);
     private final ConversationMessageRepository messageRepository = mock(ConversationMessageRepository.class);
-    private final AgentConversationStore store = new AgentConversationStore(conversationRepository, messageRepository);
+    private final AgentConversationStore store = new AgentConversationStore(conversationRepository, messageRepository,
+            mock(org.springframework.context.ApplicationEventPublisher.class));
 
     @Test
     void createsIndependentActiveConversations() {
@@ -95,5 +96,13 @@ class AgentConversationStoreTests {
         conversation.titleFromFirstMessage("帮我准备下周的 Java 后端面试，需要重点复习 JVM 和 Redis。后面还有更多说明");
 
         assertThat(conversation.getTitle()).isEqualTo("帮我准备下周的 Java 后端面试，需要重点复习…");
+    }
+
+    @Test void manualNamingIsPreservedEvenIfItMatchesTheDefaultLabel() {
+        Conversation conversation = Conversation.create(UUID.randomUUID(), "新对话");
+        conversation.rename("新对话");
+        conversation.titleFromFirstMessage("不要替换我的标题");
+        assertThat(conversation.getTitle()).isEqualTo("新对话");
+        assertThat(conversation.isTitleManuallySet()).isTrue();
     }
 }

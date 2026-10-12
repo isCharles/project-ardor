@@ -1,0 +1,48 @@
+package com.projectardor.agent.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+import com.projectardor.agent.ReasoningDepth;
+import com.projectardor.llm.domain.LlmProvider;
+import com.projectardor.llm.service.LlmConfigService.LlmRuntimeConfig;
+
+class ModelReasoningPolicyTests {
+    private LlmRuntimeConfig config(LlmProvider provider, String model) {
+        return new LlmRuntimeConfig(provider, "https://example.com", model, "synthetic-key");
+    }
+
+    @Test void openAiUsesNativeEffortWithoutSendingUnknownFields() {
+        var result = ModelReasoningPolicy.resolve(config(LlmProvider.OPENAI_COMPATIBLE, "gpt-5.1"), ReasoningDepth.DEEP);
+        assertThat(result.effort()).isEqualTo("high");
+        assertThat(result.extra()).isEmpty();
+        assertThat(result.nativeControl()).isTrue();
+    }
+
+    @Test void deepSeekUsesItsOwnHighAndMaxMappingAndPreservesToolThinking() {
+        var config = config(LlmProvider.OPENAI_COMPATIBLE, "deepseek-v4-flash");
+        assertThat(ModelReasoningPolicy.resolve(config, ReasoningDepth.STANDARD).effort()).isEqualTo("high");
+        var result = ModelReasoningPolicy.resolve(config, ReasoningDepth.DEEP);
+        assertThat(result.effort()).isEqualTo("max");
+        assertThat(result.extra()).containsKey("thinking");
+        assertThat(result.sendThinking()).isTrue();
+    }
+
+    @Test void claudeAdaptsToNewAndOlderThinkingProtocols() {
+        var adaptive = ModelReasoningPolicy.resolve(config(LlmProvider.ANTHROPIC_COMPATIBLE, "claude-opus-4-6"), ReasoningDepth.STANDARD);
+        assertThat(adaptive.thinkingType()).isEqualTo("adaptive");
+        assertThat(adaptive.extra()).containsKey("output_config");
+        assertThat(adaptive.budget()).isNull();
+        var older = ModelReasoningPolicy.resolve(config(LlmProvider.ANTHROPIC_COMPATIBLE, "claude-sonnet-4-5"), ReasoningDepth.DEEP);
+        assertThat(older.budget()).isEqualTo(8192);
+        assertThat(older.maxTokens()).isGreaterThan(older.budget());
+    }
+
+    @Test void unknownModelsUseGuidanceAndAutoKeepsProviderDefaults() {
+        var unknown = ModelReasoningPolicy.resolve(config(LlmProvider.OPENAI_COMPATIBLE, "custom-model"), ReasoningDepth.DEEP);
+        assertThat(unknown.nativeControl()).isFalse();
+        assertThat(unknown.effort()).isNull();
+        assertThat(unknown.extra()).isEmpty();
+        var auto = ModelReasoningPolicy.resolve(config(LlmProvider.OPENAI_COMPATIBLE, "gpt-5"), null);
+        assertThat(auto.effort()).isNull();
+    }
+}

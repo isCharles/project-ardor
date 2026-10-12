@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.projectardor.llm.service.LlmConfigService;
+import com.projectardor.agent.ReasoningDepth;
 
 import dev.langchain4j.http.client.jdk.JdkHttpClientBuilder;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
@@ -54,13 +55,28 @@ public class LangChainModelFactory {
         return create(configService.getRuntimeConfig(userId));
     }
 
+    public ChatModel create(UUID userId, ReasoningDepth depth) {
+        return create(configService.getRuntimeConfig(userId), depth);
+    }
+
     public ChatModel create(LlmConfigService.LlmRuntimeConfig config) {
+        return create(config, ReasoningDepth.AUTO);
+    }
+
+    public ModelReasoningPolicy.Profile reasoningProfile(UUID userId) {
+        return ModelReasoningPolicy.resolve(configService.getRuntimeConfig(userId), ReasoningDepth.AUTO);
+    }
+
+    public ChatModel create(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth) {
+        var profile = ModelReasoningPolicy.resolve(config, depth);
         return switch (config.provider()) {
             case OPENAI_COMPATIBLE -> OpenAiChatModel.builder()
                     .httpClientBuilder(httpClientBuilder())
                     .baseUrl(config.baseUrl())
                     .apiKey(config.apiKey())
                     .modelName(config.model())
+                    .reasoningEffort(profile.effort()).customParameters(profile.extra())
+                    .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking(), "reasoning_content")
                     .timeout(readTimeout)
                     .maxRetries(MODEL_INTERNAL_RETRIES)
                     .build();
@@ -69,7 +85,9 @@ public class LangChainModelFactory {
                     .baseUrl(config.baseUrl())
                     .apiKey(config.apiKey())
                     .modelName(config.model())
-                    .maxTokens(4096)
+                    .maxTokens(profile.maxTokens()).thinkingType(profile.thinkingType())
+                    .thinkingBudgetTokens(profile.budget()).customParameters(profile.extra())
+                    .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking())
                     .timeout(readTimeout)
                     .maxRetries(MODEL_INTERNAL_RETRIES)
                     .build();
@@ -77,14 +95,22 @@ public class LangChainModelFactory {
     }
 
     public StreamingChatModel createStreaming(UUID userId) {
+        return createStreaming(userId, ReasoningDepth.AUTO);
+    }
+
+    public StreamingChatModel createStreaming(UUID userId, ReasoningDepth depth) {
         LlmConfigService.LlmRuntimeConfig config = configService.getRuntimeConfig(userId);
+        var profile = ModelReasoningPolicy.resolve(config, depth);
         return switch (config.provider()) {
             case OPENAI_COMPATIBLE -> OpenAiStreamingChatModel.builder()
                     .httpClientBuilder(httpClientBuilder()).baseUrl(config.baseUrl()).apiKey(config.apiKey())
-                    .modelName(config.model()).timeout(readTimeout).build();
+                    .modelName(config.model()).reasoningEffort(profile.effort()).customParameters(profile.extra())
+                    .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking(), "reasoning_content").timeout(readTimeout).build();
             case ANTHROPIC_COMPATIBLE -> AnthropicStreamingChatModel.builder()
                     .httpClientBuilder(httpClientBuilder()).baseUrl(config.baseUrl()).apiKey(config.apiKey())
-                    .modelName(config.model()).maxTokens(4096).timeout(readTimeout).build();
+                    .modelName(config.model()).maxTokens(profile.maxTokens()).thinkingType(profile.thinkingType())
+                    .thinkingBudgetTokens(profile.budget()).customParameters(profile.extra())
+                    .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking()).timeout(readTimeout).build();
         };
     }
 

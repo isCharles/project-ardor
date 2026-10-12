@@ -63,13 +63,27 @@ try {
   await page.getByRole("link", { name: /Open lesson|打开学习/ }).click();
   await page.waitForURL(new RegExp(`${createdPlanPath.replace("?", "\\?")}$`));
   await page.getByRole("button", { name: /^(Start learning|开始学习)$/ }).click();
+  await page.getByRole("heading", { name: "恢复取舍" }).waitFor();
+  assert.equal(await page.locator('.ardor-markdown strong').filter({ hasText: "RDB" }).count(), 1);
   await page.getByRole("radio", { name: "记录写命令" }).check();
   await page.locator("#learning-practice textarea").fill("第一次回答：RDB 是快照。");
+  await page.goto(`${origin}/app/calendar`);
+  await page.getByRole("heading", { level: 1, name: /Make today count|把目标，放进今天/ }).waitFor();
+  await page.goto(`${origin}${createdPlanPath}`);
+  await page.locator("#learning-practice textarea").waitFor();
+  assert.equal(await page.locator("#learning-practice textarea").inputValue(), "第一次回答：RDB 是快照。");
+  assert.equal(await page.getByRole("radio", { name: "记录写命令" }).isChecked(), true);
+  await page.reload();
+  await page.locator("#learning-practice textarea").waitFor();
+  assert.equal(await page.locator("#learning-practice textarea").inputValue(), "第一次回答：RDB 是快照。");
   await page.getByRole("button", { name: /Submit answers|提交练习/ }).click();
   await page.getByLabel(/Latest score 65|最近得分 65 分/).waitFor();
+  assert.equal(await page.locator("#learning-practice textarea").inputValue(), "",
+    "A new practice round must not inherit an unsent answer from the old round");
   await page.locator("#learning-practice details").first().locator("summary").click();
   await page.getByText("第一次回答：RDB 是快照。").last().waitFor();
 
+  await page.getByRole("radio", { name: "允许的数据丢失窗口" }).check();
   await page.locator("#learning-practice textarea").fill("二轮修订：RDB 快照和 AOF 日志的恢复目标不同。");
   await page.getByRole("button", { name: /Submit answers|提交练习/ }).click();
   await page.getByLabel(/Latest score 85|最近得分 85 分/).waitFor();
@@ -300,6 +314,31 @@ try {
   }
   await replayPage.reload();
   await replayPage.getByText("先确定可接受的丢失窗口，再选择快照与日志策略。").first().waitFor();
+
+  const depthPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  activePage = depthPage;
+  depthPage.on("pageerror", (error) => pageErrors.push(error.message));
+  await depthPage.goto(`${origin}/login`);
+  await depthPage.locator('input[name="email"]').fill(`golden-depth-${suffix}@ardor.invalid`);
+  await depthPage.locator('input[name="password"]').fill(`Ardor-Acceptance-${suffix}!`);
+  await depthPage.locator('button[type="submit"]').click();
+  await depthPage.waitForURL(`${origin}/app`, { timeout: 15_000 });
+  await depthPage.getByRole("combobox", { name: /Thinking depth|思考深度/ }).selectOption("DEEP");
+  await depthPage.reload();
+  await depthPage.getByRole("combobox", { name: /Thinking depth|思考深度/ }).waitFor();
+  // Account settings load independently of the transcript.
+  await depthPage.waitForFunction(() => document.querySelector('select[aria-label="Thinking depth"], select[aria-label="思考深度"]')?.value === "DEEP");
+  await depthPage.getByRole("button", { name: /^(New chat|新对话)$/ }).last().click();
+  await depthPage.getByRole("textbox", { name: /Message Ardor|给 Ardor 发消息/ }).fill("帮我继续规划 Redis 面试学习");
+  await depthPage.getByRole("button", { name: /^(Send|发送)$/ }).click();
+  await depthPage.getByText("Redis 学习规划", { exact: true }).first().waitFor({ timeout: 30_000 });
+  const depthConversations = await depthPage.evaluate(async () => {
+    const response = await fetch("/api/agent/conversations");
+    if (!response.ok) throw new Error(`Conversations returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(depthConversations.filter((item) => item.title === "我的手动标题").length, 1);
+  assert.equal(depthConversations.filter((item) => item.title === "Redis 学习规划").length, 1);
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");
   console.log("Browser Golden Path passed: Agent confirmation → two learning rounds → interview report → failed recap retry → Shanghai-date metadata completion → replay → calendar retest completion.");
 } catch (error) {

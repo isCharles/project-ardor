@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import com.projectardor.agent.domain.Conversation;
 import com.projectardor.agent.domain.ConversationMessage;
 import com.projectardor.agent.AgentContextReference;
+import com.projectardor.agent.ReasoningDepth;
 import com.projectardor.agent.tools.CareerAgentTools;
 import com.projectardor.agent.web.AgentContextReferenceRequest;
 import com.projectardor.agent.web.AgentMessageResponse;
@@ -164,6 +165,20 @@ public class CareerAgentService {
 
     public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId) {
+        return chat(userId, conversationId, rawMessage, contextType, contextId, requestedReferences, requestId, ReasoningDepth.AUTO);
+    }
+
+    public boolean nativeReasoningControl(UUID userId) {
+        return modelFactory.reasoningProfile(userId).nativeControl();
+    }
+
+    public List<AgentConversationResponse> conversations(UUID userId) {
+        return store.list(userId).stream().map(AgentConversationResponse::from).toList();
+    }
+
+    public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
+            UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth) {
+        ReasoningDepth depth = ReasoningDepth.orAuto(requestedDepth);
         String message = normalizeMessage(rawMessage);
         List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
         String agentInput = contextualMessage(userId, message, references);
@@ -188,8 +203,8 @@ public class CareerAgentService {
                     requestId == null ? null : UUID.randomUUID());
 
             CareerAssistant assistant = AiServices.builder(CareerAssistant.class)
-                    .chatModel(modelFactory.create(userId))
-                    .systemMessage(systemPrompt(userId))
+                    .chatModel(modelFactory.create(userId, depth))
+                    .systemMessage(systemPrompt(userId) + depth.guidance())
                     .chatMemory(memory)
                     // A synchronous retry keeps the logical request but is a new tool-call attempt.
                     // Reusing requestId as the run ID would make regenerated arguments create a second slot.
@@ -245,6 +260,12 @@ public class CareerAgentService {
 
     public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId,
             List<AgentContextReferenceRequest> requestedReferences, UUID requestId, StreamSink sink) {
+        chatStream(userId, conversationId, rawMessage, contextType, contextId, requestedReferences, requestId, ReasoningDepth.AUTO, sink);
+    }
+
+    public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId,
+            List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth, StreamSink sink) {
+        ReasoningDepth depth = ReasoningDepth.orAuto(requestedDepth);
         long startedAt = System.nanoTime();
         AtomicBoolean finished = new AtomicBoolean();
         AtomicReference<UUID> persistedRun = new AtomicReference<>();
@@ -262,10 +283,10 @@ public class CareerAgentService {
             llmConfigService.getRuntimeConfig(userId);
             Conversation conversation = conversationId == null ? store.create(userId) : store.requireActive(userId, conversationId);
             UUID logicalActionId = requestId == null ? null : runStore.logicalActionId(userId, requestId,
-                    conversation.getId(), message, contextType, contextId, requestedReferences);
+                    conversation.getId(), message, contextType, contextId, requestedReferences, depth);
             if (requestId != null) {
                 if (!runStore.begin(userId, requestId, conversation.getId(), message,
-                        contextType, contextId, requestedReferences, logicalActionId)) {
+                        contextType, contextId, requestedReferences, logicalActionId, depth)) {
                     sink.send(AgentStreamEvent.error("RUN_ALREADY_STARTED",
                             "请求已被接收，请读取已有执行状态", false, elapsedMs(startedAt)));
                     sink.complete();
@@ -284,8 +305,8 @@ public class CareerAgentService {
             // the agent proposed, so each becomes a button in the transcript.
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
-                    .streamingChatModel(modelFactory.createStreaming(userId))
-                    .systemMessage(systemPrompt(userId)).chatMemory(memory).tools(bound)
+                    .streamingChatModel(modelFactory.createStreaming(userId, depth))
+                    .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory).tools(bound)
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
             sink.send(AgentStreamEvent.status("正在理解你的请求", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)

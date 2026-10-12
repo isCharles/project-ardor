@@ -55,7 +55,7 @@ public class AgentController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody AgentMessageRequest request) {
         return agentService.chat(principal.userId(), request.conversationId(), request.message(), request.contextType(),
-                request.contextId(), request.contextReferences(), request.requestId());
+                request.contextId(), request.contextReferences(), request.requestId(), request.reasoningDepth());
     }
 
     @PostMapping(value = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -71,7 +71,7 @@ public class AgentController {
         emitter.onCompletion(() -> closed.set(true));
         emitter.onTimeout(() -> { closed.set(true); emitter.complete(); });
         agentService.chatStream(principal.userId(), request.conversationId(), request.message(), request.contextType(), request.contextId(),
-                request.contextReferences(), request.requestId(),
+                request.contextReferences(), request.requestId(), request.reasoningDepth(),
                 new CareerAgentService.StreamSink() {
                     @Override public void send(AgentStreamEvent event) {
                         if (closed.get()) return;
@@ -83,6 +83,11 @@ public class AgentController {
                     }
                 });
         return emitter;
+    }
+
+    @GetMapping("/reasoning")
+    public java.util.Map<String, Boolean> reasoning(@AuthenticationPrincipal ArdorPrincipal principal) {
+        return java.util.Map.of("nativeControl", agentService.nativeReasoningControl(principal.userId()));
     }
 
     @GetMapping("/runs/{requestId}")
@@ -104,6 +109,11 @@ public class AgentController {
     public AgentConversationResponse createConversation(
             @AuthenticationPrincipal ArdorPrincipal principal) {
         return agentService.createConversation(principal.userId());
+    }
+
+    @GetMapping("/conversations")
+    public java.util.List<AgentConversationResponse> conversations(@AuthenticationPrincipal ArdorPrincipal principal) {
+        return agentService.conversations(principal.userId());
     }
 
     @PatchMapping("/conversations/{conversationId}")

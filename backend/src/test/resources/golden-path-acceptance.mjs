@@ -463,6 +463,35 @@ async function main() {
   const uiReplayRecap = await uiReplayOwner.request(`/api/interview-recaps/${uiReplayRecapId}`);
   assert.ok(uiReplayRecap.questions.some((question) => question.performance === "WEAK"),
     "Browser replay fixture needs a weak interview question");
+
+  const depthOwner = new Client();
+  await depthOwner.request("/api/auth/register", {
+    method: "POST", expected: 201,
+    body: { email: `golden-depth-${suffix}@ardor.invalid`, password, displayName: "Golden Path Depth" },
+  });
+  await depthOwner.request("/api/settings/llm", {
+    method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+      model: "gpt-5-depth-probe", apiKey: "disposable-fake-model-key" },
+  });
+  const depthConversation = await depthOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
+  await depthOwner.request("/api/agent/messages", {
+    method: "POST", body: { conversationId: depthConversation.id, message: "帮我规划 Redis 面试学习", reasoningDepth: "DEEP" },
+  });
+  let titled = false;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const conversations = await depthOwner.request("/api/agent/conversations");
+    if (conversations.find((item) => item.id === depthConversation.id)?.title === "Redis 学习规划") { titled = true; break; }
+    await sleep(200);
+  }
+  assert.ok(titled, "A completed turn must get an automatic summary title");
+  await depthOwner.request(`/api/agent/conversations/${depthConversation.id}`, {
+    method: "PATCH", body: { title: "我的手动标题" },
+  });
+  await depthOwner.request("/api/agent/messages", {
+    method: "POST", body: { conversationId: depthConversation.id, message: "继续这次学习规划", reasoningDepth: "QUICK" },
+  });
+  await sleep(500);
+  assert.equal((await depthOwner.request("/api/agent/conversations"))[0].title, "我的手动标题");
   console.log("Golden Path passed: recap → replay → learning/retest → calendar; Agent confirmation; failed recap recovery; canceled in-flight retest rollback; concurrent learning isolation.");
 }
 
