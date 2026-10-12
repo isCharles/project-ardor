@@ -213,8 +213,31 @@ try {
   await replayPage.getByText(replayWeak.questionText).first().waitFor();
   await replayPage.locator("#replay-answer").fill("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。");
   await replayPage.getByRole("button", { name: /Submit & compare|提交并对比/ }).click();
+  await replayPage.getByRole("alert").last().waitFor();
+  assert.equal(await replayPage.locator("#replay-answer").inputValue(),
+    "我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。");
+  const failedReplay = await replayPage.evaluate(async (questionId) => {
+    const response = await fetch(`/api/interview-replays/questions/${questionId}`);
+    if (!response.ok) throw new Error(`Replay returned ${response.status}`);
+    return response.json();
+  }, replayWeak.id);
+  assert.equal(failedReplay.attempts.length, 0, "A failed provider call must not save a replay attempt");
+  await replayPage.goto(`${origin}/app/calendar`);
+  await replayPage.getByRole("heading", { level: 1, name: /Make today count|把目标，放进今天/ }).waitFor();
+  await replayPage.goto(`${origin}/app/replay?question=${replayWeak.id}`);
+  await replayPage.getByText(replayWeak.questionText).first().waitFor();
+  assert.equal(await replayPage.locator("#replay-answer").inputValue(),
+    "我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。",
+    "The unsent answer must survive navigation after a provider error");
+  await replayPage.getByRole("button", { name: /Submit & compare|提交并对比/ }).click();
   await replayPage.getByRole("region", { name: /Latest replay result|最新回放结果/ }).waitFor();
   await replayPage.getByText("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。").first().waitFor();
+  const recoveredReplay = await replayPage.evaluate(async (questionId) => {
+    const response = await fetch(`/api/interview-replays/questions/${questionId}`);
+    if (!response.ok) throw new Error(`Replay returned ${response.status}`);
+    return response.json();
+  }, replayWeak.id);
+  assert.equal(recoveredReplay.attempts.length, 1, "Retrying the saved answer must create just one attempt");
   await replayPage.reload();
   await replayPage.getByRole("region", { name: /Latest replay result|最新回放结果/ }).waitFor();
   await replayPage.getByText("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。").first().waitFor();
