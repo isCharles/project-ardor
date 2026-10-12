@@ -45,4 +45,12 @@ class ModelReasoningPolicyTests {
         var auto = ModelReasoningPolicy.resolve(config(LlmProvider.OPENAI_COMPATIBLE, "gpt-5"), null);
         assertThat(auto.effort()).isNull();
     }
+
+    @Test void laterClaudeFourVersionsKeepAdaptiveThinking() {
+        for (String model : new String[] {"claude-opus-4-7", "claude-sonnet-4-8", "claude-opus-4.7", "claude-opus-4-10-20261012"}) {
+            var result = ModelReasoningPolicy.resolve(config(LlmProvider.ANTHROPIC_COMPATIBLE, model), ReasoningDepth.DEEP);
+            assertThat(result.thinkingType()).as(model).isEqualTo("adaptive");
+            assertThat(result.budget()).isNull();
+        }
+    }
 }

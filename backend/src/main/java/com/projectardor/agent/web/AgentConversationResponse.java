@@ -9,6 +9,7 @@ public record AgentConversationResponse(
         UUID id,
         String title,
         boolean pinned,
+        boolean titleManuallySet,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -18,6 +19,7 @@ public record AgentConversationResponse(
                 conversation.getId(),
                 title == null || title.isBlank() ? "新对话" : title,
                 conversation.isPinned(),
+                conversation.isTitleManuallySet(),
                 conversation.getCreatedAt(),
                 conversation.getUpdatedAt());
     }

@@ -17,7 +17,7 @@ import { useTypewriter } from "@/lib/use-typewriter";
 
 type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING"; id: string; label: string };
 type AgentMessage = { id: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; createdAt: string };
-type Conversation = { id: string; title: string; pinned: boolean; createdAt: string; updatedAt: string };
+type Conversation = { id: string; title: string; pinned: boolean; titleManuallySet?: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
 type RetryFailure = { label: string; detail: string };
 type AgentStreamEvent = { type: "status" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null };
@@ -119,6 +119,8 @@ export default function AgentHomePage() {
   const [reasoningDepth, setReasoningDepth] = useState<ReasoningDepth>("AUTO");
   const [nativeReasoning, setNativeReasoning] = useState(false);
   const reasoningAccount = useRef<string | null>(null);
+  const [reasoningReady, setReasoningReady] = useState(false);
+  const [titleWatch, setTitleWatch] = useState<{ id: string; title: string } | null>(null);
   const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retryFailures, setRetryFailures] = useState<RetryFailure[]>([]);
@@ -146,15 +148,16 @@ export default function AgentHomePage() {
   const runStartedAt = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
   const runningRunId = runningRun?.id;
-  const latestAssistantId = messages.filter((message) => message.role === "ASSISTANT").at(-1)?.id;
 
   useEffect(() => {
     let active = true;
     void api<{ id: string }>("/api/auth/me").then((account) => {
       if (!active) return;
       reasoningAccount.current = account.id;
-      const saved = window.sessionStorage.getItem(`ardor:reasoning-depth:${account.id}`);
-      if (saved && ["AUTO", "QUICK", "STANDARD", "DEEP"].includes(saved)) setReasoningDepth(saved as ReasoningDepth);
+      try {
+        const saved = window.sessionStorage.getItem(`ardor:reasoning-depth:${account.id}`);
+        if (saved && ["AUTO", "QUICK", "STANDARD", "DEEP"].includes(saved)) setReasoningDepth(saved as ReasoningDepth);
+      } finally { setReasoningReady(true); }
     }).catch(() => undefined);
     void api<{ nativeControl: boolean }>("/api/agent/reasoning")
       .then((result) => { if (active) setNativeReasoning(result.nativeControl); }).catch(() => undefined);
@@ -162,19 +165,24 @@ export default function AgentHomePage() {
   }, []);
 
   useEffect(() => {
-    if (busy || !latestAssistantId || latestAssistantId.startsWith("pending-")) return;
+    if (busy || !titleWatch) return;
     let active = true;
     let remaining = 12;
     const timer = window.setInterval(() => {
       if (--remaining <= 0) window.clearInterval(timer);
       void api<Conversation[]>("/api/agent/conversations")
-        .then((items) => { if (active) setConversations(sortConversations(items)); }).catch(() => undefined);
+        .then((items) => {
+          if (!active) return;
+          setConversations(sortConversations(items));
+          const updated = items.find((item) => item.id === titleWatch.id);
+          if (!updated || updated.titleManuallySet || updated.title !== titleWatch.title || remaining <= 0) setTitleWatch(null);
+        }).catch(() => { if (active && remaining <= 0) setTitleWatch(null); });
     }, 5000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [busy, latestAssistantId]);
+  }, [busy, titleWatch]);
 
   function reasoningPicker() {
-    return <select aria-label={t("Thinking depth", "思考深度")} value={reasoningDepth} disabled={busy || !!runningRun}
+    return <select aria-label={t("Thinking depth", "思考深度")} value={reasoningDepth} disabled={!reasoningReady || busy || !!runningRun}
       title={nativeReasoning ? t("Controls the model's reasoning effort", "调节模型原生思考深度") : t("Adapts through instructions for this model", "当前模型通过分析指引适配")}
       onChange={(event) => {
         const value = event.target.value as ReasoningDepth;
@@ -461,6 +469,8 @@ export default function AgentHomePage() {
               setRunSteps((current) => { const index = current.findLastIndex((step) => step.key.startsWith(`${event.toolName}-`) && !step.done); return index < 0 ? current : current.map((step, i) => i === index ? { ...step, label: event.label ?? step.label, elapsedMs: event.elapsedMs ?? 0, done: true } : step); });
               if (["analyze_resume", "organize_interview_recap", "research_knowledge_from_web"].includes(event.toolName)) window.dispatchEvent(new Event("ardor:background-refresh"));
             } else if (event.type === "done" && event.messageId && event.conversationId) {
+              const currentConversation = conversations.find((item) => item.id === event.conversationId);
+              if (!currentConversation?.titleManuallySet) setTitleWatch({ id: event.conversationId, title: currentConversation?.title ?? conversationTitle(message) });
               assistant = { id: event.messageId, conversationId: event.conversationId, role: "ASSISTANT", content: event.content ?? "", createdAt: new Date().toISOString() };
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? assistant! : item));
               const totalElapsed = event.elapsedMs ?? Date.now() - runStartedAt.current;

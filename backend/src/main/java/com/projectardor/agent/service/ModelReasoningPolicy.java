@@ -35,7 +35,7 @@ public final class ModelReasoningPolicy {
         if (config.provider() == LlmProvider.OPENAI_COMPATIBLE && openai)
             return new Profile(effort, Map.of(), null, null, 4096, false, true);
         if (config.provider() == LlmProvider.ANTHROPIC_COMPATIBLE && claude) {
-            boolean adaptive = model.contains("4-6") || model.contains("4.6")
+            boolean adaptive = model.matches(".*claude-(?:[a-z]+-)?4[.-](?:[6-9]|[1-9][0-9]+)(?:[.-].*)?")
                     || model.matches(".*claude-(?:[a-z]+-)?5(?:[.-].*)?");
             if (adaptive) return new Profile(null, Map.of("output_config", Map.of("effort", effort)),
                     "adaptive", null, 16384, true, true);
