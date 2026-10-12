@@ -413,6 +413,28 @@ async function main() {
   assert.equal(incompleteRecap.company, null);
   assert.equal(incompleteRecap.targetRole, null);
   assert.equal(incompleteRecap.occurredAt, null);
+
+  // Keep a clean weak question for the browser to complete the entire replay
+  // and calendar retest flow through user-visible controls.
+  const uiReplayOwner = new Client();
+  await uiReplayOwner.request("/api/auth/register", {
+    method: "POST", expected: 201,
+    body: { email: `golden-ui-replay-${suffix}@ardor.invalid`, password,
+      displayName: "Golden Path Replay" },
+  });
+  await uiReplayOwner.request("/api/settings/llm", {
+    method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+      model: "golden-path-model", apiKey: "disposable-fake-model-key" },
+  });
+  const uiReplaySubmission = await uiReplayOwner.request("/api/interview-recaps", {
+    method: "POST", expected: 202,
+    body: { content: "我在 Ardor Labs 的 Java 后端面试被问到 Redis 的 RDB 和 AOF 区别。我只说 RDB 是快照，没能解释 AOF 写命令、重写与恢复取舍。" },
+  });
+  const uiReplayRecapId = uiReplaySubmission.recapId
+    ?? await waitForRecap(uiReplayOwner, uiReplaySubmission.jobId);
+  const uiReplayRecap = await uiReplayOwner.request(`/api/interview-recaps/${uiReplayRecapId}`);
+  assert.ok(uiReplayRecap.questions.some((question) => question.performance === "WEAK"),
+    "Browser replay fixture needs a weak interview question");
   console.log("Golden Path passed: recap → replay → learning/retest → calendar; Agent confirmation; failed recap recovery; canceled in-flight retest rollback; concurrent learning isolation.");
 }
 

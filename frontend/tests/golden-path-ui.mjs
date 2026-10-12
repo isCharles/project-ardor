@@ -192,8 +192,68 @@ try {
   assert.equal(completedMetadata[0].targetRole, "Java 后端工程师");
   assert.equal(await metadataPage.evaluate((occurredAt) => new Date(occurredAt).getDate(),
     completedMetadata[0].occurredAt), 2);
+
+  const replayPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  activePage = replayPage;
+  replayPage.on("pageerror", (error) => pageErrors.push(error.message));
+  await replayPage.goto(`${origin}/login`);
+  await replayPage.locator('input[name="email"]').fill(`golden-ui-replay-${suffix}@ardor.invalid`);
+  await replayPage.locator('input[name="password"]').fill(`Ardor-Acceptance-${suffix}!`);
+  await replayPage.locator('button[type="submit"]').click();
+  await replayPage.waitForURL(`${origin}/app`, { timeout: 15_000 });
+  const replayRecaps = await replayPage.evaluate(async () => {
+    const response = await fetch("/api/interview-recaps");
+    if (!response.ok) throw new Error(`Interview notes returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(replayRecaps.length, 1);
+  const replayWeak = replayRecaps[0].questions.find((item) => item.performance === "WEAK");
+  assert.ok(replayWeak);
+  await replayPage.goto(`${origin}/app/replay?question=${replayWeak.id}`);
+  await replayPage.getByText(replayWeak.questionText).first().waitFor();
+  await replayPage.locator("#replay-answer").fill("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。");
+  await replayPage.getByRole("button", { name: /Submit & compare|提交并对比/ }).click();
+  await replayPage.getByRole("region", { name: /Latest replay result|最新回放结果/ }).waitFor();
+  await replayPage.getByText("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。").first().waitFor();
+  await replayPage.reload();
+  await replayPage.getByRole("region", { name: /Latest replay result|最新回放结果/ }).waitFor();
+  await replayPage.getByText("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。").first().waitFor();
+  await replayPage.getByRole("button", { name: /Schedule retest|安排复测/ }).click();
+  await replayPage.getByText(/Scheduled for |已安排 /).waitFor();
+  const replayTasks = await replayPage.evaluate(async () => {
+    const response = await fetch("/api/calendar/tasks");
+    if (!response.ok) throw new Error(`Calendar tasks returned ${response.status}`);
+    return response.json();
+  });
+  const retestTasks = replayTasks.filter((task) => task.taskKind === "INTERVIEW_RETEST");
+  assert.equal(retestTasks.length, 1, "Scheduling from replay should create one calendar retest");
+  assert.equal(retestTasks[0].status, "TODO");
+  await replayPage.getByRole("link", { name: /View calendar|查看日历/ }).click();
+  await replayPage.waitForURL(`${origin}/app/calendar`);
+  const monthDelta = await replayPage.evaluate((dueAt) => {
+    const due = new Date(dueAt), today = new Date();
+    return (due.getFullYear() - today.getFullYear()) * 12 + due.getMonth() - today.getMonth();
+  }, retestTasks[0].dueAt);
+  assert.ok(monthDelta >= 0 && monthDelta <= 1);
+  if (monthDelta === 1) await replayPage.getByRole("button", { name: /Next month|下个月/ }).click();
+  await replayPage.locator("section.ardor-panel button").filter({ hasText: /Interview retest|面试复测/ }).first().click();
+  await replayPage.getByRole("link", { name: /^(Start|开始)$/ }).click();
+  await replayPage.waitForURL(new RegExp(`/app/replay\\?question=${replayWeak.id}&retest=${retestTasks[0].id}$`));
+  await replayPage.getByText(/Variation retest|变式复测/).first().waitFor();
+  await replayPage.locator("#replay-answer").fill("先确定可接受的丢失窗口，再选择快照与日志策略。");
+  await replayPage.getByRole("button", { name: /Submit & compare|提交并对比/ }).click();
+  await replayPage.getByText("先确定可接受的丢失窗口，再选择快照与日志策略。").first().waitFor();
+  const completedRetest = await replayPage.evaluate(async (path) => {
+    const response = await fetch("/api/calendar/tasks");
+    if (!response.ok) throw new Error(`Calendar tasks returned ${response.status}`);
+    return (await response.json()).filter((task) => task.actionPath === path);
+  }, retestTasks[0].actionPath);
+  assert.equal(completedRetest.length, 1);
+  assert.equal(completedRetest[0].status, "COMPLETED");
+  await replayPage.reload();
+  await replayPage.getByText("先确定可接受的丢失窗口，再选择快照与日志策略。").first().waitFor();
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");
-  console.log("Browser Golden Path passed: Agent confirmation → two learning rounds → interview report and replay → calendar → failed recap retry → Shanghai-date metadata completion.");
+  console.log("Browser Golden Path passed: Agent confirmation → two learning rounds → interview report → failed recap retry → Shanghai-date metadata completion → replay → calendar retest completion.");
 } catch (error) {
   const screenshot = join(process.env.RUNNER_TEMP ?? ".", "ardor-ui-failure.png");
   await activePage.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
