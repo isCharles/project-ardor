@@ -209,6 +209,20 @@ try {
   assert.equal(replayRecaps.length, 1);
   const replayWeak = replayRecaps[0].questions.find((item) => item.performance === "WEAK");
   assert.ok(replayWeak);
+  await replayPage.goto(`${origin}/app/evidence`);
+  await replayPage.getByRole("link", { name: /Make a learning plan|制定补强计划/ }).first().click();
+  await replayPage.getByRole("textbox", { name: /Message Ardor|给 Ardor 发消息/ }).waitFor();
+  const learningDraft = await replayPage.getByRole("textbox", { name: /Message Ardor|给 Ardor 发消息/ }).inputValue();
+  assert.ok(learningDraft.includes(replayWeak.id),
+    "The weak-question learning request must carry its source question ID");
+  assert.equal(await replayPage.getByRole("button", { name: /Remove attachment|移除资料/ }).count(), 1,
+    "The original recap must be attached to the unsent learning request");
+  const untouchedPlans = await replayPage.evaluate(async () => {
+    const response = await fetch("/api/learning-plans");
+    if (!response.ok) throw new Error(`Learning plans returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(untouchedPlans.length, 0, "Opening the Agent handoff must not create a plan");
   await replayPage.goto(`${origin}/app/replay?question=${replayWeak.id}`);
   await replayPage.getByText(replayWeak.questionText).first().waitFor();
   await replayPage.locator("#replay-answer").fill("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。");
