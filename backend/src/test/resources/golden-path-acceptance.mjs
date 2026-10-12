@@ -391,6 +391,28 @@ async function main() {
   await waitForJobStatus(uiRecoveryOwner, uiFailedSubmission.jobId, "FAILED");
   assert.equal((await uiRecoveryOwner.request("/api/interview-recaps")).length, 0,
     "A failed recap must not expose partial notes to the browser user");
+
+  // A third browser session fills metadata the model correctly left unknown.
+  const metadataOwner = new Client();
+  await metadataOwner.request("/api/auth/register", {
+    method: "POST", expected: 201,
+    body: { email: `golden-metadata-${suffix}@ardor.invalid`, password,
+      displayName: "Golden Path Metadata" },
+  });
+  await metadataOwner.request("/api/settings/llm", {
+    method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+      model: "recap-metadata-probe", apiKey: "disposable-fake-model-key" },
+  });
+  const metadataSubmission = await metadataOwner.request("/api/interview-recaps", {
+    method: "POST", expected: 202,
+    body: { content: "在一次技术面试中，面试官问到 Redis 的 RDB 和 AOF 有什么区别。我只说了 RDB 是快照，遗漏了 AOF 重写与恢复取舍。" },
+  });
+  const metadataRecapId = metadataSubmission.recapId
+    ?? await waitForRecap(metadataOwner, metadataSubmission.jobId);
+  const incompleteRecap = await metadataOwner.request(`/api/interview-recaps/${metadataRecapId}`);
+  assert.equal(incompleteRecap.company, null);
+  assert.equal(incompleteRecap.targetRole, null);
+  assert.equal(incompleteRecap.occurredAt, null);
   console.log("Golden Path passed: recap → replay → learning/retest → calendar; Agent confirmation; failed recap recovery; canceled in-flight retest rollback; concurrent learning isolation.");
 }
 

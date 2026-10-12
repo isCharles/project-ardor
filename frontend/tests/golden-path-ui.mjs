@@ -152,8 +152,48 @@ try {
     "The browser must retry the original job, not submit a duplicate");
   assert.ok(recoveredJobs[0].attempts >= 1,
     "A user-initiated retry resets its attempt budget before the new run");
+
+  const metadataPage = await browser.newPage({
+    viewport: { width: 1440, height: 900 }, timezoneId: "Asia/Shanghai",
+  });
+  activePage = metadataPage;
+  metadataPage.on("pageerror", (error) => pageErrors.push(error.message));
+  await metadataPage.goto(`${origin}/login`);
+  await metadataPage.locator('input[name="email"]').fill(`golden-metadata-${suffix}@ardor.invalid`);
+  await metadataPage.locator('input[name="password"]').fill(`Ardor-Acceptance-${suffix}!`);
+  await metadataPage.locator('button[type="submit"]').click();
+  await metadataPage.waitForURL(`${origin}/app`, { timeout: 15_000 });
+  await metadataPage.goto(`${origin}/app/recaps`);
+  const interviewDate = metadataPage.locator('input[name="occurredOn"]');
+  await interviewDate.fill("2026-09-02");
+  await Promise.all([
+    metadataPage.waitForResponse((response) => response.url().includes("/metadata") && response.status() === 200),
+    metadataPage.getByRole("button", { name: /^(Save|保存)$/ }).click(),
+  ]);
+  await metadataPage.reload();
+  await interviewDate.waitFor();
+  assert.equal(await interviewDate.inputValue(), "2026-09-02",
+    "A date entered in Shanghai must not shift to the prior UTC date on reload");
+  await metadataPage.locator('input[name="company"]').fill("Ardor Labs");
+  await metadataPage.locator('input[name="targetRole"]').fill("Java 后端工程师");
+  await Promise.all([
+    metadataPage.waitForResponse((response) => response.url().includes("/metadata") && response.status() === 200),
+    metadataPage.getByRole("button", { name: /^(Save|保存)$/ }).click(),
+  ]);
+  await metadataPage.reload();
+  await metadataPage.getByText("Ardor Labs").first().waitFor();
+  const completedMetadata = await metadataPage.evaluate(async () => {
+    const response = await fetch("/api/interview-recaps");
+    if (!response.ok) throw new Error(`Interview notes returned ${response.status}`);
+    return response.json();
+  });
+  assert.equal(completedMetadata.length, 1);
+  assert.equal(completedMetadata[0].company, "Ardor Labs");
+  assert.equal(completedMetadata[0].targetRole, "Java 后端工程师");
+  assert.equal(await metadataPage.evaluate((occurredAt) => new Date(occurredAt).getDate(),
+    completedMetadata[0].occurredAt), 2);
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");
-  console.log("Browser Golden Path passed: Agent confirmation → two learning rounds → interview report and replay → calendar → failed recap retry in an isolated user session.");
+  console.log("Browser Golden Path passed: Agent confirmation → two learning rounds → interview report and replay → calendar → failed recap retry → Shanghai-date metadata completion.");
 } catch (error) {
   const screenshot = join(process.env.RUNNER_TEMP ?? ".", "ardor-ui-failure.png");
   await activePage.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
