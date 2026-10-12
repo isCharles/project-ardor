@@ -243,13 +243,24 @@ try {
   await replayPage.locator("#replay-answer").fill("先确定可接受的丢失窗口，再选择快照与日志策略。");
   await replayPage.getByRole("button", { name: /Submit & compare|提交并对比/ }).click();
   await replayPage.getByText("先确定可接受的丢失窗口，再选择快照与日志策略。").first().waitFor();
-  const completedRetest = await replayPage.evaluate(async (path) => {
-    const response = await fetch("/api/calendar/tasks");
-    if (!response.ok) throw new Error(`Calendar tasks returned ${response.status}`);
-    return (await response.json()).filter((task) => task.actionPath === path);
-  }, retestTasks[0].actionPath);
-  assert.equal(completedRetest.length, 1);
-  assert.equal(completedRetest[0].status, "COMPLETED");
+  let completedRetest = null;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    completedRetest = await replayPage.evaluate(async (path) => {
+      const response = await fetch("/api/calendar/tasks", { cache: "no-store" });
+      if (!response.ok) throw new Error(`Calendar tasks returned ${response.status}`);
+      return (await response.json()).filter((task) => task.actionPath === path);
+    }, retestTasks[0].actionPath);
+    if (completedRetest.length === 1 && completedRetest[0].status === "COMPLETED") break;
+    await replayPage.waitForTimeout(200);
+  }
+  assert.equal(completedRetest?.length, 1);
+  if (completedRetest[0].status !== "COMPLETED") {
+    const replayState = await replayPage.evaluate(async (questionId) => {
+      const response = await fetch(`/api/interview-replays/questions/${questionId}`, { cache: "no-store" });
+      return response.json();
+    }, replayWeak.id);
+    throw new Error(`Calendar retest remained ${completedRetest[0].status}; newest attempt retest ID: ${replayState.attempts[0]?.retestTaskId ?? "none"}; expected: ${retestTasks[0].id}`);
+  }
   await replayPage.reload();
   await replayPage.getByText("先确定可接受的丢失窗口，再选择快照与日志策略。").first().waitFor();
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");
