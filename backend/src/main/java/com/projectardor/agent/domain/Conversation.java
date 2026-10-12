@@ -29,6 +29,9 @@ public class Conversation {
     @Column(nullable = false)
     private boolean pinned;
 
+    @Column(name = "title_manually_set", nullable = false)
+    private boolean titleManuallySet;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -67,6 +70,7 @@ public class Conversation {
 
     public void rename(String title) {
         this.title = title;
+        this.titleManuallySet = true;
         touch();
     }
 
@@ -76,6 +80,7 @@ public class Conversation {
     }
 
     public void titleFromFirstMessage(String message) {
+        if (titleManuallySet) return;
         if (title == null || title.isBlank() || "新对话".equals(title)) {
             String normalized = message == null ? "" : message.strip().replaceAll("\\s+", " ");
             String firstThought = normalized.split("[。！？!?；;\\n]", 2)[0].strip();
@@ -104,6 +109,7 @@ public class Conversation {
     public String getTitle() { return title; }
     public String getStatus() { return status; }
     public boolean isPinned() { return pinned; }
+    public boolean isTitleManuallySet() { return titleManuallySet; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

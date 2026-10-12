@@ -312,12 +312,14 @@ public class LearningPlanService {
 
     private String generationPrompt() {
         return """
-                你是严谨的中文技术导师。只输出 JSON 对象，不要 Markdown。
+                你是严谨的中文技术导师。只输出 JSON 对象，不要用代码围栏包住 JSON。
                 格式：{"lesson":{"summary":"一句话","keyPoints":["..."],"explanation":"系统讲解",
                 "example":"具体例子","pitfalls":["..."]},"exercises":[{"question":"练习题",
                 "type":"SHORT_ANSWER 或 MULTIPLE_CHOICE 或 SCENARIO",
                 "options":["选项一","选项二","选项三"],"rubric":["评分要点"]}]}。
                 生成 3 到 5 个关键点和 2 到 4 道练习。讲解要准确、循序渐进、面向求职；
+                explanation 和 example 的字符串使用 Markdown：短小的小标题、分点、关键词加粗，
+                必要时使用代码块或表格。每段聚焦一个知识点，避免大段连续文字。summary 保持一句话。
                 练习至少有一道 MULTIPLE_CHOICE 选择题，其余可为简答或情境题。只有选择题需要 options。
                 练习必须检验理解与应用，不能只问定义，也不得虚构用户经历。
                 """;
@@ -325,13 +327,14 @@ public class LearningPlanService {
 
     private String evaluationPrompt() {
         return """
-                你是严格但有建设性的中文技术教练。只输出 JSON 对象，不要 Markdown。
+                你是严格但有建设性的中文技术教练。只输出 JSON 对象，不要用代码围栏包住 JSON。
                 格式：{"score":0,"feedback":"总体反馈","strengths":["..."],"gaps":["..."],
                 "questionFeedback":[{"question":"原题","feedback":"针对该回答的解释"}],
                 "nextFocus":"下一步重点","nextExercises":[{"question":"新题",
                 "type":"SHORT_ANSWER 或 MULTIPLE_CHOICE 或 SCENARIO",
                 "options":["选项一","选项二","选项三"],"rubric":["评分要点"]}]}。
                 score 是 0 到 100 的整数，只能依据评分要点和实际回答评分。
+                feedback 和 questionFeedback.feedback 可用 Markdown 分点并加粗关键结论，避免冗长段落。
                 如果得分低于 80，必须根据薄弱点出 2 到 4 道不同于原题的新题，其中至少一道选择题；
                 如果得分达到 80，nextExercises 返回空数组。只有选择题需要 options。
                 """;

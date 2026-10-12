@@ -49,7 +49,7 @@ const lesson = {
   lesson: {
     summary: "理解 Redis 持久化的取舍",
     keyPoints: ["RDB 快照", "AOF 日志", "恢复与性能取舍"],
-    explanation: "RDB 定期保存快照，AOF 记录写命令；需要结合恢复目标和性能预算选择。",
+    explanation: "### 恢复取舍\n\n- **RDB** 定期保存快照。\n- **AOF** 记录写命令。\n\n需要结合恢复目标和性能预算选择。",
     example: "对容忍少量数据丢失的缓存可偏重 RDB。",
     pitfalls: ["不要把 AOF 重写当作立即持久化"],
   },
@@ -82,6 +82,7 @@ function releaseLearningResponses() {
 
 function completionFor(payload) {
   const input = JSON.stringify(payload);
+  if (input.includes("你负责概括对话标题")) return { title: "Redis 学习规划" };
   if (payload.model === "recap-metadata-probe" && input.includes("面试复盘编辑")) {
     return { ...recap, company: "", targetRole: "", occurredAt: "" };
   }
@@ -105,7 +106,10 @@ function completionFor(payload) {
       gaps: improved ? [] : ["缺少恢复目标"],
       questionFeedback: [{ question: "如何选择 RDB 与 AOF？", feedback: "结合恢复目标说明即可。" }],
       nextFocus: improved ? "保持练习" : "恢复时间与数据丢失窗口",
-      nextExercises: improved ? [] : lesson.exercises,
+      nextExercises: improved ? [] : [
+        { question: "选择恢复策略时首先明确什么？", type: "MULTIPLE_CHOICE", options: ["允许的数据丢失窗口", "固定使用快照", "无需考虑性能"], rubric: ["允许的数据丢失窗口"] },
+        { question: "如何结合恢复时间与数据丢失窗口设计持久化策略？", type: "SCENARIO", rubric: ["分析恢复时间和数据丢失窗口"] },
+      ],
     };
   }
   if (input.includes("简历分析器")) return analysis;
@@ -132,6 +136,12 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+    if (payload.model === "gpt-5-depth-probe" && isAgentRequest
+      && !["low", "medium", "high"].includes(payload.reasoning_effort)) {
+      response.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ error: { message: "reasoning_effort was not transmitted" } }));
+      return;
+    }
     const toolResults = payload.messages?.filter((message) => message.role === "tool") ?? [];
     if (payload.model === "stream-probe-model" && isAgentRequest) {
       console.log(`stream-probe tools=${payload.tools.map((tool) => tool.function?.name).join(",")}`);

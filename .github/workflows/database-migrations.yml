@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "backend/src/main/resources/db/migration/**"
+      - ".github/tests/conversation-title-*.sql"
       - ".github/workflows/database-migrations.yml"
   workflow_dispatch:
 
@@ -39,8 +40,16 @@ jobs:
           test "${#migrations[@]}" -gt 0
           for migration in "${migrations[@]}"; do
             echo "Applying $(basename "$migration")"
+            if [[ "$(basename "$migration")" == "V32__add_conversation_title_origin.sql" ]]; then
+              docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 \
+                < .github/tests/conversation-title-before.sql
+            fi
             docker exec -i ardor-migration-check \
               psql -U postgres -d ardor -v ON_ERROR_STOP=1 < "$migration"
+            if [[ "$(basename "$migration")" == "V32__add_conversation_title_origin.sql" ]]; then
+              docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 \
+                < .github/tests/conversation-title-after.sql
+            fi
           done
           docker exec ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 \
             -c "SELECT COUNT(*) FROM agent_runs;"

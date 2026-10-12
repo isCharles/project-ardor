@@ -4,6 +4,7 @@ import java.util.UUID;
 import java.util.List;
 
 import com.projectardor.usage.QuotaRequestId;
+import com.projectardor.agent.ReasoningDepth;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -17,10 +18,16 @@ public record AgentMessageRequest(
         UUID contextId,
         @Size(max = 5, message = "一次最多引用 5 份资料")
         List<AgentContextReferenceRequest> contextReferences,
-        UUID requestId) implements QuotaRequestId {
+        UUID requestId,
+        ReasoningDepth reasoningDepth) implements QuotaRequestId {
+
+    public AgentMessageRequest(UUID conversationId, String message, String contextType, UUID contextId,
+            List<AgentContextReferenceRequest> contextReferences, UUID requestId) {
+        this(conversationId, message, contextType, contextId, contextReferences, requestId, ReasoningDepth.AUTO);
+    }
 
     public AgentMessageRequest(UUID conversationId, String message, String contextType, UUID contextId,
             List<AgentContextReferenceRequest> contextReferences) {
-        this(conversationId, message, contextType, contextId, contextReferences, null);
+        this(conversationId, message, contextType, contextId, contextReferences, null, ReasoningDepth.AUTO);
     }
 }

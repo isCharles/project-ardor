@@ -1,0 +1,35 @@
+# 对话与学习体验
+
+## 学习内容与草稿
+
+学习讲解、例子、关键点和练习反馈按 Markdown 展示，支持强调、标题、列表、代码块和表格。模型返回的外层仍是 JSON；Markdown 位于讲解与反馈字符串中。渲染器不执行原始 HTML。
+
+练习答案即时写入浏览器 `sessionStorage`，键包含当前账号、学习计划 ID 和 `attemptCount`；题目、题型、选项还须匹配才能恢复。切页、切换计划或刷新后可继续编辑。同一浏览器会话结束后缓存可能被浏览器清除，未实现跨设备草稿同步。
+
+提交失败保留草稿；提交成功后删除本轮草稿，答案与题目保存在服务端答题历史中。新轮次使用新的缓存键，避免未提交的旧答案混入新题。
+
+## 自动对话标题
+
+每轮回复保存成功后，后台用用户当前可用模型概括最近几条消息的主题，采用快速档。标题任务不会延迟对话回复；失败时保留原标题。标题生成会额外调用一次模型，使用当前账号自己的配置或管理员默认配置。
+
+用户手动重命名后停止自动覆盖。V32 为已有标题增加来源标记：识别旧版第一条消息的自动截取格式，其余已有名称保守视为手动命名。后台写入同时检查账号、会话状态和最新助手消息 ID，防止较早的标题结果覆盖较新一轮。
+
+## 思考深度
+
+聊天框提供自动、快速、标准、深入四档，选择按账号保存在浏览器会话中。请求中的 `reasoningDepth` 同时参与流式请求幂等指纹；同一请求 ID 不能复用另一档位的请求。
+
+| 模型 | 快速 | 标准 | 深入 |
+| --- | --- | --- | --- |
+| 已知 OpenAI 推理模型 | `reasoning_effort=low` | `medium` | `high` |
+| DeepSeek | `low` | `high` | `max` |
+| 支持自适应思考的 Claude | adaptive + low effort | medium effort | high effort |
+| 较早支持扩展思考的 Claude | 1024 token budget | 4096 | 8192 |
+| 未识别的兼容模型 | 快速分析指引 | 平衡分析指引 | 深入分析指引 |
+
+自动档保留模型默认参数。原生参数按协议和模型名称保守映射，未知模型通过提示词适配；不会声称它具有未验证的原生深度控制。中转站仍须支持所选模型的官方参数。内部工具调用保留必要的思考签名／`reasoning_content`，不把原始思维链展示给用户。
+
+厂商依据：[OpenAI reasoning effort](https://developers.openai.com/api/docs/guides/reasoning#reasoning-effort)、[DeepSeek thinking mode](https://api-docs.deepseek.com/guides/thinking_mode)、[Claude adaptive thinking](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking)。可用档位会随模型变化；新增模型应更新映射与请求契约测试。
+
+## 验证
+
+单元测试覆盖模型映射与手动标题保护。隔离 Golden Path 用假模型拒绝缺少 `reasoning_effort` 的探测请求，验证同步／流式参数、后台标题和手动标题保持；Chromium 验证学习 Markdown、草稿切页与刷新恢复、深度选择恢复。假模型验收不证明所有真实服务商或中转站的兼容性。

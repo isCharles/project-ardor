@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.EntityManager;
 
 import com.projectardor.agent.AgentContextReference;
+import com.projectardor.agent.ReasoningDepth;
 import com.projectardor.agent.domain.Conversation;
 import com.projectardor.agent.domain.ConversationMessage;
 import com.projectardor.agent.web.AgentContextReferenceRequest;
@@ -53,7 +54,12 @@ public class AgentRunStore {
 
     public UUID logicalActionId(UUID userId, UUID requestId, UUID conversationId, String message,
             String contextType, UUID contextId, List<AgentContextReferenceRequest> references) {
-        String hash = fingerprint(conversationId, message, contextType, contextId, references);
+        return logicalActionId(userId, requestId, conversationId, message, contextType, contextId, references, ReasoningDepth.AUTO);
+    }
+
+    public UUID logicalActionId(UUID userId, UUID requestId, UUID conversationId, String message,
+            String contextType, UUID contextId, List<AgentContextReferenceRequest> references, ReasoningDepth depth) {
+        String hash = fingerprint(conversationId, message, contextType, contextId, references, depth);
         return jdbc.queryForList("""
                 SELECT CASE WHEN status IN ('INTERRUPTED', 'FAILED')
                                  AND (tool_started OR (logical_action_id IS NOT NULL AND logical_action_id <> id))
@@ -67,7 +73,13 @@ public class AgentRunStore {
     public boolean begin(UUID userId, UUID requestId, UUID conversationId, String message,
             String contextType, UUID contextId, List<AgentContextReferenceRequest> references,
             UUID logicalActionId) {
-        String hash = fingerprint(conversationId, message, contextType, contextId, references);
+        return begin(userId, requestId, conversationId, message, contextType, contextId, references, logicalActionId, ReasoningDepth.AUTO);
+    }
+
+    public boolean begin(UUID userId, UUID requestId, UUID conversationId, String message,
+            String contextType, UUID contextId, List<AgentContextReferenceRequest> references,
+            UUID logicalActionId, ReasoningDepth depth) {
+        String hash = fingerprint(conversationId, message, contextType, contextId, references, depth);
         int inserted = logicalActionId == null
                 ? jdbc.update("""
                     INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message)
@@ -181,7 +193,7 @@ public class AgentRunStore {
     }
 
     private String fingerprint(UUID conversationId, String message, String contextType, UUID contextId,
-            List<AgentContextReferenceRequest> references) {
+            List<AgentContextReferenceRequest> references, ReasoningDepth requestedDepth) {
         StringBuilder input = new StringBuilder().append(conversationId).append('\n')
                 .append(message.length()).append(':').append(message).append('\n')
                 .append(contextType).append(':').append(contextId);
@@ -190,6 +202,8 @@ public class AgentRunStore {
                 input.append('\n').append(reference.type()).append(':').append(reference.id());
             }
         }
+        ReasoningDepth depth = ReasoningDepth.orAuto(requestedDepth);
+        if (depth != ReasoningDepth.AUTO) input.append("\nreasoning:").append(depth);
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(input.toString().getBytes(StandardCharsets.UTF_8)));

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.projectardor.agent.domain.Conversation;
@@ -20,12 +21,14 @@ public class AgentConversationStore {
 
     private final ConversationRepository conversationRepository;
     private final ConversationMessageRepository messageRepository;
+    private final ApplicationEventPublisher events;
 
     public AgentConversationStore(
             ConversationRepository conversationRepository,
-            ConversationMessageRepository messageRepository) {
+            ConversationMessageRepository messageRepository, ApplicationEventPublisher events) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -89,6 +92,7 @@ public class AgentConversationStore {
         conversation.titleFromFirstMessage(userText);
         conversation.touch();
         conversationRepository.save(conversation);
+        events.publishEvent(new ConversationTitleRequested(userId, conversation.getId(), saved.get(1).getId()));
         return saved;
     }
 
