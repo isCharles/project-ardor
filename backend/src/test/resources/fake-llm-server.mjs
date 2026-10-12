@@ -195,6 +195,15 @@ http.createServer((request, response) => {
         return;
       }
     }
+    if (payload.model === "replay-ui-recovery-probe" && body.includes("面试复盘教练")) {
+      const attempt = (transientAttempts.get(payload.model) ?? 0) + 1;
+      transientAttempts.set(payload.model, attempt);
+      if (attempt === 1) {
+        response.writeHead(503, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: { message: "temporary replay outage" } }));
+        return;
+      }
+    }
     if (probeTool && !hasToolResult && !request.url.endsWith("/v1/messages")) {
       response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       response.end(JSON.stringify({

@@ -424,7 +424,7 @@ async function main() {
   });
   await uiReplayOwner.request("/api/settings/llm", {
     method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
-      model: "golden-path-model", apiKey: "disposable-fake-model-key" },
+      model: "replay-ui-recovery-probe", apiKey: "disposable-fake-model-key" },
   });
   const uiReplaySubmission = await uiReplayOwner.request("/api/interview-recaps", {
     method: "POST", expected: 202,
