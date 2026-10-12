@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "backend/**"
+      - "frontend/**"
       - ".github/workflows/golden-path-acceptance.yml"
   workflow_dispatch:
 
@@ -77,8 +78,7 @@ jobs:
           echo "Backend did not become healthy"
           exit 1
 
-      - name: Run browser Golden Path on demand
-        if: github.event_name == 'workflow_dispatch'
+      - name: Run browser Golden Path
         shell: bash
         run: |
           cd frontend
@@ -97,7 +97,7 @@ jobs:
           exit 1
 
       - name: Upload browser screenshot on failure
-        if: failure() && github.event_name == 'workflow_dispatch'
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: golden-path-browser-failure
