@@ -46,6 +46,8 @@ public class KnowledgeService {
     private final KnowledgeEmbeddingService embeddingService;
     private final KnowledgeVectorStore vectorStore;
     private final KnowledgeIndexer indexer;
+    private final KnowledgeIndexTaskStore indexTasks;
+    private final KnowledgeIndexDispatcher indexDispatcher;
     private final double minSimilarity;
     private final TransactionTemplate transactions;
 
@@ -57,6 +59,8 @@ public class KnowledgeService {
             KnowledgeEmbeddingService embeddingService,
             KnowledgeVectorStore vectorStore,
             KnowledgeIndexer indexer,
+            KnowledgeIndexTaskStore indexTasks,
+            KnowledgeIndexDispatcher indexDispatcher,
             @org.springframework.beans.factory.annotation.Value(
                     "${app.knowledge.min-similarity:0.35}") double minSimilarity,
             org.springframework.transaction.PlatformTransactionManager transactionManager) {
@@ -67,6 +71,8 @@ public class KnowledgeService {
         this.embeddingService = embeddingService;
         this.vectorStore = vectorStore;
         this.indexer = indexer;
+        this.indexTasks=indexTasks;
+        this.indexDispatcher=indexDispatcher;
         this.minSimilarity = minSimilarity;
         this.transactions = new TransactionTemplate(transactionManager);
     }
@@ -257,6 +263,7 @@ public class KnowledgeService {
             entities.add(KnowledgeChunk.create(document.getUserId(), document.getId(), index + 1, pieces.get(index)));
         }
         chunkRepository.saveAll(entities);
+        if (!entities.isEmpty()) indexTasks.queueDocument(document.getUserId(),document.getId());
         scheduleEmbedding(document.getUserId(), entities);
         return entities.size();
     }
@@ -276,14 +283,14 @@ public class KnowledgeService {
         List<UUID> ids = entities.stream().map(KnowledgeChunk::getId).toList();
         List<String> contents = entities.stream().map(KnowledgeChunk::getContent).toList();
         if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
-            indexer.indexNewChunks(userId, ids, contents);
+            indexDispatcher.dispatch(userId, ids, contents);
             return;
         }
         org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
                 new org.springframework.transaction.support.TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        indexer.indexNewChunks(userId, ids, contents);
+                        indexDispatcher.dispatch(userId, ids, contents);
                     }
                 });
     }

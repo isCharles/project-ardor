@@ -31,10 +31,12 @@ public class KnowledgeIndexer {
 
     private final KnowledgeEmbeddingService embeddingService;
     private final KnowledgeVectorStore vectorStore;
+    private final KnowledgeIndexTaskStore taskStore;
 
-    public KnowledgeIndexer(KnowledgeEmbeddingService embeddingService, KnowledgeVectorStore vectorStore) {
+    public KnowledgeIndexer(KnowledgeEmbeddingService embeddingService, KnowledgeVectorStore vectorStore, KnowledgeIndexTaskStore taskStore) {
         this.embeddingService = embeddingService;
         this.vectorStore = vectorStore;
+        this.taskStore = taskStore;
     }
 
     /**
@@ -43,19 +45,29 @@ public class KnowledgeIndexer {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int indexNewChunks(UUID userId, List<UUID> chunkIds, List<String> contents) {
-        if (chunkIds.isEmpty() || !embeddingService.isConfigured(userId)) {
+        if (chunkIds.isEmpty()) {
             return 0;
         }
+        var runs = taskStore.begin(userId,chunkIds);
+        if (runs.isEmpty()) return 0;
+        var claimed = runs.stream().flatMap(run -> run.chunks().stream()).collect(java.util.stream.Collectors.toSet());
+        var indexes = java.util.stream.IntStream.range(0,chunkIds.size()).filter(index -> claimed.contains(chunkIds.get(index))).boxed().toList();
         try {
-            List<EmbeddingVector> vectors = embeddingService.embedDocuments(userId, contents);
-            for (int index = 0; index < chunkIds.size(); index++) {
+            if (!embeddingService.isConfigured(userId)) {
+                taskStore.finish(runs,"EMBEDDING_NOT_CONFIGURED");
+                return 0;
+            }
+            List<EmbeddingVector> vectors = embeddingService.embedDocuments(userId, indexes.stream().map(contents::get).toList());
+            for (int index = 0; index < indexes.size(); index++) {
                 EmbeddingVector vector = vectors.get(index);
                 vectorStore.saveEmbedding(
-                        userId, chunkIds.get(index),
+                        userId, chunkIds.get(indexes.get(index)),
                         vector.toPgVectorLiteral(), vector.dimension(), vector.model());
             }
-            return chunkIds.size();
+            finishAfterCommit(runs);
+            return indexes.size();
         } catch (RuntimeException exception) {
+            taskStore.finish(runs,"EMBEDDING_FAILED");
             // The chunks stay searchable by keyword and remain queued for backfill.
             log.warn("Embedding new chunks failed, left pending for backfill: userId={}, chunks={}, cause={}",
                     userId, chunkIds.size(), exception.getClass().getSimpleName());
@@ -70,14 +82,19 @@ public class KnowledgeIndexer {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int backfill(UUID userId, int limit) {
-        if (!embeddingService.isConfigured(userId)) {
-            return 0;
-        }
         List<PendingChunk> pending = vectorStore.findPending(userId, Math.min(limit, BACKFILL_BATCH));
         if (pending.isEmpty()) {
             return 0;
         }
+        var runs = taskStore.begin(userId,pending.stream().map(PendingChunk::chunkId).toList());
+        if (runs.isEmpty()) return 0;
+        var claimed = runs.stream().flatMap(run -> run.chunks().stream()).collect(java.util.stream.Collectors.toSet());
+        pending = pending.stream().filter(chunk -> claimed.contains(chunk.chunkId())).toList();
         try {
+            if (!embeddingService.isConfigured(userId)) {
+                taskStore.finish(runs,"EMBEDDING_NOT_CONFIGURED");
+                return 0;
+            }
             List<EmbeddingVector> vectors = embeddingService.embedDocuments(
                     userId, pending.stream().map(PendingChunk::content).toList());
             for (int index = 0; index < pending.size(); index++) {
@@ -87,12 +104,27 @@ public class KnowledgeIndexer {
                         vector.toPgVectorLiteral(), vector.dimension(), vector.model());
             }
             log.info("Backfilled {} knowledge embedding(s) for userId={}", pending.size(), userId);
+            finishAfterCommit(runs);
             return pending.size();
         } catch (RuntimeException exception) {
+            taskStore.finish(runs,"EMBEDDING_FAILED");
             log.warn("Knowledge embedding backfill failed: userId={}, cause={}",
                     userId, exception.getClass().getSimpleName());
             return 0;
         }
+    }
+
+    private void finishAfterCommit(List<KnowledgeIndexTaskStore.Run> runs) {
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            taskStore.finish(runs,null);
+            return;
+        }
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override public void afterCompletion(int status) {
+                        taskStore.finish(runs,status == STATUS_COMMITTED ? null : "EMBEDDING_INTERRUPTED");
+                    }
+                });
     }
 
     /**

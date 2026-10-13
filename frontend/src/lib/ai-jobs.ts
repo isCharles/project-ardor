@@ -17,6 +17,7 @@ export function useAiJob(type: AiJobType, resourceId: string | null, enabled = t
   const [job, setJob] = useState<AiJob | null>(null);
   const [pollFailed, setPollFailed] = useState(false);
   const pending = jobPending(job) || pollFailed;
+  useEffect(() => { window.dispatchEvent(new Event("ardor:background-refresh")); },[job?.id,job?.status]);
   useEffect(() => {
     if (!enabled) return;
     let active = true;

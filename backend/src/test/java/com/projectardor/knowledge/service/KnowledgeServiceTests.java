@@ -45,7 +45,7 @@ class KnowledgeServiceTests {
         when(documentRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         service = new KnowledgeService(
                 documentRepository, chunkRepository, new KnowledgeTextExtractor(), tavilySearchService,
-                embeddingService, vectorStore, indexer, 0.35, transactionManager);
+                embeddingService, vectorStore, indexer, mock(KnowledgeIndexTaskStore.class), mock(KnowledgeIndexDispatcher.class), 0.35, transactionManager);
     }
 
     @Test

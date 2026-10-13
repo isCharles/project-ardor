@@ -78,6 +78,28 @@ jobs:
           echo "Backend did not become healthy"
           exit 1
 
+      - name: Restart backend to verify persisted task and read state
+        shell: bash
+        run: |
+          task_backend_pid=$(cat "$RUNNER_TEMP/backend.pid")
+          test "$task_backend_pid" -gt 1
+          kill "$task_backend_pid"
+          for attempt in {1..45}; do
+            if ! kill -0 "$task_backend_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if kill -0 "$task_backend_pid" 2>/dev/null; then
+            echo "Backend did not exit safely"
+            exit 1
+          fi
+          java -jar backend/target/ardor-backend-0.5.0.jar >> "$RUNNER_TEMP/backend.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/backend.pid"
+          for attempt in {1..90}; do
+            if curl --silent --fail http://127.0.0.1:8080/actuator/health | grep -q '"status":"UP"'; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+
       - name: Run browser Golden Path
         shell: bash
         run: |

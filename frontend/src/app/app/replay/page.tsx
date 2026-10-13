@@ -1,5 +1,7 @@
 "use client";
 
+import { useReadVisibleResult } from "@/lib/background-tasks";
+
 import { ArrowLeft, ArrowRight, CalendarDays, RotateCcw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -88,6 +90,7 @@ export default function ReplayPage() {
   const assessing = jobPending(assessment.job);
   const handledJobs = useRef(new Set<string>());
   const replayQuestionId = replay?.questionId;
+  useReadVisibleResult("REPLAY_EVALUATE",replayQuestionId,!!replay?.attempts.length,replay?.attempts[0]?.id);
   const completedJobId = assessment.job?.id;
   const completedJobStatus = assessment.job?.status;
   const errorText = error ? replayError(error.reason, locale, error.english, error.chinese) : "";

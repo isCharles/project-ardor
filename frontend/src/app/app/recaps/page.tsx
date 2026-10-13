@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import React, { FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { markBackgroundPending } from "@/lib/background-notifications";
+import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale, type Locale } from "@/lib/locale";
 import styles from "./recaps.module.css";
 
@@ -184,6 +185,7 @@ export default function RecapsPage() {
   const load = useCallback(async () => { try { const [items, tasks] = await Promise.all([api<Recap[]>("/api/interview-recaps"), api<RecapTask[]>("/api/interview-recaps/jobs")]); setRecaps(items); setJobs(tasks); const params = new URLSearchParams(window.location.search); const requested = params.get("selected"); const source = params.get("source"); const sourceRecap = source ? items.find((item) => item.id === source || item.questions.some((question) => question.id === source)) : null; setSelectedId((id) => id && items.some((x) => x.id === id) ? id : requested && items.some((x) => x.id === requested) ? requested : sourceRecap ? sourceRecap.id : items[0]?.id ?? null); } catch (reason) { if (reason instanceof ApiError && reason.status === 401) router.replace("/login"); else setError(localizedError(reason, locale, "Could not load interview notes", "无法加载面经")); } }, [router, locale]);
   useEffect(() => { const first = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(first); }, [load]);
   const selected = recaps.find((item) => item.id === selectedId) ?? null;
+  useReadVisibleResult("RECAP_ORGANIZE",selected?.id,!!selected);
   const activeJobs = jobs.filter((job) => job.status === "QUEUED" || job.status === "RUNNING");
   const failedJobs = jobs.filter((job) => job.status === "FAILED");
   useEffect(() => {

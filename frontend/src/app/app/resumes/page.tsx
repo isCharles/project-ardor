@@ -7,6 +7,7 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react"
 
 import { ApiError, api } from "@/lib/api";
 import { markBackgroundPending } from "@/lib/background-notifications";
+import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 
 type ResumeItem = {
@@ -62,6 +63,7 @@ export default function ResumesPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const selected = resumes.find((resume) => resume.id === selectedId) ?? null;
+  useReadVisibleResult("RESUME_ANALYSIS",analysis?.resumeId,!!analysis,analysis?.id);
 
   const load = useCallback(async () => {
     try { setResumes(await api<ResumeItem[]>("/api/resumes")); }
@@ -72,7 +74,11 @@ export default function ResumesPage() {
   }, [router, t]);
   useEffect(() => {
     let active = true;
-    api<ResumeItem[]>("/api/resumes").then((items) => { if (active) setResumes(items); }).catch((reason) => {
+    api<ResumeItem[]>("/api/resumes").then((items) => { if (active) {
+      setResumes(items);
+      const requested = new URLSearchParams(window.location.search).get("selected");
+      if (requested && items.some(item => item.id===requested)) setSelectedId(requested);
+    } }).catch((reason) => {
       if (!active) return;
       if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
       else setError(reason instanceof Error ? reason.message : t("Could not load resumes", "无法加载简历"));

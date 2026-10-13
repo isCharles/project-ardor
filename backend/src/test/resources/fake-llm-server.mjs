@@ -140,6 +140,16 @@ http.createServer((request, response) => {
   request.on("data", (chunk) => { body += chunk; });
   request.on("end", () => {
     const payload = JSON.parse(body || "{}");
+    if (request.url.endsWith("/embeddings")) {
+      const inputs = Array.isArray(payload.input) ? payload.input : [payload.input];
+      setTimeout(() => {
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ object: "list", model: payload.model,
+          data: inputs.map((_, index) => ({ object: "embedding", index, embedding: [1, 0.5, 0.25] })),
+          usage: { prompt_tokens: 10, total_tokens: 10 } }));
+      }, 1500);
+      return;
+    }
     const delayedReplay = payload.model === "delayed-replay-model" && body.includes("面试复盘教练");
     const concurrentLearning = payload.model === "concurrent-learning-model"
       && body.includes("严格但有建设性的中文技术教练");

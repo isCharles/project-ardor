@@ -11,6 +11,7 @@ import { MarkdownContent } from "@/components/ardor/markdown-content";
 import { clearLearningDraft, readLearningDraft, saveLearningDraft } from "@/lib/learning-drafts";
 import { type AiJob, jobPending, useAiJob } from "@/lib/ai-jobs";
 import { AiJobStatus } from "@/components/ardor/ai-job-status";
+import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 
 type Lesson = { summary?: string; keyPoints?: string[]; explanation?: string; example?: string; pitfalls?: string[] };
@@ -154,6 +155,8 @@ export default function LearningPage() {
   const selected = plans.find((plan) => plan.id === selectedId) ?? null;
   const assessing = jobPending(assessment.job);
   const previousAttempts = selected?.lastEvaluation?.attempts ?? [];
+  useReadVisibleResult("LEARNING_CREATE",selected?.id,!!selected);
+  useReadVisibleResult("LEARNING_EVALUATE",selected?.id,previousAttempts.length>0,selected?.attemptCount);
   const activeCount = plans.filter((plan) => plan.status !== "COMPLETED").length;
   const orderedPlans = [...plans].sort((left, right) => {
     if ((left.status === "COMPLETED") !== (right.status === "COMPLETED")) return left.status === "COMPLETED" ? 1 : -1;

@@ -2,14 +2,14 @@
 
 import {
   BookOpenText, Brain, CalendarDays, FileSearch, FileText, GraduationCap,
-  Ellipsis, Home, LogOut, MessageSquareText, Settings2, ShieldCheck, SquareStack, Target, TrendingUp,
+  Clock3, Ellipsis, Home, LogOut, MessageSquareText, Settings2, ShieldCheck, SquareStack, Target, TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
-import { backgroundNotificationKey, type BackgroundModule } from "@/lib/background-notifications";
+import { type TaskSummary } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 import { LocaleSwitch } from "./locale-switch";
 
@@ -24,20 +24,15 @@ const workspaces = [
   { href: "/app/calendar", en: "Calendar", zh: "日程", icon: CalendarDays },
   { href: "/app/applications", en: "Applications", zh: "投递节奏", icon: Target },
   { href: "/app/evidence", en: "Growth evidence", zh: "成长证据", icon: TrendingUp },
+  { href: "/app/tasks", en: "Background tasks", zh: "后台任务", icon: Clock3 },
 ] as const;
 const primaryHrefs = new Set(["/app", "/app/resumes", "/app/interviews", "/app/cards", "/app/calendar", "/app/applications"]);
 const primaryWorkspaces = workspaces.filter((item) => primaryHrefs.has(item.href));
 const secondaryWorkspaces = workspaces.filter((item) => !primaryHrefs.has(item.href));
-const backgroundPaths: Record<BackgroundModule, string> = { resumes: "/app/resumes", recaps: "/app/recaps", knowledge: "/app/knowledge" };
-type ResumeBackgroundStatus = { analysisStatus: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | null };
-type RecapBackgroundStatus = { status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" };
-type KnowledgeBackgroundStatus = { pendingChunks: number };
 
-function moduleFor(href: string): BackgroundModule | null {
-  if (href === "/app/resumes") return "resumes";
-  if (href === "/app/recaps") return "recaps";
-  if (href === "/app/knowledge") return "knowledge";
-  return null;
+function moduleFor(href: string): string | null {
+  const moduleName = href.split("/").at(-1);
+  return moduleName && ["resumes","recaps","knowledge","learning","interviews","evidence","tasks"].includes(moduleName) ? moduleName : null;
 }
 
 export function WorkspaceRail() {
@@ -54,7 +49,8 @@ export function WorkspaceRail() {
   const morePanel = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
   const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null);
-  const [backgroundReady, setBackgroundReady] = useState<Record<BackgroundModule, boolean>>({ resumes: false, recaps: false, knowledge: false });
+  const [badges, setBadges] = useState<{ userId: string; ready: Record<string, boolean> } | null>(null);
+  const backgroundReady = badges?.userId === account?.id ? badges?.ready ?? {} : {};
 
   useEffect(() => {
     if (account) return;
@@ -114,7 +110,6 @@ export function WorkspaceRail() {
     let refreshAgain = false;
     let consecutiveFailures = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const modules: BackgroundModule[] = ["resumes", "recaps", "knowledge"];
     const refresh = async () => {
       if (cancelled || document.hidden) return;
       if (refreshing) { refreshAgain = true; return; }
@@ -122,42 +117,22 @@ export function WorkspaceRail() {
       if (timer) clearTimeout(timer);
       let keepPolling = false;
       try {
-        const [resumes, recaps, knowledge] = await Promise.all([
-          api<ResumeBackgroundStatus[]>("/api/resumes"),
-          api<RecapBackgroundStatus[]>("/api/interview-recaps/jobs"),
-          api<KnowledgeBackgroundStatus>("/api/knowledge/index-status"),
-        ]);
-        const active = {
-          resumes: resumes.some((item) => item.analysisStatus === "QUEUED" || item.analysisStatus === "RUNNING"),
-          recaps: recaps.some((item) => item.status === "QUEUED" || item.status === "RUNNING"),
-          knowledge: knowledge.pendingChunks > 0,
-        } satisfies Record<BackgroundModule, boolean>;
+        const summary = await api<TaskSummary>("/api/background-tasks/summary");
         consecutiveFailures = 0;
-        keepPolling = Object.values(active).some(Boolean);
-        for (const itemModule of modules) {
-          const pendingKey = backgroundNotificationKey(userId, "pending", itemModule);
-          const readyKey = backgroundNotificationKey(userId, "ready", itemModule);
-          if (pathname.startsWith(backgroundPaths[itemModule])) {
-            window.localStorage.removeItem(readyKey);
-            if (!active[itemModule]) window.localStorage.removeItem(pendingKey);
-            continue;
-          }
-          if (active[itemModule]) window.localStorage.setItem(pendingKey, "1");
-          else if (window.localStorage.getItem(pendingKey) === "1") {
-            window.localStorage.removeItem(pendingKey);
-            window.localStorage.setItem(readyKey, "1");
-          }
-        }
-        if (!cancelled) setBackgroundReady(Object.fromEntries(modules.map((itemModule) => [itemModule, window.localStorage.getItem(backgroundNotificationKey(userId, "ready", itemModule)) === "1"])) as Record<BackgroundModule, boolean>);
+        keepPolling = summary.activeCount > 0;
+        if (!cancelled) setBadges({ userId, ready: {
+          ...Object.fromEntries(Object.entries(summary.unreadByModule).map(([name,count]) => [name,count>0])),
+          tasks: Object.values(summary.unreadByModule).some((count) => count>0),
+        } });
       } catch {
         // Badges are informational; they must never interrupt navigation.
         consecutiveFailures += 1;
-        keepPolling = consecutiveFailures <= 2 || modules.some((itemModule) => window.localStorage.getItem(backgroundNotificationKey(userId, "pending", itemModule)) === "1");
+        keepPolling = true;
       } finally {
         refreshing = false;
         if (cancelled) return;
         if (refreshAgain) { refreshAgain = false; void refresh(); }
-        else if (keepPolling && !document.hidden) timer = setTimeout(() => void refresh(), consecutiveFailures ? Math.min(5000 * 2 ** (consecutiveFailures - 1), 30_000) : 10_000);
+        else if (!document.hidden) timer = setTimeout(() => void refresh(), consecutiveFailures ? Math.min(5000 * 2 ** (consecutiveFailures - 1), 30_000) : keepPolling ? 5000 : 30_000);
       }
     };
     const onVisibilityChange = () => {
@@ -172,11 +147,8 @@ export function WorkspaceRail() {
     return () => { cancelled = true; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibilityChange); window.removeEventListener("focus", wake); window.removeEventListener("ardor:background-refresh", wake); };
   }, [account?.id, pathname]);
 
-  function acknowledgeBackground(itemModule: BackgroundModule | null) {
-    if (!itemModule || !account?.id) return;
-    window.localStorage.removeItem(backgroundNotificationKey(account.id, "ready", itemModule));
-    setBackgroundReady((current) => ({ ...current, [itemModule]: false }));
-  }
+  // Navigation is not acknowledgment: only a specific result's read API clears its badge.
+  function acknowledgeBackground(itemModule: string | null) { void itemModule; window.dispatchEvent(new Event("ardor:background-refresh")); }
 
   async function logout() {
     setError("");
