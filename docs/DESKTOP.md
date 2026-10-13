@@ -14,6 +14,15 @@ v0.6.0 的自定义窗口顶栏依赖同版本服务器前端：后退/前进仅
 
 `frontend/tests/desktop-chrome.mjs` 在独立临时用户目录运行生产 main/preload，以模拟接口验证真实窗口，不读取已安装客户端档案；Windows CI 使用默认沙箱执行。本机开发 Electron 曾在 `--version` 就退出 0x80000003，并有临时档案目录 Access denied 证据，不能把这种环境失败当作产品测试通过，也不得为发布关闭生产沙箱。
 
+### v0.6.0 候选窗口验收现场（2026-10-13，尚未发布）
+
+- PR #92 的初始提交 `bd7a703`：网页类型检查、lint、生产构建及合成 API 的 Edge 回归通过，15 个桌面单元测试通过。Windows CI `38375241574` 的 `desktop-window` 失败于启动 Electron，而不是界面断言；不能合并后声称桌面验证完成。
+- 本机 Electron 44.5.1 直接 `--version` 返回 `2147483651`（0x80000003），仅加 `--disable-gpu` 同样失败；一次纯版本查询加 `--no-sandbox` 返回 v44.5.1。这只是定位证据，生产代码和提交的测试均未关闭沙箱。
+- 一次隔离测试启动到 Inspector 后，报临时档案目录的 Singleton lock / GPUPersistentCache / DevToolsActivePort Access denied。只对下载的开发运行时和一次性合成档案做过窄范围 LPAC 权限实验，但重测仍不能启动；未触碰已安装应用、真实用户档案、系统目录 ACL，测试源码不保留该未证实的权限修改。
+- 官方报告存在相似但未证实同因的情形：[Electron #51761](https://github.com/electron/electron/issues/51761)（目录 DACL 与 LPAC）、[#49167](https://github.com/electron/electron/issues/49167)（管理员运行）、[#54614](https://github.com/electron/electron/issues/54614)（44.x / Windows 11 STATUS_BREAKPOINT）。不得把这些报告当作本机根因或已解决证据。
+- 后续应先收集完整 Windows CI 启动日志及对应系统/运行时版本，在仍受支持的稳定版本之间做可逆比较，确认正常沙箱启动后再验收窗口、合并与发版。不要用跳过测试、允许失败、系统级 ACL reset 或生产 no-sandbox 来过关。
+- 21:15 的后续复验：官方维护版 44.7.0 的 zip 已与官方 SHA-256 清单匹配。项目目录运行仍失败，同一二进制复制到干净系统临时目录后 `--version` 正常；据此测试改为干净运行时副本与规范化临时档案，不改 ACL、不禁用沙箱。测试中的健康探测与业务 API 均为合成输入，实际 main/preload、HTTP 前端、原生窗口和 IPC 仍使用产品实现。已取得真实窗口通过证据；远程 CI、公开安装包及更新元数据仍须分别确认，不能据本机单次测试宣称已发布。
+
 在 `desktop` 目录执行 `npm ci`、`npm test` 和 `npm run dist:win`。构建产物在 `desktop/dist/`；此命令生成**未签名的安装包**。不要覆盖已发布的同版本 Git 标签。新版本按 [版本规则](VERSIONING.md) 同步前后端、桌面包、锁文件和发布说明后，再发布源码仓库中的新 GitHub Release。Release 发布事件会在 Windows Runner 构建双语 NSIS 安装程序，先附加到私有源码 Release，再使用 Actions Secret `ARDOR_RELEASES_TOKEN` 将安装包、blockmap 和 `latest.yml` 发布到 `isCharles/project-ardor-releases`。该 Secret 只在 CI 使用，不会进入安装包；它必须具有公开下载仓库的 Release 写入权限。缺失时公开发布步骤会明确失败，不能称为已完成桌面版发布。
 
 NSIS 在构建中需要运行临时安装器来生成卸载器。本机曾在项目目录运行该临时 EXE 时显示 `Error writing temporary file. Make sure your temp folder is valid.`，退出码为 2；同一文件移到系统临时目录后正常退出并生成卸载器。现在 `dist:win` 会在系统临时目录构建，核对完整安装包与 `latest.yml` 的 SHA-512 后再复制到 `desktop/dist/`。如果仍失败，先检查构建日志中保留的临时输出目录及 `%TEMP%` 的可写性，不要关闭 Windows 安全防护或把未完成的 NSIS stub 当作安装包发布。

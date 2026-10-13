@@ -7,7 +7,7 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { DEFAULT_SERVER_URL, normalizeServerUrl, isTrustedAppUrl, isHealthyBackendStatus } = require("./server-config.cjs");
 const { updateErrorKind } = require("./update-errors.cjs");
-const { navigationState, navigate, menuTemplate } = require("./window-chrome.cjs");
+const { navigationState, navigate, menuTemplate, shortcutAction } = require("./window-chrome.cjs");
 const { normalizeLocale, desktopText, updateStatusMessage, serverErrorKey, serverErrorMessage } = require("./i18n.cjs");
 
 let window;
@@ -151,6 +151,10 @@ function createWindow() {
   const publishNavigation = () => window?.webContents.send("desktop:navigation", navigationState(window.webContents.navigationHistory, (url) => isTrustedAppUrl(url, serverUrl)));
   window.webContents.on("did-navigate", publishNavigation);
   window.webContents.on("did-navigate-in-page", publishNavigation);
+  window.webContents.on("before-input-event", (event, input) => {
+    const action = shortcutAction(input);
+    if (action) { event.preventDefault(); window.webContents.send("desktop:window-action", action); }
+  });
   window.webContents.setWindowOpenHandler(({ url }) => { openExternalSafe(url); return { action: "deny" }; });
   window.webContents.on("will-navigate", (event, url) => {
     if (isTrustedAppUrl(url, serverUrl) || (offline && url === pathToFileURL(offlineFile).href)) return;

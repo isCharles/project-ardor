@@ -1,6 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { navigationState, navigate, menuTemplate } = require("../window-chrome.cjs");
+const { navigationState, navigate, menuTemplate, shortcutAction } = require("../window-chrome.cjs");
+test("shortcuts work independently of popup creation", () => {
+  assert.equal(shortcutAction({ type: "keyDown", control: true, key: "N" }), "new-chat");
+  assert.equal(shortcutAction({ type: "keyDown", meta: true, key: "," }), "settings");
+  assert.equal(shortcutAction({ type: "keyDown", key: "n" }), null);
+  assert.equal(shortcutAction({ type: "keyUp", control: true, key: "n" }), null);
+});
 test("history cannot navigate to a previous server or untrusted URL", () => {
   const entries = [{ url: "https://old.example/app" }, { url: "https://current.example/app" }, { url: "https://current.example/app/settings" }];
   const calls = [];

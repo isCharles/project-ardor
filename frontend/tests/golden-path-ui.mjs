@@ -413,9 +413,9 @@ try {
   await taskPage.unroute(blockedStatus);
   await taskPage.getByRole("button",{name:/Refresh tasks|刷新任务/}).click();
   await taskPage.getByRole("alert").filter({hasText:/Connection interrupted|连接暂时中断/}).waitFor({state:"hidden"});
-  await taskPage.getByRole("button",{name:/Account|个人账户/}).click();
+  await taskPage.goto(`${origin}/app/settings`);
   await taskPage.getByRole("button",{name:"中文",exact:true}).click();
-  await taskPage.getByRole("button",{name:/Close account menu|关闭账户菜单/}).click();
+  await taskPage.goto(`${origin}/app/tasks`);
   await taskPage.getByRole("heading",{level:1,name:"后台任务",exact:true}).waitFor();
   await taskPage.getByRole("article",{name:"知识库向量化",exact:true}).waitFor();
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");

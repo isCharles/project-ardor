@@ -9,12 +9,14 @@ const backendVersion = pom.match(/<artifactId>ardor-backend<\/artifactId>\s*<ver
 const version = frontend.version;
 const dockerfile = readFileSync(new URL("../backend/Dockerfile", import.meta.url), "utf8");
 const dockerignore = readFileSync(new URL("../backend/.dockerignore", import.meta.url), "utf8");
+const goldenPath = readFileSync(new URL("../.github/workflows/golden-path-acceptance.yml", import.meta.url), "utf8");
 
 if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-rc\.[1-9]\d*)?$/.test(version ?? "")) {
   throw new Error(`Invalid product version: ${version ?? "missing"}`);
 }
 
 const sources = {
+  ...Object.fromEntries([...goldenPath.matchAll(/java -jar backend\/target\/ardor-backend-([^\s]+)\.jar/g)].map((match, index) => [`Golden Path launcher ${index + 1}`, match[1]])),
   "backend/pom.xml": backendVersion,
   "frontend/package.json": version,
   "frontend/package-lock.json": lock.version,

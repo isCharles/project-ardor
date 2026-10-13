@@ -14,7 +14,7 @@
   --demo-content-scale: 0.97;
   position: relative;
   isolation: isolate;
-  min-height: 100vh;
+  min-height: var(--ardor-page-height, 100vh);
   overflow: clip;
   background: var(--ng-ground);
   color: var(--ng-black);
