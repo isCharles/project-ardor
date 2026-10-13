@@ -17,6 +17,20 @@ let activePage = page;
 const pageErrors = [];
 page.on("pageerror", (error) => pageErrors.push(error.message));
 
+async function waitForApiState(page,path,accept) {
+  let latest;
+  for(let attempt=0;attempt<200;attempt++) {
+    latest=await page.evaluate(async(path)=>{
+      const response=await fetch(path,{cache:"no-store"});
+      if(!response.ok) throw new Error(`Status query failed: ${response.status}`);
+      return response.json();
+    },path);
+    if(accept(latest)) return latest;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`Status did not reach expected state: ${path} (${latest?.status})`);
+}
+
 try {
   await page.goto(`${origin}/login`);
   await page.locator('input[name="email"]').fill(`golden-owner-${suffix}@ardor.invalid`);
@@ -342,6 +356,67 @@ try {
   });
   assert.equal(depthConversations.filter((item) => item.title === "我的手动标题").length, 1);
   assert.equal(depthConversations.filter((item) => item.title === "Redis 学习规划").length, 1);
+  const taskPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  activePage=taskPage;
+  taskPage.on("pageerror",error => pageErrors.push(error.message));
+  await taskPage.goto(`${origin}/login`);
+  await taskPage.locator('input[name="email"]').fill(`golden-async-${suffix}@ardor.invalid`);
+  await taskPage.locator('input[name="password"]').fill(`Ardor-Acceptance-${suffix}!`);
+  await taskPage.locator('button[type="submit"]').click();
+  await taskPage.waitForURL(`${origin}/app`);
+  await taskPage.getByRole("button",{name:/More workspaces|更多工作区/}).hover();
+  await taskPage.getByRole("link",{name:/Background tasks|后台任务/}).click();
+  await taskPage.waitForURL(`${origin}/app/tasks`);
+  await taskPage.getByRole("heading",{level:1,name:/Background tasks|后台任务/}).waitFor();
+  assert.equal(await taskPage.getByRole("complementary",{name:/Main navigation|主导航/}).count(),1);
+  const beforeReads = await taskPage.evaluate(async () => (await fetch("/api/background-tasks?limit=100")).json());
+  const gradedTask = beforeReads.find(item => item.kind==="LEARNING_EVALUATE" && item.status==="COMPLETED");
+  const interruptedTask = beforeReads.find(item => item.kind==="LEARNING_EVALUATE" && item.status==="FAILED");
+  assert.equal(interruptedTask?.errorCode,"AI_JOB_INTERRUPTED","An interrupted worker must surface a recoverable task, not lose its submission");
+  await taskPage.locator(`[data-task-id="${interruptedTask.id}"]`).getByRole("button",{name:/^Retry$|^重试$/}).click();
+  await waitForApiState(taskPage,`/api/background-tasks/LEARNING_EVALUATE/${interruptedTask.id}`,task=>task.status==="COMPLETED");
+  const recoveredPlan = await taskPage.evaluate(async(id) => (await fetch(`/api/learning-plans/${id}`,{cache:"no-store"})).json(),interruptedTask.resourceId);
+  assert.equal(recoveredPlan.attemptCount,1,`Interrupted task ${interruptedTask.id} resource ${interruptedTask.resourceId} returned plan ${recoveredPlan.id} with ${recoveredPlan.attemptCount} attempts`);
+  assert.equal(recoveredPlan.lastEvaluation.attempts[0].items[1].answer,"restart saved answer");
+  const vectorTask = beforeReads.find(item => item.kind==="KNOWLEDGE_INDEX");
+  assert.equal(gradedTask.unread,false,"Read state must survive the backend restart");
+  assert.equal(vectorTask.status,"COMPLETED");
+  assert.equal(vectorTask.unread,true);
+  const vectorArticle = taskPage.getByRole("article",{name:/Knowledge indexing|知识库向量化/});
+  await taskPage.route(/\/api\/resumes\/[^/]+\/analysis$/,route=>route.abort());
+  const resumeTask = beforeReads.find(item=>item.kind==="RESUME_ANALYSIS");
+  await taskPage.locator(`[data-task-id="${resumeTask.id}"]`).getByRole("link",{name:/Open result|查看结果/}).click();
+  await taskPage.waitForURL(/\/app\/resumes\?selected=/);
+  await taskPage.getByRole("button",{name:/All resumes|所有简历/}).waitFor();
+  await taskPage.getByRole("alert").waitFor();
+  assert.equal(await taskPage.evaluate(async(id)=>(await (await fetch(`/api/background-tasks/RESUME_ANALYSIS/${id}`)).json()).unread,resumeTask.id),true,"Failed report loading must not clear a notification");
+  await taskPage.unroute(/\/api\/resumes\/[^/]+\/analysis$/);
+  await taskPage.reload();
+  await taskPage.getByText(/技术栈聚焦，项目经历清晰/).waitFor();
+  await waitForApiState(taskPage,`/api/background-tasks/RESUME_ANALYSIS/${resumeTask.id}`,task=>!task.unread);
+  await taskPage.goto(`${origin}/app/tasks`);
+  await vectorArticle.getByRole("link",{name:/Open result|查看结果/}).click();
+  await taskPage.waitForURL(/\/app\/knowledge\?document=/);
+  await taskPage.getByText("redis-learning").first().waitFor();
+  await waitForApiState(taskPage,`/api/background-tasks/KNOWLEDGE_INDEX/${vectorTask.id}`,task=>!task.unread);
+  await taskPage.goto(`${origin}/app/tasks`);
+  await vectorArticle.waitFor();
+  assert.equal(await vectorArticle.getByLabel(/Unread result|未读结果/).count(),0);
+  const afterReads = await taskPage.evaluate(async () => (await fetch("/api/background-tasks?limit=100")).json());
+  assert.equal(afterReads.find(item => item.kind==="LEARNING_CREATE").unread,true,"Reading one result must not clear unrelated notifications");
+  const blockedStatus = /\/api\/background-tasks\?/;
+  await taskPage.route(blockedStatus,route=>route.abort());
+  await taskPage.getByRole("button",{name:/Refresh tasks|刷新任务/}).click();
+  await taskPage.getByRole("alert").filter({hasText:/Connection interrupted|连接暂时中断/}).waitFor();
+  await vectorArticle.waitFor();
+  await taskPage.unroute(blockedStatus);
+  await taskPage.getByRole("button",{name:/Refresh tasks|刷新任务/}).click();
+  await taskPage.getByRole("alert").filter({hasText:/Connection interrupted|连接暂时中断/}).waitFor({state:"hidden"});
+  await taskPage.getByRole("button",{name:/Account|个人账户/}).click();
+  await taskPage.getByRole("button",{name:"中文",exact:true}).click();
+  await taskPage.getByRole("button",{name:/Close account menu|关闭账户菜单/}).click();
+  await taskPage.getByRole("heading",{level:1,name:"后台任务",exact:true}).waitFor();
+  await taskPage.getByRole("article",{name:"知识库向量化",exact:true}).waitFor();
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");
   console.log("Browser Golden Path passed: Agent confirmation → two learning rounds → interview report → failed recap retry → Shanghai-date metadata completion → replay → calendar retest completion.");
 } catch (error) {

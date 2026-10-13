@@ -1,5 +1,7 @@
 "use client";
 
+import { useReadVisibleResult } from "@/lib/background-tasks";
+
 import { ArrowLeft, CheckCircle2, ExternalLink, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -66,6 +68,7 @@ export default function InterviewsPage() {
   const evaluationJobId = assessment.job?.id;
   const evaluationJobStatus = assessment.job?.status;
   const activeSessionId = activeSession?.id;
+  useReadVisibleResult("INTERVIEW_EVALUATE",activeSessionId,!!evaluation);
 
   useEffect(() => {
     if (!activeSessionId || !evaluationJobId || evaluationJobStatus !== "COMPLETED" || handledJobs.current.has(evaluationJobId)) return;
@@ -103,6 +106,13 @@ export default function InterviewsPage() {
         if (!active) return;
         setResumes(resumeItems.filter((item) => item.analysisId));
         setSessions(interviewItems);
+        const requestedSession = new URLSearchParams(window.location.search).get("session");
+        const session = interviewItems.find(item => item.id===requestedSession && item.status==="COMPLETED");
+        if (session) {
+          setActiveSession(session);
+          void api<Evaluation>(`/api/interviews/${session.id}/evaluation`).then(value => { if (active) setEvaluation(value); })
+            .catch(() => { if (active) setError(t("Could not load evaluation", "无法加载评价")); });
+        }
         const queryAnalysisId = new URLSearchParams(window.location.search).get("analysisId") ?? "";
         setSelectedAnalysisId((current) => current ?? (queryAnalysisId || resumeItems.find((item) => item.analysisId)?.analysisId || ""));
       })

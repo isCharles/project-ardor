@@ -10,6 +10,19 @@ const base = process.env.ARDOR_ACCEPTANCE_API_BASE ?? "http://127.0.0.1:8080";
 const modelBase = process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090";
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+function syntheticResumePdf() {
+  const stream="BT /F1 12 Tf 40 740 Td (Java Spring Boot developer. Built a login service with PostgreSQL and Redis. Documented performance results and incident recovery.) Tj ET";
+  const objects=["<< /Type /Catalog /Pages 2 0 R >>","<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`];
+  let pdf="%PDF-1.4\n";
+  const offsets=[0];
+  objects.forEach((object,index) => { offsets.push(Buffer.byteLength(pdf)); pdf+=`${index+1} 0 obj\n${object}\nendobj\n`; });
+  const xref=Buffer.byteLength(pdf);
+  pdf+=`xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(offset=>`${String(offset).padStart(10,"0")} 00000 n \n`).join("")}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return pdf;
+}
+
 class Client {
   cookies = new Map();
 
@@ -27,13 +40,13 @@ class Client {
       headers.Cookie = [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
     }
     if (body !== undefined || !["GET", "HEAD"].includes(method)) {
-      if (body !== undefined) headers["Content-Type"] = "application/json";
+      if (body !== undefined && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
       const csrf = await this.request("/api/auth/csrf");
       headers[csrf.headerName] = csrf.token;
       headers.Cookie = [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
     }
     const response = await fetch(new URL(path, base), {
-      method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+      method, headers, body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
     });
     this.captureCookies(response);
     const text = await response.text();
@@ -527,11 +540,27 @@ async function main() {
   await stranger.request(assessmentPath, { method: "POST", expected: 404, body: { ...asyncInput, requestId: randomUUID() } });
   assert.equal((await stranger.request(`/api/ai-jobs?resourceId=${asyncPlanId}`)).length, 0);
   const failedAssessment = await waitForAiJob(asyncOwner, queuedAssessment.id, "FAILED");
+  const failedTaskPath = `/api/background-tasks/LEARNING_EVALUATE/${queuedAssessment.id}`;
+  const failedTask = await asyncOwner.request(failedTaskPath);
+  assert.equal(failedTask.unread,true);
+  await stranger.request(failedTaskPath,{ expected:404 });
+  await stranger.request(`${failedTaskPath}/read`,{ method:"POST",expected:404,body:{completionToken:failedTask.completionToken} });
+  await stranger.request(`${failedTaskPath}/retry`,{ method:"POST",expected:404,body:{completionToken:failedTask.completionToken} });
+  await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",body:{completionToken:failedTask.completionToken} });
+  assert.equal((await asyncOwner.request(failedTaskPath)).unread,false);
   assert.equal(failedAssessment.attempts, 1);
   assert.equal((await asyncOwner.request(`/api/learning-plans/${asyncPlanId}`)).attemptCount, 0);
   await asyncOwner.request(`/api/ai-jobs/${queuedAssessment.id}/retry`, { method: "POST" });
   assert.equal((await waitForAiJob(asyncOwner, queuedAssessment.id)).attempts, 2);
   const graded = await asyncOwner.request(`/api/learning-plans/${asyncPlanId}`);
+  const gradedTask = await asyncOwner.request(failedTaskPath);
+  assert.equal(gradedTask.unread,true,"A newly completed retry must have its own unread result");
+  await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",expected:409,body:{completionToken:failedTask.completionToken} });
+  await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",body:{completionToken:gradedTask.completionToken} });
+  await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",body:{completionToken:gradedTask.completionToken} });
+  await asyncOwner.request("/api/auth/logout",{ method:"POST",expected:204 });
+  await asyncOwner.request("/api/auth/login",{ method:"POST",body:{email:`golden-async-${suffix}@ardor.invalid`,password} });
+  assert.equal((await asyncOwner.request(failedTaskPath)).unread,false,"Read status must survive a new login session");
   assert.equal(graded.attemptCount, 1);
   assert.equal(graded.lastScore, 65);
   assert.equal(graded.lastEvaluation.attempts[0].items[0].answer, asyncInput.answers[0]);
@@ -573,6 +602,80 @@ async function main() {
   await waitForAiJob(asyncOwner, canceledJob.id, "FAILED");
   assert.equal((await asyncOwner.request(`/api/interviews/${canceledInterview.id}`)).status, "CANCELLED");
   await asyncOwner.request(`/api/interviews/${canceledInterview.id}/evaluation`, { expected: 404 });
+  const libraryUpload = new FormData();
+  libraryUpload.set("file",new Blob(["Redis RDB 快照与 AOF 日志，恢复窗口和性能取舍。"],{type:"text/plain"}),"redis-learning.txt");
+  const knowledgeDocument = await asyncOwner.request("/api/knowledge/documents",{ method:"POST",expected:201,body:libraryUpload });
+  let vectorTask;
+  for (let attempt=0;attempt<100;attempt++) {
+    vectorTask = (await asyncOwner.request("/api/background-tasks?limit=100")).find(task => task.kind==="KNOWLEDGE_INDEX" && task.resourceId===knowledgeDocument.id);
+    if (vectorTask?.status==="FAILED") break;
+    await sleep(100);
+  }
+  assert.equal(vectorTask?.errorCode,"EMBEDDING_NOT_CONFIGURED");
+  await asyncOwner.request("/api/settings/integrations/EMBEDDING",{method:"PUT",body:{provider:"OPENAI_COMPATIBLE",baseUrl:`${modelBase}/v1`,model:"embedding-success-probe",apiKey:"disposable-fake-key"}});
+  const vectorTaskPath = `/api/background-tasks/KNOWLEDGE_INDEX/${vectorTask.id}`;
+  await stranger.request(`${vectorTaskPath}/retry`,{method:"POST",expected:404,body:{completionToken:vectorTask.completionToken}});
+  await asyncOwner.request(`${vectorTaskPath}/retry`,{method:"POST",expected:202,body:{completionToken:vectorTask.completionToken}});
+  for (let attempt=0;attempt<100;attempt++) {
+    vectorTask = await asyncOwner.request(vectorTaskPath);
+    if (vectorTask.status==="COMPLETED") break;
+    await sleep(100);
+  }
+  assert.equal(vectorTask.status,"COMPLETED");
+  assert.equal(vectorTask.unread,true);
+  assert.equal((await asyncOwner.request("/api/knowledge/index-status")).pendingChunks,0);
+  const concurrentSearches=await Promise.all(Array.from({length:4},()=>asyncOwner.request("/api/knowledge/search?query=Redis")));
+  assert.ok(concurrentSearches.every(hits=>hits.some(hit=>hit.documentId===knowledgeDocument.id)),"Concurrent retrieval must succeed with the CI's two-connection pool");
+  assert.equal((await asyncOwner.request(vectorTaskPath)).completionToken,vectorTask.completionToken,"Searching must not create new completed-index notifications");
+  assert.ok((await asyncOwner.request("/api/background-tasks/summary")).unreadByModule.knowledge>0);
+  const resumeUpload = new FormData();
+  resumeUpload.set("file",new Blob([syntheticResumePdf()],{type:"application/pdf"}),"golden-task-resume.pdf");
+  const resume = await asyncOwner.request("/api/resumes",{method:"POST",expected:201,body:resumeUpload});
+  assert.equal(resume.parseStatus,"PARSED");
+  const resumeJob = await asyncOwner.request(`/api/resumes/${resume.id}/analysis`,{method:"POST",expected:202});
+  let resumeTask;
+  for (let attempt=0;attempt<100;attempt++) {
+    resumeTask = await asyncOwner.request(`/api/background-tasks/RESUME_ANALYSIS/${resumeJob.jobId}`);
+    if (resumeTask.status==="COMPLETED") break;
+    await sleep(100);
+  }
+  assert.equal(resumeTask.status,"COMPLETED");
+  assert.equal(resumeTask.unread,true);
+  assert.equal(resumeTask.resultPath,`/app/resumes?selected=${resume.id}`);
+  await stranger.request(`/api/background-tasks/RESUME_ANALYSIS/${resumeJob.jobId}`,{expected:404});
+  const taskRecap = await asyncOwner.request("/api/interview-recaps",{method:"POST",expected:202,body:{content:"后台任务验收：技术面试中被问到 Redis 的 RDB 和 AOF 区别，我只说了快照，没能解释日志、重写及故障恢复的数据丢失窗口。"}});
+  const taskRecapId=taskRecap.recapId ?? await waitForRecap(asyncOwner,taskRecap.jobId);
+  const taskRecapDetail=await asyncOwner.request(`/api/interview-recaps/${taskRecapId}`);
+  const taskWeak=taskRecapDetail.questions.find(question=>question.performance==="WEAK");
+  const queuedReplay=await asyncOwner.request(`/api/interview-replays/questions/${taskWeak.id}/jobs`,{method:"POST",expected:202,body:{requestId:randomUUID(),answer:"我会比较快照和写命令日志，说明故障恢复的丢失窗口与性能取舍。"}});
+  await waitForAiJob(asyncOwner,queuedReplay.id);
+  const catalog = await asyncOwner.request("/api/background-tasks?limit=100");
+  const taskKinds=["RESUME_ANALYSIS","RECAP_ORGANIZE","KNOWLEDGE_INDEX","LEARNING_CREATE","LEARNING_EVALUATE","REPLAY_EVALUATE","INTERVIEW_EVALUATE"];
+  const beforeOwnershipChecks=catalog.map(task=>({id:task.id,status:task.status,attempts:task.attempts,unread:task.unread}));
+  for(const kind of taskKinds) {
+    const task=catalog.find(item=>item.kind===kind);
+    assert.ok(task,`Catalog must include ${kind}`);
+    const path=`/api/background-tasks/${kind}/${task.id}`;
+    await stranger.request(path,{expected:404});
+    await stranger.request(`${path}/read`,{method:"POST",expected:404,body:{completionToken:task.completionToken}});
+    await stranger.request(`${path}/retry`,{method:"POST",expected:404,body:{completionToken:task.completionToken}});
+  }
+  assert.deepEqual((await asyncOwner.request("/api/background-tasks?limit=100")).map(task=>({id:task.id,status:task.status,attempts:task.attempts,unread:task.unread})),beforeOwnershipChecks,"Rejected foreign operations must not change owner tasks or notifications");
+  assert.ok((await stranger.request("/api/background-tasks?limit=100")).every(task=>!catalog.some(own=>own.id===task.id)));
+  assert.equal((await asyncOwner.request("/api/background-tasks?offset=1&limit=1"))[0].id,catalog[1].id);
+  await asyncOwner.request("/api/background-tasks?limit=101",{expected:400});
+  await asyncOwner.request("/api/settings/llm",{method:"PUT",body:{provider:"OPENAI_COMPATIBLE",baseUrl:modelBase,model:"restart-ai-probe",apiKey:"disposable-fake-model-key"}});
+  const restartCreation = await asyncOwner.request("/api/learning-plans/jobs",{method:"POST",expected:202,body:{requestId:randomUUID(),concept:"Restart persistence fixture",sourceType:"MANUAL"}});
+  const restartResult = await waitForAiJob(asyncOwner,restartCreation.id);
+  const restartPlanId = new URL(restartResult.resultPath,"https://ardor.invalid").searchParams.get("id");
+  await asyncOwner.request(`/api/learning-plans/${restartPlanId}/evaluation-jobs`,{method:"POST",expected:202,body:{requestId:randomUUID(),expectedAttemptCount:0,answers:["记录写命令","restart saved answer"]}});
+  let restartReachedProvider=false;
+  for(let attempt=0;attempt<100;attempt++) {
+    const probe = await (await fetch(new URL("/__probe/restart-started",modelBase))).json();
+    if(probe.count>0) { restartReachedProvider=true; break; }
+    await sleep(100);
+  }
+  assert.ok(restartReachedProvider,"Restart acceptance must interrupt an actual pending model call");
   console.log("Golden Path passed: persistent async generation/evaluation/retry/ownership; recap → replay → learning/retest → calendar; Agent confirmation; recovery; concurrent isolation.");
 }
 

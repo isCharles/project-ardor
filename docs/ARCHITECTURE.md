@@ -38,6 +38,10 @@ CareerAgentService ─> LangChain4j AI Services + Chat Memory + Tools
 - `user_agent_memories` 保存跨会话总体记忆。总体记忆以可见文本注入系统上下文，用户可编辑或清空；Agent 只能通过受控 Tool 覆盖更新，且提示词禁止保存凭据、一次性任务和未经确认的推测。
 - 当前会话上下文、用户总体记忆和简历/面试业务数据是三个独立边界，不能互相替代。
 
+### 后台任务与通知
+
+简历、面经及通用 AI 评估保留各自持久化队列，向量化以知识片段为待处理来源。统一任务入口通过只读视图投影它们的状态；已读结果单独按用户、任务及完成版本保存，不依赖浏览器本地缓存判断完成。通知不能执行业务操作，重试由原业务 Service 校验。详见 [后台任务与结果提醒](BACKGROUND_TASKS.md)。
+
 ### 数据归属与授权
 
 认证成功后，后端从 Security Context 解析当前用户；请求体、查询参数和 Header 中的 `user_id` 均不可信。Service 把当前 `userId` 传给 Repository，Repository 使用 `id + user_id` 查询。找不到属于当前用户的数据时返回不存在，避免泄露其他用户资源是否存在。

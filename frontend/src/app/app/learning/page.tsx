@@ -11,11 +11,12 @@ import { MarkdownContent } from "@/components/ardor/markdown-content";
 import { clearLearningDraft, readLearningDraft, saveLearningDraft } from "@/lib/learning-drafts";
 import { type AiJob, jobPending, useAiJob } from "@/lib/ai-jobs";
 import { AiJobStatus } from "@/components/ardor/ai-job-status";
+import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 
 type Lesson = { summary?: string; keyPoints?: string[]; explanation?: string; example?: string; pitfalls?: string[] };
 type Exercise = { question: string; type?: "SHORT_ANSWER" | "MULTIPLE_CHOICE" | "SCENARIO"; options?: string[] };
-type LearningAttempt = { items: Array<Exercise & { answer: string }>; score: number; submittedAt: string; feedback?: string; questionFeedback?: Array<{ question: string; feedback: string }> };
+type LearningAttempt = { requestId?: string; items: Array<Exercise & { answer: string }>; score: number; submittedAt: string; feedback?: string; questionFeedback?: Array<{ question: string; feedback: string }> };
 type Evaluation = { feedback?: string; strengths?: string[]; gaps?: string[]; nextFocus?: string; questionFeedback?: Array<{ question: string; feedback: string }>; attempts?: LearningAttempt[] };
 type LearningPlan = {
   id: string;
@@ -154,6 +155,8 @@ export default function LearningPage() {
   const selected = plans.find((plan) => plan.id === selectedId) ?? null;
   const assessing = jobPending(assessment.job);
   const previousAttempts = selected?.lastEvaluation?.attempts ?? [];
+  useReadVisibleResult("LEARNING_CREATE",selected?.id,!!selected,"",selected?.requestId);
+  useReadVisibleResult("LEARNING_EVALUATE",selected?.id,!!previousAttempts.at(-1)?.requestId,selected?.attemptCount,previousAttempts.at(-1)?.requestId);
   const activeCount = plans.filter((plan) => plan.status !== "COMPLETED").length;
   const orderedPlans = [...plans].sort((left, right) => {
     if ((left.status === "COMPLETED") !== (right.status === "COMPLETED")) return left.status === "COMPLETED" ? 1 : -1;

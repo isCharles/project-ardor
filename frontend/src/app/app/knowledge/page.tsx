@@ -1,5 +1,7 @@
 "use client";
 
+import { useReadVisibleResult } from "@/lib/background-tasks";
+
 import { ArrowLeft, BookOpenText, FileUp, Globe2, Search, Sparkles, Trash2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -48,6 +50,11 @@ export default function KnowledgePage() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [resultDocumentId,setResultDocumentId] = useState<string | null>(null);
+  useReadVisibleResult("KNOWLEDGE_INDEX",resultDocumentId,!!indexStatus && documents.some(item=>item.id===resultDocumentId),indexStatus?.embeddedChunks);
+  useEffect(() => {
+    if(resultDocumentId) document.getElementById(`knowledge-${resultDocumentId}`)?.scrollIntoView({block:"center"});
+  },[documents,resultDocumentId]);
 
   const loadStatus = useCallback(async () => {
     try { setIndexStatus(await api<IndexStatus>("/api/knowledge/index-status")); }
@@ -55,7 +62,12 @@ export default function KnowledgePage() {
   }, []);
 
   const load = useCallback(async () => {
-    try { setDocuments(await api<DocumentItem[]>("/api/knowledge/documents")); }
+    try {
+      const items=await api<DocumentItem[]>("/api/knowledge/documents");
+      setDocuments(items);
+      const requested=new URLSearchParams(window.location.search).get("document");
+      if(requested && items.some(item=>item.id===requested)) setResultDocumentId(requested);
+    }
     catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) return router.replace("/login");
       setError(reason instanceof Error ? reason.message : t("Could not load knowledge library", "无法加载知识库"));
@@ -72,6 +84,8 @@ export default function KnowledgePage() {
       .then(([items, status]) => {
         if (!active) return;
         setDocuments(items);
+        const requested=new URLSearchParams(window.location.search).get("document");
+        if(requested && items.some(item=>item.id===requested)) setResultDocumentId(requested);
         if (status) setIndexStatus(status);
       })
       .catch((reason) => {
@@ -339,7 +353,7 @@ export default function KnowledgePage() {
           ) : (
             <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {documents.map((document) => (
-                <article key={document.id} className={`${styles.cardSolid} p-6`}>
+                <article key={document.id} id={`knowledge-${document.id}`} className={`${styles.cardSolid} p-6`}>
                   <div className="flex items-start justify-between gap-3">
                     <span
                       className={`${styles.pill} px-3 py-1 ${

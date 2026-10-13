@@ -66,6 +66,13 @@ public class ApiExceptionHandler {
         return new ApiError("FILE_TOO_LARGE", "上传文件或单段录音不能超过 10 MB");
     }
 
+    @ExceptionHandler({jakarta.validation.ConstraintViolationException.class,
+            org.springframework.web.method.annotation.HandlerMethodValidationException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ApiError methodValidation() {
+        return new ApiError("VALIDATION_ERROR", "请检查请求参数");
+    }
+
     @ExceptionHandler(ExternalHostResolutionException.class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
     ApiError externalHostResolution(ExternalHostResolutionException exception) {

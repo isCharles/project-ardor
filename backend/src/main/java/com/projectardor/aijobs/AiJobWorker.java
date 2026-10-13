@@ -43,7 +43,7 @@ public class AiJobWorker {
         } catch (RuntimeException failure) { slots.release(); throw failure; }
     }
 
-    @Scheduled(fixedDelay = 30_000)
+    @Scheduled(fixedDelayString = "${app.ai-jobs.maintenance-delay:30s}")
     public void maintain() {
         active.values().forEach(store::heartbeat);
         store.recoverStale();
