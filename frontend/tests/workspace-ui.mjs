@@ -59,6 +59,7 @@ try {
   await sidebar.getByRole("button", { name: "Notifications", exact: true }).waitFor();
   assert.equal(await sidebar.getByRole("button", { name: "Project Ardor", exact: true }).count(), 0);
   assert.equal(await sidebar.getByRole("button", { name: "Close conversations", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "New chat", exact: true }).count(), 1, "Only the sidebar should show the new-chat button");
   const bounds = await sidebar.boundingBox();
   const composer = await page.getByRole("textbox", { name: "Message Ardor", exact: true }).boundingBox();
   assert.ok(composer.x >= bounds.x + bounds.width, "Desktop chat must sit beside the sidebar");

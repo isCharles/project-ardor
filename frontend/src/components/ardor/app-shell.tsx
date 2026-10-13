@@ -10,7 +10,6 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
-import { LocaleSwitch } from "./locale-switch";
 import styles from "./app-shell.module.css";
 
 const WORKSPACE_ITEMS = [
@@ -160,7 +159,6 @@ export function AppShell({
             <span className={styles.topbarSignal} aria-hidden />
             {headerLeft}
           </div>
-          <LocaleSwitch className="shrink-0" />
           {headerRight}
         </header>
         <main className={cn(styles.workspace, "min-h-0 flex-1", scroll && "overflow-y-auto")}>{children}</main>

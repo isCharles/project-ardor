@@ -774,7 +774,6 @@ export default function AgentHomePage() {
           <header className="relative z-10 flex h-16 shrink-0 items-center justify-between px-4 md:px-6">
             <div className="flex min-w-0 items-center gap-2">
               <button aria-label={t("Toggle conversations", "折叠对话栏")} title={t("Recent chats", "最近对话")} onClick={() => setSidebarOpen((value) => !(value ?? window.matchMedia("(min-width: 768px)").matches))} className="ardor-chat-toggle rounded-xl p-2 text-stone-500 hover:bg-white"><PanelLeftOpen className="size-5" /></button>
-              <button type="button" onClick={newConversation} disabled={busy} className="rounded-xl p-2 text-stone-500 hover:bg-white disabled:opacity-50" aria-label={t("New chat", "新对话")} title={t("New chat", "新对话")}><Plus className="size-5" /></button>
               <h1 className="truncate text-sm font-medium text-stone-600">{selected?.title ?? "Ardor"}</h1>
             </div>
           </header>

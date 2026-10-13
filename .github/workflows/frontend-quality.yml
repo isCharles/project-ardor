@@ -54,6 +54,9 @@ jobs:
             desktop/package-lock.json
       - run: npm ci
         working-directory: desktop
+      - name: Install Electron runtime for native window tests
+        run: node node_modules/electron/install.js
+        working-directory: desktop
       - run: npm test
         working-directory: desktop
       - run: npm ci
