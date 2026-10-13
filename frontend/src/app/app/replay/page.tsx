@@ -90,7 +90,7 @@ export default function ReplayPage() {
   const assessing = jobPending(assessment.job);
   const handledJobs = useRef(new Set<string>());
   const replayQuestionId = replay?.questionId;
-  useReadVisibleResult("REPLAY_EVALUATE",replayQuestionId,!!replay?.attempts.length,replay?.attempts[0]?.id);
+  useReadVisibleResult("REPLAY_EVALUATE",replayQuestionId,!!replay?.attempts.length,replay?.attempts[0]?.id,replay?.attempts[0]?.requestId);
   const completedJobId = assessment.job?.id;
   const completedJobStatus = assessment.job?.status;
   const errorText = error ? replayError(error.reason, locale, error.english, error.chinese) : "";

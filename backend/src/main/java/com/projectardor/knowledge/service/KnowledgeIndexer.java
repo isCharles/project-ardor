@@ -6,8 +6,6 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.projectardor.knowledge.repository.KnowledgeVectorStore;
 import com.projectardor.knowledge.repository.KnowledgeVectorStore.PendingChunk;
@@ -32,18 +30,19 @@ public class KnowledgeIndexer {
     private final KnowledgeEmbeddingService embeddingService;
     private final KnowledgeVectorStore vectorStore;
     private final KnowledgeIndexTaskStore taskStore;
+    private final KnowledgeEmbeddingWriter writer;
 
-    public KnowledgeIndexer(KnowledgeEmbeddingService embeddingService, KnowledgeVectorStore vectorStore, KnowledgeIndexTaskStore taskStore) {
+    public KnowledgeIndexer(KnowledgeEmbeddingService embeddingService, KnowledgeVectorStore vectorStore, KnowledgeIndexTaskStore taskStore,KnowledgeEmbeddingWriter writer) {
         this.embeddingService = embeddingService;
         this.vectorStore = vectorStore;
         this.taskStore = taskStore;
+        this.writer=writer;
     }
 
     /**
-     * Embeds freshly ingested chunks. Runs in its own transaction so that an embedding
-     * failure can never roll back the document the user just uploaded.
+     * Lease, model call, atomic vector write and completion are sequential boundaries.
+     * No database connection is held while waiting for the embedding provider.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int indexNewChunks(UUID userId, List<UUID> chunkIds, List<String> contents) {
         if (chunkIds.isEmpty()) {
             return 0;
@@ -58,13 +57,8 @@ public class KnowledgeIndexer {
                 return 0;
             }
             List<EmbeddingVector> vectors = embeddingService.embedDocuments(userId, indexes.stream().map(contents::get).toList());
-            for (int index = 0; index < indexes.size(); index++) {
-                EmbeddingVector vector = vectors.get(index);
-                vectorStore.saveEmbedding(
-                        userId, chunkIds.get(indexes.get(index)),
-                        vector.toPgVectorLiteral(), vector.dimension(), vector.model());
-            }
-            finishAfterCommit(runs);
+            writer.write(userId,indexes.stream().map(chunkIds::get).toList(),vectors);
+            taskStore.finish(runs,null);
             return indexes.size();
         } catch (RuntimeException exception) {
             taskStore.finish(runs,"EMBEDDING_FAILED");
@@ -80,7 +74,6 @@ public class KnowledgeIndexer {
      * semantic search so that documents ingested while no embedding model was configured
      * become retrievable as soon as one is.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int backfill(UUID userId, int limit) {
         List<PendingChunk> pending = vectorStore.findPending(userId, Math.min(limit, BACKFILL_BATCH));
         if (pending.isEmpty()) {
@@ -97,14 +90,9 @@ public class KnowledgeIndexer {
             }
             List<EmbeddingVector> vectors = embeddingService.embedDocuments(
                     userId, pending.stream().map(PendingChunk::content).toList());
-            for (int index = 0; index < pending.size(); index++) {
-                EmbeddingVector vector = vectors.get(index);
-                vectorStore.saveEmbedding(
-                        userId, pending.get(index).chunkId(),
-                        vector.toPgVectorLiteral(), vector.dimension(), vector.model());
-            }
+            writer.write(userId,pending.stream().map(PendingChunk::chunkId).toList(),vectors);
             log.info("Backfilled {} knowledge embedding(s) for userId={}", pending.size(), userId);
-            finishAfterCommit(runs);
+            taskStore.finish(runs,null);
             return pending.size();
         } catch (RuntimeException exception) {
             taskStore.finish(runs,"EMBEDDING_FAILED");
@@ -114,25 +102,11 @@ public class KnowledgeIndexer {
         }
     }
 
-    private void finishAfterCommit(List<KnowledgeIndexTaskStore.Run> runs) {
-        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
-            taskStore.finish(runs,null);
-            return;
-        }
-        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
-                new org.springframework.transaction.support.TransactionSynchronization() {
-                    @Override public void afterCompletion(int status) {
-                        taskStore.finish(runs,status == STATUS_COMMITTED ? null : "EMBEDDING_INTERRUPTED");
-                    }
-                });
-    }
-
     /**
      * Invalidates embeddings produced by a model other than the one now configured.
      * Mixing vector spaces would make cosine distance meaningless, so the affected rows
      * are reset and re-embedded by the normal backfill path.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int reconcileModel(UUID userId) {
         String model = embeddingService.modelName(userId);
         if (model == null) {

@@ -27,7 +27,7 @@ public class BackgroundTaskStore {
     private static final RowMapper<Task> MAPPER = (rs, index) -> new Task(rs.getObject("id", UUID.class),
             rs.getString("kind"), rs.getString("module"), rs.getString("title"), rs.getString("status"),
             rs.getInt("attempts"), time(rs,"created_at"), time(rs,"started_at"), time(rs,"finished_at"),
-            rs.getString("error_code"), rs.getString("result_path"), rs.getObject("resource_id", UUID.class),
+            rs.getString("error_code"), "KNOWLEDGE_INDEX".equals(rs.getString("kind")) ? "/app/knowledge?document="+rs.getObject("resource_id",UUID.class) : rs.getString("result_path"), rs.getObject("resource_id", UUID.class),
             rs.getString("completion_token"), rs.getBoolean("unread"), 30, 120);
 
     public List<Task> list(UUID userId, int offset, int limit,String kind,UUID resourceId) {

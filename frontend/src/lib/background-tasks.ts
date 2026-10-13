@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { api } from "@/lib/api";
+import { api,ApiError } from "@/lib/api";
 
 export type BackgroundTask = {
   id: string; kind: string; module: string; title: string; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
@@ -18,19 +18,32 @@ export async function readBackgroundTask(task: BackgroundTask) {
 }
 
 // A specific loaded report is acknowledgment; merely visiting a module is not.
-export function useReadVisibleResult(kind: string,resourceId: string | null | undefined,ready: boolean,version: string | number | undefined = "") {
+export function useReadVisibleResult(kind: string,resourceId: string | null | undefined,ready: boolean,version: string | number | undefined = "",taskId?: string | null) {
   useEffect(() => {
     if (!resourceId || !ready) return;
     let active=true;
+    let checking=false;
+    let timer: ReturnType<typeof setTimeout> | null=null;
     const query = new URLSearchParams({kind,resourceId,limit:"1"});
-    const check = () => {
-      if (!active || document.hidden) return;
-      void api<BackgroundTask[]>(`/api/background-tasks?${query}`).then(async (tasks) => {
+    const check = async () => {
+      if (!active || document.hidden || checking) return;
+      checking=true;
+      let retry=false;
+      try {
+        const tasks=taskId ? [await api<BackgroundTask>(`/api/background-tasks/${kind}/${taskId}`)]
+          : await api<BackgroundTask[]>(`/api/background-tasks?${query}`);
         const task=tasks[0];
-        if (active && !document.hidden && task?.status==="COMPLETED" && task.unread) await readBackgroundTask(task);
-      }).catch(() => undefined);
+        if (!active || document.hidden) return;
+        if (task?.status==="COMPLETED" && task.resourceId===resourceId && task.unread) await readBackgroundTask(task);
+        else retry=task?.status==="QUEUED" || task?.status==="RUNNING";
+      } catch(reason) { retry=!(reason instanceof ApiError && reason.status===404); }
+      finally {
+        checking=false;
+        if (active && retry && !document.hidden) timer=setTimeout(()=>void check(),3000);
+      }
     };
-    check(); document.addEventListener("visibilitychange",check);
-    return () => { active=false; document.removeEventListener("visibilitychange",check); };
-  },[kind,resourceId,ready,version]);
+    const wake=()=>{ if(timer) clearTimeout(timer); void check(); };
+    wake(); document.addEventListener("visibilitychange",wake);
+    return () => { active=false; if(timer) clearTimeout(timer); document.removeEventListener("visibilitychange",wake); };
+  },[kind,resourceId,ready,version,taskId]);
 }

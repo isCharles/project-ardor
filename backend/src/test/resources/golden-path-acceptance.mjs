@@ -624,6 +624,9 @@ async function main() {
   assert.equal(vectorTask.status,"COMPLETED");
   assert.equal(vectorTask.unread,true);
   assert.equal((await asyncOwner.request("/api/knowledge/index-status")).pendingChunks,0);
+  const concurrentSearches=await Promise.all(Array.from({length:4},()=>asyncOwner.request("/api/knowledge/search?query=Redis")));
+  assert.ok(concurrentSearches.every(hits=>hits.some(hit=>hit.documentId===knowledgeDocument.id)),"Concurrent retrieval must succeed with the CI's two-connection pool");
+  assert.equal((await asyncOwner.request(vectorTaskPath)).completionToken,vectorTask.completionToken,"Searching must not create new completed-index notifications");
   assert.ok((await asyncOwner.request("/api/background-tasks/summary")).unreadByModule.knowledge>0);
   const resumeUpload = new FormData();
   resumeUpload.set("file",new Blob([syntheticResumePdf()],{type:"application/pdf"}),"golden-task-resume.pdf");
