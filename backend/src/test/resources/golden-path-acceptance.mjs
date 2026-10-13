@@ -643,6 +643,18 @@ async function main() {
   const catalog = await asyncOwner.request("/api/background-tasks?limit=100");
   assert.equal((await asyncOwner.request("/api/background-tasks?offset=1&limit=1"))[0].id,catalog[1].id);
   await asyncOwner.request("/api/background-tasks?limit=101",{expected:400});
+  await asyncOwner.request("/api/settings/llm",{method:"PUT",body:{provider:"OPENAI_COMPATIBLE",baseUrl:modelBase,model:"restart-ai-probe",apiKey:"disposable-fake-model-key"}});
+  const restartCreation = await asyncOwner.request("/api/learning-plans/jobs",{method:"POST",expected:202,body:{requestId:randomUUID(),concept:"Restart persistence fixture",sourceType:"MANUAL"}});
+  const restartResult = await waitForAiJob(asyncOwner,restartCreation.id);
+  const restartPlanId = new URL(restartResult.resultPath,"https://ardor.invalid").searchParams.get("id");
+  await asyncOwner.request(`/api/learning-plans/${restartPlanId}/evaluation-jobs`,{method:"POST",expected:202,body:{requestId:randomUUID(),expectedAttemptCount:0,answers:["记录写命令","restart saved answer"]}});
+  let restartReachedProvider=false;
+  for(let attempt=0;attempt<100;attempt++) {
+    const probe = await (await fetch(new URL("/__probe/restart-started",modelBase))).json();
+    if(probe.count>0) { restartReachedProvider=true; break; }
+    await sleep(100);
+  }
+  assert.ok(restartReachedProvider,"Restart acceptance must interrupt an actual pending model call");
   console.log("Golden Path passed: persistent async generation/evaluation/retry/ownership; recap → replay → learning/retest → calendar; Agent confirmation; recovery; concurrent isolation.");
 }
 

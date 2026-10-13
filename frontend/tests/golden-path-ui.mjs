@@ -356,7 +356,17 @@ try {
   await taskPage.getByRole("heading",{level:1,name:/Background tasks|后台任务/}).waitFor();
   assert.equal(await taskPage.getByRole("complementary",{name:/Main navigation|主导航/}).count(),1);
   const beforeReads = await taskPage.evaluate(async () => (await fetch("/api/background-tasks?limit=100")).json());
-  const gradedTask = beforeReads.find(item => item.kind==="LEARNING_EVALUATE");
+  const gradedTask = beforeReads.find(item => item.kind==="LEARNING_EVALUATE" && item.status==="COMPLETED");
+  const interruptedTask = beforeReads.find(item => item.kind==="LEARNING_EVALUATE" && item.status==="FAILED");
+  assert.equal(interruptedTask?.errorCode,"AI_JOB_INTERRUPTED","An interrupted worker must surface a recoverable task, not lose its submission");
+  await taskPage.locator(`[data-task-id="${interruptedTask.id}"]`).getByRole("button",{name:/^Retry$|^重试$/}).click();
+  await taskPage.waitForFunction(async(id) => {
+    const response = await fetch(`/api/background-tasks/LEARNING_EVALUATE/${id}`);
+    return response.ok && (await response.json()).status==="COMPLETED";
+  },interruptedTask.id);
+  const recoveredPlan = await taskPage.evaluate(async(id) => (await fetch(`/api/learning-plans/${id}`)).json(),interruptedTask.resourceId);
+  assert.equal(recoveredPlan.attemptCount,1);
+  assert.equal(recoveredPlan.lastEvaluation.attempts[0].items[1].answer,"restart saved answer");
   const vectorTask = beforeReads.find(item => item.kind==="KNOWLEDGE_INDEX");
   assert.equal(gradedTask.unread,false,"Read state must survive the backend restart");
   assert.equal(vectorTask.status,"COMPLETED");
@@ -377,6 +387,14 @@ try {
   assert.equal(await vectorArticle.getByLabel(/Unread result|未读结果/).count(),0);
   const afterReads = await taskPage.evaluate(async () => (await fetch("/api/background-tasks?limit=100")).json());
   assert.equal(afterReads.find(item => item.kind==="LEARNING_CREATE").unread,true,"Reading one result must not clear unrelated notifications");
+  const blockedStatus = /\/api\/background-tasks\?/;
+  await taskPage.route(blockedStatus,route=>route.abort());
+  await taskPage.getByRole("button",{name:/Refresh tasks|刷新任务/}).click();
+  await taskPage.getByRole("alert").filter({hasText:/Connection interrupted|连接暂时中断/}).waitFor();
+  await vectorArticle.waitFor();
+  await taskPage.unroute(blockedStatus);
+  await taskPage.getByRole("button",{name:/Refresh tasks|刷新任务/}).click();
+  await taskPage.getByRole("alert").filter({hasText:/Connection interrupted|连接暂时中断/}).waitFor({state:"hidden"});
   await taskPage.getByRole("button",{name:/Account|个人账户/}).click();
   await taskPage.getByRole("button",{name:"中文",exact:true}).click();
   await taskPage.getByRole("button",{name:/Close account menu|关闭账户菜单/}).click();

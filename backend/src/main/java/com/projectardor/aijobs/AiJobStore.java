@@ -22,7 +22,12 @@ public class AiJobStore {
             rs.getTimestamp("started_at") == null ? null : rs.getTimestamp("started_at").toInstant(),
             rs.getTimestamp("finished_at") == null ? null : rs.getTimestamp("finished_at").toInstant());
     private final JdbcTemplate jdbc;
-    public AiJobStore(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+    private final long staleSeconds;
+    public AiJobStore(JdbcTemplate jdbc,@org.springframework.beans.factory.annotation.Value("${app.ai-jobs.stale-after:5m}") java.time.Duration staleAfter) {
+        this.jdbc = jdbc;
+        if (staleAfter.compareTo(java.time.Duration.ofSeconds(5))<0) throw new IllegalArgumentException("任务失联阈值不能少于 5 秒");
+        this.staleSeconds=staleAfter.getSeconds();
+    }
 
     public Job enqueue(UUID userId, UUID requestId, AiJobType type, UUID resourceId, String payload) {
         UUID id = requestId == null ? UUID.randomUUID() : requestId;
@@ -108,8 +113,8 @@ public class AiJobStore {
                 UPDATE ai_jobs SET status = 'FAILED', error_code = 'AI_JOB_INTERRUPTED',
                     error_message = '评估中断，原提交已保留，可重试', finished_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE status = 'RUNNING' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes'
-                """);
+                WHERE status = 'RUNNING' AND updated_at < CURRENT_TIMESTAMP - (CAST(? AS double precision) * INTERVAL '1 second')
+                """,staleSeconds);
     }
 
     private String hash(String value) {

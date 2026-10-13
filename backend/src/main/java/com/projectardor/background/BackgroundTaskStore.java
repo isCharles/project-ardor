@@ -63,9 +63,13 @@ public class BackgroundTaskStore {
                 INSERT INTO background_task_reads(user_id,kind,task_id,completion_token)
                 SELECT user_id,kind,id,completion_token FROM background_task_catalog
                 WHERE user_id=? AND kind=? AND id=? AND completion_token=? AND status IN ('COMPLETED','FAILED')
-                ON CONFLICT(user_id,kind,task_id) DO UPDATE SET completion_token=EXCLUDED.completion_token, read_at=CURRENT_TIMESTAMP
+                ON CONFLICT(user_id,kind,task_id,completion_token) DO NOTHING
                 """, userId, kind, id, token);
-        if (changed == 0) throw new IllegalStateException("任务状态已更新，请刷新后查看");
+        if (changed == 0) {
+            var current = get(userId,kind,id);
+            if (current.completionToken().equals(token) && !current.unread()) return;
+            throw new IllegalStateException("任务状态已更新，请刷新后查看");
+        }
     }
     public record Summary(Map<String, Long> unreadByModule, long activeCount) {}
     public record Task(UUID id, String kind, String module, String title, String status, int attempts,

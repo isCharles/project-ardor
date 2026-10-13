@@ -6,6 +6,7 @@ on:
       - "backend/src/main/resources/db/migration/**"
       - ".github/tests/conversation-title-*.sql"
       - ".github/tests/background-tasks-*.sql"
+      - ".github/tests/background-read-*.sql"
       - ".github/workflows/database-migrations.yml"
   workflow_dispatch:
 
@@ -58,6 +59,10 @@ jobs:
             if [[ "$(basename "$migration")" == "V34__add_background_task_notifications.sql" ]]; then
               docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 \
                 < .github/tests/background-tasks-after.sql
+            fi
+            if [[ "$(basename "$migration")" == "V35__preserve_background_result_read_versions.sql" ]]; then
+              docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 \
+                < .github/tests/background-read-versions-after.sql
             fi
           done
           docker exec ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 \
