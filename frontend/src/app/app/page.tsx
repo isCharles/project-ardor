@@ -2,7 +2,7 @@
 
 import {
   Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame,
-  MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Target, Trash2, Upload, X,
+  MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, Target, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,6 +12,8 @@ import remarkGfm from "remark-gfm";
 import { type AiJob } from "@/lib/ai-jobs";
 
 import { Button } from "@/components/ui/button";
+import { AppDialog } from "@/components/ui/app-dialog";
+import { ChatNotifications } from "@/components/ardor/chat-notifications";
 import { ApiError, api, streamApi } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 import { useTypewriter } from "@/lib/use-typewriter";
@@ -131,7 +133,10 @@ export default function AgentHomePage() {
   const [runElapsed, setRunElapsed] = useState(0);
   const [leavingEmptyState, setLeavingEmptyState] = useState(false);
   const [error, setError] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean | null>(null);
+  const [recentOpen, setRecentOpen] = useState(true);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [chatSearch, setChatSearch] = useState("");
   const typedHint = useTypewriter(locale === "en" ? typewriterExamples : typewriterExamplesZh, messages.length === 0);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
@@ -144,6 +149,10 @@ export default function AgentHomePage() {
   const [notice, setNotice] = useState("");
   const [applicationReminder, setApplicationReminder] = useState<ApplicationReminder | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<Conversation | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameError, setRenameError] = useState("");
+  const [renamePending, setRenamePending] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const runStartedAt = useRef(0);
@@ -227,7 +236,7 @@ export default function AgentHomePage() {
       setMemoryOpen(true);
     }
     const openMemory = () => setMemoryOpen(true);
-    const closeDrawer = () => setSidebarOpen(false);
+    const closeDrawer = () => { if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false); };
     window.addEventListener("ardor:open-memory", openMemory);
     window.addEventListener("ardor:close-chat-drawer", closeDrawer);
     return () => {
@@ -369,8 +378,9 @@ export default function AgentHomePage() {
 
   async function selectConversation(conversationId: string) {
     if (busy) return;
-    if (conversationId === state?.conversationId) { setSidebarOpen(false); return; }
-    setError(""); setRunningRun(null); setConfirmations([]); setMenuId(null); setSidebarOpen(false);
+    if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false);
+    if (conversationId === state?.conversationId) return;
+    setError(""); setRunningRun(null); setConfirmations([]); setMenuId(null);
     try { await load(conversationId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入会话"); }
   }
@@ -388,7 +398,7 @@ export default function AgentHomePage() {
     setState((current) => current ? { ...current, conversationId: null, messages: [] } : current);
     setDraft(readSavedDraft(null));
     window.history.replaceState(null, "", "/app");
-    setSidebarOpen(false);
+    if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false);
   }
 
   /* The button calls the same REST endpoint the corresponding page would call.
@@ -617,14 +627,22 @@ export default function AgentHomePage() {
       : [...items, context].slice(-5));
   }
 
-  async function renameConversation(conversation: Conversation) {
-    const title = window.prompt("修改会话名称", conversation.title)?.trim();
-    if (!title || title === conversation.title) return;
+  function openRename(conversation: Conversation) {
+    setRenaming(conversation); setRenameDraft(conversation.title); setRenameError(""); setMenuId(null);
+  }
+
+  async function renameConversation(event: FormEvent) {
+    event.preventDefault();
+    if (!renaming || renamePending) return;
+    const title = renameDraft.trim();
+    if (!title || title.length > 240) { setRenameError(t("Use 1–240 characters.", "请输入 1–240 个字符。")); return; }
+    setRenamePending(true); setRenameError("");
     try {
-      const updated = await api<Conversation>(`/api/agent/conversations/${conversation.id}`, { method: "PATCH", body: JSON.stringify({ title }) });
+      const updated = await api<Conversation>(`/api/agent/conversations/${renaming.id}`, { method: "PATCH", body: JSON.stringify({ title }) });
       setConversations((current) => current.map((item) => item.id === updated.id ? updated : item));
-      setMenuId(null);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法重命名会话"); }
+      setRenaming(null);
+    } catch (reason) { setRenameError(reason instanceof Error ? reason.message : t("Could not rename chat.", "无法重命名会话。")); }
+    finally { setRenamePending(false); }
   }
 
   async function togglePin(conversation: Conversation) {
@@ -698,27 +716,28 @@ export default function AgentHomePage() {
   return (
     <main className="ardor-workbench h-full overflow-hidden text-stone-900">
       <div className="flex h-full">
-        {sidebarOpen && <button aria-label={t("Close conversations", "关闭会话栏")} className="fixed inset-0 z-20 bg-black/20" onClick={() => setSidebarOpen(false)} />}
-        <aside aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={`fixed inset-y-0 left-16 z-40 flex flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl transition-transform duration-200 md:left-[4.25rem] ${sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+5rem)]"}`} style={{ width: "min(18rem, calc(100vw - 4rem))" }}>
+        {sidebarOpen === true && <button aria-label={t("Close conversations", "关闭会话栏")} className="fixed inset-0 z-20 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} />}
+        <aside aria-label={t("Conversations", "对话栏")} aria-hidden={sidebarOpen === false} inert={sidebarOpen === false} className={`fixed inset-y-0 left-16 z-40 shrink-0 flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl md:static md:z-20 md:shadow-none ${sidebarOpen === false ? "hidden" : sidebarOpen === true ? "flex" : "hidden md:flex"}`} style={{ width: "min(18rem, calc(100vw - 4rem))" }}>
           <div className="flex h-12 items-center justify-between px-2">
             <Link href="/app" onClick={(event) => { event.preventDefault(); setSidebarOpen(false); }} className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
               <span className="grid size-8 place-items-center rounded-xl bg-stone-950 text-white"><Flame className="size-4" /></span>Project Ardor
             </Link>
-            <button aria-label={t("Close conversations", "关闭会话栏")} className="rounded-lg p-2 text-stone-500 hover:bg-white" onClick={() => setSidebarOpen(false)}><X className="size-4" /></button>
+            <div className="flex items-center"><ChatNotifications /><button aria-label={t("Search chats", "搜索对话")} onClick={() => { setSearchOpen((value) => !value); setRecentOpen(true); setChatSearch(""); }} className="rounded-lg p-2 text-stone-500 hover:bg-white"><Search className="size-4" /></button><button aria-label={t("Close conversations", "关闭会话栏")} className="rounded-lg p-2 text-stone-500 hover:bg-white" onClick={() => setSidebarOpen(false)}><X className="size-4" /></button></div>
           </div>
           <button type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium shadow-sm transition hover:border-stone-300 hover:shadow disabled:opacity-50"><Plus className="size-4" />{t("New chat", "新对话")}</button>
 
           <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
-            <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400">{t("Recent chats", "最近对话")}</p>
-            <div className="space-y-1">
-              {conversations.map((conversation) => (
+            {searchOpen && <input autoFocus aria-label={t("Search chat titles", "搜索对话标题")} value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder={t("Search chat titles…", "搜索对话标题…")} className="mb-3 w-full rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm outline-none focus:border-violet-300" />}
+            <button type="button" aria-expanded={recentOpen} aria-controls="recent-conversations" onClick={() => setRecentOpen((value) => !value)} className="flex w-full items-center gap-2 px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400"><ChevronDown className={`size-3 transition-transform ${recentOpen ? "" : "-rotate-90"}`} />{t("Recent chats", "最近对话")}</button>
+            {recentOpen && <div id="recent-conversations" className="space-y-1">
+              {conversations.filter((item) => item.title.toLocaleLowerCase().includes(chatSearch.trim().toLocaleLowerCase())).map((conversation) => (
                 <div key={conversation.id} className={`group relative rounded-xl ${conversation.id === state?.conversationId ? "bg-white shadow-sm" : "hover:bg-white/70"}`}>
                   <button type="button" onClick={() => selectConversation(conversation.id)} className="flex w-full items-center gap-2 px-3 py-2.5 pr-10 text-left text-sm">{conversation.pinned && <Pin className="size-3.5 shrink-0 fill-stone-700 text-stone-700" />}<span className="truncate">{conversation.title}</span></button>
                   <button type="button" aria-label={t("Chat actions", "会话操作")} onClick={() => setMenuId(menuId === conversation.id ? null : conversation.id)} className="absolute right-1.5 top-1.5 rounded-lg p-2 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-stone-700 md:opacity-0 md:group-hover:opacity-100"><MoreHorizontal className="size-4" /></button>
                   {menuId === conversation.id && (
                     <div className="absolute right-2 top-10 z-20 w-36 rounded-xl border border-stone-200 bg-white p-1.5 text-sm shadow-xl">
                       <button onClick={() => togglePin(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pin className={`size-3.5 ${conversation.pinned ? "fill-current" : ""}`} />{conversation.pinned ? t("Unpin", "取消置顶") : t("Pin", "置顶")}</button>
-                      <button onClick={() => renameConversation(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pencil className="size-3.5" />{t("Rename", "重命名")}</button>
+                      <button onClick={() => openRename(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pencil className="size-3.5" />{t("Rename", "重命名")}</button>
                       <button onClick={() => removeConversation(conversation.id, false)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Archive className="size-3.5" />{t("Archive", "归档")}</button>
                       <button onClick={() => removeConversation(conversation.id, true)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-red-600 hover:bg-red-50"><Trash2 className="size-3.5" />{t("Delete permanently", "永久删除")}</button>
                     </div>
@@ -726,7 +745,8 @@ export default function AgentHomePage() {
                 </div>
               ))}
               {conversations.length === 0 && <p className="px-2 py-3 text-xs leading-5 text-stone-400">{t("New chats will appear here.", "新对话会出现在这里。")}</p>}
-            </div>
+              {chatSearch.trim() && !conversations.some((item) => item.title.toLocaleLowerCase().includes(chatSearch.trim().toLocaleLowerCase())) && <p className="px-2 py-3 text-xs text-stone-400">{t("No matching chats.", "没有匹配的对话。")}</p>}
+            </div>}
             {archivedConversations.length > 0 && (
               <div className="mt-4 border-t border-stone-200/70 pt-3">
                 <button onClick={() => setShowArchived((current) => !current)} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-stone-500 hover:bg-white/70"><Archive className="size-3.5" />{t("Archived", "已归档")}<span className="ml-auto text-stone-400">{archivedConversations.length}</span></button>
@@ -835,6 +855,15 @@ export default function AgentHomePage() {
           </div>}
         </section>
       </div>
+
+      {renaming && <AppDialog title={t("Rename chat", "重命名对话")} onClose={() => { if (!renamePending) setRenaming(null); }}>
+        <form onSubmit={renameConversation}>
+          <label htmlFor="chat-title" className="text-sm text-stone-500">{t("Chat title", "对话名称")}</label>
+          <input id="chat-title" autoFocus value={renameDraft} onFocus={(event) => event.target.select()} onChange={(event) => setRenameDraft(event.target.value)} disabled={renamePending} className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-3 outline-none focus:border-violet-400" />
+          {renameError && <p role="alert" className="mt-3 break-words text-sm text-red-600">{renameError}</p>}
+          <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="outline" disabled={renamePending} onClick={() => setRenaming(null)}>{t("Cancel", "取消")}</Button><Button disabled={renamePending || !renameDraft.trim()}>{renamePending ? t("Saving…", "保存中…") : t("Save", "保存")}</Button></div>
+        </form>
+      </AppDialog>}
 
       {memoryOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setMemoryOpen(false); }}>

@@ -1,0 +1,145 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { chromium } from "playwright";
+
+// Mock every API: this regression suite never changes real accounts or calls models.
+const origin = "http://127.0.0.1:3101";
+const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", "3101"], { stdio: "pipe" });
+let logs = "";
+server.stdout.on("data", (chunk) => { logs += chunk; });
+server.stderr.on("data", (chunk) => { logs += chunk; });
+let browser;
+try {
+  let ready = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (server.exitCode !== null) throw new Error(logs);
+    try { if ((await fetch(origin)).ok) { ready = true; break; } } catch { /* starting */ }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  assert.ok(ready, logs);
+  browser = await chromium.launch({ headless: true, ...(process.env.ARDOR_UI_BROWSER_CHANNEL ? { channel: process.env.ARDOR_UI_BROWSER_CHANNEL } : {}) });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  let userId = "workspace-owner";
+  let failRename = true;
+  let renameCalls = 0;
+  let conversation = { id: "chat-one", title: "Original chat", pinned: false, titleManuallySet: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  await context.addInitScript(() => { window.prompt = () => { throw new Error("Native prompt must not be used"); }; });
+  await context.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    let body = {};
+    if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin: false };
+    else if (path === "/api/auth/csrf") body = { token: "test", headerName: "X-CSRF-TOKEN" };
+    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, displayName: "Fixture", conversations: [conversation], archivedConversations: [], messages: [], memory: { content: "", updatedAt: null } };
+    else if (path === "/api/agent/conversations/chat-one") {
+      renameCalls++;
+      if (failRename) return route.fulfill({ status: 503, json: { message: "Synthetic save failure" } });
+      conversation = { ...conversation, ...route.request().postDataJSON(), titleManuallySet: true }; body = conversation;
+    }
+    else if (path === "/api/agent/conversations") body = [conversation];
+    else if (path.startsWith("/api/agent/runs")) return route.fulfill({ status: 204 });
+    else if (path === "/api/agent/reasoning") body = { nativeControl: true };
+    else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
+    else if (path === "/api/background-tasks") body = [{ id: "finished", kind: "LEARNING_EVALUATE", title: "Practice assessment", status: "COMPLETED", resultPath: "/app/learning?id=fixture", unread: true }];
+    else if (path === "/api/profile") body = { displayName: "Fixture", headline: "", targetRoles: [], timezone: "Asia/Shanghai" };
+    else if (path === "/api/settings/llm") body = { configured: true, provider: "OPENAI_COMPATIBLE", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false };
+    else if (path === "/api/settings/web-search") body = { configured: true, provider: "TAVILY", configurationSource: "ADMIN", personalOverride: false };
+    else if (path === "/api/settings/integrations") body = ["EMBEDDING", "ASR", "TTS", "FALLBACK_LLM"].map((serviceType) => ({ serviceType, configured: true, provider: "fixture", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false }));
+    else if (path === "/api/usage") body = { tier: "MEMBER", resetsAt: new Date().toISOString(), features: [] };
+    await route.fulfill({ json: body });
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(`${origin}/app`);
+  await page.getByRole("button", { name: "Open conversations", exact: true }).click();
+  const sidebar = page.getByRole("complementary", { name: "Conversations", exact: true });
+  const bounds = await sidebar.boundingBox();
+  const composer = await page.getByRole("textbox", { name: "Message Ardor", exact: true }).boundingBox();
+  assert.ok(composer.x >= bounds.x + bounds.width, "Desktop chat must sit beside the sidebar");
+  await sidebar.getByRole("button", { name: "Recent chats", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "Chat actions", exact: true }).count(), 0);
+  await sidebar.getByRole("button", { name: "Recent chats", exact: true }).click();
+  await sidebar.getByRole("button", { name: "Search chats" }).click();
+  await page.getByRole("textbox", { name: "Search chat titles" }).fill("missing title");
+  await page.getByText("No matching chats.", { exact: true }).waitFor();
+  await page.getByRole("textbox", { name: "Search chat titles" }).fill("");
+  await sidebar.getByRole("button", { name: "Notifications", exact: true }).click();
+  await page.getByRole("dialog", { name: "Notifications" }).getByRole("link", { name: /Practice assessment/ }).waitFor();
+  await page.getByRole("dialog", { name: "Notifications" }).press("Escape");
+  await page.getByRole("button", { name: "Chat actions", exact: true }).click();
+  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  const rename = page.getByRole("dialog", { name: "Rename chat" });
+  await rename.getByLabel("Chat title").fill("x".repeat(241));
+  await rename.getByRole("button", { name: "Save", exact: true }).click();
+  await rename.getByRole("alert").getByText("Use 1–240 characters.").waitFor();
+  assert.equal(renameCalls, 0);
+  await rename.getByLabel("Chat title").fill("My custom title");
+  await rename.getByRole("button", { name: "Save", exact: true }).click();
+  await rename.getByRole("alert").getByText("Synthetic save failure").waitFor();
+  assert.equal(await rename.getByLabel("Chat title").inputValue(), "My custom title");
+  failRename = false;
+  await rename.getByLabel("Chat title").press("Enter");
+  await rename.waitFor({ state: "hidden" });
+  assert.equal(renameCalls, 2);
+  assert.equal(conversation.titleManuallySet, true);
+  await page.reload();
+  await page.getByRole("heading", { name: "My custom title", exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "More workspaces" }).click();
+  await page.getByRole("button", { name: "Customize sidebar", exact: true }).click();
+  const custom = page.getByRole("dialog", { name: "Customize sidebar" });
+  assert.equal(await custom.getByLabel("Chat", { exact: true }).isDisabled(), true);
+  await custom.getByLabel("Resumes", { exact: true }).uncheck();
+  await custom.getByLabel("Interview notes", { exact: true }).check();
+  await custom.getByRole("button", { name: "Save", exact: true }).click();
+  const nav = page.getByRole("navigation", { name: "Workspaces", exact: true });
+  assert.equal(await nav.getByRole("link", { name: "Resumes", exact: true }).count(), 0);
+  assert.equal(await nav.getByRole("link", { name: "Interview notes", exact: true }).count(), 1);
+  await page.screenshot({ path: ".next/workspace-chat.png" });
+  await page.reload();
+  await nav.getByRole("link", { name: "Interview notes", exact: true }).waitFor();
+  await page.getByRole("button", { name: "More workspaces" }).click();
+  await page.locator("#ardor-more-workspaces").getByRole("link", { name: "Resumes", exact: true }).waitFor();
+
+  await page.goto(`${origin}/app/settings`);
+  const categories = page.getByRole("navigation", { name: "Settings categories" });
+  await page.getByRole("heading", { name: "General & sidebar" }).waitFor();
+  await page.screenshot({ path: ".next/workspace-settings.png" });
+  assert.equal(await page.locator('input[name="displayName"]').isVisible(), false);
+  await categories.getByRole("button", { name: "Profile", exact: true }).click();
+  await page.locator('input[name="displayName"]').fill("Unsaved draft");
+  await categories.getByRole("button", { name: "Account security" }).click();
+  await page.getByLabel("Current password", { exact: true }).waitFor();
+  await categories.getByRole("button", { name: "Profile", exact: true }).click();
+  assert.equal(await page.locator('input[name="displayName"]').inputValue(), "Unsaved draft");
+  await categories.getByRole("button", { name: "Models & services" }).click();
+  await page.getByRole("button", { name: "Use your own APIs" }).click();
+  await page.locator('#personal-api-primary-llm input[name="model"]').fill("Unsaved model");
+  const services = page.getByRole("navigation", { name: "API services" });
+  await services.getByRole("button", { name: "Web search", exact: true }).click();
+  assert.equal(await page.locator('#personal-api-primary-llm input[name="model"]').isVisible(), false);
+  await services.getByRole("button", { name: "Primary LLM", exact: true }).click();
+  assert.equal(await page.locator('#personal-api-primary-llm input[name="model"]').inputValue(), "Unsaved model");
+  await categories.getByRole("button", { name: "General & sidebar" }).click();
+  await page.getByRole("button", { name: "Customize sidebar", exact: true }).click();
+  await custom.getByRole("button", { name: "Reset defaults" }).click();
+  await custom.press("Escape"); // cancel must not save defaults
+  await page.reload();
+  await nav.getByRole("link", { name: "Interview notes", exact: true }).waitFor();
+  userId = "workspace-other";
+  await page.reload();
+  await nav.getByRole("link", { name: "Resumes", exact: true }).waitFor();
+  assert.equal(await nav.getByRole("link", { name: "Interview notes", exact: true }).count(), 0);
+  await page.evaluate(() => localStorage.setItem("ardor:workspace-rail:v1:workspace-other", "bad json"));
+  await page.reload();
+  await nav.getByRole("link", { name: "Resumes", exact: true }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.deepEqual(errors, []);
+  console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
+} finally {
+  await browser?.close();
+  server.kill();
+  if (server.exitCode === null) await new Promise((resolve) => server.once("close", resolve));
+}
