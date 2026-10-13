@@ -34,3 +34,7 @@ jobs:
         run: npm run lint
       - name: Build production frontend
         run: npm run build
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Workspace UI regression (mock APIs)
+        run: node tests/workspace-ui.mjs

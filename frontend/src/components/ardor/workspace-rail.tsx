@@ -11,6 +11,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { type TaskSummary } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
+import { AppDialog } from "@/components/ui/app-dialog";
+import { Button } from "@/components/ui/button";
 import { LocaleSwitch } from "./locale-switch";
 
 const workspaces = [
@@ -26,9 +28,15 @@ const workspaces = [
   { href: "/app/evidence", en: "Growth evidence", zh: "成长证据", icon: TrendingUp },
   { href: "/app/tasks", en: "Background tasks", zh: "后台任务", icon: Clock3 },
 ] as const;
-const primaryHrefs = new Set(["/app", "/app/resumes", "/app/interviews", "/app/cards", "/app/calendar", "/app/applications"]);
-const primaryWorkspaces = workspaces.filter((item) => primaryHrefs.has(item.href));
-const secondaryWorkspaces = workspaces.filter((item) => !primaryHrefs.has(item.href));
+const defaultHrefs = ["/app", "/app/resumes", "/app/interviews", "/app/cards", "/app/calendar", "/app/applications"];
+function preferenceKey(userId: string) { return `ardor:workspace-rail:v1:${userId}`; }
+function readHrefs(userId: string): string[] {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem(preferenceKey(userId)) ?? "null");
+    if (!Array.isArray(saved)) return defaultHrefs;
+    return ["/app", ...workspaces.filter((item) => item.href !== "/app" && saved.includes(item.href)).map((item) => item.href)];
+  } catch { return defaultHrefs; }
+}
 
 function moduleFor(href: string): string | null {
   const moduleName = href.split("/").at(-1);
@@ -41,6 +49,13 @@ export function WorkspaceRail() {
   const { t } = useLocale();
   const [account, setAccount] = useState<{ id: string; email: string; admin: boolean } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [preference, setPreference] = useState<{ userId: string; hrefs: string[] } | null>(null);
+  const [customizing, setCustomizing] = useState(false);
+  const [customDraft, setCustomDraft] = useState<string[]>(defaultHrefs);
+  const [customError, setCustomError] = useState("");
+  const pinnedHrefs = preference?.userId === account?.id ? preference?.hrefs ?? defaultHrefs : defaultHrefs;
+  const primaryWorkspaces = workspaces.filter((item) => pinnedHrefs.includes(item.href));
+  const secondaryWorkspaces = workspaces.filter((item) => !pinnedHrefs.includes(item.href));
   const [moreOpen, setMoreOpen] = useState(false);
   const [morePinned, setMorePinned] = useState(false);
   const [moreTop, setMoreTop] = useState(0);
@@ -59,7 +74,7 @@ export function WorkspaceRail() {
     let attempts = 0;
     const loadAccount = () => {
       api<{ id: string; email: string; admin: boolean }>("/api/auth/me")
-        .then((value) => { if (!cancelled) setAccount(value); })
+        .then((value) => { if (!cancelled) { setAccount(value); setPreference({ userId: value.id, hrefs: readHrefs(value.id) }); } })
         .catch(() => {
           if (!cancelled && ++attempts < 3) retryTimer = setTimeout(loadAccount, attempts * 3000);
         });
@@ -67,6 +82,22 @@ export function WorkspaceRail() {
     loadAccount();
     return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
   }, [account, pathname]);
+
+  useEffect(() => {
+    const open = () => { if (account) { setCustomDraft(pinnedHrefs); setCustomError(""); setCustomizing(true); setMoreOpen(false); setAccountOpen(false); } };
+    const sync = (event: StorageEvent) => { if (account && event.key === preferenceKey(account.id)) setPreference({ userId: account.id, hrefs: readHrefs(account.id) }); };
+    window.addEventListener("ardor:customize-sidebar", open);
+    window.addEventListener("storage", sync);
+    return () => { window.removeEventListener("ardor:customize-sidebar", open); window.removeEventListener("storage", sync); };
+  }, [account, pinnedHrefs]);
+
+  function saveSidebar() {
+    if (!account) return;
+    try {
+      window.localStorage.setItem(preferenceKey(account.id), JSON.stringify(customDraft));
+      setPreference({ userId: account.id, hrefs: customDraft }); setCustomizing(false);
+    } catch { setCustomError(t("Could not save on this device. Check your browser storage settings.", "无法保存到此设备，请检查浏览器存储设置。")); }
+  }
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -210,8 +241,15 @@ export function WorkspaceRail() {
       {moreOpen && !accountOpen && <div ref={morePanel} id="ardor-more-workspaces" className="fixed left-[4.25rem] z-50 w-56 max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 shadow-[0_20px_60px_rgba(70,48,100,0.16)]" style={{ top: moreTop }} onMouseEnter={() => { if (moreCloseTimer.current) clearTimeout(moreCloseTimer.current); }} onMouseLeave={hideMoreSoon}>
         {secondaryWorkspaces.map((item) => { const label = t(item.en, item.zh); const moduleName = moduleFor(item.href); return <Link key={item.href} href={item.href} onClick={() => { acknowledgeBackground(moduleName); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50 ${pathname.startsWith(item.href) ? "bg-violet-50 text-violet-700" : "text-stone-700"}`}><item.icon className="size-4 shrink-0" aria-hidden="true" /><span>{label}</span>{moduleName && backgroundReady[moduleName] && <span className="ml-auto size-2 rounded-full bg-red-500" aria-hidden="true" />}</Link>; })}
         <button type="button" onClick={() => { if (pathname === "/app") window.dispatchEvent(new Event("ardor:open-memory")); else { window.sessionStorage.setItem("ardor:open-memory", "1"); router.push("/app"); } closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-stone-700 hover:bg-violet-50"><Brain className="size-4 shrink-0" aria-hidden="true" />{t("Memory", "总体记忆")}</button>
+        <button type="button" disabled={!account} onClick={() => { closeMore(); setCustomDraft(pinnedHrefs); setCustomError(""); setCustomizing(true); }} className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-stone-100 px-3 py-2.5 text-left text-sm text-violet-700 hover:bg-violet-50"><Settings2 className="size-4" />{t("Customize sidebar", "自定义侧栏")}</button>
       </div>}
 
+      {customizing && <AppDialog title={t("Customize sidebar", "自定义侧栏")} onClose={() => setCustomizing(false)}>
+        <p className="mb-4 text-sm text-stone-500">{t("Selected modules stay in the sidebar. Others go in More. Saved on this device for your account.", "选中项显示在侧栏，其余收进更多。按账户保存在此设备。")}</p>
+        <div className="space-y-1">{workspaces.map((item) => <label key={item.href} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 hover:bg-violet-50"><item.icon className="size-4 text-stone-500" /><span className="flex-1 text-sm">{t(item.en, item.zh)}</span><input type="checkbox" checked={customDraft.includes(item.href)} disabled={item.href === "/app"} onChange={(event) => setCustomDraft((current) => event.target.checked ? [...current, item.href] : current.filter((href) => href !== item.href))} className="size-4 accent-violet-600" /></label>)}</div>
+        {customError && <p role="alert" className="mt-3 text-sm text-red-600">{customError}</p>}
+        <div className="mt-5 flex justify-between gap-2"><Button variant="outline" onClick={() => setCustomDraft(defaultHrefs)}>{t("Reset defaults", "恢复默认")}</Button><Button onClick={saveSidebar}>{t("Save", "保存")}</Button></div>
+      </AppDialog>}
       {accountOpen && (
         <>
           <button type="button" className="fixed inset-0 z-40 cursor-default" aria-label={t("Close account menu", "关闭账户菜单")} onClick={() => setAccountOpen(false)} />

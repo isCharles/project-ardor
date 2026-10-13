@@ -12,6 +12,16 @@ import { PasswordSettings } from "@/components/ardor/password-settings";
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 import { usageFeatureLabels } from "@/lib/usage-features";
+import { LocaleSwitch } from "@/components/ardor/locale-switch";
+
+const settingsCategories = [
+  { id: "general", en: "General & sidebar", zh: "通用与侧栏" },
+  { id: "profile", en: "Profile", zh: "个人资料" },
+  { id: "security", en: "Account security", zh: "账户安全" },
+  { id: "services", en: "Models & services", zh: "模型与服务" },
+  { id: "usage", en: "Usage", zh: "使用额度" },
+  { id: "desktop", en: "Desktop app", zh: "桌面应用" },
+] as const;
 
 type CurrentUser = { id: string; email: string };
 type Profile = { displayName: string | null; headline: string | null; targetRoles: string[]; timezone: string };
@@ -77,6 +87,8 @@ export default function SettingsPage() {
   const [healthDialogOpen, setHealthDialogOpen] = useState(false);
   const [testingAll, setTestingAll] = useState(false);
   const [healthResults, setHealthResults] = useState<Record<HealthServiceType, HealthResult> | null>(null);
+  const [category, setCategory] = useState<string>("general");
+  const [apiService, setApiService] = useState<HealthServiceType>("PRIMARY_LLM");
 
   useEffect(() => {
     Promise.all([
@@ -344,13 +356,28 @@ export default function SettingsPage() {
 
       {(notice || error) && <div className={`mx-auto mb-6 max-w-6xl rounded-2xl px-5 py-4 text-sm ${error ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-800"}`}>{error || notice}</div>}
 
-      <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-2">
-        <DesktopSettings />
+      <div className="mx-auto grid max-w-6xl items-start gap-6 md:grid-cols-[13rem_minmax(0,1fr)]">
+        <nav aria-label={t("Settings categories", "设置分类")} className="flex gap-1 overflow-x-auto rounded-2xl border border-white/80 bg-white/70 p-2 md:sticky md:top-6 md:flex-col">
+          {settingsCategories.map((item) => <button key={item.id} type="button" aria-current={category === item.id ? "page" : undefined} onClick={() => { setCategory(item.id); setNotice(""); setError(""); }} className={`shrink-0 rounded-xl px-4 py-3 text-left text-sm transition ${category === item.id ? "bg-violet-100 font-medium text-violet-800" : "text-stone-600 hover:bg-white"}`}>{t(item.en, item.zh)}</button>)}
+        </nav>
+        <div className="min-w-0">
+        <section className={category === "general" ? "ardor-panel rounded-[2rem] p-6 md:p-8" : "hidden"}>
+          <h2 className="text-xl font-semibold">{t("General & sidebar", "通用与侧栏")}</h2>
+          <div className="mt-6 divide-y divide-stone-200/60">
+            <div className="flex flex-wrap items-center justify-between gap-4 py-4"><span className="text-sm font-medium">{t("Language", "语言")}</span><LocaleSwitch /></div>
+            <div className="flex flex-wrap items-center justify-between gap-4 py-4"><div><p className="text-sm font-medium">{t("Sidebar modules", "侧栏模块")}</p><p className="mt-1 text-xs text-stone-500">{t("Keep your essentials visible, tuck the rest into More.", "常用模块常驻，其余收进更多。")}</p></div><Button variant="outline" onClick={() => window.dispatchEvent(new Event("ardor:customize-sidebar"))}>{t("Customize sidebar", "自定义侧栏")}</Button></div>
+          </div>
+        </section>
+        <div className={category === "desktop" ? "space-y-6" : "hidden"}><DesktopSettings /><p className="text-sm text-stone-500">{t("Server connection and updates are available in the Ardor desktop app.", "服务器连接与应用更新在 Ardor 桌面版中可用。")}</p></div>
+        <div className={category === "usage" ? "space-y-6" : "hidden"}>
         {usage && <section className="ardor-panel rounded-[2rem] p-6 md:col-span-2 md:p-8">
           <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">{t("Usage", "使用额度")}</h2><span className="rounded-full bg-violet-50 px-3 py-1 text-xs text-violet-700">{usage.tier === "MEMBER" ? t("Member", "会员") : t("Free", "免费")}</span></div>
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{usage.features.filter((item) => ["AGENT_CHAT", "RESUME_ANALYSIS", "INTERVIEW_CREATE", "INTERVIEW_RECAP"].includes(item.feature)).map((item) => <div key={item.feature} className="rounded-2xl bg-white/70 p-4"><p className="text-xs text-muted-foreground">{locale === "en" ? englishUsageLabels[item.feature] ?? item.feature : usageFeatureLabels[item.feature] ?? item.feature}</p><p className="mt-2 text-lg font-semibold tabular-nums">{item.used} / {item.limit}</p></div>)}</div>
           <p className="mt-4 text-xs text-muted-foreground">{t("Resets monthly", "每月重置")} · {new Date(usage.resetsAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN")}</p>
         </section>}
+        {!usage && <p className="text-sm text-stone-500">{t("Usage information is currently unavailable.", "暂时无法取得使用额度。")}</p>}
+        </div>
+        <div className={category === "profile" ? "space-y-6" : "hidden"}>
         <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
           <div className="flex items-center gap-3"><UserRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("Profile", "个人资料")}</h2></div>
           <p className="mt-2 text-sm text-muted-foreground">{t("Ardor uses these details as context for your career goals.", "Agent 会把这些信息作为求职上下文。")}</p>
@@ -362,9 +389,11 @@ export default function SettingsPage() {
             <Button><Save className="mr-2 size-4" />{t("Save profile", "保存资料")}</Button>
           </form>
         </section>
+        </div>
 
-        <PasswordSettings />
+        <div className={category === "security" ? "space-y-6" : "hidden"}><PasswordSettings /></div>
 
+        <div className={category === "services" ? "grid gap-6" : "hidden"}>
         {!showPersonalApis ? <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
           <div className="flex items-center gap-3"><KeyRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("API services", "API 服务")}</h2></div>
           <div className="mt-8 rounded-[1.5rem] bg-gradient-to-br from-orange-50 to-violet-50 p-5">
@@ -382,7 +411,8 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <section className="ardor-panel flex min-h-[34rem] flex-col rounded-[2rem] p-6 md:p-8">
+        <nav aria-label={t("API services", "API 服务")} className="flex flex-wrap gap-2">{(Object.keys(healthServiceLabels) as HealthServiceType[]).map((type) => <button key={type} type="button" aria-current={apiService === type ? "page" : undefined} onClick={() => setApiService(type)} className={`rounded-xl px-3 py-2 text-sm ${apiService === type ? "bg-violet-100 text-violet-800" : "bg-white/70 text-stone-600 hover:bg-white"}`}>{healthServiceLabels[type]}</button>)}</nav>
+        <section className={apiService === "PRIMARY_LLM" ? "ardor-panel flex flex-col rounded-[2rem] p-6 md:p-8" : "hidden"}>
           <div className="flex items-center justify-between gap-4"><div className="flex items-center gap-3"><KeyRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("LLM service", "LLM 服务")}</h2></div>{llm.configured && <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"><CheckCircle2 className="size-3.5" />{llm.personalOverride ? t("Personal", "个人配置") : t("Admin default", "管理员默认")} {llm.keyHint}</span>}</div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("Ardor uses LangChain4j tool calling. Choose a model that supports tools, test the connection, then save.", "Agent 使用 LangChain4j Tool Calling。模型必须支持工具调用；建议先测试连接，再保存配置。")}</p>
           <form id="personal-api-primary-llm" key={JSON.stringify(llm)} className="mt-7 flex flex-1 flex-col gap-5" onSubmit={saveLlm}>
@@ -395,7 +425,7 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        <section className="ardor-panel flex min-h-[34rem] flex-col rounded-[2rem] p-6 md:p-8">
+        <section className={apiService === "WEB_SEARCH" ? "ardor-panel flex flex-col rounded-[2rem] p-6 md:p-8" : "hidden"}>
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3"><Globe2 className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("Web search", "联网搜索")}</h2></div>
             {webSearch.configured && <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"><CheckCircle2 className="size-3.5" />{webSearch.personalOverride ? t("Personal", "个人配置") : t("Admin default", "管理员默认")} {webSearch.keyHint}</span>}
@@ -417,7 +447,7 @@ export default function SettingsPage() {
               const detail = integrationDetails[integration.serviceType];
               const Icon = detail.icon;
               return (
-                <form id={`personal-api-${integration.serviceType.toLowerCase()}`} key={JSON.stringify(integration)} className="ardor-panel flex min-h-[34rem] flex-col rounded-[2rem] p-6 md:p-8" onSubmit={(event) => saveIntegration(event, integration.serviceType)}>
+                <form id={`personal-api-${integration.serviceType.toLowerCase()}`} key={JSON.stringify(integration)} className={apiService === integration.serviceType ? "ardor-panel flex flex-col rounded-[2rem] p-6 md:p-8" : "hidden"} onSubmit={(event) => saveIntegration(event, integration.serviceType)}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-stone-950 text-white"><Icon className="size-4" /></span><div><h3 className="font-semibold">{detail.title}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{detail.description}</p></div></div>
                     {integration.configured && <span className="shrink-0 text-xs font-medium text-emerald-700">{integration.personalOverride ? t("Personal", "个人配置") : t("Admin default", "管理员默认")} {integration.keyHint}</span>}
@@ -438,6 +468,8 @@ export default function SettingsPage() {
               );
             })}
         </>}
+        </div>
+        </div>
       </div>
 
       <Dialog

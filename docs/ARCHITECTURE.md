@@ -42,6 +42,10 @@ CareerAgentService ─> LangChain4j AI Services + Chat Memory + Tools
 
 简历、面经及通用 AI 评估保留各自持久化队列，向量化以知识片段为待处理来源。统一任务入口通过只读视图投影它们的状态；已读结果单独按用户、任务及完成版本保存，不依赖浏览器本地缓存判断完成。通知不能执行业务操作，重试由原业务 Service 校验。详见 [后台任务与结果提醒](BACKGROUND_TASKS.md)。
 
+### 工作台交互
+
+窄图标侧栏可按账户在当前设备自定义；桌面对话栏与聊天并排，设置按类别和 API 服务分区展示。界面偏好不承担业务授权，通知入口不代替具体结果的已读确认。详见 [工作台交互与偏好](WORKSPACE_UI.md)。
+
 ### 数据归属与授权
 
 认证成功后，后端从 Security Context 解析当前用户；请求体、查询参数和 Header 中的 `user_id` 均不可信。Service 把当前 `userId` 传给 Repository，Repository 使用 `id + user_id` 查询。找不到属于当前用户的数据时返回不存在，避免泄露其他用户资源是否存在。
