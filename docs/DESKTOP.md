@@ -4,7 +4,7 @@ Ardor 桌面版是一个安装在 Windows 上的轻量客户端。双击桌面�
 
 ## 安装与连接
 
-公开的 [桌面安装包仓库](https://github.com/isCharles/project-ardor-releases/releases/latest) 提供 `Project-Ardor-Setup-<版本>-x64.exe`，不是 ZIP。安装向导提供简体中文和英语，默认随 Windows 语言选择，也可在安装开始时手动切换；允许选择用户/所有用户安装及目标目录，并创建桌面、开始菜单快捷方式。首次打开默认连接 `http://127.0.0.1:3000`；服务未启动时会看到连接页，可以重试或填写新的服务器根地址。设置页的“桌面应用”区域也可切换地址。公网只接受 HTTPS，本机 HTTP 仅允许 localhost / 127.0.0.1 / ::1。切换前需在系统对话框确认。
+公开的 [桌面安装包仓库](https://github.com/isCharles/project-ardor/releases/latest) 提供 `Project-Ardor-Setup-<版本>-x64.exe`，不是 ZIP。安装向导提供简体中文和英语，默认随 Windows 语言选择，也可在安装开始时手动切换；允许选择用户/所有用户安装及目标目录，并创建桌面、开始菜单快捷方式。首次打开默认连接 `http://127.0.0.1:3000`；服务未启动时会看到连接页，可以重试或填写新的服务器根地址。设置页的“桌面应用”区域也可切换地址。公网只接受 HTTPS，本机 HTTP 仅允许 localhost / 127.0.0.1 / ::1。切换前需在系统对话框确认。
 
 已安装的桌面版在启动约 20 秒后自动检查公开安装包仓库，随后每 6 小时检查一次；也可在“设置 → 桌面应用”手动检查。发现新版本后自动下载，下载完成时在页面右上角提示；用户点击“安装并重启”才退出应用并执行更新，不会悄悄重启。离线连接页同样保留更新入口。此功能只在已安装版本中可用，开发模式不可检查安装包更新。发布时必须把安装包、`.blockmap` 与 `latest.yml` 放在同一公开 Release，缺少其中任一文件都不能声称完成了可更新发布。v0.4.0 及更早安装包内仍写着私有仓库地址，必须手动安装一次修复版才能切换更新源。
 
@@ -23,7 +23,7 @@ v0.6.0 的自定义窗口顶栏依赖同版本服务器前端：后退/前进仅
 - 后续应先收集完整 Windows CI 启动日志及对应系统/运行时版本，在仍受支持的稳定版本之间做可逆比较，确认正常沙箱启动后再验收窗口、合并与发版。不要用跳过测试、允许失败、系统级 ACL reset 或生产 no-sandbox 来过关。
 - 21:15 的后续复验：官方维护版 44.7.0 的 zip 已与官方 SHA-256 清单匹配。项目目录运行仍失败，同一二进制复制到干净系统临时目录后 `--version` 正常；据此测试改为干净运行时副本与规范化临时档案，不改 ACL、不禁用沙箱。测试中的健康探测与业务 API 均为合成输入，实际 main/preload、HTTP 前端、原生窗口和 IPC 仍使用产品实现。已取得真实窗口通过证据；远程 CI、公开安装包及更新元数据仍须分别确认，不能据本机单次测试宣称已发布。
 
-在 `desktop` 目录执行 `npm ci`、`npm test` 和 `npm run dist:win`。构建产物在 `desktop/dist/`；此命令生成**未签名的安装包**。不要覆盖已发布的同版本 Git 标签。新版本按 [版本规则](VERSIONING.md) 同步前后端、桌面包、锁文件和发布说明后，再发布源码仓库中的新 GitHub Release。Release 发布事件会在 Windows Runner 构建双语 NSIS 安装程序，先附加到私有源码 Release，再使用 Actions Secret `ARDOR_RELEASES_TOKEN` 将安装包、blockmap 和 `latest.yml` 发布到 `isCharles/project-ardor-releases`。该 Secret 只在 CI 使用，不会进入安装包；它必须具有公开下载仓库的 Release 写入权限。缺失时公开发布步骤会明确失败，不能称为已完成桌面版发布。
+在 `desktop` 目录执行 `npm ci`、`npm test` 和 `npm run dist:win`，产物位于 `desktop/dist/`。源码仓库现已公开：Release 工作流构建和校验安装包、blockmap、latest.yml 后，直接上传当前仓库的 Release，使用自动提供的 `github.token`，无需跨仓库发布密钥。v0.6.1 起客户端从 `isCharles/project-ardor` 检查更新；v0.4.1 至 v0.6.0 仍指向旧分发仓库，删除旧仓库前必须手动升级这些客户端。不可覆盖已发布的标签或附件。
 
 NSIS 在构建中需要运行临时安装器来生成卸载器。本机曾在项目目录运行该临时 EXE 时显示 `Error writing temporary file. Make sure your temp folder is valid.`，退出码为 2；同一文件移到系统临时目录后正常退出并生成卸载器。现在 `dist:win` 会在系统临时目录构建，核对完整安装包与 `latest.yml` 的 SHA-512 后再复制到 `desktop/dist/`。如果仍失败，先检查构建日志中保留的临时输出目录及 `%TEMP%` 的可写性，不要关闭 Windows 安全防护或把未完成的 NSIS stub 当作安装包发布。
 
