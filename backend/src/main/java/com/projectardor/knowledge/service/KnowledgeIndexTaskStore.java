@@ -20,7 +20,7 @@ public class KnowledgeIndexTaskStore {
     public List<Run> begin(UUID userId, List<UUID> chunks) {
         if (chunks.isEmpty()) return List.of();
         String ids = "{" + String.join(",", chunks.stream().map(UUID::toString).toList()) + "}";
-        var documents = jdbc.query("SELECT document_id,array_agg(id) AS ids FROM knowledge_chunks WHERE user_id=? AND id=ANY(CAST(? AS uuid[])) GROUP BY document_id ORDER BY document_id",
+        var documents = jdbc.query("SELECT document_id,array_agg(id) AS ids FROM knowledge_chunks WHERE user_id=? AND embedding IS NULL AND id=ANY(CAST(? AS uuid[])) GROUP BY document_id ORDER BY document_id",
                 (row,index) -> {
                     var array = row.getArray("ids");
                     try { return new DocumentChunks(row.getObject(1,UUID.class),List.of((UUID[])array.getArray())); }
