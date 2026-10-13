@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DesktopUpdatePrompt } from "@/components/ardor/desktop-update-prompt";
 import { LocaleProvider } from "@/lib/locale";
+import { DesktopFrame } from "@/components/ardor/desktop-frame";
 
 import "./globals.css";
 
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body><LocaleProvider><DesktopUpdatePrompt />{children}</LocaleProvider></body>
+      <body><LocaleProvider><DesktopUpdatePrompt /><DesktopFrame>{children}</DesktopFrame></LocaleProvider></body>
     </html>
   );
 }

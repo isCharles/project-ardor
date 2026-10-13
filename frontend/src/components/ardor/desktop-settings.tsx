@@ -11,6 +11,12 @@ type UpdateStatus = { state: "idle" | "checking" | "downloading" | "current" | "
 type DesktopInfo = { version: string; serverUrl: string; locale: Locale | null; updateStatus: UpdateStatus; packaged: boolean };
 type SetServerResult = { changed: boolean; connected?: boolean; errorCode?: "invalidServer" | "httpsRequired" | "rootOnly"; message?: string };
 type DesktopBridge = {
+  windowChrome?: boolean;
+  getNavigation?(): Promise<{ back: boolean; forward: boolean }>;
+  navigate?(direction: "back" | "forward"): Promise<{ back: boolean; forward: boolean }>;
+  showMenu?(name: "file" | "edit" | "view" | "help"): Promise<void>;
+  onNavigation?(callback: (state: { back: boolean; forward: boolean }) => void): () => void;
+  onWindowAction?(callback: (action: string) => void): () => void;
   getInfo(): Promise<DesktopInfo>;
   setLocale(locale: Locale): Promise<{ locale: Locale }>;
   setServer(url: string): Promise<SetServerResult>;

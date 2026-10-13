@@ -10,6 +10,10 @@ Ardor 桌面版是一个安装在 Windows 上的轻量客户端。双击桌面�
 
 ## 本地构建
 
+v0.6.0 的自定义窗口顶栏依赖同版本服务器前端：后退/前进仅允许当前服务器的可信历史地址；折叠按钮仅操作对话栏；File/Edit/View/Help 调用固定原生菜单。IPC 仍检查当前主窗口与可信页面来源，不接受任意 URL、命令或脚本。窗口保留原生最小化/最大化/关闭及拖动区，生产配置保持 contextIsolation、sandbox 与 nodeIntegration=false。旧客户端没有新桥能力时，服务器前端保留页面内折叠按钮，不强行显示第二套窗口菜单。
+
+`frontend/tests/desktop-chrome.mjs` 在独立临时用户目录运行生产 main/preload，以模拟接口验证真实窗口，不读取已安装客户端档案；Windows CI 使用默认沙箱执行。本机开发 Electron 曾在 `--version` 就退出 0x80000003，并有临时档案目录 Access denied 证据，不能把这种环境失败当作产品测试通过，也不得为发布关闭生产沙箱。
+
 在 `desktop` 目录执行 `npm ci`、`npm test` 和 `npm run dist:win`。构建产物在 `desktop/dist/`；此命令生成**未签名的安装包**。不要覆盖已发布的同版本 Git 标签。新版本按 [版本规则](VERSIONING.md) 同步前后端、桌面包、锁文件和发布说明后，再发布源码仓库中的新 GitHub Release。Release 发布事件会在 Windows Runner 构建双语 NSIS 安装程序，先附加到私有源码 Release，再使用 Actions Secret `ARDOR_RELEASES_TOKEN` 将安装包、blockmap 和 `latest.yml` 发布到 `isCharles/project-ardor-releases`。该 Secret 只在 CI 使用，不会进入安装包；它必须具有公开下载仓库的 Release 写入权限。缺失时公开发布步骤会明确失败，不能称为已完成桌面版发布。
 
 NSIS 在构建中需要运行临时安装器来生成卸载器。本机曾在项目目录运行该临时 EXE 时显示 `Error writing temporary file. Make sure your temp folder is valid.`，退出码为 2；同一文件移到系统临时目录后正常退出并生成卸载器。现在 `dist:win` 会在系统临时目录构建，核对完整安装包与 `latest.yml` 的 SHA-512 后再复制到 `desktop/dist/`。如果仍失败，先检查构建日志中保留的临时输出目录及 `%TEMP%` 的可写性，不要关闭 Windows 安全防护或把未完成的 NSIS stub 当作安装包发布。

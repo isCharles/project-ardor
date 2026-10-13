@@ -2,7 +2,7 @@
 
 import {
   BookOpenText, Brain, CalendarDays, FileSearch, FileText, GraduationCap,
-  Clock3, Ellipsis, Home, LogOut, MessageSquareText, Settings2, ShieldCheck, SquareStack, Target, TrendingUp,
+  Clock3, Ellipsis, Home, LogOut, MessageSquareText, Settings2, SquareStack, Target, TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -13,7 +13,6 @@ import { type TaskSummary } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 import { AppDialog } from "@/components/ui/app-dialog";
 import { Button } from "@/components/ui/button";
-import { LocaleSwitch } from "./locale-switch";
 
 const workspaces = [
   { href: "/app", en: "Chat", zh: "对话", icon: Home },
@@ -193,7 +192,7 @@ export function WorkspaceRail() {
   }
 
   return (
-    <aside className="relative z-30 flex h-dvh w-16 shrink-0 flex-col items-center border-r border-stone-200/70 bg-gradient-to-b from-white via-[#faf8ff] to-[#fff8f6] py-3 md:w-[4.25rem]" aria-label={t("Main navigation", "主导航")}>
+    <aside className="relative z-30 flex h-full w-16 shrink-0 flex-col items-center border-r border-stone-200/70 bg-gradient-to-b from-white via-[#faf8ff] to-[#fff8f6] py-3 md:w-[4.25rem]" aria-label={t("Main navigation", "主导航")}>
       <nav className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto px-2" aria-label={t("Workspaces", "工作区")} onScroll={() => setTooltip(null)}>
         {primaryWorkspaces.map((item, index) => {
           const active = item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
@@ -256,8 +255,6 @@ export function WorkspaceRail() {
           <div className="fixed bottom-3 left-[4.75rem] z-50 w-60 rounded-2xl border border-stone-200 bg-white p-2 shadow-[0_20px_60px_rgba(70,48,100,0.16)]">
             <p className="truncate border-b border-stone-100 px-3 py-2 text-xs text-stone-500" title={account?.email}>{account?.email ?? t("Your account", "个人账户")}</p>
             <Link href="/app/settings" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50"><Settings2 className="size-4" />{t("Settings", "设置")}</Link>
-            {account?.admin && <Link href="/app/admin" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50"><ShieldCheck className="size-4" />{t("Admin", "管理员")}</Link>}
-            <div className="px-3 py-2"><LocaleSwitch /></div>
             <button type="button" onClick={() => void logout()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-violet-50"><LogOut className="size-4" />{t("Log out", "退出登录")}</button>
             {error && <p role="alert" className="px-3 py-2 text-xs text-red-600">{error}</p>}
           </div>

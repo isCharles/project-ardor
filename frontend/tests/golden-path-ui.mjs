@@ -340,11 +340,12 @@ try {
   await depthPage.locator('input[name="password"]').fill(`Ardor-Acceptance-${suffix}!`);
   await depthPage.locator('button[type="submit"]').click();
   await depthPage.waitForURL(`${origin}/app`, { timeout: 15_000 });
-  await depthPage.getByRole("combobox", { name: /Thinking depth|思考深度/ }).selectOption("DEEP");
+  await depthPage.getByRole("button", { name: /Thinking depth|思考深度/, exact: true }).click();
+  await depthPage.getByRole("button", { name: "Max", exact: true }).click();
   await depthPage.reload();
-  await depthPage.getByRole("combobox", { name: /Thinking depth|思考深度/ }).waitFor();
+  await depthPage.getByRole("button", { name: /Thinking depth|思考深度/, exact: true }).waitFor();
   // Account settings load independently of the transcript.
-  await depthPage.waitForFunction(() => document.querySelector('select[aria-label="Thinking depth"], select[aria-label="思考深度"]')?.value === "DEEP");
+  await depthPage.waitForFunction(() => document.querySelector('[data-reasoning-depth]')?.getAttribute("data-reasoning-depth") === "DEEP");
   await depthPage.getByRole("button", { name: /^(New chat|新对话)$/ }).last().click();
   await depthPage.getByRole("textbox", { name: /Message Ardor|给 Ardor 发消息/ }).fill("帮我继续规划 Redis 面试学习");
   await depthPage.getByRole("button", { name: /^(Send|发送)$/ }).click();
