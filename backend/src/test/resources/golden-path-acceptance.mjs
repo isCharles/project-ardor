@@ -643,7 +643,25 @@ async function main() {
   assert.equal(resumeTask.unread,true);
   assert.equal(resumeTask.resultPath,`/app/resumes?selected=${resume.id}`);
   await stranger.request(`/api/background-tasks/RESUME_ANALYSIS/${resumeJob.jobId}`,{expected:404});
+  const taskRecap = await asyncOwner.request("/api/interview-recaps",{method:"POST",expected:202,body:{content:"后台任务验收：技术面试中被问到 Redis 的 RDB 和 AOF 区别，我只说了快照，没能解释日志、重写及故障恢复的数据丢失窗口。"}});
+  const taskRecapId=taskRecap.recapId ?? await waitForRecap(asyncOwner,taskRecap.jobId);
+  const taskRecapDetail=await asyncOwner.request(`/api/interview-recaps/${taskRecapId}`);
+  const taskWeak=taskRecapDetail.questions.find(question=>question.performance==="WEAK");
+  const queuedReplay=await asyncOwner.request(`/api/interview-replays/questions/${taskWeak.id}/jobs`,{method:"POST",expected:202,body:{requestId:randomUUID(),answer:"我会比较快照和写命令日志，说明故障恢复的丢失窗口与性能取舍。"}});
+  await waitForAiJob(asyncOwner,queuedReplay.id);
   const catalog = await asyncOwner.request("/api/background-tasks?limit=100");
+  const taskKinds=["RESUME_ANALYSIS","RECAP_ORGANIZE","KNOWLEDGE_INDEX","LEARNING_CREATE","LEARNING_EVALUATE","REPLAY_EVALUATE","INTERVIEW_EVALUATE"];
+  const beforeOwnershipChecks=catalog.map(task=>({id:task.id,status:task.status,attempts:task.attempts,unread:task.unread}));
+  for(const kind of taskKinds) {
+    const task=catalog.find(item=>item.kind===kind);
+    assert.ok(task,`Catalog must include ${kind}`);
+    const path=`/api/background-tasks/${kind}/${task.id}`;
+    await stranger.request(path,{expected:404});
+    await stranger.request(`${path}/read`,{method:"POST",expected:404,body:{completionToken:task.completionToken}});
+    await stranger.request(`${path}/retry`,{method:"POST",expected:404,body:{completionToken:task.completionToken}});
+  }
+  assert.deepEqual((await asyncOwner.request("/api/background-tasks?limit=100")).map(task=>({id:task.id,status:task.status,attempts:task.attempts,unread:task.unread})),beforeOwnershipChecks,"Rejected foreign operations must not change owner tasks or notifications");
+  assert.ok((await stranger.request("/api/background-tasks?limit=100")).every(task=>!catalog.some(own=>own.id===task.id)));
   assert.equal((await asyncOwner.request("/api/background-tasks?offset=1&limit=1"))[0].id,catalog[1].id);
   await asyncOwner.request("/api/background-tasks?limit=101",{expected:400});
   await asyncOwner.request("/api/settings/llm",{method:"PUT",body:{provider:"OPENAI_COMPATIBLE",baseUrl:modelBase,model:"restart-ai-probe",apiKey:"disposable-fake-model-key"}});
