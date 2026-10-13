@@ -17,6 +17,20 @@ let activePage = page;
 const pageErrors = [];
 page.on("pageerror", (error) => pageErrors.push(error.message));
 
+async function waitForApiState(page,path,accept) {
+  let latest;
+  for(let attempt=0;attempt<200;attempt++) {
+    latest=await page.evaluate(async(path)=>{
+      const response=await fetch(path,{cache:"no-store"});
+      if(!response.ok) throw new Error(`Status query failed: ${response.status}`);
+      return response.json();
+    },path);
+    if(accept(latest)) return latest;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`Status did not reach expected state: ${path} (${latest?.status})`);
+}
+
 try {
   await page.goto(`${origin}/login`);
   await page.locator('input[name="email"]').fill(`golden-owner-${suffix}@ardor.invalid`);
@@ -360,12 +374,9 @@ try {
   const interruptedTask = beforeReads.find(item => item.kind==="LEARNING_EVALUATE" && item.status==="FAILED");
   assert.equal(interruptedTask?.errorCode,"AI_JOB_INTERRUPTED","An interrupted worker must surface a recoverable task, not lose its submission");
   await taskPage.locator(`[data-task-id="${interruptedTask.id}"]`).getByRole("button",{name:/^Retry$|^重试$/}).click();
-  await taskPage.waitForFunction(async(id) => {
-    const response = await fetch(`/api/background-tasks/LEARNING_EVALUATE/${id}`);
-    return response.ok && (await response.json()).status==="COMPLETED";
-  },interruptedTask.id);
-  const recoveredPlan = await taskPage.evaluate(async(id) => (await fetch(`/api/learning-plans/${id}`)).json(),interruptedTask.resourceId);
-  assert.equal(recoveredPlan.attemptCount,1);
+  await waitForApiState(taskPage,`/api/background-tasks/LEARNING_EVALUATE/${interruptedTask.id}`,task=>task.status==="COMPLETED");
+  const recoveredPlan = await taskPage.evaluate(async(id) => (await fetch(`/api/learning-plans/${id}`,{cache:"no-store"})).json(),interruptedTask.resourceId);
+  assert.equal(recoveredPlan.attemptCount,1,`Interrupted task ${interruptedTask.id} resource ${interruptedTask.resourceId} returned plan ${recoveredPlan.id} with ${recoveredPlan.attemptCount} attempts`);
   assert.equal(recoveredPlan.lastEvaluation.attempts[0].items[1].answer,"restart saved answer");
   const vectorTask = beforeReads.find(item => item.kind==="KNOWLEDGE_INDEX");
   assert.equal(gradedTask.unread,false,"Read state must survive the backend restart");
@@ -382,15 +393,12 @@ try {
   await taskPage.unroute(/\/api\/resumes\/[^/]+\/analysis$/);
   await taskPage.reload();
   await taskPage.getByText(/技术栈聚焦，项目经历清晰/).waitFor();
-  await taskPage.waitForFunction(async(id)=>!(await (await fetch(`/api/background-tasks/RESUME_ANALYSIS/${id}`)).json()).unread,resumeTask.id);
+  await waitForApiState(taskPage,`/api/background-tasks/RESUME_ANALYSIS/${resumeTask.id}`,task=>!task.unread);
   await taskPage.goto(`${origin}/app/tasks`);
   await vectorArticle.getByRole("link",{name:/Open result|查看结果/}).click();
   await taskPage.waitForURL(/\/app\/knowledge\?document=/);
   await taskPage.getByText("redis-learning").first().waitFor();
-  await taskPage.waitForFunction(async (id) => {
-    const response = await fetch(`/api/background-tasks/KNOWLEDGE_INDEX/${id}`);
-    return response.ok && !(await response.json()).unread;
-  },vectorTask.id);
+  await waitForApiState(taskPage,`/api/background-tasks/KNOWLEDGE_INDEX/${vectorTask.id}`,task=>!task.unread);
   await taskPage.goto(`${origin}/app/tasks`);
   await vectorArticle.waitFor();
   assert.equal(await vectorArticle.getByLabel(/Unread result|未读结果/).count(),0);
