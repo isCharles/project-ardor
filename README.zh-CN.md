@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/ardor-hero.svg" alt="Project Ardor：让每一步准备，都成为下一步的底气" width="100%" />
+  <img src="docs/assets/ardor-feature-cards.svg" alt="Project Ardor：让每一步准备，都成为下一步的底气" width="100%" />
 
   <h1>Project Ardor</h1>
   <p><a href="README.md">English</a> · <strong>简体中文</strong></p>
