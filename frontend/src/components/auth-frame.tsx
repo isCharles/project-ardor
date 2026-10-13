@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 
-import { LocaleSwitch } from "@/components/ardor/locale-switch";
 import { useLocale } from "@/lib/locale";
 import styles from "./auth-frame.module.css";
 
@@ -26,7 +25,6 @@ export function AuthFrame({
           <span className={styles.brandMark} aria-hidden="true">✦</span>
           Ardor
         </Link>
-        <LocaleSwitch />
       </header>
       <div className={styles.layout}>
         <div className={styles.statement} aria-hidden="true">

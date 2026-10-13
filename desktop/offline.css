@@ -1,5 +1,6 @@
 :root { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #24202a; background: #fffaf8; }
 * { box-sizing: border-box; }
+.window-titlebar { position: fixed; inset: 0 0 auto; height: 46px; padding: 14px 160px 0 18px; background: #faf9f6; color: #57534e; font-size: 13px; -webkit-app-region: drag; }
 body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 36px; background: radial-gradient(ellipse at 22% 80%, #ffb6d48c, transparent 42%), radial-gradient(ellipse at 80% 24%, #a8affb99, transparent 40%), radial-gradient(ellipse at 54% 70%, #ffe2b288, transparent 38%), #fffaf8; }
 .card { width: min(100%, 600px); padding: clamp(32px, 6vw, 58px); border: 1px solid #ffffffcc; border-radius: 34px; background: #fffffff0; box-shadow: 0 30px 90px #51465c25; }
 .language { display: flex; justify-content: flex-end; gap: 4px; margin: -20px -20px 22px 0; }

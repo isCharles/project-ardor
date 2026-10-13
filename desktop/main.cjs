@@ -1,12 +1,13 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, ipcMain, net, session, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, net, session, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { DEFAULT_SERVER_URL, normalizeServerUrl, isTrustedAppUrl, isHealthyBackendStatus } = require("./server-config.cjs");
 const { updateErrorKind } = require("./update-errors.cjs");
+const { navigationState, navigate, menuTemplate, shortcutAction } = require("./window-chrome.cjs");
 const { normalizeLocale, desktopText, updateStatusMessage, serverErrorKey, serverErrorMessage } = require("./i18n.cjs");
 
 let window;
@@ -133,16 +134,26 @@ function scheduleUpdateChecks() {
 }
 
 function createWindow() {
+  Menu.setApplicationMenu(null);
   window = new BrowserWindow({
     width: 1280, height: 820, minWidth: 860, minHeight: 600,
     title: "Project Ardor", icon: path.join(__dirname, "assets", "icon.png"),
     backgroundColor: "#fffaf8",
+    titleBarStyle: "hidden",
+    titleBarOverlay: { color: "#faf9f6", symbolColor: "#57534e", height: 46 },
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
     },
+  });
+  const publishNavigation = () => window?.webContents.send("desktop:navigation", navigationState(window.webContents.navigationHistory, (url) => isTrustedAppUrl(url, serverUrl)));
+  window.webContents.on("did-navigate", publishNavigation);
+  window.webContents.on("did-navigate-in-page", publishNavigation);
+  window.webContents.on("before-input-event", (event, input) => {
+    const action = shortcutAction(input);
+    if (action) { event.preventDefault(); window.webContents.send("desktop:window-action", action); }
   });
   window.webContents.setWindowOpenHandler(({ url }) => { openExternalSafe(url); return { action: "deny" }; });
   window.webContents.on("will-navigate", (event, url) => {
@@ -158,6 +169,21 @@ function createWindow() {
 }
 
 function registerIpc() {
+  ipcMain.handle("desktop:get-navigation", (event) => {
+    assertTrusted(event);
+    return navigationState(window.webContents.navigationHistory, (url) => isTrustedAppUrl(url, serverUrl));
+  });
+  ipcMain.handle("desktop:navigate", (event, direction) => {
+    assertTrusted(event);
+    return navigate(window.webContents.navigationHistory, direction, (url) => isTrustedAppUrl(url, serverUrl));
+  });
+  ipcMain.handle("desktop:show-menu", (event, name) => {
+    assertTrusted(event);
+    const template = menuTemplate(name, currentLocale(), (action) => window.webContents.send("desktop:window-action", action), () => {
+      void dialog.showMessageBox(window, { type: "info", title: "Project Ardor", message: `Project Ardor ${app.getVersion()}`, detail: currentLocale() === "zh-CN" ? "你的 AI 职业成长工作台" : "Your AI career workspace" });
+    });
+    Menu.buildFromTemplate(template).popup({ window });
+  });
   ipcMain.handle("desktop:get-info", (event) => {
     assertTrusted(event);
     return { version: app.getVersion(), serverUrl, locale: desktopLocale, updateStatus, packaged: app.isPackaged };

@@ -340,11 +340,12 @@ try {
   await depthPage.locator('input[name="password"]').fill(`Ardor-Acceptance-${suffix}!`);
   await depthPage.locator('button[type="submit"]').click();
   await depthPage.waitForURL(`${origin}/app`, { timeout: 15_000 });
-  await depthPage.getByRole("combobox", { name: /Thinking depth|思考深度/ }).selectOption("DEEP");
+  await depthPage.getByRole("button", { name: /Thinking depth|思考深度/, exact: true }).click();
+  await depthPage.getByRole("button", { name: "Max", exact: true }).click();
   await depthPage.reload();
-  await depthPage.getByRole("combobox", { name: /Thinking depth|思考深度/ }).waitFor();
+  await depthPage.getByRole("button", { name: /Thinking depth|思考深度/, exact: true }).waitFor();
   // Account settings load independently of the transcript.
-  await depthPage.waitForFunction(() => document.querySelector('select[aria-label="Thinking depth"], select[aria-label="思考深度"]')?.value === "DEEP");
+  await depthPage.waitForFunction(() => document.querySelector('[data-reasoning-depth]')?.getAttribute("data-reasoning-depth") === "DEEP");
   await depthPage.getByRole("button", { name: /^(New chat|新对话)$/ }).last().click();
   await depthPage.getByRole("textbox", { name: /Message Ardor|给 Ardor 发消息/ }).fill("帮我继续规划 Redis 面试学习");
   await depthPage.getByRole("button", { name: /^(Send|发送)$/ }).click();
@@ -412,9 +413,9 @@ try {
   await taskPage.unroute(blockedStatus);
   await taskPage.getByRole("button",{name:/Refresh tasks|刷新任务/}).click();
   await taskPage.getByRole("alert").filter({hasText:/Connection interrupted|连接暂时中断/}).waitFor({state:"hidden"});
-  await taskPage.getByRole("button",{name:/Account|个人账户/}).click();
+  await taskPage.goto(`${origin}/app/settings`);
   await taskPage.getByRole("button",{name:"中文",exact:true}).click();
-  await taskPage.getByRole("button",{name:/Close account menu|关闭账户菜单/}).click();
+  await taskPage.goto(`${origin}/app/tasks`);
   await taskPage.getByRole("heading",{level:1,name:"后台任务",exact:true}).waitFor();
   await taskPage.getByRole("article",{name:"知识库向量化",exact:true}).waitFor();
   assert.deepEqual(pageErrors, [], "No page should throw an uncaught browser error");

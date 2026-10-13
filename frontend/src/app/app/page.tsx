@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText, Flame,
+  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText,
   MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, Target, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
@@ -14,6 +14,9 @@ import { type AiJob } from "@/lib/ai-jobs";
 import { Button } from "@/components/ui/button";
 import { AppDialog } from "@/components/ui/app-dialog";
 import { ChatNotifications } from "@/components/ardor/chat-notifications";
+import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
+import { ReasoningControl } from "@/components/ardor/reasoning-control";
+import { useDismiss } from "@/components/ardor/overlay";
 import { ApiError, api, streamApi } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 import { useTypewriter } from "@/lib/use-typewriter";
@@ -142,6 +145,8 @@ export default function AgentHomePage() {
   const [memoryDraft, setMemoryDraft] = useState("");
   const [selectedContexts, setSelectedContexts] = useState<SelectedContext[]>([]);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
+  const attachmentRef = useDismiss<HTMLDivElement>(attachmentOpen, () => setAttachmentOpen(false));
+  const [isAdmin, setIsAdmin] = useState(false);
   const [resumeOptions, setResumeOptions] = useState<ResumeOption[]>([]);
   const [recapOptions, setRecapOptions] = useState<RecapOption[]>([]);
   const [knowledgeOptions, setKnowledgeOptions] = useState<KnowledgeOption[]>([]);
@@ -186,8 +191,9 @@ export default function AgentHomePage() {
 
   useEffect(() => {
     let active = true;
-    void api<{ id: string }>("/api/auth/me").then((account) => {
+    void api<{ id: string; admin: boolean }>("/api/auth/me").then((account) => {
       if (!active) return;
+      setIsAdmin(account.admin === true);
       reasoningAccount.current = account.id;
       try {
         const saved = window.sessionStorage.getItem(`ardor:reasoning-depth:${account.id}`);
@@ -217,17 +223,12 @@ export default function AgentHomePage() {
   }, [busy, titleWatch]);
 
   function reasoningPicker() {
-    return <select aria-label={t("Thinking depth", "思考深度")} value={reasoningDepth} disabled={!reasoningReady || busy || !!runningRun}
-      title={nativeReasoning ? t("Controls the model's reasoning effort", "调节模型原生思考深度") : t("Adapts through instructions for this model", "当前模型通过分析指引适配")}
-      onChange={(event) => {
-        const value = event.target.value as ReasoningDepth;
+    return <ReasoningControl value={reasoningDepth} disabled={!reasoningReady || busy || !!runningRun} nativeControl={nativeReasoning}
+      onChange={(value) => {
         setReasoningDepth(value);
         try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:reasoning-depth:${reasoningAccount.current}`, value); }
         catch { /* The current selection remains usable when browser storage is unavailable. */ }
-      }} className="max-w-36 rounded-full bg-transparent px-2 py-1.5 text-xs text-stone-500 outline-none hover:bg-violet-50 disabled:opacity-50">
-      <option value="AUTO">{t("Auto", "自动")}</option><option value="QUICK">{t("Quick", "快速")}</option>
-      <option value="STANDARD">{t("Standard", "标准")}</option><option value="DEEP">{t("Deep", "深入")}</option>
-    </select>;
+      }} />;
   }
 
   useEffect(() => {
@@ -237,11 +238,17 @@ export default function AgentHomePage() {
     }
     const openMemory = () => setMemoryOpen(true);
     const closeDrawer = () => { if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false); };
+    const toggleSidebar = () => setSidebarOpen((value) => !(value ?? window.matchMedia("(min-width: 768px)").matches));
+    const newChat = () => { document.querySelector<HTMLButtonElement>('button[data-new-chat]')?.click(); };
     window.addEventListener("ardor:open-memory", openMemory);
     window.addEventListener("ardor:close-chat-drawer", closeDrawer);
+    window.addEventListener("ardor:toggle-chat-sidebar", toggleSidebar);
+    window.addEventListener("ardor:new-chat", newChat);
     return () => {
       window.removeEventListener("ardor:open-memory", openMemory);
       window.removeEventListener("ardor:close-chat-drawer", closeDrawer);
+      window.removeEventListener("ardor:toggle-chat-sidebar", toggleSidebar);
+      window.removeEventListener("ardor:new-chat", newChat);
     };
   }, []);
 
@@ -704,7 +711,7 @@ export default function AgentHomePage() {
 
   function attachmentPicker() {
     const option = (context: SelectedContext, icon: React.ReactNode) => <button type="button" key={`${context.type}-${context.id}`} onClick={() => toggleContext(context)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left hover:bg-stone-100">{icon}<span className="min-w-0 flex-1 truncate">{context.label}</span>{selectedContexts.some((item) => item.type === context.type && item.id === context.id) && <Check className="size-3.5 text-violet-600" />}</button>;
-    return <div className="relative"><input ref={uploadRef} type="file" accept=".pdf,.docx" className="hidden" onChange={(event) => void uploadResume(event.target.files?.[0])} /><button type="button" aria-label="添加资料" title="添加资料" onClick={() => void openAttachments()} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Plus className="size-4" /></button>{attachmentOpen && <div className="absolute bottom-11 left-0 z-30 max-h-96 w-80 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 text-sm shadow-2xl"><button type="button" onClick={() => uploadRef.current?.click()} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-stone-100"><Upload className="size-4" />上传简历</button>{resumeOptions.map((resume) => option({ type: "RESUME", id: resume.id, label: resume.originalFilename }, <FileSearch className="size-4 shrink-0 text-blue-500" />))}{recapOptions.map((recap) => option({ type: "RECAP", id: recap.id, label: recap.title }, <FileText className="size-4 shrink-0 text-violet-500" />))}{knowledgeOptions.map((document) => option({ type: "KNOWLEDGE", id: document.id, label: document.title }, <BookOpenText className="size-4 shrink-0 text-cyan-600" />))}{learningOptions.map((plan) => option({ type: "LEARNING", id: plan.id, label: plan.concept }, <BrainCircuit className="size-4 shrink-0 text-rose-500" />))}</div>}</div>;
+    return <div ref={attachmentRef} className="relative"><input ref={uploadRef} type="file" accept=".pdf,.docx" className="hidden" onChange={(event) => void uploadResume(event.target.files?.[0])} /><button type="button" aria-label={t("Add attachments", "添加资料")} title={t("Add attachments", "添加资料")} aria-expanded={attachmentOpen} onClick={() => void openAttachments()} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Plus className="size-4" /></button>{attachmentOpen && <div role="region" aria-label={t("Attachments", "附件")} className="absolute bottom-11 left-0 z-30 max-h-96 w-80 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 text-sm shadow-2xl"><button type="button" onClick={() => uploadRef.current?.click()} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-stone-100"><Upload className="size-4" />{t("Upload resume", "上传简历")}</button>{resumeOptions.map((resume) => option({ type: "RESUME", id: resume.id, label: resume.originalFilename }, <FileSearch className="size-4 shrink-0 text-blue-500" />))}{recapOptions.map((recap) => option({ type: "RECAP", id: recap.id, label: recap.title }, <FileText className="size-4 shrink-0 text-violet-500" />))}{knowledgeOptions.map((document) => option({ type: "KNOWLEDGE", id: document.id, label: document.title }, <BookOpenText className="size-4 shrink-0 text-cyan-600" />))}{learningOptions.map((plan) => option({ type: "LEARNING", id: plan.id, label: plan.concept }, <BrainCircuit className="size-4 shrink-0 text-rose-500" />))}</div>}</div>;
   }
 
   if (!state && !error) return <main className="ardor-workbench grid h-full place-items-center text-sm text-stone-500">{t("Waking Ardor…", "正在唤醒 Ardor…")}</main>;
@@ -719,12 +726,10 @@ export default function AgentHomePage() {
         {sidebarOpen === true && <button aria-label={t("Close conversations", "关闭会话栏")} className="fixed inset-0 z-20 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} />}
         <aside aria-label={t("Conversations", "对话栏")} aria-hidden={sidebarOpen === false} inert={sidebarOpen === false} className={`fixed inset-y-0 left-16 z-40 shrink-0 flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl md:static md:z-20 md:shadow-none ${sidebarOpen === false ? "hidden" : sidebarOpen === true ? "flex" : "hidden md:flex"}`} style={{ width: "min(18rem, calc(100vw - 4rem))" }}>
           <div className="flex h-12 items-center justify-between px-2">
-            <Link href="/app" onClick={(event) => { event.preventDefault(); setSidebarOpen(false); }} className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
-              <span className="grid size-8 place-items-center rounded-xl bg-stone-950 text-white"><Flame className="size-4" /></span>Project Ardor
-            </Link>
-            <div className="flex items-center"><ChatNotifications /><button aria-label={t("Search chats", "搜索对话")} onClick={() => { setSearchOpen((value) => !value); setRecentOpen(true); setChatSearch(""); }} className="rounded-lg p-2 text-stone-500 hover:bg-white"><Search className="size-4" /></button><button aria-label={t("Close conversations", "关闭会话栏")} className="rounded-lg p-2 text-stone-500 hover:bg-white" onClick={() => setSidebarOpen(false)}><X className="size-4" /></button></div>
+            <WorkspaceBrand admin={isAdmin} />
+            <div className="flex items-center"><ChatNotifications /><button aria-label={t("Search chats", "搜索对话")} onClick={() => { setSearchOpen((value) => !value); setRecentOpen(true); setChatSearch(""); }} className="rounded-lg p-2 text-stone-500 hover:bg-white"><Search className="size-4" /></button></div>
           </div>
-          <button type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium shadow-sm transition hover:border-stone-300 hover:shadow disabled:opacity-50"><Plus className="size-4" />{t("New chat", "新对话")}</button>
+          <button data-new-chat type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium shadow-sm transition hover:border-stone-300 hover:shadow disabled:opacity-50"><Plus className="size-4" />{t("New chat", "新对话")}</button>
 
           <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
             {searchOpen && <input autoFocus aria-label={t("Search chat titles", "搜索对话标题")} value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder={t("Search chat titles…", "搜索对话标题…")} className="mb-3 w-full rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm outline-none focus:border-violet-300" />}
@@ -768,8 +773,7 @@ export default function AgentHomePage() {
         <section className="relative flex min-w-0 flex-1 flex-col">
           <header className="relative z-10 flex h-16 shrink-0 items-center justify-between px-4 md:px-6">
             <div className="flex min-w-0 items-center gap-2">
-              <button aria-label={t("Open conversations", "打开会话栏")} title={t("Recent chats", "最近对话")} onClick={() => setSidebarOpen(true)} className="rounded-xl p-2 text-stone-500 hover:bg-white"><PanelLeftOpen className="size-5" /></button>
-              <button type="button" onClick={newConversation} disabled={busy} className="rounded-xl p-2 text-stone-500 hover:bg-white disabled:opacity-50" aria-label={t("New chat", "新对话")} title={t("New chat", "新对话")}><Plus className="size-5" /></button>
+              <button aria-label={t("Toggle conversations", "折叠对话栏")} title={t("Recent chats", "最近对话")} onClick={() => setSidebarOpen((value) => !(value ?? window.matchMedia("(min-width: 768px)").matches))} className="ardor-chat-toggle rounded-xl p-2 text-stone-500 hover:bg-white"><PanelLeftOpen className="size-5" /></button>
               <h1 className="truncate text-sm font-medium text-stone-600">{selected?.title ?? "Ardor"}</h1>
             </div>
           </header>

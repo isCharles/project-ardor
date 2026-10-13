@@ -1,7 +1,7 @@
 {
   "name": "project-ardor-desktop",
   "productName": "Project Ardor",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "Project Ardor Windows desktop client",
   "main": "main.cjs",
@@ -18,7 +18,7 @@
     "electron-updater": "6.8.9"
   },
   "devDependencies": {
-    "electron": "44.5.1",
+    "electron": "44.7.0",
     "electron-builder": "26.15.3",
     "png-to-ico": "3.0.2",
     "sharp": "0.35.5"

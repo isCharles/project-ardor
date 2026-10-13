@@ -1,4 +1,18 @@
 @import "tailwindcss";
+
+.ardor-window-titlebar { -webkit-app-region: drag; }
+.ardor-window-control { -webkit-app-region: no-drag; }
+[data-desktop-chrome] { --ardor-page-height: calc(100dvh - 46px); }
+[data-desktop-chrome] .min-h-screen { min-height: var(--ardor-page-height); }
+[data-desktop-chrome] .ardor-chat-toggle { display: none; }
+.ardor-depth-range { appearance: none; background: transparent; height: 36px; outline: none; }
+.ardor-depth-range::-webkit-slider-thumb { appearance: none; height: 36px; width: 36px; border-radius: 50%; background: white; box-shadow: 0 2px 8px #0002; transition: transform 150ms, box-shadow 150ms; }
+.ardor-depth-range::-moz-range-thumb { height: 34px; width: 34px; border: none; border-radius: 50%; background: white; box-shadow: 0 2px 8px #0002; }
+.ardor-depth-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px #a7f3d080; }
+.ardor-depth-range:active::-webkit-slider-thumb { transform: scale(1.08); }
+.ardor-depth-popover { animation: ardor-depth-enter 160ms ease-out; transform-origin: bottom left; }
+@keyframes ardor-depth-enter { from { opacity: 0; transform: translateY(5px) scale(.97); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ardor-depth-popover { animation: none; } .ardor-depth-range::-webkit-slider-thumb { transition: none; } }
 @import "../styles/tokens.css";
 
 /* ---------------------------------------------------------------
@@ -481,7 +495,7 @@ time,
   --muted-foreground: #6e6a75;
   --border: #ddd8e4;
   --ring: #7967ef;
-  min-height: 100vh;
+  min-height: var(--ardor-page-height, 100vh);
   background-color: #fbfaf8;
   background-image:
     radial-gradient(circle at 8% 88%, rgba(255, 107, 177, 0.28), transparent 31rem),

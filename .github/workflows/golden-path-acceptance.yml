@@ -65,7 +65,7 @@ jobs:
       - name: Run end-to-end Golden Path
         shell: bash
         run: |
-          java -jar backend/target/ardor-backend-0.5.0.jar --spring.datasource.hikari.maximum-pool-size=2 --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s > "$RUNNER_TEMP/backend.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.6.0.jar --spring.datasource.hikari.maximum-pool-size=2 --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s > "$RUNNER_TEMP/backend.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/backend.pid"
           for attempt in {1..90}; do
             if curl --silent --fail http://127.0.0.1:8080/actuator/health \
@@ -92,7 +92,7 @@ jobs:
             echo "Backend did not exit safely"
             exit 1
           fi
-          java -jar backend/target/ardor-backend-0.5.0.jar --spring.datasource.hikari.maximum-pool-size=2 --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s >> "$RUNNER_TEMP/backend.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.6.0.jar --spring.datasource.hikari.maximum-pool-size=2 --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s >> "$RUNNER_TEMP/backend.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/backend.pid"
           for attempt in {1..90}; do
             if curl --silent --fail http://127.0.0.1:8080/actuator/health | grep -q '"status":"UP"'; then exit 0; fi

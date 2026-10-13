@@ -20,6 +20,7 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.ARDOR_UI_BROWSER_CHANNEL ? { channel: process.env.ARDOR_UI_BROWSER_CHANNEL } : {}) });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   let userId = "workspace-owner";
+  let admin = false;
   let failRename = true;
   let renameCalls = 0;
   let conversation = { id: "chat-one", title: "Original chat", pinned: false, titleManuallySet: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -28,7 +29,7 @@ try {
     const url = new URL(route.request().url());
     const path = url.pathname;
     let body = {};
-    if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin: false };
+    if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin };
     else if (path === "/api/auth/csrf") body = { token: "test", headerName: "X-CSRF-TOKEN" };
     else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, displayName: "Fixture", conversations: [conversation], archivedConversations: [], messages: [], memory: { content: "", updatedAt: null } };
     else if (path === "/api/agent/conversations/chat-one") {
@@ -42,6 +43,8 @@ try {
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
     else if (path === "/api/background-tasks") body = [{ id: "finished", kind: "LEARNING_EVALUATE", title: "Practice assessment", status: "COMPLETED", resultPath: "/app/learning?id=fixture", unread: true }];
     else if (path === "/api/profile") body = { displayName: "Fixture", headline: "", targetRoles: [], timezone: "Asia/Shanghai" };
+    else if (path === "/api/resumes") body = [{ id: "resume", originalFilename: "Synthetic resume.pdf" }];
+    else if (["/api/interview-recaps", "/api/knowledge/documents", "/api/learning-plans"].includes(path)) body = [];
     else if (path === "/api/settings/llm") body = { configured: true, provider: "OPENAI_COMPATIBLE", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false };
     else if (path === "/api/settings/web-search") body = { configured: true, provider: "TAVILY", configurationSource: "ADMIN", personalOverride: false };
     else if (path === "/api/settings/integrations") body = ["EMBEDDING", "ASR", "TTS", "FALLBACK_LLM"].map((serviceType) => ({ serviceType, configured: true, provider: "fixture", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false }));
@@ -52,8 +55,11 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${origin}/app`);
-  await page.getByRole("button", { name: "Open conversations", exact: true }).click();
   const sidebar = page.getByRole("complementary", { name: "Conversations", exact: true });
+  await sidebar.getByRole("button", { name: "Notifications", exact: true }).waitFor();
+  assert.equal(await sidebar.getByRole("button", { name: "Project Ardor", exact: true }).count(), 0);
+  assert.equal(await sidebar.getByRole("button", { name: "Close conversations", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "New chat", exact: true }).count(), 1, "Only the sidebar should show the new-chat button");
   const bounds = await sidebar.boundingBox();
   const composer = await page.getByRole("textbox", { name: "Message Ardor", exact: true }).boundingBox();
   assert.ok(composer.x >= bounds.x + bounds.width, "Desktop chat must sit beside the sidebar");
@@ -67,6 +73,25 @@ try {
   await sidebar.getByRole("button", { name: "Notifications", exact: true }).click();
   await page.getByRole("dialog", { name: "Notifications" }).getByRole("link", { name: /Practice assessment/ }).waitFor();
   await page.getByRole("dialog", { name: "Notifications" }).press("Escape");
+  await page.getByRole("button", { name: "Add attachments" }).click();
+  await page.getByRole("region", { name: "Attachments", exact: true }).getByRole("button", { name: "Synthetic resume.pdf" }).click();
+  assert.equal(await page.getByRole("region", { name: "Attachments", exact: true }).count(), 1);
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).click();
+  assert.equal(await page.getByRole("region", { name: "Attachments", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Add attachments" }).click();
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByRole("region", { name: "Attachments", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
+  const depth = page.getByRole("dialog", { name: "Thinking depth options" });
+  await depth.getByRole("slider").focus();
+  await page.keyboard.press("End");
+  assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "DEEP");
+  await page.keyboard.press("Home");
+  assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "QUICK");
+  await depth.getByRole("button", { name: "High", exact: true }).click();
+  assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "STANDARD");
+  await page.screenshot({ path: ".next/reasoning-slider.png" });
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Chat actions", exact: true }).click();
   await page.getByRole("button", { name: "Rename", exact: true }).click();
   const rename = page.getByRole("dialog", { name: "Rename chat" });
@@ -85,6 +110,7 @@ try {
   assert.equal(conversation.titleManuallySet, true);
   await page.reload();
   await page.getByRole("heading", { name: "My custom title", exact: true }).waitFor();
+  assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "STANDARD");
 
   await page.getByRole("button", { name: "More workspaces" }).click();
   await page.getByRole("button", { name: "Customize sidebar", exact: true }).click();
@@ -136,6 +162,15 @@ try {
   await nav.getByRole("link", { name: "Resumes", exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  admin = true;
+  await page.goto(`${origin}/app`);
+  await sidebar.getByRole("button", { name: "Project Ardor", exact: true }).click();
+  await sidebar.getByRole("link", { name: "Admin dashboard", exact: true }).waitFor();
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).click();
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  assert.equal(await page.getByRole("link", { name: "Admin", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "中文", exact: true }).count(), 0);
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {

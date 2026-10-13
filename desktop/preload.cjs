@@ -3,6 +3,22 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("ardorDesktop", Object.freeze({
+  windowChrome: true,
+  getNavigation: () => ipcRenderer.invoke("desktop:get-navigation"),
+  navigate: (direction) => ipcRenderer.invoke("desktop:navigate", direction),
+  showMenu: (name) => ipcRenderer.invoke("desktop:show-menu", name),
+  onNavigation: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("desktop:navigation", listener);
+    return () => ipcRenderer.removeListener("desktop:navigation", listener);
+  },
+  onWindowAction: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, action) => callback(action);
+    ipcRenderer.on("desktop:window-action", listener);
+    return () => ipcRenderer.removeListener("desktop:window-action", listener);
+  },
   getInfo: () => ipcRenderer.invoke("desktop:get-info"),
   setLocale: (locale) => ipcRenderer.invoke("desktop:set-locale", locale),
   retry: () => ipcRenderer.invoke("desktop:retry"),

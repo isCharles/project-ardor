@@ -8,11 +8,8 @@ const version = document.getElementById("version");
 const updateStatus = document.getElementById("update-status");
 const checkUpdate = document.getElementById("check-update");
 const installUpdate = document.getElementById("install-update");
-const languageEn = document.getElementById("language-en");
-const languageZh = document.getElementById("language-zh");
 let packaged = false;
 let locale = "en";
-let localeRevision = 0;
 let statusKey = "";
 
 const copy = {
@@ -72,17 +69,7 @@ function renderLocale(next) {
   checkUpdate.textContent = words.check;
   installUpdate.textContent = words.install;
   document.getElementById("footer").textContent = words.footer;
-  languageEn.setAttribute("aria-pressed", String(locale === "en"));
-  languageZh.setAttribute("aria-pressed", String(locale === "zh-CN"));
   if (statusKey) status.textContent = words[statusKey];
-}
-
-async function changeLocale(next) {
-  const previous = locale;
-  localeRevision += 1;
-  renderLocale(next);
-  try { await window.ardorDesktop.setLocale(locale); }
-  catch { renderLocale(previous); }
 }
 
 function renderUpdate(next) {
@@ -108,17 +95,14 @@ async function run(action) {
   finally { retry.disabled = false; form.querySelector("button").disabled = false; }
 }
 
-const initialLocaleRevision = localeRevision;
 window.ardorDesktop.getInfo().then((info) => {
   input.value = info.serverUrl;
   version.textContent = `v${info.version}`;
   packaged = info.packaged;
-  if (initialLocaleRevision === localeRevision) renderLocale(info.locale);
+  renderLocale(info.locale);
   renderUpdate(info.updateStatus);
 }).catch(() => { statusKey = "failed"; status.textContent = copy[locale].failed; });
 window.ardorDesktop.onUpdateStatus(renderUpdate);
-languageEn.addEventListener("click", () => { void changeLocale("en"); });
-languageZh.addEventListener("click", () => { void changeLocale("zh-CN"); });
 form.addEventListener("submit", (event) => { event.preventDefault(); void run(() => window.ardorDesktop.setServerResult(input.value)); });
 retry.addEventListener("click", () => { void run(() => window.ardorDesktop.retry()); });
 checkUpdate.addEventListener("click", () => { void window.ardorDesktop.checkForUpdates().then(renderUpdate, () => { updateStatus.textContent = copy[locale].updateFailed; }); });

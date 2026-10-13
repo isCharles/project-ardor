@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
-import { LocaleSwitch } from "@/components/ardor/locale-switch";
 import { MarkdownContent } from "@/components/ardor/markdown-content";
 import { clearLearningDraft, readLearningDraft, saveLearningDraft } from "@/lib/learning-drafts";
 import { type AiJob, jobPending, useAiJob } from "@/lib/ai-jobs";
@@ -264,7 +263,7 @@ export default function LearningPage() {
           <Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70 hover:text-stone-900">
             <ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}
           </Link>
-          <div className="flex items-center gap-2"><LocaleSwitch />{!loading && plans.length > 0 && <button type="button" onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/65 px-4 py-2.5 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-white">
+          <div className="flex items-center gap-2">{!loading && plans.length > 0 && <button type="button" onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/65 px-4 py-2.5 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-white">
             <Plus className="size-4" />{t("New topic", "新学习")}
           </button>}</div>
         </div>

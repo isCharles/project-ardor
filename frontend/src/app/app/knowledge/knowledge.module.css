@@ -5,7 +5,7 @@
      system preference render form controls against a cream ground. */
   color-scheme: light;
   position: relative;
-  min-height: 100vh;
+  min-height: var(--ardor-page-height, 100vh);
   overflow-x: hidden;
   background: #fffdfc;
   color: #29242d;
