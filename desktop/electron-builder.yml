@@ -40,4 +40,4 @@ nsis:
 publish:
   provider: github
   owner: isCharles
-  repo: project-ardor-releases
+  repo: project-ardor
