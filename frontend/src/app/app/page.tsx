@@ -17,6 +17,7 @@ import { ChatNotifications } from "@/components/ardor/chat-notifications";
 import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
 import { ReasoningControl } from "@/components/ardor/reasoning-control";
 import { ServicePicker } from "@/components/ardor/service-picker";
+import { PublicThinking } from "@/components/ardor/public-thinking";
 import type { AgentFeature } from "@/lib/agent-features";
 import { featureHref } from "@/lib/agent-features";
 import { useDismiss } from "@/components/ardor/overlay";
@@ -29,7 +30,8 @@ type AgentMessage = { id: string; conversationId: string; role: "USER" | "ASSIST
 type Conversation = { id: string; title: string; pinned: boolean; titleManuallySet?: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
 type RetryFailure = { label: string; detail: string };
-type AgentStreamEvent = { type: "status" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null };
+type AgentStreamEvent = { type: "status" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null };
+type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean };
 type AgentRun = { id: string; conversationId: string; message: string; status: "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED"; label: string; errorCode: string | null; errorMessage: string | null; retryable: boolean; createdAt: string; updatedAt: string };
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
    button, and pressing it is an ordinary authenticated DELETE from here — the
@@ -61,7 +63,7 @@ function formatElapsed(milliseconds: number) {
 
 function savedRunTrace(raw?: string | null) {
   if (!raw) return null;
-  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<{ label: string; elapsedMs: number; status: string }>; proposals?: AgentConfirmation[] }; }
+  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<{ label: string; elapsedMs: number; status: string }>; proposals?: AgentConfirmation[]; thinkingOutput?: string; firstOutputMs?: number }; }
   catch { return null; }
 }
 
@@ -134,6 +136,8 @@ export default function AgentHomePage() {
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retryFailures, setRetryFailures] = useState<RetryFailure[]>([]);
   const [runSteps, setRunSteps] = useState<RunStep[]>([]);
+  const [runThinking, setRunThinking] = useState("");
+  const [streamProgress, setStreamProgress] = useState<StreamProgress | null>(null);
   const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const [traceOpen, setTraceOpen] = useState(true);
   const [runElapsed, setRunElapsed] = useState(0);
@@ -365,6 +369,13 @@ export default function AgentHomePage() {
           runStartedAt.current = new Date(run.createdAt).getTime();
           setRunningRun(run);
           previousStatus = "RUNNING";
+          try {
+            const progress = await api<StreamProgress>(`/api/agent/runs/${encodeURIComponent(run.id)}/progress`);
+            if (!stopped) {
+              setStreamProgress(progress);
+              setRunThinking(progress.thinkingOutput);
+            }
+          } catch { /* Older servers or a restarted worker may not retain live output. Keep polling the durable run. */ }
           timer = window.setTimeout(() => void check(), 3000);
         } else {
           setRunningRun(null);
@@ -414,6 +425,7 @@ export default function AgentHomePage() {
     setError("");
     setRunningRun(null);
     setRetryFailures([]);
+    setRunThinking(""); setStreamProgress(null);
     setRunSteps([]);
     setConfirmations([]);
     setRunElapsed(0);
@@ -477,7 +489,7 @@ export default function AgentHomePage() {
     let acceptedRun = false;
     let savedDraftKey = draftStorageKey(conversationId);
     window.sessionStorage.setItem(savedDraftKey, message);
-    setError(""); setRetryFailures([]); setRunSteps([]);
+    setError(""); setRetryFailures([]); setRunSteps([]); setRunThinking(""); setStreamProgress(null);
     setConfirmations((current) => current.filter((item) => item.kind === "learning_plan"));
     setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setBusy(true);
     try {
@@ -527,7 +539,9 @@ export default function AgentHomePage() {
           let streamFailure: AgentStreamEvent | null = null;
           if (retry > 0) setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: "" } : item));
           await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { requestId, conversationId: activeConversationId, message, reasoningDepth, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
-            if (event.type === "delta" && event.content) {
+            if (event.type === "thinking" && event.content) {
+              setRunThinking((current) => (current + event.content).slice(0, 32_000));
+            } else if (event.type === "delta" && event.content) {
               receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
             } else if (event.type === "status" && event.label) {
@@ -550,7 +564,7 @@ export default function AgentHomePage() {
                   .reduce((sum, step) => sum + step.elapsedMs, 0);
                 const modelElapsed = Math.max(1, totalElapsed - toolElapsed);
                 return current.map((step) => step.key === "status"
-                  ? { ...step, label: "理解请求与生成回复", elapsedMs: modelElapsed, done: true }
+                  ? { ...step, label: t("Model output and upstream wait (not pure thinking)", "模型输出与上游等待（非纯思考时间）"), elapsedMs: modelElapsed, done: true }
                   : step);
               });
             } else if (event.type === "confirm" && event.confirmation) {
@@ -847,6 +861,7 @@ export default function AgentHomePage() {
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
+                        <PublicThinking content={savedRunTrace(message.runTrace)?.thinkingOutput} />
                         {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <details className="mt-3 max-w-xl rounded-2xl border border-white/70 bg-white/45 px-4 py-3 text-stone-600 shadow-sm"><summary className="cursor-pointer list-none text-xs font-medium">Ardor 已完成 <span className="float-right font-normal tabular-nums text-stone-400">{formatElapsed(trace.elapsedMs)}</span></summary><div className="mt-3 space-y-2 border-l border-stone-200 pl-4">{trace.steps.map((step, index) => <div key={`${step.label}-${index}`} className="flex items-center gap-2 text-xs"><CheckCircle2 className={`size-3.5 ${step.status === "FAILED" ? "text-rose-500" : "text-emerald-500"}`} /><span>{step.label}</span><span className="ml-auto tabular-nums text-stone-400">{formatElapsed(step.elapsedMs)}</span></div>)}</div></details>; })()}
                       </div>
                     )}
@@ -879,7 +894,8 @@ export default function AgentHomePage() {
                     <span className="ml-auto text-xs tabular-nums text-stone-400">{formatElapsed(runElapsed)}</span>
                   </button>
                   {traceOpen && <div className="mt-3 space-y-2 border-l border-stone-200 pl-4">
-                    {runningRun && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin" /><span>{runningRun.label} · 可刷新页面继续查看</span></div>}
+                    {runningRun && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin motion-reduce:animate-none" /><span>{streamProgress?.phase === "WAITING_DATA" ? t("Waiting for new upstream data", "等待上游返回新数据") : streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</span></div>}
+                    <PublicThinking content={runThinking} />
                     {runSteps.map((step) => <div key={step.key} className="flex items-center gap-2 text-xs"><CheckCircle2 className={`size-3.5 ${step.done ? "text-emerald-500" : "animate-pulse text-violet-500"}`} /><span>{step.label}</span><span className="ml-auto tabular-nums text-stone-400">{step.done ? formatElapsed(step.elapsedMs) : "进行中"}</span></div>)}
                     {retryFailures.map((failure, index) => <div key={`${failure.label}-${index}`} className="flex items-start gap-2 text-xs text-amber-700"><RotateCcw className="mt-0.5 size-3.5 shrink-0" /><span><span className="font-medium">{failure.label}</span> · {failure.detail}</span></div>)}
                     {busy && retryAttempt > 0 && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin" /><span>连接波动，正在进行第 {retryAttempt}/{MAX_MESSAGE_RETRIES} 次重试</span></div>}

@@ -112,6 +112,12 @@ public class AgentController {
         return agentService.latestRun(principal.userId(), conversationId);
     }
 
+    @GetMapping("/runs/{requestId}/progress")
+    public com.projectardor.agent.service.AgentStreamProgress.View progress(
+            @AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID requestId) {
+        return agentService.progress(principal.userId(), requestId);
+    }
+
     @PostMapping("/conversations")
     @ResponseStatus(HttpStatus.CREATED)
     public AgentConversationResponse createConversation(
