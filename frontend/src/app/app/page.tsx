@@ -509,7 +509,9 @@ export default function AgentHomePage() {
     let savedDraftKey = draftStorageKey(conversationId);
     // The sent payload has a separate outbox. Never keep it in the editable next-message draft.
     window.sessionStorage.removeItem(savedDraftKey);
+    window.sessionStorage.removeItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
     setDraft("");
+    setSelectedContexts([]);
     setError(""); setRetryFailures([]); setRunSteps([]); setRunThinking(""); setStreamProgress(null);
     setConfirmations((current) => current.filter((item) => item.kind === "learning_plan"));
     setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setBusy(true);
@@ -541,8 +543,6 @@ export default function AgentHomePage() {
         setLeavingEmptyState(true);
         await new Promise((resolve) => window.setTimeout(resolve, 260));
       }
-      window.sessionStorage.removeItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
-      setSelectedContexts([]);
       window.sessionStorage.setItem(outgoingKey(reasoningAccount.current, activeConversationId), JSON.stringify(optimistic));
       setMessages((current) => [...current, optimistic]);
       setLeavingEmptyState(false);
