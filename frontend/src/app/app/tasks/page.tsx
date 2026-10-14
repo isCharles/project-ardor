@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, CircleAlert, Clock3, LoaderCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -19,6 +19,8 @@ export default function BackgroundTasksPage() {
   const [limit, setLimit] = useState(30);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const manualRefreshPending = useRef(false);
   const refresh = useCallback(async () => {
     try {
       const pages = await Promise.all(Array.from({ length: Math.ceil(limit / 100) }, (_, index) =>
@@ -28,6 +30,18 @@ export default function BackgroundTasksPage() {
     catch { setError(t("Connection interrupted. Your tasks are saved.", "连接暂时中断，后台任务仍已保存。")); }
     finally { setLoading(false); }
   }, [limit, t]);
+  async function manualRefresh() {
+    if (manualRefreshPending.current) return;
+    manualRefreshPending.current = true;
+    setRefreshing(true);
+    try {
+      // Keep one visible rotation even when the cached response arrives instantly.
+      await Promise.all([refresh(), new Promise((resolve) => window.setTimeout(resolve, 700))]);
+    } finally {
+      manualRefreshPending.current = false;
+      setRefreshing(false);
+    }
+  }
   useEffect(() => {
     let active = true;
     const update = () => { if (active && !document.hidden) void refresh(); };
@@ -50,7 +64,7 @@ export default function BackgroundTasksPage() {
   }
   return <main className="ardor-workbench min-h-screen px-6 py-10 md:px-10">
     <div className="mx-auto max-w-4xl">
-      <header className="mb-9 flex items-center justify-between gap-4"><h1 className="text-3xl font-semibold tracking-tight">{t("Background tasks", "后台任务")}</h1><button type="button" onClick={() => void refresh()} aria-label={t("Refresh tasks", "刷新任务")} className="rounded-full bg-white/80 p-3 shadow-sm"><RefreshCw className="size-4" /></button></header>
+      <header className="mb-9 flex items-center justify-between gap-4"><h1 className="text-3xl font-semibold tracking-tight">{t("Background tasks", "后台任务")}</h1><button type="button" onClick={() => void manualRefresh()} disabled={refreshing} aria-busy={refreshing} aria-label={t("Refresh tasks", "刷新任务")} title={refreshing ? t("Refreshing…", "正在刷新…") : t("Refresh tasks", "刷新任务")} className="rounded-full bg-white/80 p-3 shadow-sm transition hover:bg-white disabled:cursor-wait disabled:text-violet-600"><RefreshCw className={`size-4 ${refreshing ? "animate-spin motion-reduce:animate-none" : ""}`} style={{ animationDuration: "700ms" }} /></button></header>
       {error && <p role="alert" className="mb-5 rounded-2xl bg-rose-50 p-4 text-sm text-rose-800">{error}</p>}
       {loading ? <LoaderCircle aria-label={t("Loading", "加载中")} className="size-5 animate-spin" /> : tasks.length === 0 ? <p className="text-stone-500">{t("Nothing running. Start something when you’re ready.", "还没有后台任务。")}</p> : <div className="space-y-3">{tasks.map((task) => {
         const label = labels[task.kind] ?? [task.kind, task.kind];
