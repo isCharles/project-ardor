@@ -22,6 +22,8 @@ try {
   let userId = "workspace-owner";
   let admin = false;
   let taskRefreshFails = false;
+  let displayedMessages = [];
+  let sentMessage = null;
   let failRename = true;
   let renameCalls = 0;
   let conversation = { id: "chat-one", title: "Original chat", pinned: false, titleManuallySet: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -31,8 +33,20 @@ try {
     const path = url.pathname;
     let body = {};
     if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin };
+    else if (path === "/api/agent/features") body = [
+      { key: "LEARNING", id: "f1111111-1111-3111-8111-111111111111", label: "学习", englishLabel: "Learning", description: "学习概念" },
+      { key: "CARDS", id: "f2222222-2222-3222-8222-222222222222", label: "记忆卡", englishLabel: "Flashcards", description: "准备记忆卡" },
+    ];
     else if (path === "/api/auth/csrf") body = { token: "test", headerName: "X-CSRF-TOKEN" };
-    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, displayName: "Fixture", conversations: [conversation], archivedConversations: [], messages: [], memory: { content: "", updatedAt: null } };
+    else if (path === "/api/agent/messages/stream") {
+      sentMessage = route.request().postDataJSON();
+      displayedMessages = [
+        { id: "sent-user", conversationId: conversation.id, role: "USER", content: sentMessage.message, contextReferences: sentMessage.contextReferences.map((reference) => ({ ...reference, label: "学习" })), createdAt: new Date().toISOString() },
+        { id: "sent-assistant", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic agent reply", createdAt: new Date().toISOString() },
+      ];
+      return route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "done", conversationId: conversation.id, messageId: "sent-assistant", content: "Synthetic agent reply", elapsedMs: 100 })}\n\n` });
+    }
+    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, displayName: "Fixture", conversations: [conversation], archivedConversations: [], messages: displayedMessages, memory: { content: "", updatedAt: null } };
     else if (path === "/api/agent/conversations/chat-one") {
       renameCalls++;
       if (failRename) return route.fulfill({ status: 503, json: { message: "Synthetic save failure" } });
@@ -48,6 +62,7 @@ try {
     }
     else if (path === "/api/profile") body = { displayName: "Fixture", headline: "", targetRoles: [], timezone: "Asia/Shanghai" };
     else if (path === "/api/resumes") body = [{ id: "resume", originalFilename: "Synthetic resume.pdf" }];
+    else if (path === "/api/memory-cards") body = [];
     else if (["/api/interview-recaps", "/api/knowledge/documents", "/api/learning-plans"].includes(path)) body = [];
     else if (path === "/api/settings/llm") body = { configured: true, provider: "OPENAI_COMPATIBLE", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false };
     else if (path === "/api/settings/web-search") body = { configured: true, provider: "TAVILY", configurationSource: "ADMIN", personalOverride: false };
@@ -168,6 +183,30 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.setViewportSize({ width: 1440, height: 900 });
   admin = true;
+  await page.goto(`${origin}/app?new=1`);
+  const draftBox = page.getByRole("textbox", { name: "Message Ardor", exact: true });
+  await draftBox.fill("@Learning");
+  await page.getByRole("option", { name: "Learning", exact: true }).click();
+  await page.screenshot({ path: ".next/service-tag.png", animations: "disabled" });
+  assert.equal(await draftBox.inputValue(), "");
+  await page.getByRole("button", { name: "Change service" }).waitFor();
+  await draftBox.fill("Keep my example draft");
+  await page.reload();
+  await page.getByRole("button", { name: "Change service" }).waitFor();
+  assert.equal(await draftBox.inputValue(), "Keep my example draft");
+  await page.getByRole("button", { name: "Remove service" }).click();
+  await draftBox.fill("$Flashcards");
+  await draftBox.press("ArrowDown");
+  await page.getByRole("option", { name: "Flashcards", exact: true }).press("Enter");
+  assert.equal(await draftBox.inputValue(), "");
+  await page.goto(`${origin}/app/learning`);
+  await page.getByRole("button", { name: "New topic", exact: true }).click();
+  await page.getByRole("button", { name: "Change service" }).waitFor();
+  assert.equal(await draftBox.inputValue(), "I'd like to learn…");
+  await page.goto(`${origin}/app/cards`);
+  await page.getByRole("button", { name: "New card", exact: true }).click();
+  await page.getByRole("button", { name: "Change service" }).waitFor();
+  assert.equal(await draftBox.inputValue(), "Help me prepare flashcards about…");
   await page.goto(`${origin}/app/tasks`);
   await page.getByRole("link", { name: "Open result", exact: true }).waitFor();
   const refreshTasks = page.getByRole("button", { name: "Refresh tasks", exact: true });
@@ -190,6 +229,18 @@ try {
   await page.getByRole("button", { name: "Account", exact: true }).click();
   assert.equal(await page.getByRole("link", { name: "Admin", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "中文", exact: true }).count(), 0);
+  await page.goto(`${origin}/app`);
+  await draftBox.fill("@Learning");
+  await page.getByRole("option", { name: "Learning", exact: true }).click();
+  await draftBox.fill("Make a study outline");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByText("Synthetic agent reply", { exact: true }).waitFor();
+  assert.deepEqual(sentMessage.contextReferences, [{ type: "SERVICE", id: "f1111111-1111-3111-8111-111111111111" }]);
+  const sentBubble = page.getByRole("article").filter({ hasText: "Make a study outline" });
+  await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Change service" }).count(), 0);
+  await page.reload();
+  await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {
