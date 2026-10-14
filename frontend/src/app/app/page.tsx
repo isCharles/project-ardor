@@ -118,6 +118,20 @@ function readSavedDraft(conversationId?: string | null) {
   return window.sessionStorage.getItem(draftStorageKey(conversationId)) ?? "";
 }
 
+function outgoingKey(accountId: string | null, conversationId: string) {
+  return `ardor:outgoing:${accountId}:${conversationId}`;
+}
+
+function readOutgoing(accountId: string | null, conversationId: string | null): AgentMessage | null {
+  if (!accountId || !conversationId) return null;
+  try {
+    const raw = window.sessionStorage.getItem(outgoingKey(accountId, conversationId));
+    if (!raw) return null;
+    const value = JSON.parse(raw) as AgentMessage;
+    return value.role === "USER" && value.conversationId === conversationId && typeof value.content === "string" ? value : null;
+  } catch { return null; }
+}
+
 export default function AgentHomePage() {
   const router = useRouter();
   const { locale, t } = useLocale();
@@ -232,7 +246,7 @@ export default function AgentHomePage() {
   }, [busy, titleWatch]);
 
   function reasoningPicker() {
-    return <ReasoningControl value={reasoningDepth} disabled={!reasoningReady || busy || !!runningRun} nativeControl={nativeReasoning}
+    return <ReasoningControl value={reasoningDepth} disabled={!reasoningReady} nativeControl={nativeReasoning}
       onChange={(value) => {
         setReasoningDepth(value);
         try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:reasoning-depth:${reasoningAccount.current}`, value); }
@@ -263,7 +277,8 @@ export default function AgentHomePage() {
 
   const applyState = useCallback((result: AgentState) => {
     setState(result);
-    setMessages(result.messages);
+    const outgoing = readOutgoing(reasoningAccount.current, result.conversationId);
+    setMessages(outgoing ? [...result.messages, outgoing] : result.messages);
     const proposals = [...new Map<string, AgentConfirmation>(result.messages.flatMap((message) => savedRunTrace(message.runTrace)?.proposals ?? [])
       .filter((item) => item.kind === "learning_plan" && item.learningPlan?.requestId)
       .map((item): [string, AgentConfirmation] => [confirmationKey(item), item])).values()].slice(-50);
@@ -368,6 +383,10 @@ export default function AgentHomePage() {
         if (run.status === "RUNNING") {
           runStartedAt.current = new Date(run.createdAt).getTime();
           setRunningRun(run);
+          setMessages((current) => current.some((item) => item.role === "USER" && item.content === run.message && item.id.startsWith("pending-user-message-"))
+            ? current : [...current, readOutgoing(reasoningAccount.current, conversationId) ?? {
+              id: `pending-user-message-${run.id}`, conversationId, role: "USER", content: run.message, createdAt: run.createdAt,
+            }]);
           previousStatus = "RUNNING";
           try {
             const progress = await api<StreamProgress>(`/api/agent/runs/${encodeURIComponent(run.id)}/progress`);
@@ -382,7 +401,7 @@ export default function AgentHomePage() {
           if (previousStatus === "RUNNING") {
             previousStatus = run.status;
             if (run.status === "COMPLETED") {
-              window.sessionStorage.removeItem(draftStorageKey(conversationId));
+              window.sessionStorage.removeItem(outgoingKey(reasoningAccount.current, conversationId));
               await load(conversationId);
             } else {
               setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
@@ -488,7 +507,9 @@ export default function AgentHomePage() {
     let conversationId = state?.conversationId ?? null;
     let acceptedRun = false;
     let savedDraftKey = draftStorageKey(conversationId);
-    window.sessionStorage.setItem(savedDraftKey, message);
+    // The sent payload has a separate outbox. Never keep it in the editable next-message draft.
+    window.sessionStorage.removeItem(savedDraftKey);
+    setDraft("");
     setError(""); setRetryFailures([]); setRunSteps([]); setRunThinking(""); setStreamProgress(null);
     setConfirmations((current) => current.filter((item) => item.kind === "learning_plan"));
     setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setBusy(true);
@@ -497,7 +518,8 @@ export default function AgentHomePage() {
         const conversation = await api<Conversation>("/api/agent/conversations", { method: "POST" });
         conversationId = conversation.id;
         const conversationDraftKey = draftStorageKey(conversationId);
-        window.sessionStorage.setItem(conversationDraftKey, message);
+        const nextDraft = readSavedDraft(null);
+        if (nextDraft) window.sessionStorage.setItem(conversationDraftKey, nextDraft);
         const serviceId = window.sessionStorage.getItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
         if (serviceId) window.sessionStorage.setItem(`${conversationDraftKey}:service:${reasoningAccount.current}`, serviceId);
         window.sessionStorage.removeItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
@@ -519,9 +541,9 @@ export default function AgentHomePage() {
         setLeavingEmptyState(true);
         await new Promise((resolve) => window.setTimeout(resolve, 260));
       }
-      setDraft("");
       window.sessionStorage.removeItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
       setSelectedContexts([]);
+      window.sessionStorage.setItem(outgoingKey(reasoningAccount.current, activeConversationId), JSON.stringify(optimistic));
       setMessages((current) => [...current, optimistic]);
       setLeavingEmptyState(false);
       const pendingAssistantId = `pending-assistant-${crypto.randomUUID()}`;
@@ -589,7 +611,7 @@ export default function AgentHomePage() {
             }
           }
           if (recorded?.status === "COMPLETED") {
-            window.sessionStorage.removeItem(savedDraftKey);
+            window.sessionStorage.removeItem(outgoingKey(reasoningAccount.current, activeConversationId));
             await load(activeConversationId);
             return;
           }
@@ -616,19 +638,20 @@ export default function AgentHomePage() {
       }
       const completedAssistant = assistant as AgentMessage | null;
       if (!completedAssistant) throw new Error("Agent 暂时无法回复");
-      window.sessionStorage.removeItem(savedDraftKey);
+      window.sessionStorage.removeItem(outgoingKey(reasoningAccount.current, completedAssistant.conversationId));
       await load(completedAssistant.conversationId);
       setRunSteps([]);
       setRetryFailures([]);
       setRunElapsed(0);
     } catch (reason) {
       // An empty conversation may still have an in-flight run. Never delete it on transport failure.
-      setMessages((current) => current.filter((item) => item.id !== optimisticId && !item.id.startsWith("pending-assistant-")));
-      setDraft(message);
-      setSelectedContexts((current) => current.length ? current : sentContexts);
-      const sentService = sentContexts.find((context) => context.type === "SERVICE");
-      if (sentService) window.sessionStorage.setItem(`${savedDraftKey}:service:${reasoningAccount.current}`, sentService.id);
-      window.sessionStorage.setItem(savedDraftKey, message);
+      setMessages((current) => current.filter((item) => !item.id.startsWith("pending-assistant-")));
+      // Once dispatched, retain it in history even if transport status is uncertain.
+      // A failure before the outbox was created may restore the original without overwriting new typing.
+      if (!conversationId || !readOutgoing(reasoningAccount.current, conversationId)) {
+        setDraft((current) => current || message);
+        if (!readSavedDraft(conversationId)) window.sessionStorage.setItem(savedDraftKey, message);
+      }
       setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
     } finally { setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
   }
@@ -847,7 +870,7 @@ export default function AgentHomePage() {
                   <form onSubmit={submit} className="mx-auto mt-10 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
                     {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
-                    <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !!runningRun || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
+                    <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
                     <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}</div><div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
                   </form>
                 </div>
@@ -911,7 +934,7 @@ export default function AgentHomePage() {
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
-              <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !!runningRun || !state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
+              <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
               <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label={t("Send", "发送")} disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
             </form>
           </div>}

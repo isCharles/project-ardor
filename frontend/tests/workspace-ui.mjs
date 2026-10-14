@@ -24,6 +24,8 @@ try {
   let taskRefreshFails = false;
   let displayedMessages = [];
   let sentMessage = null;
+  let releaseStream;
+  let activeRun = null;
   let failRename = true;
   let renameCalls = 0;
   let conversation = { id: "chat-one", title: "Original chat", pinned: false, titleManuallySet: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -40,6 +42,7 @@ try {
     else if (path === "/api/auth/csrf") body = { token: "test", headerName: "X-CSRF-TOKEN" };
     else if (path === "/api/agent/messages/stream") {
       sentMessage = route.request().postDataJSON();
+      await new Promise((resolve) => { releaseStream = resolve; });
       displayedMessages = [
         { id: "sent-user", conversationId: conversation.id, role: "USER", content: sentMessage.message, contextReferences: sentMessage.contextReferences.map((reference) => ({ ...reference, label: "学习" })), createdAt: new Date().toISOString() },
         { id: "sent-assistant", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic agent reply", runTrace: JSON.stringify({ elapsedMs: 100, status: "COMPLETED", steps: [], thinkingOutput: "Synthetic public reasoning", firstOutputMs: 80 }), createdAt: new Date().toISOString() },
@@ -53,6 +56,8 @@ try {
       conversation = { ...conversation, ...route.request().postDataJSON(), titleManuallySet: true }; body = conversation;
     }
     else if (path === "/api/agent/conversations") body = [conversation];
+    else if (path === "/api/agent/runs/latest" && activeRun) body = activeRun;
+    else if (path.endsWith("/progress") && activeRun) body = { phase: "WAITING_DATA", label: "Waiting", thinkingOutput: "", answerPartial: "", silentSeconds: 40 };
     else if (path.startsWith("/api/agent/runs")) return route.fulfill({ status: 204 });
     else if (path === "/api/agent/reasoning") body = { nativeControl: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
@@ -234,6 +239,15 @@ try {
   await page.getByRole("option", { name: "Learning", exact: true }).click();
   await draftBox.fill("Make a study outline");
   await page.getByRole("button", { name: "Send", exact: true }).click();
+  for (let attempt = 0; attempt < 100 && !releaseStream; attempt++) await page.waitForTimeout(20);
+  assert.ok(releaseStream, "Synthetic stream must be in flight");
+  assert.equal(await draftBox.isEnabled(), true);
+  await draftBox.fill("Next message draft survives completion");
+  await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
+  await page.getByRole("button", { name: "Low", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).getAttribute("data-reasoning-depth"), "QUICK");
+  await draftBox.click();
+  releaseStream();
   await page.getByText("Synthetic agent reply", { exact: true }).waitFor();
   const reasoning = page.locator("details").filter({ has: page.getByText("Model reasoning output", { exact: true }) }).first();
   await reasoning.locator("summary").click();
@@ -241,9 +255,28 @@ try {
   assert.deepEqual(sentMessage.contextReferences, [{ type: "SERVICE", id: "f1111111-1111-3111-8111-111111111111" }]);
   const sentBubble = page.getByRole("article").filter({ hasText: "Make a study outline" });
   await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
+  assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   assert.equal(await page.getByRole("button", { name: "Change service" }).count(), 0);
   await page.reload();
   await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
+  assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
+  // Reconnect to an accepted run: it is history, never the next-message draft.
+  activeRun = { id: "accepted-run", conversationId: conversation.id, message: "Accepted message after disconnect", status: "RUNNING", label: "Waiting", createdAt: new Date().toISOString() };
+  await page.evaluate(({ accountId, conversationId }) => {
+    window.sessionStorage.setItem(`ardor:outgoing:${accountId}:${conversationId}`, JSON.stringify({
+      id: "pending-user-message-accepted-run", conversationId, role: "USER", content: "Accepted message after disconnect", createdAt: new Date().toISOString(),
+    }));
+  }, { accountId: userId, conversationId: conversation.id });
+  await page.reload();
+  await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).waitFor();
+  assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
+  assert.equal(await draftBox.isEnabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).isEnabled(), true);
+  activeRun = null;
+  userId = "different-outbox-owner";
+  await page.reload();
+  await page.getByRole("button", { name: "Thinking depth", exact: true }).waitFor();
+  assert.equal(await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).count(), 0);
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {
