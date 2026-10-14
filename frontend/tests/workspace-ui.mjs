@@ -42,9 +42,9 @@ try {
       sentMessage = route.request().postDataJSON();
       displayedMessages = [
         { id: "sent-user", conversationId: conversation.id, role: "USER", content: sentMessage.message, contextReferences: sentMessage.contextReferences.map((reference) => ({ ...reference, label: "学习" })), createdAt: new Date().toISOString() },
-        { id: "sent-assistant", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic agent reply", createdAt: new Date().toISOString() },
+        { id: "sent-assistant", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic agent reply", runTrace: JSON.stringify({ elapsedMs: 100, status: "COMPLETED", steps: [], thinkingOutput: "Synthetic public reasoning", firstOutputMs: 80 }), createdAt: new Date().toISOString() },
       ];
-      return route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "done", conversationId: conversation.id, messageId: "sent-assistant", content: "Synthetic agent reply", elapsedMs: 100 })}\n\n` });
+      return route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "thinking", content: "Synthetic public reasoning" })}\n\ndata: ${JSON.stringify({ type: "done", conversationId: conversation.id, messageId: "sent-assistant", content: "Synthetic agent reply", elapsedMs: 100 })}\n\n` });
     }
     else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, displayName: "Fixture", conversations: [conversation], archivedConversations: [], messages: displayedMessages, memory: { content: "", updatedAt: null } };
     else if (path === "/api/agent/conversations/chat-one") {
@@ -235,6 +235,9 @@ try {
   await draftBox.fill("Make a study outline");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByText("Synthetic agent reply", { exact: true }).waitFor();
+  const reasoning = page.locator("details").filter({ has: page.getByText("Model reasoning output", { exact: true }) }).first();
+  await reasoning.locator("summary").click();
+  await reasoning.getByText("Synthetic public reasoning", { exact: true }).waitFor();
   assert.deepEqual(sentMessage.contextReferences, [{ type: "SERVICE", id: "f1111111-1111-3111-8111-111111111111" }]);
   const sentBubble = page.getByRole("article").filter({ hasText: "Make a study outline" });
   await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();

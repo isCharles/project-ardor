@@ -40,6 +40,9 @@ public record AgentStreamEvent(
     public static AgentStreamEvent delta(String content) {
         return new AgentStreamEvent("delta", content, null, null, null, null, null, null, null, null);
     }
+    public static AgentStreamEvent thinking(String content) {
+        return new AgentStreamEvent("thinking", content, null, "收到模型思考输出", null, null, null, null, null, null);
+    }
     public static AgentStreamEvent tool(String type, String name, String label, long elapsedMs) {
         return new AgentStreamEvent(type, null, name, label, elapsedMs, null, null, null, null, null);
     }

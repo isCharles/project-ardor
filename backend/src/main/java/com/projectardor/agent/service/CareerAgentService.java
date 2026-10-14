@@ -100,6 +100,7 @@ public class CareerAgentService {
     private final AgentMemoryService memoryService;
     private final ProfileService profileService;
     private final ObjectMapper objectMapper;
+    private final AgentStreamProgress streamProgress;
     private final ConcurrentHashMap<UUID, Semaphore> userLocks = new ConcurrentHashMap<>();
 
     public CareerAgentService(
@@ -110,7 +111,8 @@ public class CareerAgentService {
             LlmConfigService llmConfigService,
             AgentMemoryService memoryService,
             ProfileService profileService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            AgentStreamProgress streamProgress) {
         this.store = store;
         this.runStore = runStore;
         this.modelFactory = modelFactory;
@@ -119,6 +121,7 @@ public class CareerAgentService {
         this.memoryService = memoryService;
         this.profileService = profileService;
         this.objectMapper = objectMapper;
+        this.streamProgress = streamProgress;
     }
 
     public AgentStateResponse state(UUID userId, UUID requestedConversationId) {
@@ -297,6 +300,8 @@ public class CareerAgentService {
             }
             MessageWindowChatMemory memory = conversationMemory(userId, conversation.getId());
             ConcurrentHashMap<String, Long> toolStarts = new ConcurrentHashMap<>();
+            UUID progressId = requestId == null ? UUID.randomUUID() : requestId;
+            streamProgress.begin(userId, progressId);
             List<RunStep> persistedSteps = new CopyOnWriteArrayList<>();
             AtomicInteger partialChunks = new AtomicInteger();
             AtomicLong firstPartialAt = new AtomicLong();
@@ -308,15 +313,17 @@ public class CareerAgentService {
                     .streamingChatModel(modelFactory.createStreaming(userId, depth))
                     .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory).tools(bound)
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
-            sink.send(AgentStreamEvent.status("正在理解你的请求", elapsedMs(startedAt)));
+            sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)
                     .beforeToolExecution(before -> {
                         String name = before.request().name();
+                        streamProgress.tool(progressId, toolLabel(name, false));
                         toolStarts.put(before.request().id(), System.nanoTime());
                         if (requestId != null) runStore.progress(userId, requestId, toolLabel(name, false), true);
                         sink.send(AgentStreamEvent.tool("tool_start", name, toolLabel(name, false), elapsedMs(startedAt)));
                     })
                     .onToolExecuted(execution -> {
+                        streamProgress.waiting(progressId);
                         Long toolStarted = toolStarts.remove(execution.request().id());
                         long duration = toolStarted == null ? 0 : Math.max(1, elapsedMs(toolStarted));
                         persistedSteps.add(new RunStep(toolLabel(execution.request().name(), execution.hasFailed()), duration,
@@ -325,7 +332,14 @@ public class CareerAgentService {
                         sink.send(AgentStreamEvent.tool("tool_end", execution.request().name(),
                                 toolLabel(execution.request().name(), execution.hasFailed()), duration));
                     })
+                    .onPartialThinking(thinking -> {
+                        if (finished.get()) return;
+                        streamProgress.thinking(progressId, thinking.text());
+                        sink.send(AgentStreamEvent.thinking(thinking.text()));
+                    })
                     .onPartialResponse(token -> {
+                        if (finished.get()) return;
+                        streamProgress.answer(progressId, token);
                         firstPartialAt.compareAndSet(0, System.nanoTime());
                         partialChunks.incrementAndGet();
                         long now = System.nanoTime();
@@ -342,10 +356,11 @@ public class CareerAgentService {
                             String answer = response.aiMessage().text();
                             if (answer == null || answer.isBlank()) throw new IllegalStateException("Agent 没有返回可用内容");
                             long totalElapsed = elapsedMs(startedAt);
-                            String trace = runTrace(totalElapsed, persistedSteps, bound.pendingConfirmations());
+                            String trace = runTrace(totalElapsed, persistedSteps, bound.pendingConfirmations(), streamProgress.get(userId, progressId));
                             List<ConversationMessage> saved = requestId == null
                                     ? store.appendExchange(userId, conversation, message, answer.strip(), trace, references)
                                     : runStore.complete(userId, requestId, conversation, message, answer.strip(), trace, references);
+                            streamProgress.finish(progressId, false);
                             long firstPartialMs = firstPartialDelayMs(startedAt, firstPartialAt.get());
                             log.info("Agent stream completed: userId={}, conversationId={}, partialChunks={}, firstPartialMs={}, totalMs={}",
                                     userId, conversation.getId(), partialChunks.get(), firstPartialMs, elapsedMs(startedAt));
@@ -354,11 +369,13 @@ public class CareerAgentService {
                             sink.send(AgentStreamEvent.done(AgentMessageResponse.from(saved.get(1)), elapsedMs(startedAt)));
                             sink.complete();
                         } catch (RuntimeException exception) {
+                            streamProgress.finish(progressId, true);
                             sendStreamError(sink, exception, startedAt, userId, persistedRun.get());
                         } finally { lock.release(); }
                     })
                     .onError(exception -> {
                         if (!finished.compareAndSet(false, true)) return;
+                        streamProgress.finish(progressId, true);
                         try { sendStreamError(sink, exception, startedAt, userId, persistedRun.get()); }
                         finally { lock.release(); }
                     });
@@ -425,14 +442,20 @@ public class CareerAgentService {
 
     private String runTrace(long elapsedMs, List<RunStep> toolSteps,
             List<CareerAgentTools.PendingConfirmation> pending) {
+        return runTrace(elapsedMs, toolSteps, pending, null);
+    }
+
+    private String runTrace(long elapsedMs, List<RunStep> toolSteps,
+            List<CareerAgentTools.PendingConfirmation> pending, AgentStreamProgress.View progress) {
         List<RunStep> steps = new java.util.ArrayList<>();
         long toolElapsed = toolSteps.stream().mapToLong(RunStep::elapsedMs).sum();
-        steps.add(new RunStep("理解请求与生成回复", Math.max(1, elapsedMs - toolElapsed), "COMPLETED"));
+        steps.add(new RunStep("模型输出与上游等待（非纯思考时间）", Math.max(1, elapsedMs - toolElapsed), "COMPLETED"));
         steps.addAll(toolSteps);
         List<AgentStreamEvent.AgentConfirmation> proposals = pending.stream()
                 .filter(item -> "learning_plan".equals(item.kind()))
                 .map(AgentStreamEvent.AgentConfirmation::from).toList();
-        try { return objectMapper.writeValueAsString(new RunTrace(elapsedMs, "COMPLETED", steps, proposals)); }
+        try { return objectMapper.writeValueAsString(new RunTrace(elapsedMs, "COMPLETED", steps, proposals,
+                progress == null ? null : progress.thinkingOutput(), progress == null ? null : progress.firstOutputMs())); }
         catch (tools.jackson.core.JacksonException exception) {
             log.warn("Could not serialize agent run trace: {}", exception.getMessage());
             return null;
@@ -440,7 +463,12 @@ public class CareerAgentService {
     }
 
     private record RunTrace(long elapsedMs, String status, List<RunStep> steps,
-            List<AgentStreamEvent.AgentConfirmation> proposals) {}
+            List<AgentStreamEvent.AgentConfirmation> proposals, String thinkingOutput, Long firstOutputMs) {}
+
+    public AgentStreamProgress.View progress(UUID userId, UUID requestId) {
+        runStore.get(userId, requestId);
+        return streamProgress.get(userId, requestId);
+    }
     private record RunStep(String label, long elapsedMs, String status) {}
 
     private String toolLabel(String name, boolean failed) {
