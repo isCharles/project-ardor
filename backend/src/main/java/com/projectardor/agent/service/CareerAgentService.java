@@ -504,6 +504,7 @@ public class CareerAgentService {
             case "delete_interview_recap" -> "删除面经";
             case "list_learning_plans", "get_learning_plan" -> "读取学习计划";
             case "create_learning_plan" -> "生成学习计划";
+            case "delete_learning_plan" -> "提议删除学习计划";
             case "search_web" -> "联网搜索";
             default -> "调用职业工具";
         };

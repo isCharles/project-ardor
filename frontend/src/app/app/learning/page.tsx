@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, CircleAlert, Plus, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, CircleAlert, Plus, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -13,6 +13,7 @@ import { AiJobStatus } from "@/components/ardor/ai-job-status";
 import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 import { agentCreationHref } from "@/lib/agent-features";
+import { AppDialog } from "@/components/ui/app-dialog";
 
 type Lesson = { summary?: string; keyPoints?: string[]; explanation?: string; example?: string; pitfalls?: string[] };
 type Exercise = { question: string; type?: "SHORT_ANSWER" | "MULTIPLE_CHOICE" | "SCENARIO"; options?: string[] };
@@ -99,6 +100,9 @@ export default function LearningPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<LearningPlan | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const [error, setError] = useState("");
   const pendingCreate = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const userId = useRef<string | null>(null);
@@ -153,6 +157,22 @@ export default function LearningPage() {
   }, [router]);
 
   const selected = plans.find((plan) => plan.id === selectedId) ?? null;
+
+  async function deletePlan() {
+    if (!deleteTarget || deleting) return;
+    const target = deleteTarget;
+    setDeleting(true); setDeleteError("");
+    try {
+      await api<void>(`/api/learning-plans/${target.id}`, { method: "DELETE" });
+      clearLearningDraft(userId.current, target);
+      selectedRef.current = null;
+      setDeleteTarget(null);
+      await load();
+      window.dispatchEvent(new Event("ardor:background-refresh"));
+    } catch (reason) {
+      setDeleteError(reason instanceof Error ? reason.message : t("Could not delete learning plan", "删除学习计划失败"));
+    } finally { setDeleting(false); }
+  }
   const assessing = jobPending(assessment.job);
   const previousAttempts = selected?.lastEvaluation?.attempts ?? [];
   useReadVisibleResult("LEARNING_CREATE",selected?.id,!!selected,"",selected?.requestId);
@@ -292,6 +312,7 @@ export default function LearningPage() {
                   <h2 className="mt-3 max-w-3xl break-words text-4xl font-semibold tracking-[-0.05em] md:text-6xl">{selected.concept}</h2>
                   <p className="mt-3 text-sm text-stone-600">{selected.status === "NEEDS_REVIEW" ? t("Try a new round to confirm your understanding.", "再练一次，确认真正掌握。") : selected.status === "IN_PROGRESS" ? t("Explain it in your own words.", "学过之后，用自己的话回答。") : selected.status === "COMPLETED" ? t("This topic is complete.", "这一步已完成。") : t("Understand first, then practice.", "先理解，再检验。")}</p>
                   <div className="mt-7 flex flex-wrap items-center gap-3">
+                    <button type="button" aria-label={t("Delete learning plan", "删除学习计划")} disabled={busy || deleting} onClick={() => { setDeleteTarget(selected); setDeleteError(""); }} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm text-stone-500 transition hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"><Trash2 className="size-4" />{t("Delete", "删除")}</button>
                     {selected.status === "SCHEDULED" && <button type="button" onClick={() => void begin()} disabled={busy} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-stone-800 disabled:opacity-50">{busy ? t("Starting…", "正在开始…") : t("Start learning", "开始学习")}<ArrowRight className="size-4" /></button>}
                     {(selected.status === "IN_PROGRESS" || selected.status === "NEEDS_REVIEW") && <button type="button" onClick={() => document.getElementById("learning-practice")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-stone-800">{t("Practice", "去练习")}<ArrowRight className="size-4" /></button>}
                     {selected.sourceType === "RECAP" && selected.sourceId ? <Link href={`/app/recaps?source=${selected.sourceId}`} className="text-sm text-stone-600 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">{t("View interview notes", "查看来源面经")}</Link> : <span className="text-xs text-stone-500">{t(sourceLabel[selected.sourceType].en, sourceLabel[selected.sourceType].zh)}</span>}
@@ -358,6 +379,12 @@ export default function LearningPage() {
       </div>
 
       {showCreate && <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCreate(false); }}><section role="dialog" aria-modal="true" aria-labelledby="create-learning-title" className="ardor-panel w-full max-w-lg rounded-[2rem] p-7"><div className="flex items-center justify-between"><h2 id="create-learning-title" className="text-2xl font-semibold">{t("What would you like to learn?", "学什么？")}</h2><button type="button" aria-label={t("Close", "关闭")} onClick={() => setShowCreate(false)} className="rounded-full p-2 text-stone-500 hover:bg-white"><X className="size-5" /></button></div><form onSubmit={create} className="mt-6 space-y-4"><input name="concept" required maxLength={160} className="field" placeholder={t("For example, JVM or database indexes", "例如 JVM、数据库索引")} autoFocus /><textarea name="reason" maxLength={4000} rows={3} className="field resize-y" placeholder={t("Why this topic? (optional)", "为什么想学（可选）")} />{error && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}<button disabled={busy} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Generating…", "正在生成…") : t("Create learning plan", "生成学习计划")}</button></form></section></div>}
+      {deleteTarget && <AppDialog title={t("Delete learning plan?", "删除学习计划？")} onClose={() => { if (!deleting) setDeleteTarget(null); }}>
+        <p className="break-words font-medium">{deleteTarget.concept}</p>
+        <p className="mt-3 text-sm leading-6 text-stone-500">{t("This permanently removes the lesson, practice history and its calendar task. Interview notes and other plans stay unchanged.", "将永久删除讲解、练习记录及关联日程，不影响来源面经或其他学习计划。")}</p>
+        {deleteError && <p role="alert" className="mt-3 break-words text-sm text-rose-700">{deleteError}</p>}
+        <div className="mt-6 flex justify-end gap-3"><button type="button" disabled={deleting} onClick={() => setDeleteTarget(null)} className="rounded-full px-4 py-2 text-sm">{t("Cancel", "取消")}</button><button type="button" disabled={deleting} onClick={() => void deletePlan()} className="rounded-full bg-rose-600 px-4 py-2 text-sm text-white disabled:opacity-50">{deleting ? t("Deleting…", "正在删除…") : t("Delete permanently", "永久删除")}</button></div>
+      </AppDialog>}
     </main>
   );
 }

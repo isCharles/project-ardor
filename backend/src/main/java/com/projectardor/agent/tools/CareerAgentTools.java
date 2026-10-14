@@ -260,6 +260,14 @@ public class CareerAgentTools {
             return LearningPlanResponse.from(learningPlanService.get(userId, uuid(planId, "学习计划 ID")));
         }
 
+        @Tool(name = "delete_learning_plan", value = "提议删除当前用户指定的学习计划、练习记录及关联日历任务。先调用 list_learning_plans 定位真实 UUID；只显示确认按钮，用户点击后才删除")
+        public Map<String, Object> deleteLearningPlan(@P("学习计划 UUID") String planId) {
+            UUID id = uuid(planId, "学习计划 ID");
+            var plan = learningPlanService.get(userId, id);
+            return propose("learning_plan_delete", id, plan.getConcept(),
+                    "删除讲解、练习记录和关联日程，不能撤销", "/api/learning-plans/" + id);
+        }
+
         @Tool(name = "create_learning_plan", value = "向用户提议一项概念学习计划和日程；只有用户点击确认后才生成，不能声称已创建")
         public Map<String, Object> createLearningPlan(
                 @P("简洁明确的学习概念，例如 JVM 或数据库索引") String concept,
