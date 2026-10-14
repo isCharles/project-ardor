@@ -9,6 +9,7 @@ import remarkGfm from "remark-gfm";
 
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
+import { agentCreationHref } from "@/lib/agent-features";
 
 type Card = {
   id: string;
@@ -110,7 +111,7 @@ export default function CardsPage() {
   });
 
   function openCreate() {
-    setEditing(null); setFormSource("KNOWLEDGE"); setError(""); setShowForm(true);
+    router.push(agentCreationHref("CARDS", locale));
   }
 
   function openEdit(item: Card) {

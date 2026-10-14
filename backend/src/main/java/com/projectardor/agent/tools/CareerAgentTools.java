@@ -131,6 +131,7 @@ public class CareerAgentTools {
     public String contextHint(UUID userId, String rawType, UUID contextId) {
         if (rawType == null || contextId == null) return "";
         return switch (rawType.strip().toUpperCase(java.util.Locale.ROOT)) {
+            case "SERVICE" -> com.projectardor.agent.AgentFeature.require(contextId).hint();
             case "RESUME" -> {
                 Resume resume = resumeService.get(userId, contextId);
                 yield "用户在界面中明确指定了简历：" + resume.getOriginalFilename() + "（简历 ID：" + resume.getId() + "）。需要内容时调用简历工具读取或分析。";
@@ -156,6 +157,7 @@ public class CareerAgentTools {
     public AgentContextReference resolveContext(UUID userId, String rawType, UUID contextId) {
         String type = rawType == null ? "" : rawType.strip().toUpperCase(Locale.ROOT);
         String label = switch (type) {
+            case "SERVICE" -> com.projectardor.agent.AgentFeature.require(contextId).label();
             case "RESUME" -> resumeService.get(userId, contextId).getOriginalFilename();
             case "RECAP" -> interviewRecapService.detail(userId, contextId).title();
             case "KNOWLEDGE" -> knowledgeService.get(userId, contextId).title();

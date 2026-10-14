@@ -16,12 +16,15 @@ import { AppDialog } from "@/components/ui/app-dialog";
 import { ChatNotifications } from "@/components/ardor/chat-notifications";
 import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
 import { ReasoningControl } from "@/components/ardor/reasoning-control";
+import { ServicePicker } from "@/components/ardor/service-picker";
+import type { AgentFeature } from "@/lib/agent-features";
+import { featureHref } from "@/lib/agent-features";
 import { useDismiss } from "@/components/ardor/overlay";
 import { ApiError, api, streamApi } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 import { useTypewriter } from "@/lib/use-typewriter";
 
-type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING"; id: string; label: string };
+type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING" | "SERVICE"; id: string; label: string };
 type AgentMessage = { id: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; createdAt: string };
 type Conversation = { id: string; title: string; pinned: boolean; titleManuallySet?: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
@@ -144,6 +147,8 @@ export default function AgentHomePage() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState("");
   const [selectedContexts, setSelectedContexts] = useState<SelectedContext[]>([]);
+  const [features, setFeatures] = useState<AgentFeature[]>([]);
+  const featuresRef = useRef<AgentFeature[]>([]);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const attachmentRef = useDismiss<HTMLDivElement>(attachmentOpen, () => setAttachmentOpen(false));
   const [isAdmin, setIsAdmin] = useState(false);
@@ -280,7 +285,10 @@ export default function AgentHomePage() {
     setArchivedConversations(result.archivedConversations);
     setMemoryDraft(result.memory.content);
     setDraft(readSavedDraft(result.conversationId));
-    window.history.replaceState(null, "", result.conversationId ? `/app?conversation=${result.conversationId}` : "/app");
+    const serviceId = window.sessionStorage.getItem(`${draftStorageKey(result.conversationId)}:service:${reasoningAccount.current}`);
+    const feature = featuresRef.current.find((item) => item.id === serviceId);
+    setSelectedContexts((current) => [...current.filter((item) => item.type !== "SERVICE"), ...(feature ? [{ type: "SERVICE" as const, id: feature.id, label: feature.label }] : [])]);
+    window.history.replaceState(null, "", result.conversationId ? `/app?conversation=${result.conversationId}` : "/app?new=1");
   }, []);
 
   const load = useCallback(async (conversationId?: string | null) => {
@@ -296,10 +304,19 @@ export default function AgentHomePage() {
       .then(async (result) => {
         if (cancelled) return;
         const params = new URLSearchParams(window.location.search);
+        const account = await api<{ id: string }>("/api/auth/me");
+        reasoningAccount.current = account.id;
+        const response = await api<AgentFeature[]>("/api/agent/features").catch(() => []);
+        const catalog = Array.isArray(response) ? response : [];
+        if (cancelled) return;
+        setFeatures(catalog);
+        featuresRef.current = catalog;
         if (params.get("new") === "1") {
           result = { ...result, conversationId: null, messages: [] };
           const prefill = params.get("prefill") ?? "";
           if (prefill) window.sessionStorage.setItem(draftStorageKey(null), prefill);
+          const feature = catalog.find((item) => item.key === params.get("feature"));
+          if (feature) window.sessionStorage.setItem(`${draftStorageKey(null)}:service:${account.id}`, feature.id);
           const contextType = params.get("contextType"); const contextId = params.get("contextId"); const contextLabel = params.get("contextLabel");
           if ((contextType === "RESUME" || contextType === "RECAP" || contextType === "KNOWLEDGE" || contextType === "LEARNING") && contextId && contextLabel) setSelectedContexts([{ type: contextType, id: contextId, label: contextLabel }]);
         }
@@ -404,7 +421,7 @@ export default function AgentHomePage() {
     setSelectedContexts([]);
     setState((current) => current ? { ...current, conversationId: null, messages: [] } : current);
     setDraft(readSavedDraft(null));
-    window.history.replaceState(null, "", "/app");
+    window.history.replaceState(null, "", "/app?new=1");
     if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false);
   }
 
@@ -455,6 +472,7 @@ export default function AgentHomePage() {
       return;
     }
     const optimisticId = `pending-user-message-${crypto.randomUUID()}`;
+    const sentContexts = [...selectedContexts];
     let conversationId = state?.conversationId ?? null;
     let acceptedRun = false;
     let savedDraftKey = draftStorageKey(conversationId);
@@ -468,6 +486,9 @@ export default function AgentHomePage() {
         conversationId = conversation.id;
         const conversationDraftKey = draftStorageKey(conversationId);
         window.sessionStorage.setItem(conversationDraftKey, message);
+        const serviceId = window.sessionStorage.getItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
+        if (serviceId) window.sessionStorage.setItem(`${conversationDraftKey}:service:${reasoningAccount.current}`, serviceId);
+        window.sessionStorage.removeItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
         window.sessionStorage.removeItem(savedDraftKey);
         savedDraftKey = conversationDraftKey;
         setConversations((current) => sortConversations([conversation, ...current]));
@@ -481,13 +502,14 @@ export default function AgentHomePage() {
         const title = conversationTitle(message);
         setConversations((current) => current.map((item) => item.id === activeConversationId ? { ...item, title } : item));
       }
-      const sentContexts = [...selectedContexts];
       const optimistic: AgentMessage = { id: optimisticId, conversationId: activeConversationId, role: "USER", content: message, contextReferences: sentContexts, createdAt: "" };
       if (messages.length === 0) {
         setLeavingEmptyState(true);
         await new Promise((resolve) => window.setTimeout(resolve, 260));
       }
       setDraft("");
+      window.sessionStorage.removeItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
+      setSelectedContexts([]);
       setMessages((current) => [...current, optimistic]);
       setLeavingEmptyState(false);
       const pendingAssistantId = `pending-assistant-${crypto.randomUUID()}`;
@@ -581,7 +603,6 @@ export default function AgentHomePage() {
       const completedAssistant = assistant as AgentMessage | null;
       if (!completedAssistant) throw new Error("Agent 暂时无法回复");
       window.sessionStorage.removeItem(savedDraftKey);
-      setSelectedContexts([]);
       await load(completedAssistant.conversationId);
       setRunSteps([]);
       setRetryFailures([]);
@@ -590,6 +611,9 @@ export default function AgentHomePage() {
       // An empty conversation may still have an in-flight run. Never delete it on transport failure.
       setMessages((current) => current.filter((item) => item.id !== optimisticId && !item.id.startsWith("pending-assistant-")));
       setDraft(message);
+      setSelectedContexts((current) => current.length ? current : sentContexts);
+      const sentService = sentContexts.find((context) => context.type === "SERVICE");
+      if (sentService) window.sessionStorage.setItem(`${savedDraftKey}:service:${reasoningAccount.current}`, sentService.id);
       window.sessionStorage.setItem(savedDraftKey, message);
       setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
     } finally { setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
@@ -706,7 +730,23 @@ export default function AgentHomePage() {
 
   function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void send(draft); }
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (/^[@$]/.test(draft) && event.key === "ArrowDown") {
+      const option = document.querySelector<HTMLButtonElement>("[data-service-option]");
+      if (option) { event.preventDefault(); option.focus(); return; }
+    }
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
+  }
+
+  function servicePicker() {
+    const selected = features.find((feature) => selectedContexts.some((context) => context.type === "SERVICE" && context.id === feature.id));
+    return <ServicePicker features={features} selected={selected} draft={draft} choose={(feature) => {
+      setSelectedContexts((current) => [...current.filter((item) => item.type !== "SERVICE"), { type: "SERVICE", id: feature.id, label: feature.label }]);
+      window.sessionStorage.setItem(`${draftStorageKey(state?.conversationId)}:service:${reasoningAccount.current}`, feature.id);
+      updateDraft(draft.replace(/^[@$][^\s]*\s*/, ""));
+    }} remove={() => {
+      setSelectedContexts((current) => current.filter((item) => item.type !== "SERVICE"));
+      window.sessionStorage.removeItem(`${draftStorageKey(state?.conversationId)}:service:${reasoningAccount.current}`);
+    }} />;
   }
 
   function attachmentPicker() {
@@ -791,7 +831,8 @@ export default function AgentHomePage() {
                   {runningRun && <div role="status" className="mx-auto mt-5 max-w-2xl rounded-2xl border border-violet-100 bg-white/75 px-4 py-3 text-left text-sm text-violet-700">{t(`Ardor is working on your last message · ${runningRun.label}. It will appear when ready.`, `Ardor 正在处理上一条消息 · ${runningRun.label}。完成后会自动显示。`)}</div>}
                   {(visibleError || retryFailures.length > 0) && <div className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{retryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
                   <form onSubmit={submit} className="mx-auto mt-10 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
-                    {selectedContexts.length > 0 && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
+                    {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
+              {servicePicker()}
                     <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !!runningRun || !state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
                     <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}</div><div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
                   </form>
@@ -802,7 +843,7 @@ export default function AgentHomePage() {
                 {messages.map((message) => (
                   <article key={message.id} className={`flex gap-3 ${message.role === "USER" ? "justify-end" : "justify-start"}`}>
                     {message.role === "USER" ? (
-                      <div className="max-w-[86%] rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7">{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" /><span className="truncate">{context.label}</span></span>)}</div>}<div className="whitespace-pre-wrap">{message.content}</div></div>
+                      <div className="max-w-[86%] rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7">{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" />{context.type === "SERVICE" ? <Link href={featureHref(features.find((feature) => feature.id === context.id)?.key)} className="truncate text-violet-700 underline underline-offset-2">{locale === "en" ? features.find((feature) => feature.id === context.id)?.englishLabel ?? context.label : context.label}</Link> : <span className="truncate">{context.label}</span>}</span>)}</div>}<div className="whitespace-pre-wrap">{message.content}</div></div>
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
@@ -852,7 +893,8 @@ export default function AgentHomePage() {
           {messages.length > 0 && <div className="ardor-composer-enter relative z-10 shrink-0 px-4 pb-5 md:px-8">
             {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
-              {selectedContexts.length > 0 && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
+              {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
+              {servicePicker()}
               <textarea aria-label="给 Ardor 发消息" value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={busy || !!runningRun || !state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
               <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label={t("Send", "发送")} disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
             </form>

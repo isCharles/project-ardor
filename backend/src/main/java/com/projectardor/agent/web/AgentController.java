@@ -49,6 +49,14 @@ public class AgentController {
         return agentService.state(principal.userId(), conversationId);
     }
 
+    @GetMapping("/features")
+    public java.util.List<FeatureView> features() {
+        return java.util.Arrays.stream(com.projectardor.agent.AgentFeature.values())
+                .map(feature -> new FeatureView(feature.name(), feature.id(), feature.label(), feature.englishLabel(), feature.description())).toList();
+    }
+
+    public record FeatureView(String key, java.util.UUID id, String label, String englishLabel, String description) {}
+
     @PostMapping("/messages")
     @QuotaProtected(UsageFeature.AGENT_CHAT)
     public AgentMessageResponse chat(

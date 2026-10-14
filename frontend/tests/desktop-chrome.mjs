@@ -54,11 +54,11 @@ try {
   assert.deepEqual(preferences, { sandbox: true, nodeIntegration: false, contextIsolation: true });
   await page.goto("http://127.0.0.1:3101/app/settings");
   await toolbar.getByRole("button", { name: "Back", exact: true }).click();
-  await page.waitForURL("http://127.0.0.1:3101/app");
+  await page.waitForURL((url) => url.origin === "http://127.0.0.1:3101" && url.pathname === "/app");
   await toolbar.getByRole("button", { name: "Forward", exact: true }).click();
   await page.waitForURL("http://127.0.0.1:3101/app/settings");
   await toolbar.getByRole("button", { name: "Back", exact: true }).click();
-  await page.waitForURL("http://127.0.0.1:3101/app");
+  await page.waitForURL((url) => url.origin === "http://127.0.0.1:3101" && url.pathname === "/app");
   await toolbar.getByRole("button", { name: "Toggle conversations" }).click();
   assert.equal(await sidebar.isVisible(), false);
   await toolbar.getByRole("button", { name: "Toggle conversations" }).click();

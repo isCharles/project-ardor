@@ -346,7 +346,7 @@ public class CareerAgentService {
                             List<ConversationMessage> saved = requestId == null
                                     ? store.appendExchange(userId, conversation, message, answer.strip(), trace, references)
                                     : runStore.complete(userId, requestId, conversation, message, answer.strip(), trace, references);
-                            long firstPartialMs = firstPartialAt.get() == 0 ? -1 : elapsedMs(firstPartialAt.get());
+                            long firstPartialMs = firstPartialDelayMs(startedAt, firstPartialAt.get());
                             log.info("Agent stream completed: userId={}, conversationId={}, partialChunks={}, firstPartialMs={}, totalMs={}",
                                     userId, conversation.getId(), partialChunks.get(), firstPartialMs, elapsedMs(startedAt));
                             bound.pendingConfirmations().forEach(
@@ -418,6 +418,10 @@ public class CareerAgentService {
     }
 
     private long elapsedMs(long startedAt) { return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt); }
+
+    static long firstPartialDelayMs(long startedAt, long firstPartialAt) {
+        return firstPartialAt == 0 ? -1 : java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(Math.max(0, firstPartialAt - startedAt));
+    }
 
     private String runTrace(long elapsedMs, List<RunStep> toolSteps,
             List<CareerAgentTools.PendingConfirmation> pending) {

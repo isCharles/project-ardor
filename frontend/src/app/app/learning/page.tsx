@@ -12,6 +12,7 @@ import { type AiJob, jobPending, useAiJob } from "@/lib/ai-jobs";
 import { AiJobStatus } from "@/components/ardor/ai-job-status";
 import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
+import { agentCreationHref } from "@/lib/agent-features";
 
 type Lesson = { summary?: string; keyPoints?: string[]; explanation?: string; example?: string; pitfalls?: string[] };
 type Exercise = { question: string; type?: "SHORT_ANSWER" | "MULTIPLE_CHOICE" | "SCENARIO"; options?: string[] };
@@ -263,7 +264,7 @@ export default function LearningPage() {
           <Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70 hover:text-stone-900">
             <ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}
           </Link>
-          <div className="flex items-center gap-2">{!loading && plans.length > 0 && <button type="button" onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/65 px-4 py-2.5 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-white">
+          <div className="flex items-center gap-2">{!loading && plans.length > 0 && <button type="button" onClick={() => router.push(agentCreationHref("LEARNING", locale))} className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/65 px-4 py-2.5 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-white">
             <Plus className="size-4" />{t("New topic", "新学习")}
           </button>}</div>
         </div>
@@ -278,7 +279,7 @@ export default function LearningPage() {
           <div className="ardor-panel h-80 animate-pulse rounded-[2.5rem]" aria-label={t("Loading learning plans", "正在加载学习计划")} />
         ) : plans.length === 0 ? (
           <section className="ardor-panel grid min-h-96 place-items-center rounded-[2.5rem] px-6 text-center">
-            <div><BookOpen className="mx-auto size-9 text-violet-500" /><h2 className="mt-5 text-2xl font-semibold">{t("Start with one concept", "从一个概念开始")}</h2><p className="mt-2 text-sm text-stone-500">{t("Choose one yourself, or let Ardor suggest one from your interviews.", "自己选择，或让 Ardor 根据面试情况安排。")}</p><button type="button" onClick={() => setShowCreate(true)} className="mt-7 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white">{t("New topic", "新学习")}<ArrowRight className="ml-2 inline size-4" /></button></div>
+            <div><BookOpen className="mx-auto size-9 text-violet-500" /><h2 className="mt-5 text-2xl font-semibold">{t("Start with one concept", "从一个概念开始")}</h2><p className="mt-2 text-sm text-stone-500">{t("Choose one yourself, or let Ardor suggest one from your interviews.", "自己选择，或让 Ardor 根据面试情况安排。")}</p><button type="button" onClick={() => router.push(agentCreationHref("LEARNING", locale))} className="mt-7 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white">{t("New topic", "新学习")}<ArrowRight className="ml-2 inline size-4" /></button></div>
           </section>
         ) : selected && (
           <>
