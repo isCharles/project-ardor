@@ -421,7 +421,7 @@ export default function AgentHomePage() {
     setSelectedContexts([]);
     setState((current) => current ? { ...current, conversationId: null, messages: [] } : current);
     setDraft(readSavedDraft(null));
-    window.history.replaceState(null, "", "/app");
+    window.history.replaceState(null, "", "/app?new=1");
     if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false);
   }
 
@@ -472,6 +472,7 @@ export default function AgentHomePage() {
       return;
     }
     const optimisticId = `pending-user-message-${crypto.randomUUID()}`;
+    const sentContexts = [...selectedContexts];
     let conversationId = state?.conversationId ?? null;
     let acceptedRun = false;
     let savedDraftKey = draftStorageKey(conversationId);
@@ -501,7 +502,6 @@ export default function AgentHomePage() {
         const title = conversationTitle(message);
         setConversations((current) => current.map((item) => item.id === activeConversationId ? { ...item, title } : item));
       }
-      const sentContexts = [...selectedContexts];
       const optimistic: AgentMessage = { id: optimisticId, conversationId: activeConversationId, role: "USER", content: message, contextReferences: sentContexts, createdAt: "" };
       if (messages.length === 0) {
         setLeavingEmptyState(true);
@@ -611,6 +611,9 @@ export default function AgentHomePage() {
       // An empty conversation may still have an in-flight run. Never delete it on transport failure.
       setMessages((current) => current.filter((item) => item.id !== optimisticId && !item.id.startsWith("pending-assistant-")));
       setDraft(message);
+      setSelectedContexts((current) => current.length ? current : sentContexts);
+      const sentService = sentContexts.find((context) => context.type === "SERVICE");
+      if (sentService) window.sessionStorage.setItem(`${savedDraftKey}:service:${reasoningAccount.current}`, sentService.id);
       window.sessionStorage.setItem(savedDraftKey, message);
       setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
     } finally { setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
