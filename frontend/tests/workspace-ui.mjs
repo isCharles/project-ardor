@@ -21,6 +21,7 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   let userId = "workspace-owner";
   let admin = false;
+  let taskRefreshFails = false;
   let failRename = true;
   let renameCalls = 0;
   let conversation = { id: "chat-one", title: "Original chat", pinned: false, titleManuallySet: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -41,7 +42,10 @@ try {
     else if (path.startsWith("/api/agent/runs")) return route.fulfill({ status: 204 });
     else if (path === "/api/agent/reasoning") body = { nativeControl: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
-    else if (path === "/api/background-tasks") body = [{ id: "finished", kind: "LEARNING_EVALUATE", title: "Practice assessment", status: "COMPLETED", resultPath: "/app/learning?id=fixture", unread: true }];
+    else if (path === "/api/background-tasks") {
+      if (taskRefreshFails) return route.fulfill({ status: 503, json: { message: "Synthetic refresh failure" } });
+      body = [{ id: "finished", kind: "LEARNING_EVALUATE", title: "Practice assessment", status: "COMPLETED", resultPath: "/app/learning?id=fixture", unread: true }];
+    }
     else if (path === "/api/profile") body = { displayName: "Fixture", headline: "", targetRoles: [], timezone: "Asia/Shanghai" };
     else if (path === "/api/resumes") body = [{ id: "resume", originalFilename: "Synthetic resume.pdf" }];
     else if (["/api/interview-recaps", "/api/knowledge/documents", "/api/learning-plans"].includes(path)) body = [];
@@ -164,6 +168,21 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.setViewportSize({ width: 1440, height: 900 });
   admin = true;
+  await page.goto(`${origin}/app/tasks`);
+  await page.getByRole("link", { name: "Open result", exact: true }).waitFor();
+  const refreshTasks = page.getByRole("button", { name: "Refresh tasks", exact: true });
+  await refreshTasks.click();
+  assert.equal(await refreshTasks.isEnabled(), false);
+  assert.equal(await refreshTasks.getAttribute("aria-busy"), "true");
+  assert.equal(await refreshTasks.locator("svg.animate-spin").count(), 1);
+  await page.waitForFunction(() => document.querySelector('[aria-label="Refresh tasks"]').getAttribute("aria-busy") === "false");
+  taskRefreshFails = true;
+  await refreshTasks.click();
+  await page.getByRole("alert").waitFor();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Refresh tasks"]').getAttribute("aria-busy") === "false");
+  assert.equal(await refreshTasks.isEnabled(), true);
+  assert.equal(await page.getByRole("link", { name: "Open result", exact: true }).count(), 1);
+  taskRefreshFails = false;
   await page.goto(`${origin}/app`);
   await sidebar.getByRole("button", { name: "Project Ardor", exact: true }).click();
   await sidebar.getByRole("link", { name: "Admin dashboard", exact: true }).waitFor();
