@@ -19,6 +19,31 @@ import com.projectardor.agent.repository.AgentMemoryItemRepository;
 
 class AgentMemoryServiceTests {
 
+    @Test
+    void editingOneMemoryPreservesItsIdAndDoesNotRecreateOtherItems() {
+        UUID owner = UUID.randomUUID();
+        AgentMemoryItem item = AgentMemoryItem.create(owner, "Java backend");
+        when(itemRepository.findByIdAndUserId(item.getId(), owner)).thenReturn(java.util.Optional.of(item));
+        when(itemRepository.saveAndFlush(item)).thenReturn(item);
+        var result = service.edit(owner, item.getId(), "  Java and AI backend  ");
+        assertThat(result.id()).isEqualTo(item.getId());
+        assertThat(result.content()).isEqualTo("Java and AI backend");
+        verify(itemRepository, never()).deleteAllByUserId(owner);
+        assertThatThrownBy(() -> service.edit(UUID.randomUUID(), item.getId(), "other owner"))
+                .isInstanceOf(com.projectardor.common.web.ResourceNotFoundException.class);
+    }
+
+    @Test
+    void duplicateMemoryEditDoesNotSilentlyMergeOrDelete() {
+        UUID owner = UUID.randomUUID();
+        AgentMemoryItem item = AgentMemoryItem.create(owner, "Original");
+        when(itemRepository.findByIdAndUserId(item.getId(), owner)).thenReturn(java.util.Optional.of(item));
+        when(itemRepository.existsByUserIdAndContentIgnoreCase(owner, "Duplicate")).thenReturn(true);
+        assertThatThrownBy(() -> service.edit(owner, item.getId(), "Duplicate")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(item.getContent()).isEqualTo("Original");
+        verify(itemRepository, never()).saveAndFlush(any());
+    }
+
     private final AgentMemoryRepository repository = mock(AgentMemoryRepository.class);
     private final AgentMemoryItemRepository itemRepository = mock(AgentMemoryItemRepository.class);
     private final AgentMemoryService service = new AgentMemoryService(repository, itemRepository);

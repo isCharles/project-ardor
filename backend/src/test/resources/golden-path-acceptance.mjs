@@ -182,6 +182,20 @@ async function main() {
     method: "POST", expected: 201, body: planInput,
   });
   assert.equal(plan.sourceId, weak.id);
+  const rearrangedAt = new Date(new Date(dueAt).getTime() + 3600000).toISOString();
+  const changedPlan = await owner.request(`/api/learning-plans/${plan.id}/arrangement`, {
+    method: "PATCH", body: { reason: "Synthetic updated reason", scheduledAt: rearrangedAt },
+  });
+  assert.equal(new Date(changedPlan.scheduledAt).getTime(), new Date(rearrangedAt).getTime());
+  assert.deepEqual(changedPlan.lesson, plan.lesson);
+  assert.deepEqual(changedPlan.exercises, plan.exercises);
+  const changedCalendar = calendarTask(await owner.request("/api/calendar/tasks"), `/app/learning?id=${plan.id}`);
+  assert.equal(new Date(changedCalendar.dueAt).getTime(), new Date(rearrangedAt).getTime());
+  await stranger.request(`/api/learning-plans/${plan.id}/arrangement`, { method: "PATCH", expected: 404,
+    body: { reason: "Unauthorized overwrite" } });
+  await owner.request(`/api/learning-plans/${plan.id}/arrangement`, {
+    method: "PATCH", body: { reason: planInput.reason, scheduledAt: dueAt },
+  });
   const planRetry = await owner.request("/api/learning-plans", {
     method: "POST", expected: 201, body: planInput,
   });

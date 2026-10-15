@@ -19,6 +19,7 @@ public class AgentMemoryItem {
     @PreUpdate void onUpdate() { updatedAt = Instant.now(); }
     public UUID getId() { return id; }
     public String getContent() { return content; }
+    public void revise(String content) { this.content = content; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

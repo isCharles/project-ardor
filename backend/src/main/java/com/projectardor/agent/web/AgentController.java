@@ -218,6 +218,12 @@ public class AgentController {
         return memoryService.get(principal.userId());
     }
 
+    @PatchMapping("/memory/items/{memoryId}")
+    public AgentMemoryItemResponse editMemoryItem(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable java.util.UUID memoryId, @Valid @RequestBody AgentMemoryItemUpdateRequest request) {
+        return memoryService.edit(principal.userId(), memoryId, request.content());
+    }
+
     @PutMapping("/memory")
     public AgentMemoryResponse updateMemory(
             @AuthenticationPrincipal ArdorPrincipal principal,

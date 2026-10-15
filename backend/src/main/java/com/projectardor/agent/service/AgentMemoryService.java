@@ -98,6 +98,18 @@ public class AgentMemoryService {
     }
 
     @Transactional
+    public AgentMemoryItemResponse edit(UUID userId, UUID memoryId, String rawContent) {
+        AgentMemoryItem item = itemRepository.findByIdAndUserId(memoryId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("记忆不存在"));
+        String content = itemContent(rawContent);
+        if (!item.getContent().equalsIgnoreCase(content) && itemRepository.existsByUserIdAndContentIgnoreCase(userId, content)) {
+            throw new IllegalArgumentException("已有相同记忆，请修改原条目，不会自动合并或删除");
+        }
+        item.revise(content);
+        return AgentMemoryItemResponse.from(itemRepository.saveAndFlush(item));
+    }
+
+    @Transactional
     public void clear(UUID userId) {
         itemRepository.deleteAllByUserId(userId);
         repository.findByUserId(userId).ifPresent(repository::delete);
