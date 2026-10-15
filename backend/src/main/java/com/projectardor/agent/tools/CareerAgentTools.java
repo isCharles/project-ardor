@@ -268,6 +268,18 @@ public class CareerAgentTools {
                     "删除讲解、练习记录和关联日程，不能撤销", "/api/learning-plans/" + id);
         }
 
+        @Tool(name = "update_learning_plan", value = "修改当前用户学习计划的说明或改期，同步日历；保留讲解、练习和评分。先读取真实计划；不能用改名替换学习主题，换主题应另建计划")
+        public LearningPlanResponse updateLearningPlan(@P("学习计划 UUID") String planId,
+                @P(value = "新的说明；不修改传 null，清空传空字符串", required = false) String reason,
+                @P(value = "新的未来安排时间，带时区的 ISO-8601；不修改传 null", required = false) String scheduledAt) {
+            return LearningPlanResponse.from(learningPlanService.updateArrangement(userId, uuid(planId, "学习计划 ID"), reason, nullableInstant(scheduledAt)));
+        }
+
+        @Tool(name = "begin_learning_plan", value = "将当前用户的学习计划标记为开始学习，不生成新内容、不伪造完成或评分")
+        public LearningPlanResponse beginLearningPlan(@P("学习计划 UUID") String planId) {
+            return LearningPlanResponse.from(learningPlanService.begin(userId, uuid(planId, "学习计划 ID")));
+        }
+
         @Tool(name = "create_learning_plan", value = "向用户提议一项概念学习计划和日程；只有用户点击确认后才生成，不能声称已创建")
         public Map<String, Object> createLearningPlan(
                 @P("简洁明确的学习概念，例如 JVM 或数据库索引") String concept,
@@ -597,6 +609,26 @@ public class CareerAgentTools {
                 @P("结果：AGAIN、HARD、GOOD 或 EASY") String rating) {
             return MemoryCardResponse.from(interviewRecapService.review(userId, uuid(cardId, "记忆卡 ID"),
                     enumValue(MemoryCardRating.class, rating, null)));
+        }
+
+        @Tool(name = "update_memory_card", value = "编辑当前用户记忆卡的问题、参考答案和标签，保留复习进度。先用 list_memory_cards 读取原内容，再提供完整修订值，保留用户未要求修改的部分")
+        public MemoryCardResponse updateMemoryCard(@P("记忆卡 UUID") String cardId,
+                @P("完整的修订后问题") String question,
+                @P("完整的修订后参考答案") String answer,
+                @P("完整的英文逗号分隔标签，清空传空字符串") String tags) {
+            UUID id = uuid(cardId, "记忆卡 ID");
+            return MemoryCardResponse.from(interviewRecapService.updateCard(userId, id,
+                    question, answer, tags == null ? List.of() : List.of(tags.split(","))));
+        }
+
+        @Tool(name = "update_interview_recap_metadata", value = "修改当前用户面经的公司、岗位和面试时间；只补正元数据，不覆盖原文、逐题复盘和弱项。先读取面经，再提交完整元数据，保留未要求修改的值")
+        public InterviewRecapResponse updateInterviewRecapMetadata(@P("面经 UUID") String recapId,
+                @P("完整公司名；清空传空字符串") String company,
+                @P("完整岗位名；清空传空字符串") String targetRole,
+                @P("实际面试日期时间，带时区的 ISO-8601；没有日期传空字符串") String occurredAt) {
+            UUID id = uuid(recapId, "面经 ID");
+            return interviewRecapService.updateMetadata(userId, id, new com.projectardor.recap.web.InterviewRecapMetadataRequest(
+                    company, targetRole, nullableInstant(occurredAt)));
         }
 
         @Tool(name = "delete_memory_card", value = "永久删除当前用户指定的一张记忆卡。只有用户明确要求删除时使用")
