@@ -440,7 +440,7 @@ export default function AgentHomePage() {
     if (busy) return;
     if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false);
     if (conversationId === state?.conversationId) return;
-    setError(""); setRunningRun(null); setRunThinking(""); setStreamProgress(null); setConfirmations([]); setMenuId(null);
+    setError(""); setRunningRun(null); setHasQueuedMessages(false); setRunThinking(""); setStreamProgress(null); setConfirmations([]); setMenuId(null);
     try { await load(conversationId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入会话"); }
   }
@@ -449,6 +449,7 @@ export default function AgentHomePage() {
     if (busy) return;
     setError("");
     setRunningRun(null);
+    setHasQueuedMessages(false);
     setRetryFailures([]);
     setRunThinking(""); setStreamProgress(null);
     setRunSteps([]);

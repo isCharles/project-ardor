@@ -12,6 +12,7 @@ import com.projectardor.common.web.ResourceNotFoundException;
 import jakarta.annotation.PreDestroy;
 
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.agent.queue.enabled", matchIfMissing = true)
 public class AgentMessageQueueWorker {
     private final AgentMessageQueue queue;
     private final CareerAgentService agent;

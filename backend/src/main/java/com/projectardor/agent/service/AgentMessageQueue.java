@@ -47,14 +47,16 @@ public class AgentMessageQueue {
         Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM agent_message_queue WHERE user_id = ? AND status IN ('QUEUED','DISPATCHING','RUNNING')", Integer.class, userId);
         if (count != null && count >= 20) throw new IllegalStateException("队列最多保留 20 条待处理消息");
         // A queued predecessor need not have begun an agent run yet. Its ID is immutable.
-        UUID predecessor = jdbc.queryForList("""
-                SELECT id FROM agent_message_queue WHERE user_id = ? AND status IN ('QUEUED','DISPATCHING','RUNNING')
+        var previous = jdbc.query("""
+                SELECT * FROM agent_message_queue WHERE user_id = ? AND status <> 'CANCELLED'
                 ORDER BY sequence DESC LIMIT 1
-                """, UUID.class, userId).stream().findFirst().orElse(null);
-        if (predecessor == null) predecessor = jdbc.queryForList("""
+                """, rows, userId).stream().findFirst().orElse(null);
+        UUID activeRun = jdbc.queryForList("""
                 SELECT id FROM agent_runs WHERE user_id = ? AND status = 'RUNNING'
                 ORDER BY created_at DESC LIMIT 1
                 """, UUID.class, userId).stream().findFirst().orElse(null);
+        UUID predecessor = previous == null || previous.status().equals("COMPLETED") ? activeRun
+                : List.of("FAILED", "INTERRUPTED").contains(previous.status()) && activeRun != null ? activeRun : previous.id();
         int inserted = jdbc.update("""
                 INSERT INTO agent_message_queue(id,user_id,conversation_id,payload,blocked_by)
                 VALUES(?,?,?,CAST(? AS jsonb),?) ON CONFLICT(id) DO NOTHING

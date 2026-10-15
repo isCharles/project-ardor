@@ -538,6 +538,33 @@ async function main() {
   assert.ok(queuedComplete, "Queued requests must finish sequentially without an open stream");
   const queuedHistory = (await depthOwner.request(`/api/agent?conversationId=${depthConversation.id}`)).messages;
   assert.deepEqual(queuedHistory.filter((item) => item.role === "USER" && item.content.startsWith("Queue probe")).map((item) => item.content), ["Queue probe one", "Queue probe two"]);
+  await depthOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+    model: "queue-failure-probe", apiKey: "disposable-fake-model-key" } });
+  const failureQueued = { ...queuedFirst, requestId: randomUUID(), message: "Queue failure marker" };
+  const pausedQueued = { ...queuedSecond, requestId: randomUUID(), message: "Queue continuation after review" };
+  await depthOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: failureQueued });
+  await depthOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: pausedQueued });
+  let pausedAfterFailure = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const queued = await depthOwner.request(`/api/agent/queue?conversationId=${depthConversation.id}`);
+    if (queued.find((item) => item.id === failureQueued.requestId)?.status === "FAILED") {
+      assert.equal(queued.find((item) => item.id === pausedQueued.requestId)?.status, "QUEUED");
+      pausedAfterFailure = true; break;
+    }
+    await sleep(200);
+  }
+  assert.ok(pausedAfterFailure, "Failure must pause its queued successor");
+  await sleep(1500);
+  assert.equal((await depthOwner.request(`/api/agent/queue?conversationId=${depthConversation.id}`)).find((item) => item.id === pausedQueued.requestId)?.status, "QUEUED");
+  await owner.request(`/api/agent/queue/${pausedQueued.requestId}/resume`, { method: "POST", expected: 404 });
+  await depthOwner.request(`/api/agent/queue/${pausedQueued.requestId}/resume`, { method: "POST", expected: 204 });
+  let resumed = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const queued = await depthOwner.request(`/api/agent/queue?conversationId=${depthConversation.id}`);
+    if (queued.find((item) => item.id === pausedQueued.requestId)?.status === "COMPLETED") { resumed = true; break; }
+    await sleep(200);
+  }
+  assert.ok(resumed, "Explicit acknowledgement must resume only the queued successor");
   await asyncOwner.request("/api/auth/register", { method: "POST", expected: 201,
     body: { email: `golden-async-${suffix}@ardor.invalid`, password, displayName: "Async Assessments" } });
   await asyncOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE",
