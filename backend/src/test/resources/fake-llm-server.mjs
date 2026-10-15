@@ -166,6 +166,19 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+    if (payload.model === "approval-integration-probe" && isAgentRequest) {
+      const delta = hasToolResult
+        ? { role: "assistant", content: "Permission probe finished." }
+        : { role: "assistant", tool_calls: [{ index: 0, id: "approved-memory-probe", type: "function",
+          function: { name: "add_memory", arguments: JSON.stringify({ memory: "Synthetic approved preference" }) } }] };
+      response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache" });
+      for (const [chunk, finish] of [[delta, null], [{}, hasToolResult ? "stop" : "tool_calls"]]) {
+        response.write(`data: ${JSON.stringify({ id: "approval-probe", object: "chat.completion.chunk", model: payload.model,
+          choices: [{ index: 0, delta: chunk, finish_reason: finish }] })}\n\n`);
+      }
+      response.end("data: [DONE]\n\n");
+      return;
+    }
       if (["agent-silence-probe", "agent-cancel-probe"].includes(payload.model) && isAgentRequest) {
         response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache" });
         response.flushHeaders();
