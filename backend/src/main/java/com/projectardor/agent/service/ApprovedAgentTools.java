@@ -25,8 +25,10 @@ final class ApprovedAgentTools {
             var delegate = new DefaultToolExecutor(bound, method);
             result.put(specification, (request, memoryId) -> {
                 if (!specification.name().equals(request.name())) throw new IllegalArgumentException("工具名称不匹配");
-                if (!PROPOSALS.contains(specification.name())
-                        && !approvals.await(userId, requestId, specification.name(), request.arguments())) {
+                boolean allowed = PROPOSALS.contains(specification.name())
+                        ? approvals.canPropose(userId, requestId)
+                        : approvals.await(userId, requestId, specification.name(), request.arguments());
+                if (!allowed) {
                     return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"用户未批准、已拒绝或权限请求过期。未执行工具，本轮不得重复申请或用聊天口令代替批准。\"}";
                 }
                 return delegate.execute(request, memoryId);

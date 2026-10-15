@@ -66,6 +66,19 @@ public class AgentToolApprovals {
         }
     }
 
+    public boolean canPropose(UUID userId, UUID requestId) {
+        // Legacy synchronous chat can prepare UI proposals, never execute their final mutation.
+        if (requestId == null) return true;
+        Run run = runs.get(new RunKey(userId, requestId));
+        if (run == null) return false;
+        synchronized (run) {
+            run.approvals.forEach(approval -> {
+                if (approval.status.equals("PENDING") && !Instant.now().isBefore(approval.expiresAt)) expire(run, approval);
+            });
+            return !run.closed && !run.denied;
+        }
+    }
+
     public void decide(UUID userId, UUID requestId, UUID approvalId, boolean allow) {
         Run run = runs.get(new RunKey(userId, requestId));
         if (run == null) throw missing();

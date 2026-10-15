@@ -74,6 +74,23 @@ class AgentToolApprovalsTests {
         assertThat(probe.calls).hasValue(0);
     }
 
+    @Test
+    void denialAndCloseAlsoBlockProposalMetadataReads() throws Exception {
+        gate.begin(owner, run);
+        ProposalProbe probe = new ProposalProbe();
+        var executor = ApprovedAgentTools.wrap(probe, owner, run, gate).values().iterator().next();
+        var call = ToolExecutionRequest.builder().name("delete_memory").arguments("{}").build();
+        assertThat(executor.execute(call, null)).contains("proposal");
+        assertThat(probe.calls).hasValue(1);
+        var denied = CompletableFuture.supplyAsync(() -> gate.await(owner, run, "read", "{}"));
+        gate.decide(owner, run, pending(gate).id(), false);
+        assertThat(denied.get(2, TimeUnit.SECONDS)).isFalse();
+        assertThat(executor.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
+        gate.close(owner, run);
+        assertThat(executor.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
+        assertThat(probe.calls).hasValue(1);
+    }
+
     private AgentToolApprovals.View pending(AgentToolApprovals approvals) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (approvals.list(owner, run).isEmpty() && System.nanoTime() < deadline) Thread.sleep(1);
@@ -84,5 +101,10 @@ class AgentToolApprovalsTests {
         final AtomicInteger calls = new AtomicInteger();
         @Tool(name = "read_private_data", value = "Read owner data")
         public String read() { calls.incrementAndGet(); return "result"; }
+    }
+    public static class ProposalProbe {
+        final AtomicInteger calls = new AtomicInteger();
+        @Tool(name = "delete_memory", value = "Prepare confirmation metadata")
+        public String propose() { calls.incrementAndGet(); return "proposal"; }
     }
 }

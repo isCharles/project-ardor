@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
@@ -12,6 +12,7 @@ export function ToolApprovals({ requestId }: { requestId: string | null }) {
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pollFailed, setPollFailed] = useState(false);
+  const section = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!requestId) return;
     let stopped = false;
@@ -42,8 +43,12 @@ export function ToolApprovals({ requestId }: { requestId: string | null }) {
   }
 
   const pending = items.filter((item) => item.status === "PENDING");
+  const pendingIds = pending.map((item) => item.id).join(",");
+  useEffect(() => {
+    if (pendingIds) section.current?.scrollIntoView({ block: "nearest", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }, [pendingIds]);
   if (!requestId || !pending.length && !pollFailed) return null;
-  return <section aria-label={t("Tool permissions", "工具权限确认")} className="my-4 max-w-xl space-y-3">
+  return <section ref={section} aria-label={t("Tool permissions", "工具权限确认")} className="my-4 max-w-xl space-y-3">
     {pollFailed && <p role="status" className="text-xs text-amber-700">{t("Permission status is temporarily unavailable. Reconnecting; nothing is approved automatically.", "暂时无法读取权限状态，正在重连；不会自动批准。")}</p>}
     {pending.map((item) => <div key={item.id} className="rounded-2xl border border-violet-200 bg-white/90 p-4 shadow-sm">
       <p className="text-sm font-medium text-stone-800">{t("Allow this operation?", "允许这次操作？")}</p>
