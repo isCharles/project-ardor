@@ -31,6 +31,7 @@ try {
   let queueItems = [];
   let queuedRequests = [];
   let cancelCalls = 0;
+  let calendarWrites = 0;
   let retryProbe = false;
   let retryProbeCalls = 0;
   let learningPlans = [];
@@ -49,8 +50,13 @@ try {
       { key: "LEARNING", id: "f1111111-1111-3111-8111-111111111111", label: "学习", englishLabel: "Learning", description: "学习概念" },
       { key: "CARDS", id: "f2222222-2222-3222-8222-222222222222", label: "记忆卡", englishLabel: "Flashcards", description: "准备记忆卡" },
       { key: "RECAPS", id: "f3333333-3333-3333-8333-333333333333", label: "面经", englishLabel: "Interview notes", description: "整理面试内容" },
+      { key: "CALENDAR", id: "f4444444-4444-3444-8444-444444444444", label: "日程", englishLabel: "Calendar", description: "管理日程" },
     ];
     else if (path === "/api/auth/csrf") body = { token: "test", headerName: "X-CSRF-TOKEN" };
+    else if (path === "/api/calendar/tasks" || path === "/api/calendar/series") {
+      if (route.request().method() !== "GET") calendarWrites++;
+      body = path.endsWith("/series") ? [{ id: "series-fixture", title: "Weekly sync", summary: "Every Thursday 07:00", status: "ACTIVE", upcoming: [] }] : [];
+    }
     else if (path === "/api/agent/messages/stream") {
       if (retryProbe) {
         retryProbeCalls++;
@@ -452,6 +458,15 @@ try {
   await page.goto(`${origin}/app?conversation=chat-one`);
   await page.waitForFunction(() => document.querySelector('textarea[aria-label="Message Ardor"]')?.value === "Legacy owned conversation draft");
   assert.equal(await page.evaluate(() => window.sessionStorage.getItem("ardor:conversation-draft:chat-one")), null);
+  await page.goto(`${origin}/app/calendar`);
+  await page.getByRole("link", { name: "Add a task", exact: true }).click();
+  await page.getByRole("button", { name: "Change service", exact: true }).waitFor();
+  assert.match(await draftBox.inputValue(), /^Add a task on \d{4}-\d{2}-\d{2}: /);
+  await page.goto(`${origin}/app/calendar`);
+  await page.getByRole("link", { name: "Edit Weekly sync", exact: true }).click();
+  await page.getByRole("button", { name: "Change service", exact: true }).waitFor();
+  assert.match(await draftBox.inputValue(), /Change the recurring schedule “Weekly sync”/);
+  assert.equal(calendarWrites, 0, "Guided creation/editing must not mutate the calendar before sending and approving");
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {

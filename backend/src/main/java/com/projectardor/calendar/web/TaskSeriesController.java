@@ -69,7 +69,7 @@ public class TaskSeriesController {
                 series, service.upcoming(principal.userId(), series.getId(), UPCOMING_SHOWN));
     }
 
-    /** Stops the series; past and already-touched occurrences stay on the calendar. */
+    /** Updates supported fields while retaining historical and individually edited occurrences. */
     @org.springframework.web.bind.annotation.PatchMapping("/{seriesId}")
     public Map<String, Object> update(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID seriesId,
             @Valid @RequestBody TaskSeriesUpdateRequest request) {

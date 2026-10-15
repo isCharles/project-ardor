@@ -28,7 +28,4 @@ public interface TaskSeriesRepository extends JpaRepository<TaskSeries, UUID> {
 
     List<TaskSeries> findAllByUserIdAndStatusOrderByCreatedAtDesc(UUID userId, TaskSeriesStatus status);
 
-    /** Series whose expansion has fallen behind the horizon, oldest window first. */
-    List<TaskSeries> findAllByStatusAndMaterializedThroughLessThanOrderByMaterializedThroughAsc(
-            TaskSeriesStatus status, LocalDate horizon, Limit limit);
 }
