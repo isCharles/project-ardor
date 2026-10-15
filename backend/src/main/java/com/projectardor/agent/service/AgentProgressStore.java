@@ -24,10 +24,18 @@ public class AgentProgressStore {
 
     public Optional<Saved> find(UUID owner, UUID runId) {
         return jdbc.query("""
-                SELECT progress_snapshot::text, status FROM agent_runs
+                SELECT progress_snapshot::text, status, created_at, finished_at FROM agent_runs
                 WHERE id=? AND user_id=? AND progress_snapshot IS NOT NULL
-                """, (rs, row) -> new Saved(mapper.readValue(rs.getString(1), AgentStreamProgress.Snapshot.class), rs.getString(2)),
+                """, (rs, row) -> {
+                    var snapshot = mapper.readValue(rs.getString(1), AgentStreamProgress.Snapshot.class);
+                    var finished = rs.getTimestamp(4);
+                    long elapsed = finished == null ? snapshot.view().elapsedMs() : Math.max(0,
+                            java.time.Duration.between(rs.getTimestamp(3).toInstant(), finished.toInstant()).toMillis());
+                    return new Saved(snapshot, rs.getString(2), elapsed);
+                },
                 runId, owner).stream().findFirst();
     }
-    public record Saved(AgentStreamProgress.Snapshot snapshot, String status) {}
+    public record Saved(AgentStreamProgress.Snapshot snapshot, String status, long elapsedMs) {
+        Saved(AgentStreamProgress.Snapshot snapshot, String status) { this(snapshot, status, snapshot.view().elapsedMs()); }
+    }
 }

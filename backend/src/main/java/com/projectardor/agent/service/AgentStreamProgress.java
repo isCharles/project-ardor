@@ -84,7 +84,7 @@ public class AgentStreamProgress {
             String phase = terminal ? saved.status() : !view.phase().equals("TOOL") && silence >= 30 ? "WAITING_DATA" : view.phase();
             return new View(phase, terminal ? "COMPLETED".equals(phase) ? "已完成" : "执行已结束，查看保留的记录" : view.label(),
                     view.thinkingOutput(), view.answerPartial(), view.firstThinkingMs(), view.firstOutputMs(), silence,
-                    view.truncated(), view.steps(), terminal ? snapshot.view().elapsedMs() : Math.max(0, Duration.between(snapshot.startedAt(), clock.instant()).toMillis()));
+                    view.truncated(), view.steps(), terminal ? saved.elapsedMs() : Math.max(0, Duration.between(snapshot.startedAt(), clock.instant()).toMillis()));
         }
         if (entry == null || !entry.userId.equals(userId)) throw new ResourceNotFoundException("执行进度不存在");
         synchronized (entry) {
