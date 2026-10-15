@@ -604,6 +604,50 @@ async function main() {
     await sleep(200);
   }
   assert.ok(resumed, "Explicit acknowledgement must resume only the queued successor");
+  // Exercise the real model -> wrapped executor -> HTTP decision -> database boundary.
+  // Each case has a fresh account/conversation so earlier tool results cannot mask a missing gate.
+  for (const allow of [false, true]) {
+    const permissionOwner = new Client();
+    await permissionOwner.request("/api/auth/register", { method: "POST", expected: 201,
+      body: { email: `golden-permission-${allow}-${suffix}@ardor.invalid`, password, displayName: "Permission probe" } });
+    await permissionOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE",
+      baseUrl: modelBase, model: "approval-integration-probe", apiKey: "disposable-fake-model-key" } });
+    const permissionConversation = await permissionOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
+    const permissionRunId = randomUUID();
+    await permissionOwner.request("/api/agent/queue", { method: "POST", expected: 202,
+      body: { requestId: permissionRunId, conversationId: permissionConversation.id, message: "Remember my synthetic preference" } });
+    const approvalsPath = `/api/agent/runs/${permissionRunId}/approvals`;
+    let permission;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try { permission = (await permissionOwner.request(approvalsPath)).find(item => item.status === "PENDING"); }
+      catch (error) { if (!error.message.includes("got 404")) throw error; }
+      if (permission) break;
+      await sleep(100);
+    }
+    assert.ok(permission, "A real tool call must pause for UI permission");
+    assert.equal(permission.tool, "add_memory");
+    assert.deepEqual(JSON.parse(permission.arguments), { memory: "Synthetic approved preference" });
+    await sleep(250);
+    assert.deepEqual(await permissionOwner.request("/api/agent/memory/items"), [], "No write may occur while approval is pending");
+    await stranger.request(approvalsPath, { expected: 404 });
+    await stranger.request(`${approvalsPath}/${permission.id}`, { method: "POST", expected: 404, body: { allow: true } });
+    assert.deepEqual(await permissionOwner.request("/api/agent/memory/items"), [], "A foreign user cannot grant permission");
+    await permissionOwner.request(`${approvalsPath}/${permission.id}`, { method: "POST", expected: 204, body: { allow } });
+    let permissionFinished = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const run = await permissionOwner.request(`/api/agent/runs/${permissionRunId}`);
+      if (run.status === "COMPLETED") { permissionFinished = true; break; }
+      assert.notEqual(run.status, "FAILED", "The fake provider should complete after the permission decision");
+      await sleep(100);
+    }
+    assert.ok(permissionFinished);
+    const savedMemories = await permissionOwner.request("/api/agent/memory/items");
+    assert.equal(savedMemories.length, allow ? 1 : 0);
+    if (allow) assert.equal(savedMemories[0].content, "Synthetic approved preference");
+    await permissionOwner.request(`${approvalsPath}/${permission.id}`, { method: "POST", expected: 409, body: { allow: true } });
+    assert.equal((await permissionOwner.request("/api/agent/memory/items")).length, allow ? 1 : 0, "A consumed/denied decision cannot replay a write");
+  }
+
   const silentOwner = new Client();
   const memoryEditor = new Client();
   await memoryEditor.request("/api/auth/register", { method: "POST", expected: 201,
