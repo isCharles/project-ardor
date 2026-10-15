@@ -316,7 +316,10 @@ try {
   await draftBox.click();
   releaseStream();
   await page.getByText("Synthetic agent reply", { exact: true }).waitFor();
-  const reasoning = page.locator("details").filter({ has: page.getByText("Model reasoning output", { exact: true }) }).first();
+  // The live progress card is replaced after completion. Inspect the persisted
+  // assistant article so a click cannot land on the soon-to-be-unmounted card.
+  const reasoning = page.getByRole("article").filter({ hasText: "Synthetic agent reply" }).locator("details")
+    .filter({ has: page.getByText("Model reasoning output", { exact: true }) }).first();
   await reasoning.locator("summary").click();
   await reasoning.getByText("Synthetic public reasoning", { exact: true }).waitFor();
   assert.deepEqual(sentMessage.contextReferences, [{ type: "SERVICE", id: "f1111111-1111-3111-8111-111111111111" }]);
