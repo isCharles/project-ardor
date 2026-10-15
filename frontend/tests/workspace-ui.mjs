@@ -48,6 +48,7 @@ try {
     else if (path === "/api/agent/features") body = [
       { key: "LEARNING", id: "f1111111-1111-3111-8111-111111111111", label: "学习", englishLabel: "Learning", description: "学习概念" },
       { key: "CARDS", id: "f2222222-2222-3222-8222-222222222222", label: "记忆卡", englishLabel: "Flashcards", description: "准备记忆卡" },
+      { key: "RECAPS", id: "f3333333-3333-3333-8333-333333333333", label: "面经", englishLabel: "Interview notes", description: "整理面试内容" },
     ];
     else if (path === "/api/auth/csrf") body = { token: "test", headerName: "X-CSRF-TOKEN" };
     else if (path === "/api/agent/messages/stream") {
@@ -112,7 +113,7 @@ try {
       learningPlans = [];
       return route.fulfill({ status: 204 });
     }
-    else if (["/api/interview-recaps", "/api/knowledge/documents"].includes(path)) body = [];
+    else if (["/api/interview-recaps", "/api/interview-recaps/jobs", "/api/knowledge/documents"].includes(path)) body = [];
     else if (path === "/api/settings/llm") body = { configured: true, provider: "OPENAI_COMPATIBLE", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false };
     else if (path === "/api/settings/web-search") body = { configured: true, provider: "TAVILY", configurationSource: "ADMIN", personalOverride: false };
     else if (path === "/api/settings/integrations") body = ["EMBEDDING", "ASR", "TTS", "FALLBACK_LLM"].map((serviceType) => ({ serviceType, configured: true, provider: "fixture", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false }));
@@ -401,6 +402,14 @@ try {
   await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
   await page.getByText("Start with one concept", { exact: true }).waitFor();
   assert.equal(learningDeleteCalls, 2);
+  await page.goto(`${origin}/app/recaps`);
+  await page.getByRole("link", { name: "Add interview notes", exact: true }).click();
+  await page.getByRole("button", { name: "Change service", exact: true }).waitFor();
+  assert.equal(await draftBox.inputValue(), "Organize these interview notes and identify what I should improve:\n");
+  assert.equal(await page.getByRole("article").count(), 0, "Guided entry must open an unsent blank conversation");
+  await draftBox.fill("My edited interview draft");
+  await page.reload();
+  assert.equal(await draftBox.inputValue(), "My edited interview draft");
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {

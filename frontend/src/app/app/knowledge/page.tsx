@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
+import { agentCreationHref } from "@/lib/agent-features";
 import { markBackgroundPending } from "@/lib/background-notifications";
 import { useLocale } from "@/lib/locale";
 import styles from "./knowledge.module.css";
@@ -42,7 +43,7 @@ type IndexStatus = {
 
 export default function KnowledgePage() {
   const router = useRouter();
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -278,6 +279,8 @@ export default function KnowledgePage() {
           <form onSubmit={research} className={`${styles.cardSolid} p-6 md:p-8`}>
             <Globe2 className="size-6 text-orange-500" />
             <h2 className="mt-5 text-xl font-medium">{t("Import from the web", "联网收录")}</h2>
+            <Link href={agentCreationHref("KNOWLEDGE", locale)} className={`${styles.buttonPrimary} mt-6 inline-flex px-5 py-2.5 text-sm`}>{t("Find with Ardor", "让 Ardor 查找")}</Link>
+            <details className="mt-5"><summary className="cursor-pointer text-sm text-slate-500">{t("Import directly", "直接收录")}</summary>
             <label htmlFor="knowledge-research" className="sr-only">{t("Topic to import", "要收录的主题")}</label>
             <input
               id="knowledge-research"
@@ -290,6 +293,7 @@ export default function KnowledgePage() {
             <button disabled={busy !== ""} className={`${styles.buttonPrimary} mt-5 px-5 py-2.5 text-sm`}>
               {busy === "research" ? t("Searching…", "搜索中…") : t("Search and import", "搜索并收录")}
             </button>
+            </details>
           </form>
         </section>
 

@@ -10,6 +10,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { VoiceAnswerRecorder } from "@/components/interview/voice-answer-recorder";
 import { ApiError, api } from "@/lib/api";
+import { agentCreationHref } from "@/lib/agent-features";
 import { useLocale } from "@/lib/locale";
 import { type AiJob, jobPending, useAiJob } from "@/lib/ai-jobs";
 import { AiJobStatus } from "@/components/ardor/ai-job-status";
@@ -228,6 +229,8 @@ export default function InterviewsPage() {
         <div className="space-y-6">
           <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
             <div className="flex items-center gap-3"><Play className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("New interview", "创建面试")}</h2></div>
+            <Link href={agentCreationHref("INTERVIEWS", locale)} className="mt-6 inline-flex items-center rounded-full bg-violet-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-violet-700">{t("Plan with Ardor", "让 Ardor 准备")}</Link>
+            <details className="mt-5"><summary className="cursor-pointer text-sm text-muted-foreground">{t("Set up manually", "手动设置")}</summary>
             <form className="mt-6 space-y-4" onSubmit={createInterview}>
               <fieldset>
                 <legend className="text-sm font-medium">{t("Format", "面试方式")}</legend>
@@ -242,6 +245,7 @@ export default function InterviewsPage() {
               <label className="block text-sm font-medium">{t("Questions", "题目数量")}<select className="field mt-2" name="questionCount" defaultValue="5">{[3,4,5,6,7,8,9,10].map((count) => <option key={count}>{count}</option>)}</select></label>
               <Button disabled={busy}>{busy ? t("Preparing questions…", "生成题目中…") : t("Create and start", "创建并开始")}</Button>
             </form>
+            </details>
           </section>
 
           <section className="ardor-panel rounded-[2rem] p-6 md:p-8">

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
+import { agentCreationHref } from "@/lib/agent-features";
 import { markBackgroundPending } from "@/lib/background-notifications";
 import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale, type Locale } from "@/lib/locale";
@@ -216,7 +217,7 @@ export default function RecapsPage() {
     <div className={`${styles.content} mx-auto max-w-7xl px-5 pb-20 pt-6 md:px-10`}>
       <div className="flex items-center justify-between">
         <Link href="/app" className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-500 transition hover:bg-white/70 hover:text-slate-900"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link>
-        <button onClick={() => setShowForm(true)} className={`${styles.buttonPrimary} inline-flex items-center gap-2 px-5 py-2.5 text-sm`}><Plus className="size-4" />{t("Add interview notes", "整理面经")}</button>
+        <div className="flex items-center gap-3"><button onClick={() => setShowForm(true)} className="text-sm text-slate-500 hover:text-slate-900">{t("Paste directly", "直接粘贴")}</button><Link href={agentCreationHref("RECAPS", locale)} className={`${styles.buttonPrimary} inline-flex items-center gap-2 px-5 py-2.5 text-sm`}><Plus className="size-4" />{t("Add interview notes", "整理面经")}</Link></div>
       </div>
 
       <header className="pb-8 pt-12 text-center md:pt-16">
@@ -240,7 +241,7 @@ export default function RecapsPage() {
       </div>}
 
       {recaps.length === 0 ? (
-        activeJobs.length === 0 && <button onClick={() => setShowForm(true)} className={`${styles.panel} mx-auto block w-full max-w-md border-dashed px-5 py-16 text-sm text-slate-400 transition hover:text-slate-600`}>{t("Paste your first interview notes", "粘贴第一次面试内容")}</button>
+        activeJobs.length === 0 && <Link href={agentCreationHref("RECAPS", locale)} className={`${styles.panel} mx-auto block w-full max-w-md border-dashed px-5 py-16 text-center text-sm text-slate-400 transition hover:text-slate-600`}>{t("Organize your first interview with Ardor", "让 Ardor 整理第一次面试")}</Link>
       ) : (
         <>
           <RecapStack recaps={recaps} selectedId={selectedId} onSelect={setSelectedId} />
@@ -272,9 +273,9 @@ function Report({ recap, busy, onMetadata, onDelete }: { recap: Recap; busy: boo
 }
 
 function CompleteReport({ recap, onDelete }: { recap: Recap; onDelete: () => void }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const performanceLabel: Record<Performance, string> = { STRONG: t("Strong", "稳"), MIXED: t("Developing", "需巩固"), WEAK: t("Weak", "薄弱"), UNKNOWN: t("Unrated", "待确认") };
-  const optimizeHref = `/app?new=1&prefill=${encodeURIComponent(t("Create practice cards based on this interview", "根据我这次面试情况帮我生成记忆卡"))}&contextType=RECAP&contextId=${recap.id}&contextLabel=${encodeURIComponent(recap.title)}`;
+  const optimizeHref = `${agentCreationHref("CARDS", locale, t("Create practice cards based on this interview", "根据我这次面试情况帮我生成记忆卡"))}&contextType=RECAP&contextId=${recap.id}&contextLabel=${encodeURIComponent(recap.title)}`;
   return <div><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap gap-2">{recap.company && <span className="rounded-full bg-violet-100 px-3 py-1 text-xs text-violet-700">{recap.company}</span>}{recap.targetRole && <span className="rounded-full bg-stone-100 px-3 py-1 text-xs text-stone-600">{recap.targetRole}</span>}</div><h2 className="mt-4 text-3xl font-semibold tracking-tight">{recap.title}</h2><p className="mt-4 text-sm leading-7 text-stone-600">{recap.overview}</p><Link href={optimizeHref} className="mt-5 inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white hover:bg-black">{t("Improve my plan", "优化计划")}<ArrowRight className="size-4" /></Link></div><button aria-label={t("Delete interview notes", "删除面经")} onClick={onDelete} className="rounded-full p-2 text-stone-300 hover:bg-rose-50 hover:text-rose-500"><Trash2 className="size-4" /></button></div>{(recap.strengths.length > 0 || recap.weaknesses.length > 0) && <div className="mt-8 grid gap-3 md:grid-cols-2">{recap.strengths.length > 0 && <Summary title={t("What went well", "做得不错")} items={recap.strengths} tone="emerald" />}{recap.weaknesses.length > 0 && <Summary title={t("Focus next", "优先补强")} items={recap.weaknesses} tone="rose" />}</div>}<div className="mt-10 space-y-5">{recap.questions.map((q) => <article key={q.id} className="rounded-[1.75rem] bg-white/65 p-5 md:p-7"><div className="flex items-start gap-3"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-stone-950 text-xs text-white">{q.sequenceNumber}</span><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><h3 className="text-lg font-semibold leading-7">{q.questionText}</h3><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${performanceStyle[q.performance]}`}>{performanceLabel[q.performance]}</span></div>{q.tags.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{q.tags.map((tag) => <span key={tag} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] text-stone-500">{tag}</span>)}</div>}</div></div><div className="mt-5 space-y-5 text-sm leading-7 md:pl-11">{q.candidateAnswer && <Section title={t("Your answer", "当时回答")} text={q.candidateAnswer} />}{q.followUps.length > 0 && <section><h4 className="text-xs font-semibold uppercase tracking-wider text-stone-400">{t("Follow-ups", "追问")}</h4><ul className="mt-1 space-y-1 text-stone-600">{q.followUps.map((x) => <li key={x}>· {x}</li>)}</ul></section>}<Section title={t("Review", "复盘")} text={q.assessment} />{q.weaknessReason && <Section title={t("Weak spot", "薄弱点")} text={q.weaknessReason} danger />}{q.betterAnswer && <section className="rounded-2xl bg-violet-50/80 p-4"><h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-violet-500"><Sparkles className="size-3.5" />{t("A stronger answer", "更好的回答思路")}</h4><p className="mt-2 whitespace-pre-wrap text-violet-950/75">{q.betterAnswer}</p></section>}</div></article>)}</div></div>;
 }
 function Summary({ title, items, tone }: { title: string; items: string[]; tone: "emerald" | "rose" }) { return <div className={`rounded-2xl p-5 ${tone === "emerald" ? "bg-emerald-50/70" : "bg-rose-50/70"}`}><h3 className="text-sm font-semibold">{title}</h3><ul className="mt-3 space-y-2 text-sm leading-6 opacity-75">{items.map((x) => <li key={x}>· {x}</li>)}</ul></div>; }
