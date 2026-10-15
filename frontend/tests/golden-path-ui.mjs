@@ -358,6 +358,20 @@ try {
   assert.equal(depthConversations.filter((item) => item.title === "我的手动标题").length, 1);
   assert.equal(depthConversations.filter((item) => item.title === "Redis 学习规划").length, 1);
   const taskPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  // This server process did not execute the silent/cancelled runs. Progress must
+  // therefore come from PostgreSQL rather than a retained in-memory buffer.
+  const restoredContext = await browser.newContext();
+  const restoredLogin = await restoredContext.request.get(`${origin}/api/auth/csrf`);
+  const restoredCsrf = await restoredLogin.json();
+  const restoredAuth = await restoredContext.request.post(`${origin}/api/auth/login`, { data: { email: `golden-silence-${suffix}@ardor.invalid`, password: `Ardor-Acceptance-${suffix}!` }, headers: { [restoredCsrf.headerName]: restoredCsrf.token } });
+  assert.equal(restoredAuth.ok(), true);
+  const restoredConversations = await (await restoredContext.request.get(`${origin}/api/agent/conversations`)).json();
+  const restoredRun = await (await restoredContext.request.get(`${origin}/api/agent/runs/latest?conversationId=${restoredConversations[0].id}`)).json();
+  const restoredProgress = await restoredContext.request.get(`${origin}/api/agent/runs/${restoredRun.id}/progress`);
+  assert.equal(restoredProgress.ok(), true);
+  assert.equal((await restoredProgress.json()).phase, "FAILED");
+  assert.equal(restoredRun.errorCode, "AGENT_RUN_CANCELLED");
+  await restoredContext.close();
   activePage=taskPage;
   taskPage.on("pageerror",error => pageErrors.push(error.message));
   await taskPage.goto(`${origin}/login`);

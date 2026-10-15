@@ -33,7 +33,7 @@ type Conversation = { id: string; title: string; pinned: boolean; titleManuallyS
 type AgentMemory = { content: string; updatedAt: string | null };
 type RetryFailure = { label: string; detail: string };
 type AgentStreamEvent = { type: "status" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null };
-type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean };
+type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: { label: string; elapsedMs: number; status: string }[]; elapsedMs?: number };
 type AgentRun = { id: string; conversationId: string; message: string; status: "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED"; label: string; errorCode: string | null; errorMessage: string | null; retryable: boolean; createdAt: string; updatedAt: string };
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
    button, and pressing it is an ordinary authenticated DELETE from here — the
@@ -411,6 +411,17 @@ export default function AgentHomePage() {
           timer = window.setTimeout(() => void check(), 3000);
         } else {
           setRunningRun(null);
+          if (run.status !== "COMPLETED") {
+            setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
+            try {
+              const progress = await api<StreamProgress>(`/api/agent/runs/${encodeURIComponent(run.id)}/progress`);
+              if (!stopped) {
+                setStreamProgress(progress); setRunThinking(progress.thinkingOutput);
+                setRunElapsed(progress.elapsedMs ?? 0);
+                setRunSteps((progress.steps ?? []).map((step, index) => ({ key: `recovered-${index}`, label: step.label, elapsedMs: step.elapsedMs, done: true })));
+              }
+            } catch { /* Old runs may predate durable snapshots. Their status remains visible. */ }
+          }
           if (previousStatus === "RUNNING") {
             previousStatus = run.status;
             if (run.status === "COMPLETED") {
@@ -982,6 +993,7 @@ export default function AgentHomePage() {
                   </article>
                 ))}
                 {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div>}
+                {!runningRun && !busy && streamProgress?.answerPartial && streamProgress.phase !== "COMPLETED" && <details className="max-w-xl rounded-2xl border border-stone-200/70 bg-white/50 p-4"><summary className="cursor-pointer text-xs text-stone-500">{t("Incomplete reply · saved before execution stopped", "未完成回复 · 停止前保留的片段")}</summary><div className="ardor-markdown mt-3 text-sm leading-7"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div></details>}
                 <ToolApprovals key={runningRun?.id ?? approvalRunId} requestId={runningRun?.id ?? approvalRunId} />
                 <QueuedMessages key={state?.conversationId} conversationId={state?.conversationId ?? null} activeRunId={runningRun?.id ?? approvalRunId} onPendingChange={setHasQueuedMessages} onCompleted={load} />
                 {confirmations.length > 0 && <section className="space-y-2">
@@ -1004,7 +1016,7 @@ export default function AgentHomePage() {
                     </div>}
                   </div>)}
                 </section>}
-                {(runSteps.length > 0 || busy || runningRun || retryFailures.length > 0) && <section className="max-w-xl rounded-2xl border border-white/70 bg-white/55 px-4 py-3 text-sm text-stone-600 shadow-sm backdrop-blur-md">
+                {(runSteps.length > 0 || runThinking || busy || runningRun || retryFailures.length > 0) && <section className="max-w-xl rounded-2xl border border-white/70 bg-white/55 px-4 py-3 text-sm text-stone-600 shadow-sm backdrop-blur-md">
                   <button type="button" onClick={() => setTraceOpen((open) => !open)} className="flex w-full items-center gap-2 text-left">
                     {traceOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                     <span className="font-medium text-stone-700">{busy || runningRun ? "Ardor 正在工作" : error ? "Ardor 未完成" : "Ardor 已完成"}</span>

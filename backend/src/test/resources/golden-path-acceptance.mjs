@@ -597,6 +597,10 @@ async function main() {
   const silentRun = await silentOwner.request(`/api/agent/runs/${silentRequest.requestId}`);
   assert.equal(silentRun.errorCode, "AGENT_UPSTREAM_SILENT");
   assert.equal(silentRun.retryable, false);
+  const savedSilence = await silentOwner.request(`/api/agent/runs/${silentRequest.requestId}/progress`);
+  assert.equal(savedSilence.phase, "FAILED");
+  assert.equal(savedSilence.thinkingOutput, "");
+  await owner.request(`/api/agent/runs/${silentRequest.requestId}/progress`, { expected: 404 });
   await silentOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
     model: "agent-cancel-probe", apiKey: "disposable-fake-model-key" } });
   const cancelRequest = { ...silentRequest, requestId: randomUUID(), message: "Explicit user cancellation probe" };

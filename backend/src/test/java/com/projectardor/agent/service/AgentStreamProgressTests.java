@@ -83,6 +83,31 @@ class AgentStreamProgressTests {
         assertThatThrownBy(() -> progress.get(owner, request)).isInstanceOf(ResourceNotFoundException.class);
     }
 
+    @Test
+    void failedPublicOutputAndStepsSurviveAProcessReplacementWithoutRestoringPermissions() {
+        AgentProgressStore store = org.mockito.Mockito.mock(AgentProgressStore.class);
+        AgentStreamProgress firstProcess = new AgentStreamProgress(clock, store);
+        firstProcess.begin(owner, request);
+        firstProcess.thinking(request, "Provider public reasoning");
+        firstProcess.answer(request, "Partial answer");
+        firstProcess.step(request, "Read plans", 4, "COMPLETED");
+        firstProcess.finish(request, true);
+        var snapshot = org.mockito.ArgumentCaptor.forClass(AgentStreamProgress.Snapshot.class);
+        org.mockito.Mockito.verify(store).save(org.mockito.ArgumentMatchers.eq(owner), org.mockito.ArgumentMatchers.eq(request), snapshot.capture());
+        org.mockito.Mockito.when(store.find(owner, request)).thenReturn(java.util.Optional.of(new AgentProgressStore.Saved(snapshot.getValue(), "INTERRUPTED")));
+        AgentStreamProgress restarted = new AgentStreamProgress(clock, store);
+        var recovered = restarted.get(owner, request);
+        assertThat(recovered.phase()).isEqualTo("INTERRUPTED");
+        assertThat(recovered.answerPartial()).isEqualTo("Partial answer");
+        assertThat(recovered.thinkingOutput()).isEqualTo("Provider public reasoning");
+        assertThat(recovered.steps()).extracting(AgentStreamProgress.Step::label).containsExactly("Read plans");
+        UUID stranger = UUID.randomUUID();
+        org.mockito.Mockito.when(store.find(stranger, request)).thenReturn(java.util.Optional.empty());
+        assertThatThrownBy(() -> restarted.get(stranger, request)).isInstanceOf(ResourceNotFoundException.class);
+        restarted.answer(request, "Must not resume a persisted run");
+        assertThat(restarted.get(owner, request).answerPartial()).isEqualTo("Partial answer");
+    }
+
     private static final class MutableClock extends Clock {
         private Instant now = Instant.parse("2026-10-14T00:00:00Z");
         void advance(long seconds) { now = now.plusSeconds(seconds); }

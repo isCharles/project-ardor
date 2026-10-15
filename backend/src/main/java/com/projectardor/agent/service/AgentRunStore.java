@@ -191,14 +191,18 @@ public class AgentRunStore {
     /** A dead server cannot finish a run; do not let it remain "running" forever. */
     @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
     public void interruptStaleRuns() {
+        List<UUID> candidates = jdbc.queryForList("SELECT id FROM agent_runs WHERE status='RUNNING' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '2 minutes'", UUID.class);
+        for (UUID requestId : candidates) {
+            if (activeRuns.containsKey(requestId)) continue;
         jdbc.update("""
                 UPDATE agent_runs SET status = 'INTERRUPTED', label = '状态待确认',
                        error_code = 'AGENT_RUN_INTERRUPTED',
                        error_message = '长时间未收到执行进展，无法确认操作是否已完成；请检查日历等操作结果后再试',
                        retryable = FALSE, updated_at = CURRENT_TIMESTAMP,
                        finished_at = CURRENT_TIMESTAMP
-                WHERE status = 'RUNNING' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes'
-                """);
+                WHERE id=? AND status = 'RUNNING' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '2 minutes'
+                """, requestId);
+        }
     }
 
     private String fingerprint(UUID conversationId, String message, String contextType, UUID contextId,
