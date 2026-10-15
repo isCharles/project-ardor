@@ -126,6 +126,31 @@ async function main() {
       model: "golden-path-model", apiKey: "disposable-fake-model-key" },
   });
 
+  const seriesOwner = new Client();
+  await seriesOwner.request("/api/auth/register", { method: "POST", expected: 201,
+    body: { email: `golden-series-edit-${suffix}@ardor.invalid`, password, displayName: "Recurring update" } });
+  const recurring = await seriesOwner.request("/api/calendar/series", { method: "POST", expected: 201,
+    body: { title: "Original recurring meeting", frequency: "DAILY", timeOfDay: "07:00", occurrenceLimit: 3,
+      startDate: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) } });
+  const originalOccurrences = (await seriesOwner.request("/api/calendar/tasks")).filter(task => task.seriesId === recurring.id);
+  assert.equal(originalOccurrences.length, 3);
+  const exception = originalOccurrences[0];
+  await seriesOwner.request(`/api/calendar/tasks/${exception.id}`, { method: "PUT",
+    body: { title: "Personal exception", description: "Keep this one", dueAt: exception.dueAt, priority: exception.priority, status: "TODO" } });
+  const revisedRule = await seriesOwner.request(`/api/calendar/series/${recurring.id}`, { method: "PATCH", body: { timeOfDay: "09:00" } });
+  assert.equal(revisedRule.series.id, recurring.id);
+  assert.equal(revisedRule.updatedOccurrences, 2);
+  assert.equal(revisedRule.preservedOccurrences, 1);
+  const revisedOccurrences = (await seriesOwner.request("/api/calendar/tasks")).filter(task => task.seriesId === recurring.id);
+  assert.deepEqual(revisedOccurrences.map(task => task.id).sort(), originalOccurrences.map(task => task.id).sort());
+  for (const task of revisedOccurrences) {
+    const original = originalOccurrences.find(item => item.id === task.id);
+    assert.equal(new Date(task.dueAt).getTime(), new Date(original.dueAt).getTime() + (task.id === exception.id ? 0 : 7200000));
+  }
+  await stranger.request(`/api/calendar/series/${recurring.id}`, { method: "PATCH", expected: 404, body: { timeOfDay: "10:00" } });
+  await seriesOwner.request(`/api/calendar/series/${recurring.id}`, { method: "DELETE" });
+  await seriesOwner.request(`/api/calendar/series/${recurring.id}`, { method: "PATCH", expected: 400, body: { timeOfDay: "10:00" } });
+
   const submitted = await owner.request("/api/interview-recaps", {
     method: "POST", expected: 202,
     body: { content: "我在 Ardor Labs 的 Java 后端工程师面试里被问到 Redis 的 RDB 和 AOF 有什么区别。我只说 RDB 是快照，没能解释 AOF 的写命令日志、重写和恢复取舍。" },

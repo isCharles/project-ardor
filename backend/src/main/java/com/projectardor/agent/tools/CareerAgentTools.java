@@ -425,6 +425,18 @@ public class CareerAgentTools {
                     .toList();
         }
 
+        @Tool(name = "update_recurring_task", value = "修改当前用户重复安排的时间、标题、说明或优先级，保留规则和实例 UUID。先读取规则，只更新未被用户单独修改且尚未完成的未来实例；返回更新和保留数量，不会新建第二套规则。此工具不修改重复频率、日期范围或时区")
+        public Map<String, Object> updateRecurringTask(@P("重复规则 UUID") String seriesId,
+                @P(value = "新标题，不修改传 null", required = false) String title,
+                @P(value = "新说明，不修改传 null，清空传空字符串", required = false) String description,
+                @P(value = "LOW、MEDIUM 或 HIGH，不修改传 null", required = false) String priority,
+                @P(value = "新本地时间 HH:mm，不修改传 null", required = false) String timeOfDay) {
+            var result = taskSeriesService.updateDetails(userId, uuid(seriesId, "重复规则 ID"), title, description,
+                    priority == null ? null : parsePriority(priority), timeOfDay == null ? null : LocalTime.parse(timeOfDay));
+            return Map.of("series", TaskSeriesResponse.from(result.series(), taskSeriesService.upcoming(userId, result.series().getId(), 4)),
+                    "updatedOccurrences", result.updatedOccurrences(), "preservedOccurrences", result.preservedOccurrences());
+        }
+
         @Tool(name = "create_recurring_task", value = """
                 创建一条按天、按周或按月循环的日程规则，并把接下来一个季度的每一次都写进日历。
                 用户说“每周四晚上组会”“每天早上读书半小时”“每月 15 号复盘”这类固定安排时使用，不要改用 create_calendar_task 逐条创建。

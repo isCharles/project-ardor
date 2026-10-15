@@ -70,6 +70,15 @@ public class TaskSeriesController {
     }
 
     /** Stops the series; past and already-touched occurrences stay on the calendar. */
+    @org.springframework.web.bind.annotation.PatchMapping("/{seriesId}")
+    public Map<String, Object> update(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID seriesId,
+            @Valid @RequestBody TaskSeriesUpdateRequest request) {
+        var result = service.updateDetails(principal.userId(), seriesId, request.title(), request.description(), request.priority(), request.timeOfDay());
+        return Map.of("series", TaskSeriesResponse.from(result.series(), service.upcoming(principal.userId(), seriesId, UPCOMING_SHOWN)),
+                "updatedOccurrences", result.updatedOccurrences(), "preservedOccurrences", result.preservedOccurrences());
+    }
+
+    /** Stops the series; past and already-touched occurrences stay on the calendar. */
     @DeleteMapping("/{seriesId}")
     public Map<String, Object> cancel(
             @AuthenticationPrincipal ArdorPrincipal principal,

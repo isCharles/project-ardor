@@ -85,7 +85,8 @@ public class CalendarTaskService {
             Instant dueAt,
             CalendarTaskPriority priority,
             CalendarTaskStatus status) {
-        CalendarTask task = get(userId, taskId);
+        CalendarTask task = repository.findOwnedForUpdate(taskId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("日程不存在"));
         task.update(
                 requiredTitle(title),
                 nullableText(description, 4000),
@@ -103,7 +104,9 @@ public class CalendarTaskService {
     @Transactional
     public CalendarTask updateGeneral(UUID userId, UUID taskId, String title, String description, Instant dueAt,
             CalendarTaskPriority priority, CalendarTaskStatus status) {
-        if (get(userId, taskId).getTaskKind() != CalendarTaskKind.GENERAL) {
+        CalendarTask task = repository.findOwnedForUpdate(taskId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("日程不存在"));
+        if (task.getTaskKind() != CalendarTaskKind.GENERAL) {
             throw new IllegalArgumentException("该日程由学习、记忆卡或复测模块维护，请修改对应业务对象");
         }
         return update(userId, taskId, title, description, dueAt, priority, status);

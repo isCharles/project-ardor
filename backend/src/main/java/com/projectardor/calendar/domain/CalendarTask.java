@@ -111,6 +111,14 @@ public class CalendarTask {
         return task;
     }
 
+    public void refreshFromSeries(TaskSeries series) {
+        if (!series.getId().equals(seriesId) || !series.getUserId().equals(userId)) throw new IllegalArgumentException("重复安排归属不匹配");
+        this.title = series.getTitle();
+        this.description = series.getDescription();
+        this.priority = series.getPriority();
+        this.dueAt = series.dueAtOn(occurrenceDate);
+    }
+
     public void scheduleMemoryCardReview(int cardCount, Instant dueAt) {
         this.title = "记忆卡复习";
         this.description = cardCount + " 张待复习";

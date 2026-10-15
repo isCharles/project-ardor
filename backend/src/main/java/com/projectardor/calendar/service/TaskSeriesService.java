@@ -57,6 +57,28 @@ public class TaskSeriesService {
     }
 
     public record SeriesCreation(TaskSeries series, List<LocalDate> created) {}
+    public record SeriesUpdate(TaskSeries series, int updatedOccurrences, int preservedOccurrences) {}
+
+    @Transactional
+    public SeriesUpdate updateDetails(UUID userId, UUID seriesId, String title, String description,
+            CalendarTaskPriority priority, LocalTime timeOfDay) {
+        TaskSeries series = seriesRepository.findOwnedForUpdate(seriesId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("重复安排不存在"));
+        if (series.getStatus() == TaskSeriesStatus.CANCELLED) throw new IllegalArgumentException("已取消的重复安排不能修改或重新启用");
+        if (title == null && description == null && priority == null && timeOfDay == null) throw new IllegalArgumentException("请指定要修改的字段");
+        series.reviseDetails(title == null ? null : requiredTitle(title), nullableText(description), description != null, priority, timeOfDay);
+        Instant now = Instant.now();
+        LocalDate today = LocalDate.now(ZoneId.of(series.getTimezone()));
+        int updated = 0; int preserved = 0;
+        for (CalendarTask task : taskRepository.findSeriesForUpdate(seriesId, userId)) {
+            if (task.getStatus() != CalendarTaskStatus.TODO || task.isUserModified() || task.getOccurrenceDate() == null
+                    || task.getOccurrenceDate().isBefore(today) || !series.dueAtOn(task.getOccurrenceDate()).isAfter(now)) {
+                preserved++; continue;
+            }
+            task.refreshFromSeries(series); updated++;
+        }
+        return new SeriesUpdate(series, updated, preserved);
+    }
 
     @Transactional
     public SeriesCreation create(
@@ -162,9 +184,10 @@ public class TaskSeriesService {
      */
     @Transactional
     public int cancel(UUID userId, UUID seriesId) {
-        TaskSeries series = get(userId, seriesId);
+        TaskSeries series = seriesRepository.findOwnedForUpdate(seriesId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("重复安排不存在"));
         Instant now = Instant.now();
-        List<CalendarTask> withdrawn = taskRepository.findAllBySeriesIdAndUserId(seriesId, userId).stream()
+        List<CalendarTask> withdrawn = taskRepository.findSeriesForUpdate(seriesId, userId).stream()
                 .filter(task -> task.getStatus() == CalendarTaskStatus.TODO)
                 .filter(task -> !task.isUserModified())
                 .filter(task -> task.getDueAt() != null && task.getDueAt().isAfter(now))
@@ -178,11 +201,13 @@ public class TaskSeriesService {
     @Transactional
     public int extendActiveSeries(int maxSeries) {
         LocalDate today = LocalDate.now();
-        List<TaskSeries> pending = seriesRepository
-                .findAllByStatusAndMaterializedThroughLessThanOrderByMaterializedThroughAsc(
+        var pending = seriesRepository
+                .findExpansionCandidates(
                         TaskSeriesStatus.ACTIVE, today.plusDays(HORIZON_DAYS), Limit.of(maxSeries));
         int created = 0;
-        for (TaskSeries series : pending) {
+        for (var candidate : pending) {
+            TaskSeries series = seriesRepository.findOwnedForUpdate(candidate.getId(), candidate.getUserId()).orElse(null);
+            if (series == null || series.getStatus() != TaskSeriesStatus.ACTIVE) continue;
             created += materialize(series, LocalDate.now(ZoneId.of(series.getTimezone()))).size();
         }
         return created;
