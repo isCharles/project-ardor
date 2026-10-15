@@ -25,6 +25,19 @@ public enum AgentFeature {
     public String label() { return label; }
     public String englishLabel() { return englishLabel; }
     public String description() { return description; }
+    public String englishDescription() {
+        return switch (this) {
+            case LEARNING -> "Learn concepts, explore explanations, and practice";
+            case CARDS -> "Prepare flashcards and schedule reviews";
+            case RESUMES -> "Manage and analyze resumes";
+            case INTERVIEWS -> "Prepare and take mock interviews";
+            case RECAPS -> "Organize interview notes and identify weak areas";
+            case KNOWLEDGE -> "Search and manage learning material";
+            case CALENDAR -> "Manage tasks and schedules";
+            case APPLICATIONS -> "Track application activity and goals";
+            case MEMORY -> "Manage your long-term memories";
+        };
+    }
     public String hint() { return "用户选择的功能：" + label + "（" + description + "）。这是意图，不是操作授权；仍须遵守工具权限与确认规则。"; }
     public static AgentFeature require(UUID id) {
         return Arrays.stream(values()).filter(feature -> feature.id().equals(id)).findFirst()
