@@ -62,17 +62,21 @@ public class TaskSeriesService {
     @Transactional
     public SeriesUpdate updateDetails(UUID userId, UUID seriesId, String title, String description,
             CalendarTaskPriority priority, LocalTime timeOfDay) {
+        return updateDetailsAt(userId, seriesId, title, description, priority, timeOfDay, Instant.now());
+    }
+
+    SeriesUpdate updateDetailsAt(UUID userId, UUID seriesId, String title, String description,
+            CalendarTaskPriority priority, LocalTime timeOfDay, Instant now) {
         TaskSeries series = seriesRepository.findOwnedForUpdate(seriesId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("重复安排不存在"));
         if (series.getStatus() == TaskSeriesStatus.CANCELLED) throw new IllegalArgumentException("已取消的重复安排不能修改或重新启用");
         if (title == null && description == null && priority == null && timeOfDay == null) throw new IllegalArgumentException("请指定要修改的字段");
         series.reviseDetails(title == null ? null : requiredTitle(title), nullableText(description), description != null, priority, timeOfDay);
-        Instant now = Instant.now();
-        LocalDate today = LocalDate.now(ZoneId.of(series.getTimezone()));
+        LocalDate today = now.atZone(ZoneId.of(series.getTimezone())).toLocalDate();
         int updated = 0; int preserved = 0;
         for (CalendarTask task : taskRepository.findSeriesForUpdate(seriesId, userId)) {
             if (task.getStatus() != CalendarTaskStatus.TODO || task.isUserModified() || task.getOccurrenceDate() == null
-                    || task.getOccurrenceDate().isBefore(today) || !series.dueAtOn(task.getOccurrenceDate()).isAfter(now)) {
+                    || task.getOccurrenceDate().isBefore(today) || !task.getDueAt().isAfter(now)) {
                 preserved++; continue;
             }
             task.refreshFromSeries(series); updated++;
