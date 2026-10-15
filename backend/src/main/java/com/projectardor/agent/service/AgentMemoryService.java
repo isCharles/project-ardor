@@ -46,6 +46,7 @@ public class AgentMemoryService {
 
     @Transactional
     public AgentMemoryResponse update(UUID userId, String rawContent) {
+        itemRepository.lockOwner(userId);
         String content = normalize(rawContent);
         java.util.List<String> desired = java.util.Arrays.stream(content.split("\\R")).map(String::strip)
                 .map(line -> line.replaceFirst("^[-*•]\\s*", ""))
@@ -82,6 +83,7 @@ public class AgentMemoryService {
 
     @Transactional
     public AgentMemoryItemResponse add(UUID userId, String rawContent) {
+        itemRepository.lockOwner(userId);
         String content = itemContent(rawContent);
         if (itemRepository.existsByUserIdAndContentIgnoreCase(userId, content)) {
             return itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId).stream()
@@ -93,12 +95,14 @@ public class AgentMemoryService {
 
     @Transactional
     public void remove(UUID userId, UUID memoryId) {
+        itemRepository.lockOwner(userId);
         itemRepository.delete(itemRepository.findByIdAndUserId(memoryId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("记忆不存在")));
     }
 
     @Transactional
     public AgentMemoryItemResponse edit(UUID userId, UUID memoryId, String rawContent) {
+        itemRepository.lockOwner(userId);
         AgentMemoryItem item = itemRepository.findByIdAndUserId(memoryId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("记忆不存在"));
         String content = itemContent(rawContent);
@@ -111,6 +115,7 @@ public class AgentMemoryService {
 
     @Transactional
     public void clear(UUID userId) {
+        itemRepository.lockOwner(userId);
         itemRepository.deleteAllByUserId(userId);
         repository.findByUserId(userId).ifPresent(repository::delete);
     }
