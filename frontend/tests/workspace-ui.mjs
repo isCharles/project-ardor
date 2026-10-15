@@ -47,7 +47,7 @@ try {
     let body = {};
     if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin };
     else if (path === "/api/agent/features") body = [
-      { key: "LEARNING", id: "f1111111-1111-3111-8111-111111111111", label: "学习", englishLabel: "Learning", description: "学习概念" },
+      { key: "LEARNING", id: "f1111111-1111-3111-8111-111111111111", label: "学习", englishLabel: "Learning", description: "学习概念", englishDescription: "Learn concepts and practice" },
       { key: "CARDS", id: "f2222222-2222-3222-8222-222222222222", label: "记忆卡", englishLabel: "Flashcards", description: "准备记忆卡" },
       { key: "RECAPS", id: "f3333333-3333-3333-8333-333333333333", label: "面经", englishLabel: "Interview notes", description: "整理面试内容" },
       { key: "CALENDAR", id: "f4444444-4444-3444-8444-444444444444", label: "日程", englishLabel: "Calendar", description: "管理日程" },
@@ -244,10 +244,15 @@ try {
   await page.goto(`${origin}/app?new=1`);
   const draftBox = page.getByRole("textbox", { name: "Message Ardor", exact: true });
   await draftBox.fill("@Learning");
+  await page.getByRole("listbox", { name: "Services" }).getByText("Learn concepts and practice", { exact: true }).waitFor();
+  await draftBox.press("Escape");
+  assert.equal(await page.getByRole("listbox", { name: "Services" }).count(), 0);
+  await draftBox.fill("@Learn");
   await page.getByRole("option", { name: "Learning", exact: true }).click();
   await page.screenshot({ path: ".next/service-tag.png", animations: "disabled" });
   assert.equal(await draftBox.inputValue(), "");
   await page.getByRole("button", { name: "Change service" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Change service" }).getAttribute("title"), "Learn concepts and practice");
   await draftBox.fill("Keep my example draft");
   await page.reload();
   await page.getByRole("button", { name: "Change service" }).waitFor();

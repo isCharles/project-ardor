@@ -13,5 +13,8 @@ class AgentFeatureTests {
         assertThat(AgentFeature.LEARNING.hint()).contains("不是操作授权");
         assertThatThrownBy(() -> AgentFeature.require(UUID.randomUUID())).isInstanceOf(IllegalArgumentException.class);
         assertThat(Arrays.stream(AgentFeature.values()).map(AgentFeature::id).distinct()).hasSize(AgentFeature.values().length);
+        for (AgentFeature feature : AgentFeature.values()) {
+            assertThat(feature.englishDescription()).isNotBlank().isNotEqualTo(feature.englishLabel());
+        }
     }
 }
