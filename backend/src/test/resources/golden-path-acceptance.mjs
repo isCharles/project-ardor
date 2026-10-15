@@ -599,7 +599,7 @@ async function main() {
   await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}/cancel`, { method: "POST", expected: 202 });
   assert.equal((await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}`)).errorCode, "AGENT_RUN_CANCELLED");
   await sleep(9000); // The fake provider attempts a late tool call after the local run has stopped.
-  assert.equal((await silentOwner.request("/api/agent/memory/items")).length, 0, "Late tool chunks must not mutate memory");
+  assert.equal((await silentOwner.request("/api/agent/memory")).content, "", "Late tool chunks must not mutate memory");
   assert.equal((await silentOwner.request(`/api/agent/runs/${silentRequest.requestId}`)).errorCode, "AGENT_UPSTREAM_SILENT");
   await asyncOwner.request("/api/auth/register", { method: "POST", expected: 201,
     body: { email: `golden-async-${suffix}@ardor.invalid`, password, displayName: "Async Assessments" } });
