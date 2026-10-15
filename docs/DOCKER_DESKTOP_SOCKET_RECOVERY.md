@@ -111,3 +111,34 @@ starting services: initializing Secrets Engine: listening on unix://.../docker-s
 - [docker/desktop-feedback#631](https://github.com/docker/desktop-feedback/issues/631) 给出在另一台 Windows 机器上独立于 Docker 的 AF_UNIX 行为对照；本机**尚未执行**该复现实验，不能直接断言 Windows 内核、权限、杀毒软件或磁盘迁移是根因。本机系统构建号为 26100，与该报告的 26200 不同。
 
 真正的长期解决可能需要 Docker/Windows 上游修复，或在确认兼容性、备份和回退办法后评估升级。现阶段不应凭版本说明直接承诺升级能根治，也不应把目录改名误称为修复了上游缺陷。
+
+## 2026-10-15：独立于 Docker 的原生 socket 对照
+
+本次没有成功恢复 Engine。此前安全恢复脚本的一次启动仍因新的 Inference/Secrets Engine socket 失败；没有循环重跑恢复脚本。随后用 PowerShell/.NET 在自建临时目录中测试 `AddressFamily.Unix`、`SocketType.Stream`、`ProtocolType.Unspecified`：依次执行 `Bind(UnixDomainSocketEndPoint)`、`Listen(1)`、`Dispose()`，最后用 `System.IO.File.Delete` 删除同一 socket。以下记录是本机实测，不是上游问题的根因结论。
+
+| 对照 | 结果 |
+| --- | --- |
+| 用户 `%TEMP%`（短路径 `C:\Users\ADMINI~1\AppData\Local\Temp`） | Bind/listen/close 后删除失败：`The file cannot be accessed by the system`；条目显示 `Archive, ReparsePoint` |
+| 用户 Temp 的完整长路径 | 同样删除失败，排除了单纯的 8.3 路径别名解释 |
+| 宿主提权执行，从创建开始测试完整用户 Temp 路径 | 同样删除失败，不能归为仅受限执行环境中的删除权限问题 |
+| 同一用户 Temp 内缩短到 52 字符的 socket 路径 | 同样删除失败，不能简单归为超长路径 |
+| `C:\Windows\Temp` | 同一套 .NET bind/listen/close/delete 成功，随后清理自建空目录 |
+| `E:\Temp` 与项目构建临时目录中的直接 E 盘路径 | 同一套操作成功，已清理这些自建探针目录 |
+| 自建 C 盘 Temp Junction → 独立 E 盘临时目录 | Bind 返回 `Only one usage of each socket address ... is normally permitted`；目标实际为空。核验目标后仅移除了该临时 Junction 和空目标，**没有**将此方案用于 Docker |
+
+因此不能声称“整个 C 盘不支持 AF_UNIX”，也不能据此断定 Docker 的 E 盘 VHDX 迁移损坏。问题至少能在当前用户 Temp 路径的独立原生程序中复现，但原因仍可能涉及目录权限、文件系统过滤、系统策略或 AF_UNIX 驱动行为；尚未用证据区分这些解释。
+
+辅助只读检查：Windows 11 Pro `10.0.26100`，上次启动为本机时间 `2026-10-13 12:22:43`；Docker Desktop `4.77.0.228796`。C/E 均报告 NTFS、Healthy。`C:\Users`、用户目录、AppData、Local、Temp 均没有显示 Junction；用户 Temp 和 Windows Temp 的目录大小写敏感标志均关闭。用户 Temp 目录属主为 `BUILTIN\Administrators` 且继承 ACL，Windows Temp 为 `NT AUTHORITY\SYSTEM` 且保护 ACL；这只是差异，尚未证明 ACL 是原因，没有放宽任何目录权限。
+
+无法删除的四个自建探针保留如下，均只含本次 socket，不含应用数据；不要因此递归清理整个 Temp：
+
+- `C:\Users\Administrator\AppData\Local\Temp\ardor-socket-ffdf4782\probe.sock`
+- `C:\Users\Administrator\AppData\Local\Temp\ardor-long-socket-05b9f060\p.sock`
+- `C:\Users\Administrator\AppData\Local\Temp\ardor-host-afunix-64db6af4\p.sock`
+- `C:\Users\Administrator\AppData\Local\Temp\a1db23ba\s`
+
+### 此版本的帮助参数也有副作用
+
+尝试读取已安装 `resources\com.docker.backend.exe --help` 的参数时，它打印帮助及 `failed to parse args: flag: help requested` 后，**仍继续进入 monitor/services 启动流程**。2026-10-15 `06:59:35 UTC` 启动，随后再次因 `...\Docker\run\dockerInference` 删除失败进入错误退出；`06:59:45 UTC` monitor 以状态 150 退出。执行会话最终确认进程结束，之后查询没有后端残留进程。
+
+不要再把这个二进制的 `--help` 当作只读检查，也不要据此再次启动它。本文只保留最小错误证据，不复制完整设置日志。此次没有修改 Docker 设置、目录 Junction、数据卷或 VHDX，没有执行 reset/prune。下一轮应优先调查用户目录与系统临时目录的原生行为差异，再评估经过验证的系统或软件修复；目前没有证明可靠的运行目录重定向方案。
