@@ -14,7 +14,7 @@ class CalendarTaskUpdateTests {
         UUID owner = UUID.randomUUID();
         var repository = mock(CalendarTaskRepository.class);
         var task = CalendarTask.create(owner, "Old", "Old description", Instant.now(), CalendarTaskPriority.MEDIUM, CalendarTaskSource.MANUAL);
-        when(repository.findByIdAndUserId(task.getId(), owner)).thenReturn(Optional.of(task));
+        when(repository.findOwnedForUpdate(task.getId(), owner)).thenReturn(Optional.of(task));
         var service = new CalendarTaskService(repository);
         Instant later = Instant.now().plusSeconds(3600);
         var updated = service.updateGeneral(owner, task.getId(), "New", "New description", later, CalendarTaskPriority.HIGH, CalendarTaskStatus.IN_PROGRESS);
@@ -29,7 +29,7 @@ class CalendarTaskUpdateTests {
         var repository = mock(CalendarTaskRepository.class);
         var task = mock(CalendarTask.class);
         when(task.getTaskKind()).thenReturn(CalendarTaskKind.LEARNING);
-        when(repository.findByIdAndUserId(id, owner)).thenReturn(Optional.of(task));
+        when(repository.findOwnedForUpdate(id, owner)).thenReturn(Optional.of(task));
         assertThatThrownBy(() -> new CalendarTaskService(repository).updateGeneral(owner, id, "x", null, null, null, null))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("对应业务对象");
         verify(task, never()).update(any(), any(), any(), any(), any());

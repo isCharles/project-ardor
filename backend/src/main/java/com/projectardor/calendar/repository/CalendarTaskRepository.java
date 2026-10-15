@@ -16,6 +16,12 @@ import com.projectardor.calendar.domain.CalendarTaskStatus;
 
 public interface CalendarTaskRepository extends JpaRepository<CalendarTask, UUID> {
     Optional<CalendarTask> findByIdAndUserId(UUID id, UUID userId);
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select task from CalendarTask task where task.id=:id and task.userId=:userId")
+    Optional<CalendarTask> findOwnedForUpdate(@Param("id") UUID id, @Param("userId") UUID userId);
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select task from CalendarTask task where task.seriesId=:seriesId and task.userId=:userId order by task.id")
+    List<CalendarTask> findSeriesForUpdate(@Param("seriesId") UUID seriesId, @Param("userId") UUID userId);
     Optional<CalendarTask> findByMemoryCardIdAndUserId(UUID memoryCardId, UUID userId);
     Optional<CalendarTask> findByLearningPlanIdAndUserId(UUID learningPlanId, UUID userId);
     Optional<CalendarTask> findFirstByUserIdAndTaskKindAndReplayQuestionIdAndStatusIn(

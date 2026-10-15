@@ -209,6 +209,14 @@ public class TaskSeries {
 
     public void cancel() { this.status = TaskSeriesStatus.CANCELLED; }
 
+    public void reviseDetails(String title, String description, boolean changeDescription,
+            CalendarTaskPriority priority, LocalTime timeOfDay) {
+        if (title != null) this.title = title;
+        if (changeDescription) this.description = description;
+        if (priority != null) this.priority = priority;
+        if (timeOfDay != null) this.timeOfDay = timeOfDay.withSecond(0).withNano(0);
+    }
+
     private int cap() {
         return occurrenceLimit == null ? Integer.MAX_VALUE : occurrenceLimit;
     }

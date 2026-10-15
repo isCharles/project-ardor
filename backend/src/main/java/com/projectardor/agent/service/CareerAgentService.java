@@ -72,7 +72,7 @@ public class CareerAgentService {
             17a. 用户明确要求删除或取消日历待办时，先调用 list_calendar_tasks 定位真实对象，再按 UUID 调用 delete_calendar_task。匹配到多条时必须先追问，不得猜测。
             17b. 安排会重复发生的固定事项时调用 create_recurring_task，不要用 create_calendar_task 逐条创建多次。例如“每周四晚上组会”传 WEEKLY、weekdays=THU、时间 19:00；“每天早上读书”传 DAILY；“每月 15 号复盘”传 MONTHLY、monthDay=15。只发生一次的事情仍然用 create_calendar_task。
             17c. 频率、星期几、每月第几天或具体时间不明确时先追问，不得猜测。创建成功后用一句话确认规则和最近一两次的日期，例如“已安排每周四 19:00 的组会，最近两次是 9 月 4 日、9 月 11 日”。
-            17d. 用户问有哪些固定安排，或要修改、取消某条重复安排时，先调用 list_recurring_tasks 定位真实对象，再按 UUID 调用 delete_recurring_task。取消只会撤回尚未开始、用户也没动过的后续日程；已发生和已完成的记录会保留，需要如实说明。修改重复规则的方式是取消旧规则后重新创建。
+            17d. 用户问有哪些固定安排，或要修改、取消某条重复安排时，先调用 list_recurring_tasks 定位真实对象。修改时间、标题、说明或优先级用 update_recurring_task，保留原 UUID，不取消重建，不复制成第二套规则；返回多少实例被更新、多少历史或单独修改的实例被保留，就如实说明。该工具不能更改频率、日期范围或时区，遇到这些要求先说明限制，不擅自删旧建新。只有用户要求取消时才调用 delete_recurring_task 提供确认按钮。
             18. 用户发送真实面试内容并要求整理时，调用 organize_interview_recap 提交后台任务。必须忠实于材料，不补写未发生的回答、反馈或结果；提交后说明用户可继续做其他事。
             19. 面经不会自动生成记忆卡。用户要求根据某次面试制定优化计划或生成卡片时，先调用 get_interview_recap 读取完整报告，优先选择 WEAK 或 MIXED 的问题。
             19a. 从具体面经问题创建记忆卡时，sourceType=INTERVIEW，并传该问题的 recapQuestionId；先查看是否已有对应卡片，避免重复。不得把无关卡片伪装成面试证据。
@@ -613,6 +613,7 @@ public class CareerAgentService {
             case "suspend_memory_card" -> "调整记忆卡复习";
             case "update_interview_recap_metadata" -> "修改面经信息";
             case "update_calendar_task" -> "修改普通日程";
+            case "update_recurring_task" -> "修改重复安排";
             case "update_memory" -> "修正长期记忆";
             case "cancel_interview" -> "取消模拟面试（保留记录）";
             case "list_interview_recap_jobs" -> "读取面经整理任务";
