@@ -113,14 +113,6 @@ const MAX_MESSAGE_RETRIES = 5;
 const MAX_MESSAGE_LENGTH = 50_000;
 type ReasoningDepth = "AUTO" | "QUICK" | "STANDARD" | "DEEP";
 
-function draftStorageKey(conversationId?: string | null) {
-  return `ardor:conversation-draft:${conversationId ?? "new"}`;
-}
-
-function readSavedDraft(conversationId?: string | null) {
-  return window.sessionStorage.getItem(draftStorageKey(conversationId)) ?? "";
-}
-
 function outgoingKey(accountId: string | null, conversationId: string) {
   return `ardor:outgoing:${accountId}:${conversationId}`;
 }
@@ -147,6 +139,18 @@ export default function AgentHomePage() {
   const [reasoningDepth, setReasoningDepth] = useState<ReasoningDepth>("AUTO");
   const [nativeReasoning, setNativeReasoning] = useState(false);
   const reasoningAccount = useRef<string | null>(null);
+  const draftStorageKey = useCallback((conversationId?: string | null) =>
+    `ardor:conversation-draft:${reasoningAccount.current ?? "unavailable"}:${conversationId ?? "new"}`, []);
+  const readSavedDraft = useCallback((conversationId?: string | null) =>
+    window.sessionStorage.getItem(draftStorageKey(conversationId)) ?? "", [draftStorageKey]);
+  const readDraftReferences = useCallback((conversationId?: string | null): SelectedContext[] => {
+    try {
+      const value: unknown = JSON.parse(window.sessionStorage.getItem(`${draftStorageKey(conversationId)}:references`) ?? "[]");
+      if (!Array.isArray(value)) return [];
+      return value.filter((item): item is SelectedContext => item && ["RESUME", "RECAP", "KNOWLEDGE", "LEARNING"].includes(item.type)
+        && typeof item.id === "string" && typeof item.label === "string").slice(0, 5);
+    } catch { return []; }
+  }, [draftStorageKey]);
   const [reasoningReady, setReasoningReady] = useState(false);
   const [titleWatch, setTitleWatch] = useState<{ id: string; title: string } | null>(null);
   const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
@@ -286,6 +290,22 @@ export default function AgentHomePage() {
   }, []);
 
   const applyState = useCallback((result: AgentState) => {
+    // An authenticated conversation response proves ownership of this UUID, so
+    // its legacy draft can be migrated. The shared old "new" slot has no owner.
+    if (result.conversationId) {
+      const legacyKey = `ardor:conversation-draft:${result.conversationId}`;
+      const legacyDraft = window.sessionStorage.getItem(legacyKey);
+      if (legacyDraft != null && window.sessionStorage.getItem(draftStorageKey(result.conversationId)) == null) {
+        window.sessionStorage.setItem(draftStorageKey(result.conversationId), legacyDraft);
+        window.sessionStorage.removeItem(legacyKey);
+      }
+      const legacyServiceKey = `${legacyKey}:service:${reasoningAccount.current}`;
+      const legacyService = window.sessionStorage.getItem(legacyServiceKey);
+      if (legacyService) {
+        window.sessionStorage.setItem(`${draftStorageKey(result.conversationId)}:service:${reasoningAccount.current}`, legacyService);
+        window.sessionStorage.removeItem(legacyServiceKey);
+      }
+    }
     setState(result);
     const outgoing = readOutgoing(reasoningAccount.current, result.conversationId);
     setMessages(outgoing ? [...result.messages, outgoing] : result.messages);
@@ -316,8 +336,8 @@ export default function AgentHomePage() {
     setDraft(readSavedDraft(result.conversationId));
     const serviceId = window.sessionStorage.getItem(`${draftStorageKey(result.conversationId)}:service:${reasoningAccount.current}`);
     const feature = featuresRef.current.find((item) => item.id === serviceId);
-    setSelectedContexts((current) => [...current.filter((item) => item.type !== "SERVICE"), ...(feature ? [{ type: "SERVICE" as const, id: feature.id, label: feature.label }] : [])]);
-  }, []);
+    setSelectedContexts([...readDraftReferences(result.conversationId), ...(feature ? [{ type: "SERVICE" as const, id: feature.id, label: feature.label }] : [])].slice(-5));
+  }, [draftStorageKey, readSavedDraft, readDraftReferences]);
 
   const load = useCallback(async (conversationId?: string | null) => {
     const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "";
@@ -351,7 +371,7 @@ export default function AgentHomePage() {
           const feature = catalog.find((item) => item.key === params.get("feature"));
           if (feature) window.sessionStorage.setItem(`${draftStorageKey(null)}:service:${account.id}`, feature.id);
           const contextType = params.get("contextType"); const contextId = params.get("contextId"); const contextLabel = params.get("contextLabel");
-          if ((contextType === "RESUME" || contextType === "RECAP" || contextType === "KNOWLEDGE" || contextType === "LEARNING") && contextId && contextLabel) setSelectedContexts([{ type: contextType, id: contextId, label: contextLabel }]);
+          if ((contextType === "RESUME" || contextType === "RECAP" || contextType === "KNOWLEDGE" || contextType === "LEARNING") && contextId && contextLabel) window.sessionStorage.setItem(`${draftStorageKey(null)}:references`, JSON.stringify([{ type: contextType, id: contextId, label: contextLabel }]));
         }
         if (params.get("notice") === "recap-queued") setNotice("面经已提交后台整理，你可以继续使用 Ardor。完成后会出现在面经列表里。");
         applyState(result);
@@ -362,7 +382,7 @@ export default function AgentHomePage() {
         setError(reason instanceof Error ? reason.message : "无法载入 Agent");
       });
     return () => { cancelled = true; };
-  }, [applyState, router]);
+  }, [applyState, router, draftStorageKey]);
 
   useEffect(() => {
     let active = true;
@@ -448,7 +468,7 @@ export default function AgentHomePage() {
     };
     void check();
     return () => { stopped = true; if (timer) window.clearTimeout(timer); };
-  }, [state?.conversationId, busy, load, runningRunId]);
+  }, [state?.conversationId, busy, load, runningRunId, draftStorageKey, readSavedDraft]);
   useEffect(() => {
     if (!busy && !runningRunId) return;
     const timer = window.setInterval(() => setRunElapsed(Date.now() - runStartedAt.current), 250);
@@ -476,7 +496,9 @@ export default function AgentHomePage() {
     setConfirmations([]);
     setRunElapsed(0);
     setMessages([]);
-    setSelectedContexts([]);
+    const serviceId = window.sessionStorage.getItem(`${draftStorageKey(null)}:service:${reasoningAccount.current}`);
+    const feature = featuresRef.current.find((item) => item.id === serviceId);
+    setSelectedContexts([...readDraftReferences(null), ...(feature ? [{ type: "SERVICE" as const, id: feature.id, label: feature.label }] : [])].slice(-5));
     setState((current) => current ? { ...current, conversationId: null, messages: [] } : current);
     setDraft(readSavedDraft(null));
     window.history.replaceState(null, "", "/app?new=1");
@@ -544,10 +566,14 @@ export default function AgentHomePage() {
         const unchanged = readSavedDraft(state.conversationId).trim() === message;
         if (unchanged) {
           window.sessionStorage.removeItem(draftStorageKey(state.conversationId));
-          window.sessionStorage.removeItem(`${draftStorageKey(state.conversationId)}:service:${reasoningAccount.current}`);
         }
         setDraft((current) => current.trim() === message ? "" : current);
-        if (unchanged) setSelectedContexts((current) => JSON.stringify(current.map(({ type, id }) => ({ type, id }))) === JSON.stringify(payload.contextReferences) ? [] : current);
+        if (unchanged) setSelectedContexts((current) => {
+          if (JSON.stringify(current.map(({ type, id }) => ({ type, id }))) !== JSON.stringify(payload.contextReferences)) return current;
+          window.sessionStorage.removeItem(`${draftStorageKey(state.conversationId)}:service:${reasoningAccount.current}`);
+          window.sessionStorage.removeItem(`${draftStorageKey(state.conversationId)}:references`);
+          return [];
+        });
         setHasQueuedMessages(true);
         window.dispatchEvent(new Event("ardor:queue-refresh"));
       } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not confirm queue submission. Retry uses the same request ID.", "暂时无法确认排队结果，重试会复用请求标识。")); }
@@ -564,6 +590,7 @@ export default function AgentHomePage() {
     // The sent payload has a separate outbox. Never keep it in the editable next-message draft.
     window.sessionStorage.removeItem(savedDraftKey);
     window.sessionStorage.removeItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
+    window.sessionStorage.removeItem(`${savedDraftKey}:references`);
     setDraft("");
     setSelectedContexts([]);
     setError(""); setRetryFailures([]); setRunSteps([]); setRunThinking(""); setStreamProgress(null);
@@ -576,6 +603,9 @@ export default function AgentHomePage() {
         const conversationDraftKey = draftStorageKey(conversationId);
         const nextDraft = readSavedDraft(null);
         if (nextDraft) window.sessionStorage.setItem(conversationDraftKey, nextDraft);
+        const nextReferences = readDraftReferences(null);
+        if (nextReferences.length) window.sessionStorage.setItem(`${conversationDraftKey}:references`, JSON.stringify(nextReferences));
+        window.sessionStorage.removeItem(`${savedDraftKey}:references`);
         const serviceId = window.sessionStorage.getItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
         if (serviceId) window.sessionStorage.setItem(`${conversationDraftKey}:service:${reasoningAccount.current}`, serviceId);
         window.sessionStorage.removeItem(`${savedDraftKey}:service:${reasoningAccount.current}`);
@@ -723,6 +753,11 @@ export default function AgentHomePage() {
       if (!conversationId || !readOutgoing(reasoningAccount.current, conversationId)) {
         setDraft((current) => current || message);
         if (!readSavedDraft(conversationId)) window.sessionStorage.setItem(savedDraftKey, message);
+        setSelectedContexts((current) => {
+          const restored = current.length ? current : sentContexts;
+          window.sessionStorage.setItem(`${savedDraftKey}:references`, JSON.stringify(restored.filter(item => item.type !== "SERVICE")));
+          return restored;
+        });
       }
       setError(sendControl.signal.aborted ? t("Sending stopped. No further automatic retries will be sent.", "已停止发送，不会继续自动重试。") : reason instanceof Error ? reason.message : "Agent 暂时无法回复");
     } finally { if (activeSend.current === sendControl) activeSend.current = null; setApprovalRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
@@ -786,16 +821,24 @@ export default function AgentHomePage() {
       const resume = await api<ResumeOption>("/api/resumes", { method: "POST", body });
       setResumeOptions((items) => [resume, ...items]);
       const context: SelectedContext = { type: "RESUME", id: resume.id, label: resume.originalFilename };
-      setSelectedContexts((items) => [...items.filter((item) => !(item.type === context.type && item.id === context.id)), context].slice(-5));
+      setSelectedContexts((items) => {
+        const next = [...items.filter((item) => !(item.type === context.type && item.id === context.id)), context].slice(-5);
+        window.sessionStorage.setItem(`${draftStorageKey(state?.conversationId)}:references`, JSON.stringify(next.filter(item => item.type !== "SERVICE")));
+        return next;
+      });
       setAttachmentOpen(false); setNotice("简历已加入资料库，并附加到这条消息。你可以让 Ardor 分析或管理它。");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "简历上传失败"); }
     finally { setBusy(false); if (uploadRef.current) uploadRef.current.value = ""; }
   }
 
   function toggleContext(context: SelectedContext) {
-    setSelectedContexts((items) => items.some((item) => item.type === context.type && item.id === context.id)
+    setSelectedContexts((items) => {
+      const next = items.some((item) => item.type === context.type && item.id === context.id)
       ? items.filter((item) => !(item.type === context.type && item.id === context.id))
-      : [...items, context].slice(-5));
+      : [...items, context].slice(-5);
+      window.sessionStorage.setItem(`${draftStorageKey(state?.conversationId)}:references`, JSON.stringify(next.filter(item => item.type !== "SERVICE")));
+      return next;
+    });
   }
 
   function openRename(conversation: Conversation) {
@@ -880,7 +923,11 @@ export default function AgentHomePage() {
   function servicePicker() {
     const selected = features.find((feature) => selectedContexts.some((context) => context.type === "SERVICE" && context.id === feature.id));
     return <ServicePicker features={features} selected={selected} draft={draft} choose={(feature) => {
-      setSelectedContexts((current) => [...current.filter((item) => item.type !== "SERVICE"), { type: "SERVICE", id: feature.id, label: feature.label }]);
+      setSelectedContexts((current) => {
+        const references = current.filter((item) => item.type !== "SERVICE").slice(-4);
+        window.sessionStorage.setItem(`${draftStorageKey(state?.conversationId)}:references`, JSON.stringify(references));
+        return [...references, { type: "SERVICE", id: feature.id, label: feature.label }];
+      });
       window.sessionStorage.setItem(`${draftStorageKey(state?.conversationId)}:service:${reasoningAccount.current}`, feature.id);
       updateDraft(draft.replace(/^[@$][^\s]*\s*/, ""));
     }} remove={() => {
