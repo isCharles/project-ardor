@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
+import { agentCreationHref } from "@/lib/agent-features";
 import { chinaDayInfo } from "@/lib/china-holidays";
 import { useLocale, type Locale } from "@/lib/locale";
 
@@ -147,7 +148,7 @@ export default function CalendarPage() {
   const unscheduled = tasks.filter((task) => !task.dueAt && task.status !== "CANCELLED");
   const selectedDayInfo = chinaDayInfo(selectedDay);
   const selectedIsWeekend = (selectedDay.getDay() === 0 || selectedDay.getDay() === 6) && selectedDayInfo?.kind !== "workday";
-  const agentScheduleHref = `/app?new=1&prefill=${encodeURIComponent(t("Add this to my calendar:\n", "帮我把下面这件事安排到日历：\n"))}`;
+  const agentScheduleHref = agentCreationHref("CALENDAR", locale, t(`Add a task on ${dayKey(selectedDay)}: `, `帮我在 ${dayKey(selectedDay)} 安排：`));
   const activeSeries = series.filter((rule) => rule.status === "ACTIVE");
 
   function moveMonth(delta: number) {
