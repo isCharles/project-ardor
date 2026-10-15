@@ -60,7 +60,7 @@ try {
       await new Promise((resolve) => { releaseStream = resolve; });
       displayedMessages = [
         { id: "sent-user", conversationId: conversation.id, role: "USER", content: sentMessage.message, contextReferences: sentMessage.contextReferences.map((reference) => ({ ...reference, label: "学习" })), createdAt: new Date().toISOString() },
-        { id: "sent-assistant", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic agent reply", runTrace: JSON.stringify({ elapsedMs: 100, status: "COMPLETED", steps: [], thinkingOutput: "Synthetic public reasoning", firstOutputMs: 80 }), createdAt: new Date().toISOString() },
+        { id: "sent-assistant", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic agent reply", runTrace: JSON.stringify({ elapsedMs: 42000, status: "COMPLETED", steps: [{ label: "Read plans", elapsedMs: 40003, approvalWaitMs: 40000, businessMs: 3, status: "COMPLETED" }, { label: "Denied tool", elapsedMs: 1200, approvalWaitMs: 1200, businessMs: 0, status: "NOT_EXECUTED" }], thinkingOutput: "Synthetic public reasoning", firstOutputMs: 80 }), createdAt: new Date().toISOString() },
       ];
       return route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "thinking", content: "Synthetic public reasoning" })}\n\ndata: ${JSON.stringify({ type: "done", conversationId: conversation.id, messageId: "sent-assistant", content: "Synthetic agent reply", elapsedMs: 100 })}\n\n` });
     }
@@ -96,7 +96,7 @@ try {
     }
     else if (path === "/api/agent/runs/latest" && activeRun) body = activeRun;
     else if (path.endsWith("/progress") && activeRun) body = activeRun.status === "FAILED"
-      ? { phase: "FAILED", label: "Stopped", thinkingOutput: "Saved public reasoning", answerPartial: "Saved incomplete answer", elapsedMs: 1200, steps: [{ label: "Read plans", elapsedMs: 4, status: "COMPLETED" }] }
+      ? { phase: "FAILED", label: "Stopped", thinkingOutput: "Saved public reasoning", answerPartial: "Saved incomplete answer", elapsedMs: 1200, steps: [{ label: "Recovered read plans", elapsedMs: 4, status: "COMPLETED" }] }
       : { phase: "WAITING_DATA", label: "Waiting", thinkingOutput: "", answerPartial: "", silentSeconds: 40 };
     else if (path.startsWith("/api/agent/runs")) return route.fulfill(retryProbe ? { status: 404, json: { message: "Not accepted" } } : { status: 204 });
     else if (path === "/api/agent/reasoning") body = { nativeControl: true };
@@ -323,6 +323,10 @@ try {
   const sentBubble = page.getByRole("article").filter({ hasText: "Make a study outline" });
   await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
+  const replyTrace = page.getByRole("article").filter({ hasText: "Synthetic agent reply" }).locator("details").last();
+  await replyTrace.locator("summary").click();
+  await replyTrace.getByText("Approval wait 40.0 s", { exact: true }).waitFor();
+  await replyTrace.getByText("Not executed", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Change service" }).count(), 0);
   await page.reload();
   await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
@@ -375,7 +379,7 @@ try {
   await page.reload();
   await page.getByText("Incomplete reply · saved before execution stopped", { exact: true }).click();
   await page.getByText("Saved incomplete answer", { exact: true }).waitFor();
-  await page.getByText("Read plans", { exact: true }).waitFor();
+  await page.getByText("Recovered read plans", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).isEnabled(), true);
   activeRun = null;
   queueItems = [];

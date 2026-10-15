@@ -342,6 +342,7 @@ public class CareerAgentService {
             activeStreams.put(progressId, new ActiveStream(userId, lease, () -> terminate.accept(lease.totalExpired(totalTimeout) ? "TOTAL" : "SILENCE"), () -> terminate.accept("USER"),
                     () -> sink.send(AgentStreamEvent.status("上游暂未返回新数据，仍在等待；这不代表模型正在思考", elapsedMs(startedAt)))));
             List<RunStep> persistedSteps = new CopyOnWriteArrayList<>();
+            AgentToolTimings toolTimings = new AgentToolTimings();
             AtomicInteger partialChunks = new AtomicInteger();
             AtomicLong firstPartialAt = new AtomicLong();
             AtomicLong lastHeartbeatAt = new AtomicLong(System.nanoTime());
@@ -351,7 +352,7 @@ public class CareerAgentService {
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, depth, lease))
                     .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory)
-                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease))
+                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
             sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)
@@ -368,13 +369,15 @@ public class CareerAgentService {
                         streamProgress.waiting(progressId);
                         Long toolStarted = toolStarts.remove(execution.request().id());
                         long duration = toolStarted == null ? 0 : Math.max(1, elapsedMs(toolStarted));
-                        persistedSteps.add(new RunStep(toolLabel(execution.request().name(), execution.hasFailed()), duration,
-                                execution.hasFailed() ? "FAILED" : "COMPLETED"));
-                        streamProgress.step(progressId, toolLabel(execution.request().name(), execution.hasFailed()), duration,
-                                execution.hasFailed() ? "FAILED" : "COMPLETED");
+                        var timing = toolTimings.remove(execution.request().id());
+                        String status = timing != null && !timing.executed() ? "NOT_EXECUTED" : execution.hasFailed() ? "FAILED" : "COMPLETED";
+                        Long approvalWait = timing == null ? null : timing.approvalWaitMs();
+                        Long business = timing == null ? null : timing.businessMs();
+                        persistedSteps.add(new RunStep(toolLabel(execution.request().name(), execution.hasFailed()), duration, status, approvalWait, business));
+                        streamProgress.step(progressId, toolLabel(execution.request().name(), execution.hasFailed()), duration, status, approvalWait, business);
                         if (requestId != null) runStore.progress(userId, requestId, "正在整理回复", false);
-                        sink.send(AgentStreamEvent.tool("tool_end", execution.request().name(),
-                                toolLabel(execution.request().name(), execution.hasFailed()), duration));
+                        sink.send(AgentStreamEvent.toolFinished(execution.request().name(),
+                                toolLabel(execution.request().name(), execution.hasFailed()), duration, approvalWait, business, status));
                     })
                     .onPartialThinkingWithContext((thinking, context) -> {
                         if (!lease.attachCancellation(cancellation(context.streamingHandle()))) return;
@@ -567,7 +570,9 @@ public class CareerAgentService {
         if (!"RUNNING".equals(runStore.get(userId, requestId).status())) throw new IllegalStateException("请求已结束");
         toolApprovals.decide(userId, requestId, approvalId, allow);
     }
-    private record RunStep(String label, long elapsedMs, String status) {}
+    private record RunStep(String label, long elapsedMs, String status, Long approvalWaitMs, Long businessMs) {
+        RunStep(String label, long elapsedMs, String status) { this(label, elapsedMs, status, null, null); }
+    }
 
     private String toolLabel(String name, boolean failed) {
         String action = switch (name) {

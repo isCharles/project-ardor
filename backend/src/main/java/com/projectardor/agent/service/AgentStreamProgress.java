@@ -50,10 +50,13 @@ public class AgentStreamProgress {
         flush(requestId, entry);
     }
     public void step(UUID requestId, String label, long elapsedMs, String status) {
+        step(requestId, label, elapsedMs, status, null, null);
+    }
+    public void step(UUID requestId, String label, long elapsedMs, String status, Long approvalWaitMs, Long businessMs) {
         Entry entry = entries.get(requestId);
         if (entry != null) synchronized (entry) {
             if (entry.finishedAt != null || entry.steps.size() >= 32) return;
-            entry.steps.add(new Step(label, elapsedMs, status)); entry.revision++;
+            entry.steps.add(new Step(label, elapsedMs, status, approvalWaitMs, businessMs)); entry.revision++;
         }
     }
     private void observe(UUID requestId, String phase, String text) {
@@ -128,7 +131,7 @@ public class AgentStreamProgress {
     }
     public record View(String phase, String label, String thinkingOutput, String answerPartial,
                        Long firstThinkingMs, Long firstOutputMs, long silentSeconds, boolean truncated, List<Step> steps, long elapsedMs) {}
-    public record Step(String label, long elapsedMs, String status) {}
+    public record Step(String label, long elapsedMs, String status, Long approvalWaitMs, Long businessMs) {}
     public record Snapshot(long revision, Instant startedAt, Instant lastData, View view) {}
     private static final class Entry {
         final UUID userId;
