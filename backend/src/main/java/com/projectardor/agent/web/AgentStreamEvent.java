@@ -16,7 +16,15 @@ public record AgentStreamEvent(
         Boolean retryable,
         String errorCode,
         /** Set on "confirm" events: a deletion waiting for the user to press a button. */
-        AgentConfirmation confirmation) {
+        AgentConfirmation confirmation, Long approvalWaitMs, Long businessMs, String toolStatus) {
+
+    public AgentStreamEvent(String type, String content, String toolName, String label, Long elapsedMs,
+            UUID conversationId, UUID messageId, Boolean retryable, String errorCode, AgentConfirmation confirmation) {
+        this(type, content, toolName, label, elapsedMs, conversationId, messageId, retryable, errorCode, confirmation, null, null, null);
+    }
+    public static AgentStreamEvent toolFinished(String name, String label, long elapsedMs, Long approvalWaitMs, Long businessMs, String status) {
+        return new AgentStreamEvent("tool_end", null, name, label, elapsedMs, null, null, null, null, null, approvalWaitMs, businessMs, status);
+    }
 
     /** What the confirmation button says, and the authenticated action it offers. */
     public record AgentConfirmation(

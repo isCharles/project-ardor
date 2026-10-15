@@ -21,6 +21,9 @@ final class ApprovedAgentTools {
         return wrap(bound, userId, requestId, approvals, null);
     }
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease) {
+        return wrap(bound, userId, requestId, approvals, lease, new AgentToolTimings());
+    }
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         for (var method : bound.getClass().getMethods()) {
             if (!method.isAnnotationPresent(Tool.class)) continue;
@@ -28,13 +31,19 @@ final class ApprovedAgentTools {
             var delegate = new DefaultToolExecutor(bound, method);
             result.put(specification, (request, memoryId) -> {
                 if (!specification.name().equals(request.name())) throw new IllegalArgumentException("工具名称不匹配");
+                long started = timings.now();
                 boolean allowed = PROPOSALS.contains(specification.name())
                         ? approvals.canPropose(userId, requestId)
                         : approvals.await(userId, requestId, specification.name(), request.arguments());
+                long approved = timings.now();
                 if (!allowed) {
+                    timings.record(request.id(), started, approved, false);
                     return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"用户未批准、已拒绝或权限请求过期。未执行工具，本轮不得重复申请或用聊天口令代替批准。\"}";
                 }
-                return lease == null ? delegate.execute(request, memoryId) : lease.execute(() -> delegate.execute(request, memoryId));
+                java.util.concurrent.atomic.AtomicBoolean executed = new java.util.concurrent.atomic.AtomicBoolean();
+                java.util.function.Supplier<String> call = () -> { executed.set(true); return delegate.execute(request, memoryId); };
+                try { return lease == null ? call.get() : lease.execute(call); }
+                finally { timings.record(request.id(), started, approved, executed.get()); }
             });
         }
         return result;

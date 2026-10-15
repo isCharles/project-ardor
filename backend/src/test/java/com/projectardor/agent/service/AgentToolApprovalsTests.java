@@ -16,6 +16,48 @@ class AgentToolApprovalsTests {
     private final AgentToolApprovals gate = new AgentToolApprovals(Duration.ofSeconds(5));
 
     @Test
+    void authorizationWaitAndBusinessExecutionHaveIndependentMeasurements() throws Exception {
+        gate.begin(owner, run);
+        var nanos = new java.util.concurrent.atomic.AtomicLong();
+        var timings = new AgentToolTimings(nanos::get);
+        var probe = new TimedProbe(nanos);
+        var executor = ApprovedAgentTools.wrap(probe, owner, run, gate, null, timings).values().iterator().next();
+        var call = ToolExecutionRequest.builder().id("timed-call").name("timed_read").arguments("{}").build();
+        var result = CompletableFuture.supplyAsync(() -> executor.execute(call, null));
+        var permission = pending(gate);
+        nanos.set(TimeUnit.SECONDS.toNanos(40));
+        gate.decide(owner, run, permission.id(), true);
+        assertThat(result.get(2, TimeUnit.SECONDS)).contains("result");
+        var measured = timings.remove(call.id());
+        assertThat(measured.approvalWaitMs()).isEqualTo(40_000);
+        assertThat(measured.businessMs()).isEqualTo(3);
+        assertThat(measured.executed()).isTrue();
+    }
+
+    @Test
+    void deniedToolReportsZeroBusinessExecution() throws Exception {
+        gate.begin(owner, run);
+        var timings = new AgentToolTimings();
+        var probe = new Probe();
+        var executor = ApprovedAgentTools.wrap(probe, owner, run, gate, null, timings).values().iterator().next();
+        var call = ToolExecutionRequest.builder().id("denied-call").name("read_private_data").arguments("{}").build();
+        var result = CompletableFuture.supplyAsync(() -> executor.execute(call, null));
+        gate.decide(owner, run, pending(gate).id(), false);
+        assertThat(result.get(2, TimeUnit.SECONDS)).contains("PERMISSION_NOT_GRANTED");
+        var denied = timings.remove(call.id());
+        assertThat(denied.businessMs()).isZero();
+        assertThat(denied.executed()).isFalse();
+        assertThat(probe.calls).hasValue(0);
+    }
+
+    public static class TimedProbe {
+        private final java.util.concurrent.atomic.AtomicLong nanos;
+        TimedProbe(java.util.concurrent.atomic.AtomicLong nanos) { this.nanos = nanos; }
+        @Tool(name = "timed_read", value = "Read fixture")
+        public String read() { nanos.addAndGet(TimeUnit.MILLISECONDS.toNanos(3)); return "result"; }
+    }
+
+    @Test
     void executorCannotReadOrWriteBeforeAnExactSingleUseApproval() throws Exception {
         gate.begin(owner, run);
         Probe probe = new Probe();
