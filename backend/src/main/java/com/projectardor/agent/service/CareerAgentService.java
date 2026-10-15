@@ -101,6 +101,7 @@ public class CareerAgentService {
     private final ProfileService profileService;
     private final ObjectMapper objectMapper;
     private final AgentStreamProgress streamProgress;
+    private final AgentToolApprovals toolApprovals;
     private final ConcurrentHashMap<UUID, Semaphore> userLocks = new ConcurrentHashMap<>();
 
     public CareerAgentService(
@@ -112,7 +113,7 @@ public class CareerAgentService {
             AgentMemoryService memoryService,
             ProfileService profileService,
             ObjectMapper objectMapper,
-            AgentStreamProgress streamProgress) {
+            AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals) {
         this.store = store;
         this.runStore = runStore;
         this.modelFactory = modelFactory;
@@ -122,6 +123,7 @@ public class CareerAgentService {
         this.profileService = profileService;
         this.objectMapper = objectMapper;
         this.streamProgress = streamProgress;
+        this.toolApprovals = toolApprovals;
     }
 
     public AgentStateResponse state(UUID userId, UUID requestedConversationId) {
@@ -211,7 +213,7 @@ public class CareerAgentService {
                     .chatMemory(memory)
                     // A synchronous retry keeps the logical request but is a new tool-call attempt.
                     // Reusing requestId as the run ID would make regenerated arguments create a second slot.
-                    .tools(bound)
+                    .tools(ApprovedAgentTools.wrap(bound, userId, null, toolApprovals))
                     .maxToolCallingRoundTrips(8)
                     .maxSequentialToolsInvocations(12)
                     .compensateOnToolErrors(true)
@@ -302,6 +304,7 @@ public class CareerAgentService {
             ConcurrentHashMap<String, Long> toolStarts = new ConcurrentHashMap<>();
             UUID progressId = requestId == null ? UUID.randomUUID() : requestId;
             streamProgress.begin(userId, progressId);
+            toolApprovals.begin(userId, requestId);
             List<RunStep> persistedSteps = new CopyOnWriteArrayList<>();
             AtomicInteger partialChunks = new AtomicInteger();
             AtomicLong firstPartialAt = new AtomicLong();
@@ -311,7 +314,8 @@ public class CareerAgentService {
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, depth))
-                    .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory).tools(bound)
+                    .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory)
+                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
             sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)
@@ -371,13 +375,13 @@ public class CareerAgentService {
                         } catch (RuntimeException exception) {
                             streamProgress.finish(progressId, true);
                             sendStreamError(sink, exception, startedAt, userId, persistedRun.get());
-                        } finally { lock.release(); }
+                        } finally { toolApprovals.close(userId, requestId); lock.release(); }
                     })
                     .onError(exception -> {
                         if (!finished.compareAndSet(false, true)) return;
                         streamProgress.finish(progressId, true);
                         try { sendStreamError(sink, exception, startedAt, userId, persistedRun.get()); }
-                        finally { lock.release(); }
+                        finally { toolApprovals.close(userId, requestId); lock.release(); }
                     });
             stream.start();
         } catch (RuntimeException exception) {
@@ -386,6 +390,7 @@ public class CareerAgentService {
                     sendStreamError(sink, exception, startedAt, userId, persistedRun.get());
                 } finally {
                     if (acquired) lock.release();
+                    toolApprovals.close(userId, persistedRun.get());
                 }
             }
         }
@@ -468,6 +473,16 @@ public class CareerAgentService {
     public AgentStreamProgress.View progress(UUID userId, UUID requestId) {
         runStore.get(userId, requestId);
         return streamProgress.get(userId, requestId);
+    }
+
+    public List<AgentToolApprovals.View> approvals(UUID userId, UUID requestId) {
+        runStore.get(userId, requestId);
+        return toolApprovals.list(userId, requestId);
+    }
+
+    public void decideApproval(UUID userId, UUID requestId, UUID approvalId, boolean allow) {
+        if (!"RUNNING".equals(runStore.get(userId, requestId).status())) throw new IllegalStateException("请求已结束");
+        toolApprovals.decide(userId, requestId, approvalId, allow);
     }
     private record RunStep(String label, long elapsedMs, String status) {}
 

@@ -26,6 +26,8 @@ try {
   let sentMessage = null;
   let releaseStream;
   let activeRun = null;
+  let permissions = [];
+  let permissionDecisions = [];
   let learningPlans = [];
   let learningDeleteCalls = 0;
   let learningDeleteFails = false;
@@ -59,6 +61,12 @@ try {
       conversation = { ...conversation, ...route.request().postDataJSON(), titleManuallySet: true }; body = conversation;
     }
     else if (path === "/api/agent/conversations") body = [conversation];
+    else if (path.endsWith("/approvals")) body = permissions;
+    else if (/\/approvals\/[^/]+$/.test(path) && route.request().method() === "POST") {
+      permissionDecisions.push({ path, ...route.request().postDataJSON() });
+      permissions = [];
+      return route.fulfill({ status: 204 });
+    }
     else if (path === "/api/agent/runs/latest" && activeRun) body = activeRun;
     else if (path.endsWith("/progress") && activeRun) body = { phase: "WAITING_DATA", label: "Waiting", thinkingOutput: "", answerPartial: "", silentSeconds: 40 };
     else if (path.startsWith("/api/agent/runs")) return route.fulfill({ status: 204 });
@@ -232,7 +240,7 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="Refresh tasks"]').getAttribute("aria-busy") === "false");
   taskRefreshFails = true;
   await refreshTasks.click();
-  await page.getByRole("alert").waitFor();
+  await page.getByRole("alert").filter({ hasText: "Connection interrupted. Your tasks are saved." }).waitFor();
   await page.waitForFunction(() => document.querySelector('[aria-label="Refresh tasks"]').getAttribute("aria-busy") === "false");
   assert.equal(await refreshTasks.isEnabled(), true);
   assert.equal(await page.getByRole("link", { name: "Open result", exact: true }).count(), 1);
@@ -244,13 +252,33 @@ try {
   await page.getByRole("button", { name: "Account", exact: true }).click();
   assert.equal(await page.getByRole("link", { name: "Admin", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "中文", exact: true }).count(), 0);
+  displayedMessages = [{ id: "long-history", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic history paragraph.\n\n".repeat(120), createdAt: new Date().toISOString() }];
   await page.goto(`${origin}/app`);
   await draftBox.fill("@Learning");
   await page.getByRole("option", { name: "Learning", exact: true }).click();
   await draftBox.fill("Make a study outline");
+  permissions = [{ id: "permission-one", tool: "get_learning_plan", arguments: '{"planId":"exact-owned-target"}', status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
   await page.getByRole("button", { name: "Send", exact: true }).click();
   for (let attempt = 0; attempt < 100 && !releaseStream; attempt++) await page.waitForTimeout(20);
   assert.ok(releaseStream, "Synthetic stream must be in flight");
+  const toolPermissions = page.getByRole("region", { name: "Tool permissions", exact: true });
+  await toolPermissions.getByText("get_learning_plan", { exact: true }).waitFor();
+  await page.waitForFunction(() => {
+    const region = document.querySelector('[aria-label="Tool permissions"]');
+    if (!region) return false;
+    const bounds = region.getBoundingClientRect();
+    return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+  });
+  assert.equal(permissionDecisions.length, 0);
+  await toolPermissions.getByText("Exact parameters", { exact: true }).click();
+  await toolPermissions.getByText('{"planId":"exact-owned-target"}', { exact: true }).waitFor();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().endsWith("/approvals/permission-one") && response.request().method() === "POST"),
+    toolPermissions.getByRole("button", { name: "Allow once", exact: true }).click(),
+  ]);
+  assert.equal(permissionDecisions.length, 1);
+  assert.equal(permissionDecisions[0].allow, true);
+  assert.ok(permissionDecisions[0].path.endsWith("/approvals/permission-one"));
   assert.equal(await draftBox.isEnabled(), true);
   await draftBox.fill("Next message draft survives completion");
   await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
@@ -272,6 +300,7 @@ try {
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   // Reconnect to an accepted run: it is history, never the next-message draft.
   activeRun = { id: "accepted-run", conversationId: conversation.id, message: "Accepted message after disconnect", status: "RUNNING", label: "Waiting", createdAt: new Date().toISOString() };
+  permissions = [{ id: "permission-two", tool: "add_memory", arguments: '{"memory":"Fixture"}', status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
   await page.evaluate(({ accountId, conversationId }) => {
     window.sessionStorage.setItem(`ardor:outgoing:${accountId}:${conversationId}`, JSON.stringify({
       id: "pending-user-message-accepted-run", conversationId, role: "USER", content: "Accepted message after disconnect", createdAt: new Date().toISOString(),
@@ -281,6 +310,12 @@ try {
   await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).waitFor();
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   assert.equal(await draftBox.isEnabled(), true);
+  await Promise.all([
+    page.waitForResponse((response) => response.url().endsWith("/approvals/permission-two") && response.request().method() === "POST"),
+    toolPermissions.getByRole("button", { name: "Deny", exact: true }).click(),
+  ]);
+  assert.equal(permissionDecisions.length, 2);
+  assert.equal(permissionDecisions[1].allow, false);
   assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).isEnabled(), true);
   activeRun = null;
   userId = "different-outbox-owner";

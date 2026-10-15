@@ -98,6 +98,21 @@ public class AgentController {
         return java.util.Map.of("nativeControl", agentService.nativeReasoningControl(principal.userId()));
     }
 
+    @GetMapping("/runs/{requestId}/approvals")
+    public java.util.List<com.projectardor.agent.service.AgentToolApprovals.View> approvals(
+            @AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID requestId) {
+        return agentService.approvals(principal.userId(), requestId);
+    }
+
+    @PostMapping("/runs/{requestId}/approvals/{approvalId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void decideApproval(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable java.util.UUID requestId, @PathVariable java.util.UUID approvalId,
+            @Valid @RequestBody ApprovalDecision decision) {
+        agentService.decideApproval(principal.userId(), requestId, approvalId, decision.allow());
+    }
+    public record ApprovalDecision(@jakarta.validation.constraints.NotNull Boolean allow) {}
+
     @GetMapping("/runs/{requestId}")
     public AgentRunResponse run(
             @AuthenticationPrincipal ArdorPrincipal principal,

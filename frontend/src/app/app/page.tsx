@@ -18,6 +18,7 @@ import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
 import { ReasoningControl } from "@/components/ardor/reasoning-control";
 import { ServicePicker } from "@/components/ardor/service-picker";
 import { PublicThinking } from "@/components/ardor/public-thinking";
+import { ToolApprovals } from "@/components/ardor/tool-approvals";
 import type { AgentFeature } from "@/lib/agent-features";
 import { featureHref } from "@/lib/agent-features";
 import { useDismiss } from "@/components/ardor/overlay";
@@ -147,6 +148,7 @@ export default function AgentHomePage() {
   const [reasoningReady, setReasoningReady] = useState(false);
   const [titleWatch, setTitleWatch] = useState<{ id: string; title: string } | null>(null);
   const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
+  const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retryFailures, setRetryFailures] = useState<RetryFailure[]>([]);
   const [runSteps, setRunSteps] = useState<RunStep[]>([]);
@@ -549,6 +551,7 @@ export default function AgentHomePage() {
       const pendingAssistantId = `pending-assistant-${crypto.randomUUID()}`;
       let assistant: AgentMessage | null = null;
       let requestId = crypto.randomUUID();
+      setApprovalRunId(requestId);
       setMessages((current) => [...current, { id: pendingAssistantId, conversationId: activeConversationId, role: "ASSISTANT", content: "", createdAt: "" }]);
       for (let retry = 0; retry <= MAX_MESSAGE_RETRIES; retry += 1) {
         if (retry > 0) {
@@ -633,7 +636,7 @@ export default function AgentHomePage() {
             throw reason;
           }
           // A 404 can race with a slow first POST. Reuse its ID so a late arrival cannot execute twice.
-          if (recorded?.status === "FAILED") requestId = crypto.randomUUID();
+          if (recorded?.status === "FAILED") { requestId = crypto.randomUUID(); setApprovalRunId(requestId); }
         }
       }
       const completedAssistant = assistant as AgentMessage | null;
@@ -653,7 +656,7 @@ export default function AgentHomePage() {
         if (!readSavedDraft(conversationId)) window.sessionStorage.setItem(savedDraftKey, message);
       }
       setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
-    } finally { setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
+    } finally { setApprovalRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
   }
 
   function updateDraft(value: string) {
@@ -890,6 +893,7 @@ export default function AgentHomePage() {
                     )}
                   </article>
                 ))}
+                <ToolApprovals key={runningRun?.id ?? approvalRunId} requestId={runningRun?.id ?? approvalRunId} />
                 {confirmations.length > 0 && <section className="space-y-2">
                   {confirmations.map((pending) => <div key={confirmationKey(pending)} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : ["DISMISSED", "REMOVED", "EXPIRED"].includes(pending.state) ? "border-stone-200 bg-white/50" : pending.kind === "learning_plan" ? "border-violet-100 bg-white/80" : "border-rose-100 bg-white/80"}`}>
                     <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : pending.kind === "learning_plan" ? "bg-violet-50 text-violet-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : pending.kind === "learning_plan" ? <BookOpenText className="size-4" /> : <Trash2 className="size-4" />}</span>
