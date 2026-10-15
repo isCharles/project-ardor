@@ -30,6 +30,9 @@ try {
   let permissionDecisions = [];
   let queueItems = [];
   let queuedRequests = [];
+  let cancelCalls = 0;
+  let retryProbe = false;
+  let retryProbeCalls = 0;
   let learningPlans = [];
   let learningDeleteCalls = 0;
   let learningDeleteFails = false;
@@ -48,6 +51,10 @@ try {
     ];
     else if (path === "/api/auth/csrf") body = { token: "test", headerName: "X-CSRF-TOKEN" };
     else if (path === "/api/agent/messages/stream") {
+      if (retryProbe) {
+        retryProbeCalls++;
+        return route.fulfill({ status: 503, json: { message: "Synthetic retryable failure", retryable: true } });
+      }
       sentMessage = route.request().postDataJSON();
       await new Promise((resolve) => { releaseStream = resolve; });
       displayedMessages = [
@@ -75,6 +82,11 @@ try {
       queueItems = queueItems.filter((item) => !path.endsWith(item.id));
       return route.fulfill({ status: 204 });
     }
+    else if (path === "/api/agent/runs/accepted-run/cancel" && route.request().method() === "POST") {
+      cancelCalls++;
+      activeRun = { ...activeRun, status: "FAILED", errorCode: "AGENT_RUN_CANCELLED", errorMessage: "Synthetic stopped run" };
+      return route.fulfill({ status: 204 });
+    }
     else if (path.endsWith("/approvals")) body = permissions;
     else if (/\/approvals\/[^/]+$/.test(path) && route.request().method() === "POST") {
       permissionDecisions.push({ path, ...route.request().postDataJSON() });
@@ -83,7 +95,7 @@ try {
     }
     else if (path === "/api/agent/runs/latest" && activeRun) body = activeRun;
     else if (path.endsWith("/progress") && activeRun) body = { phase: "WAITING_DATA", label: "Waiting", thinkingOutput: "", answerPartial: "", silentSeconds: 40 };
-    else if (path.startsWith("/api/agent/runs")) return route.fulfill({ status: 204 });
+    else if (path.startsWith("/api/agent/runs")) return route.fulfill(retryProbe ? { status: 404, json: { message: "Not accepted" } } : { status: 204 });
     else if (path === "/api/agent/reasoning") body = { nativeControl: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
     else if (path === "/api/background-tasks") {
@@ -352,8 +364,25 @@ try {
   const secondQueued = page.getByRole("article").filter({ hasText: "Queued follow-up two" });
   await secondQueued.getByRole("button", { name: "Remove from queue", exact: true }).click();
   await secondQueued.waitFor({ state: "detached" });
+  await Promise.all([
+    page.waitForResponse((response) => response.url().endsWith("/runs/accepted-run/cancel") && response.request().method() === "POST"),
+    page.getByRole("button", { name: "Stop", exact: true }).click(),
+  ]);
+  assert.equal(cancelCalls, 1);
   assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).isEnabled(), true);
   activeRun = null;
+  queueItems = [];
+  retryProbe = true;
+  await page.reload();
+  await draftBox.fill("Stop during retry backoff");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByText(/正在进行第 1\/5 次重试/).waitFor();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.getByText("Sending stopped. No further automatic retries will be sent.", { exact: true }).waitFor();
+  await page.waitForTimeout(2200);
+  assert.equal(retryProbeCalls, 1, "Stop must prevent the next retry POST");
+  assert.equal(cancelCalls, 1, "Unaccepted requests must not receive server cancellation");
+  retryProbe = false;
   userId = "different-outbox-owner";
   await page.reload();
   await page.getByRole("button", { name: "Thinking depth", exact: true }).waitFor();

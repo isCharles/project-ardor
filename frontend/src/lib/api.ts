@@ -80,9 +80,13 @@ export async function streamApi<T>(
   path: string,
   body: unknown,
   onEvent: (event: T) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const headers = new Headers({ "Content-Type": "application/json", Accept: "text/event-stream" });
   Object.entries(await csrfHeaders()).forEach(([name, value]) => headers.set(name, value));
+  // Stop during CSRF setup must not dispatch a new model request. Once sent,
+  // keep reading until the server acknowledges cancellation (disconnect != stop).
+  signal?.throwIfAborted();
   const response = await fetch(path, {
     method: "POST", headers, body: JSON.stringify(body), credentials: "include", cache: "no-store",
   });

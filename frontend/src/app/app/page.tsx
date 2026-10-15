@@ -152,7 +152,10 @@ export default function AgentHomePage() {
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
   const [hasQueuedMessages, setHasQueuedMessages] = useState(false);
   const [streamAccepted, setStreamAccepted] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
   const queueSubmitting = useRef(false);
+  const activeSend = useRef<AbortController | null>(null);
+  const stopRequests = useRef(new Map<string, Promise<void>>());
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retryFailures, setRetryFailures] = useState<RetryFailure[]>([]);
   const [runSteps, setRunSteps] = useState<RunStep[]>([]);
@@ -538,6 +541,8 @@ export default function AgentHomePage() {
     const sentContexts = [...selectedContexts];
     let conversationId = state?.conversationId ?? null;
     let acceptedRun = false;
+    const sendControl = new AbortController();
+    activeSend.current = sendControl;
     let savedDraftKey = draftStorageKey(conversationId);
     // The sent payload has a separate outbox. Never keep it in the editable next-message draft.
     window.sessionStorage.removeItem(savedDraftKey);
@@ -584,16 +589,30 @@ export default function AgentHomePage() {
       setApprovalRunId(requestId);
       setMessages((current) => [...current, { id: pendingAssistantId, conversationId: activeConversationId, role: "ASSISTANT", content: "", createdAt: "" }]);
       for (let retry = 0; retry <= MAX_MESSAGE_RETRIES; retry += 1) {
+        sendControl.signal.throwIfAborted();
         if (retry > 0) {
           setRetryAttempt(retry);
-          await new Promise((resolve) => window.setTimeout(resolve, Math.min(1500 * (2 ** (retry - 1)), 8000)));
+          await new Promise<void>((resolve, reject) => {
+            const abort = () => { window.clearTimeout(timer); reject(sendControl.signal.reason); };
+            const timer = window.setTimeout(() => { sendControl.signal.removeEventListener("abort", abort); resolve(); }, Math.min(1500 * (2 ** (retry - 1)), 8000));
+            sendControl.signal.addEventListener("abort", abort, { once: true });
+            if (sendControl.signal.aborted) abort();
+          });
         }
         let receivedToolEvent = false;
         let receivedDelta = false;
         try {
+          sendControl.signal.throwIfAborted();
           let streamFailure: AgentStreamEvent | null = null;
+          let stopDispatched = false;
           if (retry > 0) setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: "" } : item));
           await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { requestId, conversationId: activeConversationId, message, reasoningDepth, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
+            // A stop can race with initial acceptance. Only a real server event
+            // proves this run exists; never send cancellation to a future UUID.
+            if (sendControl.signal.aborted && event.type !== "error" && !stopDispatched) {
+              stopDispatched = true;
+              void stopRunOnce(requestId).catch((reason) => setError(reason instanceof Error ? reason.message : t("Could not confirm stop request", "暂时无法确认停止请求")));
+            }
             if (event.type !== "error") setStreamAccepted(true);
             if (event.type === "thinking" && event.content) {
               setRunThinking((current) => (current + event.content).slice(0, 32_000));
@@ -601,7 +620,7 @@ export default function AgentHomePage() {
               receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
             } else if (event.type === "status" && event.label) {
-              setRunSteps((current) => current.some((step) => step.key === "status") ? current : [...current, { key: "status", label: event.label!, elapsedMs: 0, done: false }]);
+              setRunSteps((current) => current.some((step) => step.key === "status") ? current.map((step) => step.key === "status" ? { ...step, label: event.label! } : step) : [...current, { key: "status", label: event.label!, elapsedMs: 0, done: false }]);
             } else if (event.type === "tool_start" && event.toolName) {
               receivedToolEvent = true;
               setRunSteps((current) => [...current, { key: `${event.toolName}-${current.length}`, label: event.label ?? "调用工具", elapsedMs: 0, done: false }]);
@@ -629,7 +648,7 @@ export default function AgentHomePage() {
                 ? current
                 : [...current, { ...proposal, state: "PENDING" }]);
             } else if (event.type === "error") streamFailure = event;
-          });
+          }, sendControl.signal);
           if (streamFailure) {
             const failure = streamFailure as AgentStreamEvent;
             throw Object.assign(new Error(failure.content ?? "Agent 暂时无法回复"), { retryable: failure.retryable, code: failure.errorCode });
@@ -650,11 +669,13 @@ export default function AgentHomePage() {
             return;
           }
           if (recorded?.status === "RUNNING") {
+            if (sendControl.signal.aborted) await stopRunOnce(requestId);
             acceptedRun = true;
             setRunningRun(recorded);
             setMessages((current) => current.filter((item) => item.id !== pendingAssistantId));
             return;
           }
+          sendControl.signal.throwIfAborted();
           const serverRetryable = recorded ? recorded.retryable : reason instanceof ApiError ? reason.body.retryable === true : (reason as { retryable?: boolean }).retryable !== false;
           const retryable = serverRetryable && !receivedToolEvent && !receivedDelta && recorded?.status !== "INTERRUPTED";
           const label = retry === 0 ? "首次请求" : `第 ${retry}/${MAX_MESSAGE_RETRIES} 次重试`;
@@ -686,8 +707,39 @@ export default function AgentHomePage() {
         setDraft((current) => current || message);
         if (!readSavedDraft(conversationId)) window.sessionStorage.setItem(savedDraftKey, message);
       }
-      setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
-    } finally { setApprovalRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
+      setError(sendControl.signal.aborted ? t("Sending stopped. No further automatic retries will be sent.", "已停止发送，不会继续自动重试。") : reason instanceof Error ? reason.message : "Agent 暂时无法回复");
+    } finally { if (activeSend.current === sendControl) activeSend.current = null; setApprovalRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
+  }
+
+  function stopRunOnce(requestId: string): Promise<void> {
+    const existing = stopRequests.current.get(requestId);
+    if (existing) return existing;
+    const request = api<void>(`/api/agent/runs/${requestId}/cancel`, { method: "POST" }).catch((reason) => {
+      stopRequests.current.delete(requestId);
+      throw reason;
+    });
+    stopRequests.current.set(requestId, request);
+    if (stopRequests.current.size > 64) stopRequests.current.delete(stopRequests.current.keys().next().value!);
+    return request;
+  }
+
+  async function cancelExecution() {
+    const requestId = runningRun?.id ?? approvalRunId;
+    if (!requestId || cancelPending) return;
+    activeSend.current?.abort();
+    setCancelPending(true);
+    try {
+      // During retry backoff this ID may not exist yet. Stop the local loop
+      // regardless; only cancel server-side execution after verifying acceptance.
+      let run = runningRun;
+      if (!run) {
+        try { run = await api<AgentRun>(`/api/agent/runs/${requestId}`); }
+        catch (reason) { if (!(reason instanceof ApiError && reason.status === 404)) throw reason; }
+      }
+      if (run?.status === "RUNNING") await stopRunOnce(requestId);
+    }
+    catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not confirm stop request", "暂时无法确认停止请求")); }
+    finally { setCancelPending(false); }
   }
 
   function updateDraft(value: string) {
@@ -953,6 +1005,7 @@ export default function AgentHomePage() {
                     <span className="font-medium text-stone-700">{busy || runningRun ? "Ardor 正在工作" : error ? "Ardor 未完成" : "Ardor 已完成"}</span>
                     <span className="ml-auto text-xs tabular-nums text-stone-400">{formatElapsed(runElapsed)}</span>
                   </button>
+                  {(runningRun || approvalRunId) && <div className="mt-2 flex justify-end"><button type="button" disabled={cancelPending} onClick={() => void cancelExecution()} className="rounded-full px-3 py-1 text-xs text-stone-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50">{cancelPending ? t("Stopping…", "正在停止…") : t("Stop", "停止")}</button></div>}
                   {traceOpen && <div className="mt-3 space-y-2 border-l border-stone-200 pl-4">
                     {runningRun && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin motion-reduce:animate-none" /><span>{streamProgress?.phase === "WAITING_DATA" ? t("Waiting for new upstream data", "等待上游返回新数据") : streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</span></div>}
                     <PublicThinking content={runThinking} />

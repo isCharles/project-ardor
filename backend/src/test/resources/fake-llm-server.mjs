@@ -166,6 +166,20 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+      if (["agent-silence-probe", "agent-cancel-probe"].includes(payload.model) && isAgentRequest) {
+        response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache" });
+        response.flushHeaders();
+        response.write(": connection open, no model output\n\n");
+        const late = setTimeout(() => {
+          if (response.destroyed) return;
+          response.write(`data: ${JSON.stringify({ id: "late-tool-probe", object: "chat.completion.chunk", model: payload.model,
+            choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "late-add-memory", type: "function", function: { name: "add_memory", arguments: JSON.stringify({ memory: "Late callback must never write memory" }) } }] }, finish_reason: null }] })}\n\n`);
+          response.write(`data: ${JSON.stringify({ id: "late-tool-probe", object: "chat.completion.chunk", model: payload.model, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] })}\n\n`);
+          response.end("data: [DONE]\n\n");
+        }, 8000);
+        response.on("close", () => clearTimeout(late));
+        return;
+      }
       if (payload.model === "queue-failure-probe" && isAgentRequest
           && payload.messages?.filter((message) => message.role === "user").at(-1)?.content?.includes("Queue failure marker")) {
         response.writeHead(503, { "content-type": "application/json; charset=utf-8" });
