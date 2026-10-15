@@ -440,7 +440,7 @@ export default function AgentHomePage() {
     if (busy) return;
     if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false);
     if (conversationId === state?.conversationId) return;
-    setError(""); setRunningRun(null); setConfirmations([]); setMenuId(null);
+    setError(""); setRunningRun(null); setRunThinking(""); setStreamProgress(null); setConfirmations([]); setMenuId(null);
     try { await load(conversationId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入会话"); }
   }
@@ -923,6 +923,7 @@ export default function AgentHomePage() {
                     )}
                   </article>
                 ))}
+                {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div>}
                 <ToolApprovals key={runningRun?.id ?? approvalRunId} requestId={runningRun?.id ?? approvalRunId} />
                 <QueuedMessages key={state?.conversationId} conversationId={state?.conversationId ?? null} activeRunId={runningRun?.id ?? approvalRunId} onPendingChange={setHasQueuedMessages} onCompleted={load} />
                 {confirmations.length > 0 && <section className="space-y-2">
