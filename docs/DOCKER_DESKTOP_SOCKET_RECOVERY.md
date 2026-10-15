@@ -108,7 +108,7 @@ starting services: initializing Secrets Engine: listening on unix://.../docker-s
 - [Docker Desktop 4.89/4.90 release notes](https://docs.docker.com/desktop/release-notes/) 声称修复“异常退出后遗留卡住的 socket 导致无法启动”；本机仍是 4.77，**尚未测试升级**。该表述也没有保证正常停机后的同类问题都已解决。
 - [docker/desktop-feedback#460](https://github.com/docker/desktop-feedback/issues/460) 中有多个 Windows 用户报告 Inference 与 Secrets Engine 的 socket 轮流失败，并描述两目录一起改名的临时办法；后续评论称 4.89/4.90 仍有复发。它是相近案例，不等于本机已证明同一底层原因。
 - [docker/desktop-feedback#531](https://github.com/docker/desktop-feedback/issues/531) 记录了同样的 Windows `ERROR_CANT_ACCESS_FILE (1920)` 报错以及升级后依旧发生的案例。
-- [docker/desktop-feedback#631](https://github.com/docker/desktop-feedback/issues/631) 给出在另一台 Windows 机器上独立于 Docker 的 AF_UNIX 行为对照；本机**尚未执行**该复现实验，不能直接断言 Windows 内核、权限、杀毒软件或磁盘迁移是根因。本机系统构建号为 26100，与该报告的 26200 不同。
+- [docker/desktop-feedback#631](https://github.com/docker/desktop-feedback/issues/631) 给出另一台 Windows 机器上独立于 Docker 的 AF_UNIX 行为对照。本机已执行下文的独立探针，但目录差异并不完全相同，不能直接断言 Windows 内核、权限、杀毒软件或磁盘迁移是根因。本机系统构建号为 26100，与该报告的 26200 不同。
 
 真正的长期解决可能需要 Docker/Windows 上游修复，或在确认兼容性、备份和回退办法后评估升级。现阶段不应凭版本说明直接承诺升级能根治，也不应把目录改名误称为修复了上游缺陷。
 
@@ -142,3 +142,17 @@ starting services: initializing Secrets Engine: listening on unix://.../docker-s
 尝试读取已安装 `resources\com.docker.backend.exe --help` 的参数时，它打印帮助及 `failed to parse args: flag: help requested` 后，**仍继续进入 monitor/services 启动流程**。2026-10-15 `06:59:35 UTC` 启动，随后再次因 `...\Docker\run\dockerInference` 删除失败进入错误退出；`06:59:45 UTC` monitor 以状态 150 退出。执行会话最终确认进程结束，之后查询没有后端残留进程。
 
 不要再把这个二进制的 `--help` 当作只读检查，也不要据此再次启动它。本文只保留最小错误证据，不复制完整设置日志。此次没有修改 Docker 设置、目录 Junction、数据卷或 VHDX，没有执行 reset/prune。下一轮应优先调查用户目录与系统临时目录的原生行为差异，再评估经过验证的系统或软件修复；目前没有证明可靠的运行目录重定向方案。
+
+### 已核验的文件系统过滤驱动线索
+
+`fltmc filters` 显示已加载 `sysdiag`（5 个实例，altitude `324600`），同时还有 bindflt、UCPD、storqosflt、gameflt、CldFlt、bfs、luafv、Wof、FileInfo 等过滤驱动。服务查询显示 `sysdiag` 正在运行，启动方式为 System，路径为 `C:\Windows\System32\drivers\sysdiag.sys`。文件版本资源标识厂商 `Beijing Huorong Network Technology Co., Ltd.`、产品 `Huorong Internet Security`、版本 `6.0.0.3`；数字签名验证有效，签名者为 Microsoft Windows Hardware Compatibility Publisher。
+
+这证明本机存在火绒的文件系统过滤组件，**不证明它拦截了 Docker 或探针**。针对探针时间窗口，只读筛选 Windows Defender Operational 的 1123/1124 事件，没有返回匹配本次 `ardor-` 探针的记录；没有事件也不能排除第三方过滤或其他系统原因。尚未进行任何关闭安全软件或修改其规则的对照，没有更改驱动或防护配置。
+
+审批额度恢复后，已读取公开技术索引及上游问题正文（2026-10-15）：
+
+- [#625](https://github.com/docker/desktop-feedback/issues/625) 的用户报告相同错误；后续评论称升级到 4.89、完整重启后仍复发。这不是维护者确认的修复结论，不能承诺升级一定解决。
+- [#631](https://github.com/docker/desktop-feedback/issues/631) 的报告者称，在其机器上 TEMP 成功、LocalAppData 非 TEMP 失败，且临时目录 ACL 对照及暂停安全产品没有改变结果。本机却在用户 TEMP 也失败，而 Windows Temp、直接 E 盘路径成功；两者不能当成同一对照结果。该报告不支持直接归因火绒。
+- 本次没有找到维护者确认的火绒/sysdiag 根因或适用于本机的受支持运行目录重定向方案。上述内容是公开用户报告，不是本机因果证明；不据此关闭防护、卸载驱动、调整全局 ACL 或修改 Docker 数据路径。
+
+后续若需要重启 Windows、升级 Docker 或进行安全产品对照，应先向用户说明对当前会话、WSL 和运行中程序的影响并获得相应授权；分别记录前后版本与原生探针结果。启动成功也只算恢复，至少还需连续两次正常停止/启动和 Engine 响应，才能评价该方案是否缓解复发。
