@@ -266,6 +266,7 @@ try {
   await page.getByRole("button", { name: "Account", exact: true }).click();
   assert.equal(await page.getByRole("link", { name: "Admin", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "中文", exact: true }).count(), 0);
+  displayedMessages = [{ id: "long-history", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic history paragraph.\n\n".repeat(120), createdAt: new Date().toISOString() }];
   await page.goto(`${origin}/app`);
   await draftBox.fill("@Learning");
   await page.getByRole("option", { name: "Learning", exact: true }).click();
@@ -276,6 +277,12 @@ try {
   assert.ok(releaseStream, "Synthetic stream must be in flight");
   const toolPermissions = page.getByRole("region", { name: "Tool permissions", exact: true });
   await toolPermissions.getByText("get_learning_plan", { exact: true }).waitFor();
+  await page.waitForFunction(() => {
+    const region = document.querySelector('[aria-label="Tool permissions"]');
+    if (!region) return false;
+    const bounds = region.getBoundingClientRect();
+    return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+  });
   assert.equal(permissionDecisions.length, 0);
   await toolPermissions.getByText("Exact parameters", { exact: true }).click();
   await toolPermissions.getByText('{"planId":"exact-owned-target"}', { exact: true }).waitFor();
