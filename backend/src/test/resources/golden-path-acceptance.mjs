@@ -596,7 +596,7 @@ async function main() {
   }
   assert.ok(cancelStarted);
   await owner.request(`/api/agent/runs/${cancelRequest.requestId}/cancel`, { method: "POST", expected: 404 });
-  await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}/cancel`, { method: "POST", expected: 202 });
+  await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}/cancel`, { method: "POST", expected: 204 });
   assert.equal((await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}`)).errorCode, "AGENT_RUN_CANCELLED");
   await sleep(9000); // The fake provider attempts a late tool call after the local run has stopped.
   assert.equal((await silentOwner.request("/api/agent/memory")).content, "", "Late tool chunks must not mutate memory");

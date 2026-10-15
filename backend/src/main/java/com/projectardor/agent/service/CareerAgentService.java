@@ -124,7 +124,7 @@ public class CareerAgentService {
             ProfileService profileService,
             ObjectMapper objectMapper,
             AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals,
-            @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:180s}") java.time.Duration silenceTimeout,
+            @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:90s}") java.time.Duration silenceTimeout,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.total-timeout:10m}") java.time.Duration totalTimeout) {
         this.store = store;
         this.runStore = runStore;
@@ -427,7 +427,7 @@ public class CareerAgentService {
                         if (!finished.compareAndSet(false, true)) return;
                         lease.fence();
                         streamProgress.finish(progressId, true);
-                        try { sendStreamError(sink, exception, startedAt, userId, persistedRun.get()); }
+                        try { sendStreamError(sink, classifyStreamFailure(exception), startedAt, userId, persistedRun.get()); }
                         finally { toolApprovals.close(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
                     });
             if (!finished.get()) stream.start();
@@ -472,6 +472,16 @@ public class CareerAgentService {
     private record ActiveStream(UUID userId, AgentStreamLease lease, Runnable timeout, Runnable cancel, Runnable warning) {}
     private Runnable cancellation(dev.langchain4j.model.chat.response.StreamingHandle handle) {
         return handle == null ? () -> {} : handle::cancel;
+    }
+    static Throwable classifyStreamFailure(Throwable failure) {
+        Throwable current = failure;
+        for (int depth = 0; current != null && depth < 32; depth++, current = current.getCause()) {
+            if (current instanceof java.net.http.HttpTimeoutException || current instanceof java.net.SocketTimeoutException
+                    || current instanceof java.util.concurrent.TimeoutException) {
+                return new LlmCallException("AGENT_UPSTREAM_TIMEOUT", "上游连接或读取超时，本轮已停止；无法确认远端生成状态，不会自动重试。", false, failure);
+            }
+        }
+        return failure;
     }
 
     private void sendStreamError(StreamSink sink, Throwable exception, long startedAt) {

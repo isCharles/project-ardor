@@ -122,7 +122,7 @@ public class AgentController {
     }
 
     @PostMapping("/runs/{requestId}/cancel")
-    @ResponseStatus(HttpStatus.ACCEPTED)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancelRun(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID requestId) {
         agentService.cancelRun(principal.userId(), requestId);
     }
