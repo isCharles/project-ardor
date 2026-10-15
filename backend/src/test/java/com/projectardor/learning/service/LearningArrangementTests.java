@@ -20,6 +20,12 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 class LearningArrangementTests {
+    @Test void beginUsesTheSameOwnerRowLockAsArrangementEdits() {
+        Fixture f = new Fixture();
+        f.service.begin(f.user, f.plan.getId());
+        verify(f.repository).findOwnedForUpdate(f.plan.getId(), f.user);
+        verify(f.repository, never()).findByIdAndUserId(any(), any());
+    }
     @Test void changesScheduleAndReasonWithoutReplacingLessonOrHistory() {
         Fixture f = new Fixture();
         f.plan.recordAttempt(60, Map.of("feedback", "Keep feedback"), Instant.now().plusSeconds(3600));

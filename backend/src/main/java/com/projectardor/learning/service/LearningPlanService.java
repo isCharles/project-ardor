@@ -164,7 +164,8 @@ public class LearningPlanService {
 
     @Transactional
     public LearningPlan begin(UUID userId, UUID planId) {
-        LearningPlan plan = get(userId, planId);
+        LearningPlan plan = repository.findOwnedForUpdate(planId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("学习计划不存在"));
         plan.markInProgress();
         return plan;
     }

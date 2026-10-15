@@ -580,6 +580,17 @@ async function main() {
   }
   assert.ok(resumed, "Explicit acknowledgement must resume only the queued successor");
   const silentOwner = new Client();
+  const memoryEditor = new Client();
+  await memoryEditor.request("/api/auth/register", { method: "POST", expected: 201,
+    body: { email: `golden-memory-edit-${suffix}@ardor.invalid`, password, displayName: "Concurrent memory edit" } });
+  await memoryEditor.request("/api/agent/memory", { method: "PUT", body: { content: "First memory\nSecond memory" } });
+  const memoryItems = await memoryEditor.request("/api/agent/memory/items");
+  const memoryEdits = await Promise.allSettled(memoryItems.map(item => memoryEditor.request(`/api/agent/memory/items/${item.id}`,
+    { method: "PATCH", body: { content: "Same revised memory" } })));
+  assert.equal(memoryEdits.filter(result => result.status === "fulfilled").length, 1);
+  assert.match(memoryEdits.find(result => result.status === "rejected").reason.message, /got 400/);
+  assert.equal((await memoryEditor.request("/api/agent/memory/items")).filter(item => item.content === "Same revised memory").length, 1);
+  await owner.request(`/api/agent/memory/items/${memoryItems[0].id}`, { method: "PATCH", expected: 404, body: { content: "Foreign edit" } });
   await silentOwner.request("/api/auth/register", { method: "POST", expected: 201,
     body: { email: `golden-silence-${suffix}@ardor.invalid`, password, displayName: "Silent stream probe" } });
   await silentOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
