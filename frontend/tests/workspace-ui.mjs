@@ -420,6 +420,35 @@ try {
   await draftBox.fill("My edited interview draft");
   await page.reload();
   assert.equal(await draftBox.inputValue(), "My edited interview draft");
+  await page.goto(`${origin}/app?new=1&feature=LEARNING&prefill=Draft%20with%20source&contextType=RECAP&contextId=11111111-1111-4111-8111-111111111111&contextLabel=Interview%20source`);
+  await page.getByRole("button", { name: "Remove attachment", exact: true }).waitFor();
+  await draftBox.fill("Preserve my draft and source together");
+  await page.reload();
+  await page.getByRole("button", { name: "Change service", exact: true }).waitFor();
+  assert.equal(await page.getByText("Interview source", { exact: true }).count(), 1);
+  assert.equal(await draftBox.inputValue(), "Preserve my draft and source together");
+  const draftOwner = userId;
+  userId = "another-draft-owner";
+  await page.reload();
+  await page.getByRole("button", { name: "Thinking depth", exact: true }).waitFor();
+  assert.equal(await draftBox.inputValue(), "");
+  assert.equal(await page.getByRole("button", { name: "Remove attachment", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Change service", exact: true }).count(), 0);
+  userId = draftOwner;
+  await page.reload();
+  await page.getByRole("button", { name: "Remove attachment", exact: true }).waitFor();
+  assert.equal(await draftBox.inputValue(), "Preserve my draft and source together");
+  await page.getByRole("button", { name: "Remove attachment", exact: true }).click();
+  await page.reload();
+  await page.getByRole("button", { name: "Change service", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Remove attachment", exact: true }).count(), 0);
+  await page.evaluate((owner) => {
+    window.sessionStorage.setItem("ardor:conversation-draft:chat-one", "Legacy owned conversation draft");
+    window.sessionStorage.removeItem(`ardor:conversation-draft:${owner}:chat-one`);
+  }, userId);
+  await page.goto(`${origin}/app?conversation=chat-one`);
+  await page.waitForFunction(() => document.querySelector('textarea[aria-label="Message Ardor"]')?.value === "Legacy owned conversation draft");
+  assert.equal(await page.evaluate(() => window.sessionStorage.getItem("ardor:conversation-draft:chat-one")), null);
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {
