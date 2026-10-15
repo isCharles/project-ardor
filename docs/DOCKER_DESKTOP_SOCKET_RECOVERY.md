@@ -2,6 +2,14 @@
 
 > 记录日期：2026-10-01，Asia/Shanghai。本文记录本机实测，不把临时恢复称为 Docker 的永久修复。后续 Agent 请先核对当前状态和日志，不要照搬旧结论。
 
+## 2026-10-15 一次受控启动仍被新 Secrets socket 阻断
+
+08:49（Asia/Shanghai）先分别在受限环境及正常本机权限下核验 Engine，两次均无可用管道，不是仅凭权限错误判断停机。只执行一次恢复脚本：08:49:01 保留 `Docker\run.socket-backup-20261015-084901-b0fcb2ce`，08:49:02 保留 `docker-secrets-engine.socket-backup-20261015-084902-d618e324`，随后启动 Desktop。08:51:04 达到 120 秒上限，脚本中止，未再次尝试。
+
+只读日志复核发现 00:49:03 UTC（本地 08:49:03）后端因 `initializing Secrets Engine` 退出：新路径 `docker-secrets-engine/engine.sock` 的 remove 返回 `The file cannot be accessed by the system`，并附 `listener: The filename, directory name, or volume label syntax is incorrect`。00:49:06 UTC 再次记录同一错误并上报。08:51 后查询未见 Desktop/后端进程。旧目录保留操作本次也未能解决新 socket 初始化问题，不能宣称已永久修复。
+
+本次未删除任何备份，未重置、prune 或改动 VHDX/Junction、镜像、卷及正式数据库。Ardor 本机部署和新队列迁移验收因此尚未完成；编译、单元和模拟浏览器测试继续独立执行，不能替代本机服务验收。
+
 ## 2026-10-10 可逆恢复也未能启动：新 Secrets socket 再次阻断
 
 这次 Ardor Golden Path 的本机验收前，`docker info` 找不到 Engine 管道。依照本仓库边界，**只运行一次** `scripts/Start-DockerDesktopSafely.ps1`。其独立日志记录：23:44:47、23:44:48（Asia/Shanghai）分别将 `Docker\run` 和 `docker-secrets-engine` 两个旧运行目录改名保留为 `.socket-backup-20261010-234447-953dbff8`、`.socket-backup-20261010-234448-9bfc5575`，随即启动 Docker Desktop；23:46:52 因 Engine 仍未响应而中止，不再自动尝试。旧目录是保留副本，**没有删除**。

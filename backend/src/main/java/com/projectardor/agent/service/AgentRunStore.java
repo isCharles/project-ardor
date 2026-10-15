@@ -112,6 +112,15 @@ public class AgentRunStore {
                 .orElseThrow(() -> new ResourceNotFoundException("请求记录不存在"));
     }
 
+    public boolean hasEarlierQueuedMessage(UUID userId, UUID requestId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM agent_message_queue q
+                  WHERE q.user_id=? AND q.status IN ('QUEUED','DISPATCHING','RUNNING')
+                    AND q.id IS DISTINCT FROM ? AND q.sequence < COALESCE(
+                      (SELECT sequence FROM agent_message_queue WHERE id=? AND user_id=?),9223372036854775807))
+                """, Boolean.class, userId, requestId, requestId, userId));
+    }
+
     public Optional<AgentRun> latest(UUID userId, UUID conversationId) {
         return jdbc.query("""
                 SELECT id, conversation_id, message, status, label, error_code, error_message,

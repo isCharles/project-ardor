@@ -36,11 +36,33 @@ public class AgentController {
 
     private final CareerAgentService agentService;
     private final AgentMemoryService memoryService;
+    private final com.projectardor.agent.service.AgentMessageQueue queue;
 
-    public AgentController(CareerAgentService agentService, AgentMemoryService memoryService) {
+    public AgentController(CareerAgentService agentService, AgentMemoryService memoryService,
+            com.projectardor.agent.service.AgentMessageQueue queue) {
         this.agentService = agentService;
         this.memoryService = memoryService;
+        this.queue = queue;
     }
+
+    @PostMapping("/queue")
+    @QuotaProtected(value = UsageFeature.AGENT_CHAT, idempotentRequest = true)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public com.projectardor.agent.service.AgentMessageQueue.Item enqueue(@AuthenticationPrincipal ArdorPrincipal principal,
+            @Valid @RequestBody AgentMessageRequest request) {
+        if (request.conversationId() == null) throw new IllegalArgumentException("排队消息需要已有会话");
+        agentService.validateQueuedMessage(principal.userId(), request);
+        return queue.enqueue(principal.userId(), request);
+    }
+    @GetMapping("/queue")
+    public java.util.List<com.projectardor.agent.service.AgentMessageQueue.Item> queued(@AuthenticationPrincipal ArdorPrincipal principal,
+            @RequestParam java.util.UUID conversationId) { return queue.list(principal.userId(), conversationId); }
+    @DeleteMapping("/queue/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancelQueued(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID id) { queue.cancel(principal.userId(), id); }
+    @PostMapping("/queue/{id}/resume")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resumeQueued(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID id) { queue.resume(principal.userId(), id); }
 
     @GetMapping
     public AgentStateResponse state(
