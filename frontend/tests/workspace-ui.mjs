@@ -26,6 +26,9 @@ try {
   let sentMessage = null;
   let releaseStream;
   let activeRun = null;
+  let learningPlans = [];
+  let learningDeleteCalls = 0;
+  let learningDeleteFails = false;
   let failRename = true;
   let renameCalls = 0;
   let conversation = { id: "chat-one", title: "Original chat", pinned: false, titleManuallySet: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -68,7 +71,14 @@ try {
     else if (path === "/api/profile") body = { displayName: "Fixture", headline: "", targetRoles: [], timezone: "Asia/Shanghai" };
     else if (path === "/api/resumes") body = [{ id: "resume", originalFilename: "Synthetic resume.pdf" }];
     else if (path === "/api/memory-cards") body = [];
-    else if (["/api/interview-recaps", "/api/knowledge/documents", "/api/learning-plans"].includes(path)) body = [];
+    else if (path === "/api/learning-plans") body = learningPlans;
+    else if (path === "/api/learning-plans/delete-fixture" && route.request().method() === "DELETE") {
+      learningDeleteCalls++;
+      if (learningDeleteFails) return route.fulfill({ status: 503, json: { message: "Synthetic deletion failure" } });
+      learningPlans = [];
+      return route.fulfill({ status: 204 });
+    }
+    else if (["/api/interview-recaps", "/api/knowledge/documents"].includes(path)) body = [];
     else if (path === "/api/settings/llm") body = { configured: true, provider: "OPENAI_COMPATIBLE", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false };
     else if (path === "/api/settings/web-search") body = { configured: true, provider: "TAVILY", configurationSource: "ADMIN", personalOverride: false };
     else if (path === "/api/settings/integrations") body = ["EMBEDDING", "ASR", "TTS", "FALLBACK_LLM"].map((serviceType) => ({ serviceType, configured: true, provider: "fixture", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false }));
@@ -277,6 +287,20 @@ try {
   await page.reload();
   await page.getByRole("button", { name: "Thinking depth", exact: true }).waitFor();
   assert.equal(await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).count(), 0);
+  learningPlans = [{ id: "delete-fixture", concept: "Synthetic JVM lesson", status: "COMPLETED", sourceType: "MANUAL", scheduledAt: new Date().toISOString(), lesson: { summary: "Fixture" }, exercises: [], lastScore: null, attemptCount: 0 }];
+  await page.goto(`${origin}/app/learning`);
+  await page.getByRole("button", { name: "Delete learning plan", exact: true }).click();
+  assert.equal(learningDeleteCalls, 0);
+  await page.getByRole("dialog", { name: "Delete learning plan?" }).getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.equal(learningDeleteCalls, 0);
+  await page.getByRole("button", { name: "Delete learning plan", exact: true }).click();
+  learningDeleteFails = true;
+  await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await page.getByRole("dialog").getByRole("alert").waitFor();
+  learningDeleteFails = false;
+  await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await page.getByText("Start with one concept", { exact: true }).waitFor();
+  assert.equal(learningDeleteCalls, 2);
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {

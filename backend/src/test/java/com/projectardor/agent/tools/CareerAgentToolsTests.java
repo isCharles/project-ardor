@@ -36,6 +36,35 @@ import com.projectardor.websearch.service.WebSearchResult;
 class CareerAgentToolsTests {
 
     @Test
+    void learningDeletionOnlyProposesAnOwnedTarget() {
+        LearningPlanService service = mock(LearningPlanService.class);
+        CareerAgentTools tools = new CareerAgentTools(
+                mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
+                mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class), mock(KnowledgeService.class), service,
+                mock(ApplicationRhythmService.class), mock(com.projectardor.aijobs.AiJobService.class));
+        UUID userId = UUID.randomUUID();
+        UUID planId = UUID.randomUUID();
+        var plan = mock(com.projectardor.learning.domain.LearningPlan.class);
+        when(plan.getConcept()).thenReturn("JVM");
+        when(service.get(userId, planId)).thenReturn(plan);
+        var bound = tools.bind(userId, "删除 JVM 学习");
+        assertThat(bound.deleteLearningPlan(planId.toString())).containsEntry("status", "CONFIRMATION_REQUIRED");
+        verify(service).get(userId, planId);
+        verify(service, never()).delete(userId, planId);
+        assertThat(bound.pendingConfirmations()).singleElement().satisfies(pending -> {
+            assertThat(pending.endpoint()).isEqualTo("/api/learning-plans/" + planId);
+            assertThat(pending.label()).isEqualTo("JVM");
+        });
+        UUID missing = UUID.randomUUID();
+        when(service.get(userId, missing)).thenThrow(new com.projectardor.common.web.ResourceNotFoundException("学习计划不存在"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> bound.deleteLearningPlan(missing.toString()))
+                .isInstanceOf(com.projectardor.common.web.ResourceNotFoundException.class);
+        assertThat(bound.pendingConfirmations()).hasSize(1);
+    }
+
+    @Test
     void learningToolOnlyProposesAStableUserConfirmedAction() {
         LearningPlanService learningPlanService = mock(LearningPlanService.class);
         CareerAgentTools tools = new CareerAgentTools(
