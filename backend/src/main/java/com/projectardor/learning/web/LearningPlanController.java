@@ -95,4 +95,10 @@ public class LearningPlanController {
     public void delete(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) {
         service.delete(principal.userId(), id);
     }
+
+    @org.springframework.web.bind.annotation.PatchMapping("/{id}/arrangement")
+    public LearningPlanResponse updateArrangement(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id,
+            @Valid @RequestBody LearningArrangementRequest request) {
+        return LearningPlanResponse.from(service.updateArrangement(principal.userId(), id, request.reason(), request.scheduledAt()));
+    }
 }

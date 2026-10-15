@@ -79,6 +79,14 @@ public class LearningPlan {
         if (status != LearningStatus.COMPLETED) status = LearningStatus.IN_PROGRESS;
     }
 
+    public void updateArrangement(String reason, boolean changeReason, Instant scheduledAt) {
+        if (changeReason) this.reason = reason;
+        if (scheduledAt != null) {
+            this.scheduledAt = scheduledAt;
+            if (status == LearningStatus.NEEDS_REVIEW) this.nextReviewAt = scheduledAt;
+        }
+    }
+
     public void recordAttempt(int score, Map<String, Object> evaluation, Instant nextReviewAt) {
         recordAttempt(score, evaluation, nextReviewAt, List.of());
     }

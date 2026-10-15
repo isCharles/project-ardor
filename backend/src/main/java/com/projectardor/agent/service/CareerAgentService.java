@@ -90,6 +90,8 @@ public class CareerAgentService {
             28. 用户点击确认按钮后才会生成讲解、练习并进入日历。按钮出现时只说“建议安排”，不得声称已经创建；不要在聊天中代替学习模块伪造练习分数。
             29. 用户说“今天投了 N 份”“昨天投了 N 份”时调用 record_application_count 记录当天总数，不要把它当成新增 N 份，也不要写入长期记忆。查询投递进度先调用 get_application_rhythm。
             30. 用户明确提出每周投递目标或提醒时间时，先了解已有设置，再调用 set_application_rhythm；提醒只在用户打开工作台时显示，不要声称关闭应用后也会推送。面试准备优先时，不要机械催促投递。
+            31. 修改学习时间或说明用 update_learning_plan，开始学习用 begin_learning_plan；保留已有讲解、练习与评分，不通过删除重建冒充改期。替换主题应另外提议新计划。
+            32. 修改记忆卡用 update_memory_card，修正面经公司、岗位、时间用 update_interview_recap_metadata，修正单条长期记忆用 update_memory。先读取真实原内容，保留未要求修改的字段；所有普通工具须经界面逐次批准，聊天同意不能代替按钮授权。
             """;
 
     private final AgentConversationStore store;
@@ -598,6 +600,15 @@ public class CareerAgentService {
             case "delete_interview_recap" -> "删除面经";
             case "list_learning_plans", "get_learning_plan" -> "读取学习计划";
             case "create_learning_plan" -> "生成学习计划";
+            case "update_learning_plan" -> "修改学习安排";
+            case "begin_learning_plan" -> "开始学习";
+            case "update_memory_card" -> "编辑记忆卡";
+            case "suspend_memory_card" -> "调整记忆卡复习";
+            case "update_interview_recap_metadata" -> "修改面经信息";
+            case "update_calendar_task" -> "修改普通日程";
+            case "update_memory" -> "修正长期记忆";
+            case "cancel_interview" -> "取消模拟面试（保留记录）";
+            case "list_interview_recap_jobs" -> "读取面经整理任务";
             case "delete_learning_plan" -> "提议删除学习计划";
             case "search_web" -> "联网搜索";
             default -> "调用职业工具";

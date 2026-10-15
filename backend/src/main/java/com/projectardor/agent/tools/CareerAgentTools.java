@@ -268,6 +268,18 @@ public class CareerAgentTools {
                     "删除讲解、练习记录和关联日程，不能撤销", "/api/learning-plans/" + id);
         }
 
+        @Tool(name = "update_learning_plan", value = "修改当前用户学习计划的说明或改期，同步日历；保留讲解、练习和评分。先读取真实计划；不能用改名替换学习主题，换主题应另建计划")
+        public LearningPlanResponse updateLearningPlan(@P("学习计划 UUID") String planId,
+                @P(value = "新的说明；不修改传 null，清空传空字符串", required = false) String reason,
+                @P(value = "新的未来安排时间，带时区的 ISO-8601；不修改传 null", required = false) String scheduledAt) {
+            return LearningPlanResponse.from(learningPlanService.updateArrangement(userId, uuid(planId, "学习计划 ID"), reason, nullableInstant(scheduledAt)));
+        }
+
+        @Tool(name = "begin_learning_plan", value = "将当前用户的学习计划标记为开始学习，不生成新内容、不伪造完成或评分")
+        public LearningPlanResponse beginLearningPlan(@P("学习计划 UUID") String planId) {
+            return LearningPlanResponse.from(learningPlanService.begin(userId, uuid(planId, "学习计划 ID")));
+        }
+
         @Tool(name = "create_learning_plan", value = "向用户提议一项概念学习计划和日程；只有用户点击确认后才生成，不能声称已创建")
         public Map<String, Object> createLearningPlan(
                 @P("简洁明确的学习概念，例如 JVM 或数据库索引") String concept,
@@ -325,6 +337,11 @@ public class CareerAgentTools {
                     .orElseThrow(() -> new IllegalArgumentException("这条记忆不存在"));
             return propose("memory_item", id, content, "从长期记忆中删除这一条",
                     "/api/agent/memory/items/" + id);
+        }
+
+        @Tool(name = "update_memory", value = "修正当前用户一条长期记忆，保持原 UUID，不清空或重建其它记忆。先读取原条目；用户界面批准后才执行")
+        public AgentMemoryItemResponse updateMemory(@P("原记忆 UUID") String memoryId, @P("修订后的完整记忆，不超过 1000 字符") String content) {
+            return memoryService.edit(userId, uuid(memoryId, "记忆 ID"), content);
         }
 
         @Tool(name = "clear_all_memories", value = "清空当前用户的全部长期记忆。仅当用户明确要求清空全部记忆时使用")
@@ -390,6 +407,14 @@ public class CareerAgentTools {
             return propose("calendar_task", id, task.getTitle(),
                     task.getDueAt() == null ? "未安排时间" : task.getDueAt().toString(),
                     "/api/calendar/tasks/" + id);
+        }
+
+        @Tool(name = "update_calendar_task", value = "修改当前用户普通日程的标题、说明、时间、优先级和状态，保留 UUID；先列表读取并保留未要求改动的字段。学习、记忆卡、复测日程请改对应业务模块，不通过此工具强行改写")
+        public CalendarTaskResponse updateCalendarTask(@P("日程 UUID") String taskId, @P("完整短标题") String title,
+                @P("完整说明，清空传空字符串") String description, @P("完整 ISO-8601 带时区时间；无截止时间传空字符串") String dueAt,
+                @P("完整优先级：LOW、MEDIUM、HIGH") String priority, @P("完整状态：TODO、IN_PROGRESS、COMPLETED、CANCELLED") String status) {
+            return CalendarTaskResponse.from(calendarTaskService.updateGeneral(userId, uuid(taskId, "日程 ID"), title, description,
+                    nullableInstant(dueAt), parsePriority(priority), enumValue(com.projectardor.calendar.domain.CalendarTaskStatus.class, status, null)));
         }
 
         @Tool(name = "list_recurring_tasks", value = "读取当前用户的重复安排（每天、每周、每月循环的日程规则）及其接下来几次的日期。用户问“我有哪些固定安排”，或需要修改、取消某条重复安排前定位对象时使用")
@@ -548,6 +573,16 @@ public class CareerAgentTools {
                     "连同题目、回答和评价一起删除", "/api/interviews/" + id);
         }
 
+        @Tool(name = "cancel_interview", value = "取消当前用户的模拟面试但保留记录和答案，仅当用户要求停止或取消时使用。用户要求删除记录时必须使用 delete_interview")
+        public InterviewSessionResponse cancelInterview(@P("模拟面试 UUID") String interviewId) {
+            return InterviewSessionResponse.from(interviewService.cancel(userId, uuid(interviewId, "面试 ID")));
+        }
+
+        @Tool(name = "list_interview_recap_jobs", value = "读取当前用户面经整理的后台任务状态，包括进行中和失败的任务；不会重新提交或重试")
+        public List<InterviewRecapTaskResponse> listInterviewRecapJobs() {
+            return interviewRecapQueueService.list(userId).stream().map(InterviewRecapTaskResponse::from).toList();
+        }
+
         @Tool(name = "organize_interview_recap", value = "把用户粘贴的真实面试内容提交到后台整理队列；立即返回任务状态，不自动生成记忆卡")
         public InterviewRecapTaskResponse organizeInterviewRecap(
                 @P("用户提供的面试内容，必须完整传入，不得自行补写") String content) {
@@ -599,6 +634,26 @@ public class CareerAgentTools {
                     enumValue(MemoryCardRating.class, rating, null)));
         }
 
+        @Tool(name = "update_memory_card", value = "编辑当前用户记忆卡的问题、参考答案和标签，保留复习进度。先用 list_memory_cards 读取原内容，再提供完整修订值，保留用户未要求修改的部分")
+        public MemoryCardResponse updateMemoryCard(@P("记忆卡 UUID") String cardId,
+                @P("完整的修订后问题") String question,
+                @P("完整的修订后参考答案") String answer,
+                @P("完整的英文逗号分隔标签，清空传空字符串") String tags) {
+            UUID id = uuid(cardId, "记忆卡 ID");
+            return MemoryCardResponse.from(interviewRecapService.updateCard(userId, id,
+                    question, answer, tags == null ? List.of() : List.of(tags.split(","))));
+        }
+
+        @Tool(name = "update_interview_recap_metadata", value = "修改当前用户面经的公司、岗位和面试时间；只补正元数据，不覆盖原文、逐题复盘和弱项。先读取面经，再提交完整元数据，保留未要求修改的值")
+        public InterviewRecapResponse updateInterviewRecapMetadata(@P("面经 UUID") String recapId,
+                @P("完整公司名；清空传空字符串") String company,
+                @P("完整岗位名；清空传空字符串") String targetRole,
+                @P("实际面试日期时间，带时区的 ISO-8601；没有日期传空字符串") String occurredAt) {
+            UUID id = uuid(recapId, "面经 ID");
+            return interviewRecapService.updateMetadata(userId, id, new com.projectardor.recap.web.InterviewRecapMetadataRequest(
+                    company, targetRole, nullableInstant(occurredAt)));
+        }
+
         @Tool(name = "delete_memory_card", value = "永久删除当前用户指定的一张记忆卡。只有用户明确要求删除时使用")
         public Map<String, Object> deleteMemoryCard(@P("记忆卡 UUID") String cardId) {
             UUID id = uuid(cardId, "记忆卡 ID");
@@ -609,6 +664,11 @@ public class CareerAgentTools {
                     .orElseThrow(() -> new IllegalArgumentException("这张记忆卡不存在"));
             return propose("memory_card", id, front, "删除这张记忆卡及其复习进度",
                     "/api/memory-cards/" + id);
+        }
+
+        @Tool(name = "suspend_memory_card", value = "暂停或恢复当前用户记忆卡的复习，并同步复习日程；只在用户明确要求时使用，先列表获取真实 UUID")
+        public MemoryCardResponse suspendMemoryCard(@P("记忆卡 UUID") String cardId, @P("true 暂停，false 恢复") boolean suspended) {
+            return MemoryCardResponse.from(interviewRecapService.suspend(userId, uuid(cardId, "记忆卡 ID"), suspended));
         }
 
         @Tool(name = "delete_all_memory_cards", value = "永久删除当前用户的全部记忆卡。仅当用户明确说删除全部记忆卡时使用")

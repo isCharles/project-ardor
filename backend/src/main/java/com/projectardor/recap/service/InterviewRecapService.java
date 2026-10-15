@@ -123,8 +123,11 @@ public class InterviewRecapService {
                 questionRepository.findAllByUserIdAndRecapIdOrderBySequenceNumber(userId, recapId));
     }
 
-    private String cleanMetadata(String value) {
-        return value == null || value.isBlank() ? null : value.strip();
+    static String cleanMetadata(String value) {
+        if (value == null || value.isBlank()) return null;
+        String cleaned = value.strip();
+        if (cleaned.length() > 160) throw new IllegalArgumentException("公司和岗位不能超过 160 字符");
+        return cleaned;
     }
 
     @Transactional

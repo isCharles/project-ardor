@@ -125,7 +125,8 @@ public class CalendarTask {
         this.description = reason;
         this.dueAt = dueAt;
         this.status = completed ? CalendarTaskStatus.COMPLETED : CalendarTaskStatus.TODO;
-        this.completedAt = completed ? Instant.now() : null;
+        if (!completed) this.completedAt = null;
+        else if (this.completedAt == null) this.completedAt = Instant.now();
         this.taskKind = CalendarTaskKind.LEARNING;
         this.actionPath = "/app/learning?id=" + learningPlanId;
     }

@@ -164,8 +164,23 @@ public class LearningPlanService {
 
     @Transactional
     public LearningPlan begin(UUID userId, UUID planId) {
-        LearningPlan plan = get(userId, planId);
+        LearningPlan plan = repository.findOwnedForUpdate(planId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("学习计划不存在"));
         plan.markInProgress();
+        return plan;
+    }
+
+    @Transactional
+    public LearningPlan updateArrangement(UUID userId, UUID planId, String reason, Instant scheduledAt) {
+        LearningPlan plan = repository.findOwnedForUpdate(planId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("学习计划不存在"));
+        if (reason == null && scheduledAt == null) throw new IllegalArgumentException("请指定说明或安排时间");
+        String normalized = reason == null ? null : optional(reason, 4000);
+        if (scheduledAt != null && (!scheduledAt.isAfter(Instant.now()) || plan.getStatus() == LearningStatus.COMPLETED)) {
+            throw new IllegalArgumentException("只能为未完成的学习计划安排未来时间；已完成主题可创建新的复习计划");
+        }
+        plan.updateArrangement(normalized, reason != null, scheduledAt);
+        syncCalendar(plan);
         return plan;
     }
 
@@ -187,6 +202,7 @@ public class LearningPlanService {
             throw new IllegalArgumentException("请完成全部练习后再提交");
         }
         int expectedAttemptCount = plan.getAttemptCount();
+        Instant expectedSchedule = plan.getScheduledAt();
         List<Map<String, Object>> attempts = new ArrayList<>();
         for (int index = 0; index < answers.size(); index++) {
             Map<String, Object> exercise = plan.getExercises().get(index);
@@ -201,7 +217,7 @@ public class LearningPlanService {
         // The model call runs without a database lock. Recheck under a row lock and
         // commit the feedback together with its calendar state in one transaction.
         return transactions.execute(status -> commitAttempt(userId, planId, expectedAttemptCount,
-                answers, node, score, requestId));
+                answers, node, score, requestId, expectedSchedule));
     }
 
     private boolean hasSubmission(LearningPlan plan, UUID requestId) {
@@ -211,7 +227,7 @@ public class LearningPlanService {
     }
 
     private LearningPlan commitAttempt(UUID userId, UUID planId, int expectedAttemptCount,
-            List<String> answers, JsonNode node, int score, UUID requestId) {
+            List<String> answers, JsonNode node, int score, UUID requestId, Instant expectedSchedule) {
         LearningPlan plan = repository.findOwnedForUpdate(planId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("学习计划不存在"));
         if (hasSubmission(plan, requestId)) return plan;
@@ -246,7 +262,9 @@ public class LearningPlanService {
         history.add(recordedAttempt);
         evaluation.put("attempts", history);
         List<Map<String, Object>> followUps = score >= 80 ? List.of() : optionalExercises(node.path("nextExercises"));
-        plan.recordAttempt(score, evaluation, score >= 80 ? null : tomorrowMorning(userId), followUps);
+        Instant nextReview = score >= 80 ? null : java.util.Objects.equals(plan.getScheduledAt(), expectedSchedule)
+                ? tomorrowMorning(userId) : plan.getScheduledAt();
+        plan.recordAttempt(score, evaluation, nextReview, followUps);
         LearningPlan saved = repository.save(plan);
         syncCalendar(saved);
         return saved;
