@@ -19,7 +19,7 @@ import { ReasoningControl } from "@/components/ardor/reasoning-control";
 import { ServicePicker } from "@/components/ardor/service-picker";
 import { PublicThinking } from "@/components/ardor/public-thinking";
 import { ToolDuration, type ToolMeasurement } from "@/components/ardor/tool-duration";
-import { ToolApprovals } from "@/components/ardor/tool-approvals";
+import { DeletionPermissions } from "@/components/ardor/deletion-permissions";
 import { QueuedMessages } from "@/components/ardor/queued-messages";
 import type { AgentFeature } from "@/lib/agent-features";
 import { featureHref } from "@/lib/agent-features";
@@ -29,7 +29,7 @@ import { useLocale } from "@/lib/locale";
 import { useTypewriter } from "@/lib/use-typewriter";
 
 type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING" | "SERVICE"; id: string; label: string };
-type AgentMessage = { id: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; createdAt: string };
+type AgentMessage = { id: string; requestId?: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; createdAt: string };
 type Conversation = { id: string; title: string; pinned: boolean; titleManuallySet?: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
 type RetryFailure = { label: string; detail: string };
@@ -132,6 +132,7 @@ export default function AgentHomePage() {
   const { locale, t } = useLocale();
   const [state, setState] = useState<AgentState | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [queuedWakeId, setQueuedWakeId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
   const [draft, setDraft] = useState("");
@@ -310,16 +311,19 @@ export default function AgentHomePage() {
     const outgoing = readOutgoing(reasoningAccount.current, result.conversationId);
     setMessages(outgoing ? [...result.messages, outgoing] : result.messages);
     const proposals = [...new Map<string, AgentConfirmation>(result.messages.flatMap((message) => savedRunTrace(message.runTrace)?.proposals ?? [])
-      .filter((item) => item.kind === "learning_plan" && item.learningPlan?.requestId)
       .map((item): [string, AgentConfirmation] => [confirmationKey(item), item])).values()].slice(-50);
-    const restoredLearning = proposals.map((item) => ({ ...item, state: window.sessionStorage.getItem(dismissedProposalKey(item)) === "1"
+    const restored = proposals.map((item) => ({ ...item, state: item.kind === "learning_plan" && window.sessionStorage.getItem(dismissedProposalKey(item)) === "1"
       ? "DISMISSED" as const : proposalExpired(item) ? "EXPIRED" as const : "PENDING" as const }));
-    // A completed stream may immediately reload state. Keep its live deletion buttons;
-    // only learning proposals are recoverable from the saved assistant trace.
-    setConfirmations((current) => [...current.filter((item) => item.kind !== "learning_plan"), ...restoredLearning]);
-    if (proposals.length) {
+    // Queued calls have no open browser stream: recover their proposals without executing them.
+    setConfirmations((current) => {
+      const merged = new Map(current.filter((item) => item.kind !== "learning_plan").map((item) => [confirmationKey(item), item]));
+      for (const item of restored) if (!merged.has(confirmationKey(item))) merged.set(confirmationKey(item), item);
+      return [...merged.values()];
+    });
+    const learningProposals = proposals.filter((item) => item.kind === "learning_plan" && item.learningPlan?.requestId);
+    if (learningProposals.length) {
       const query = new URLSearchParams();
-      proposals.forEach((item) => query.append("requestIds", item.learningPlan!.requestId));
+      learningProposals.forEach((item) => query.append("requestIds", item.learningPlan!.requestId));
       void api<Array<{ requestId: string; status: "CREATED" | "DELETED" | "MISSING"; planId: string | null }>>(`/api/learning-plans/request-status?${query}`)
         .then((statuses) => {
           const byId = new Map(statuses.map((status) => [status.requestId, status]));
@@ -417,10 +421,13 @@ export default function AgentHomePage() {
         if (run.status === "RUNNING") {
           runStartedAt.current = new Date(run.createdAt).getTime();
           setRunningRun(run);
-          setMessages((current) => current.some((item) => item.role === "USER" && item.content === run.message && item.id.startsWith("pending-user-message-"))
-            ? current : [...current, readOutgoing(reasoningAccount.current, conversationId) ?? {
-              id: `pending-user-message-${run.id}`, conversationId, role: "USER", content: run.message, createdAt: run.createdAt,
-            }]);
+          const outgoing = readOutgoing(reasoningAccount.current, conversationId);
+          // The outbox can belong to a stopped predecessor. Never reuse its text for a new run.
+          const matchesRun = outgoing?.requestId ? outgoing.requestId === run.id : outgoing?.content === run.message;
+          const recovered: AgentMessage = outgoing && matchesRun ? outgoing : {
+            id: `pending-user-message-${run.id}`, conversationId, role: "USER", content: run.message, createdAt: run.createdAt,
+          };
+          setMessages((current) => current.some((item) => item.id === recovered.id) ? current : [...current, recovered]);
           previousStatus = "RUNNING";
           try {
             const progress = await api<StreamProgress>(`/api/agent/runs/${encodeURIComponent(run.id)}/progress`);
@@ -468,7 +475,7 @@ export default function AgentHomePage() {
     };
     void check();
     return () => { stopped = true; if (timer) window.clearTimeout(timer); };
-  }, [state?.conversationId, busy, load, runningRunId, draftStorageKey, readSavedDraft]);
+  }, [state?.conversationId, busy, load, runningRunId, queuedWakeId, draftStorageKey, readSavedDraft]);
   useEffect(() => {
     if (!busy && !runningRunId) return;
     const timer = window.setInterval(() => setRunElapsed(Date.now() - runStartedAt.current), 250);
@@ -581,6 +588,7 @@ export default function AgentHomePage() {
       return;
     }
     const optimisticId = `pending-user-message-${crypto.randomUUID()}`;
+    let requestId = crypto.randomUUID();
     const sentContexts = [...selectedContexts];
     let conversationId = state?.conversationId ?? null;
     let acceptedRun = false;
@@ -622,7 +630,7 @@ export default function AgentHomePage() {
         const title = conversationTitle(message);
         setConversations((current) => current.map((item) => item.id === activeConversationId ? { ...item, title } : item));
       }
-      const optimistic: AgentMessage = { id: optimisticId, conversationId: activeConversationId, role: "USER", content: message, contextReferences: sentContexts, createdAt: "" };
+      const optimistic: AgentMessage = { id: optimisticId, requestId, conversationId: activeConversationId, role: "USER", content: message, contextReferences: sentContexts, createdAt: "" };
       if (messages.length === 0) {
         setLeavingEmptyState(true);
         await new Promise((resolve) => window.setTimeout(resolve, 260));
@@ -632,7 +640,6 @@ export default function AgentHomePage() {
       setLeavingEmptyState(false);
       const pendingAssistantId = `pending-assistant-${crypto.randomUUID()}`;
       let assistant: AgentMessage | null = null;
-      let requestId = crypto.randomUUID();
       setApprovalRunId(requestId);
       setMessages((current) => [...current, { id: pendingAssistantId, conversationId: activeConversationId, role: "ASSISTANT", content: "", createdAt: "" }]);
       for (let retry = 0; retry <= MAX_MESSAGE_RETRIES; retry += 1) {
@@ -735,7 +742,11 @@ export default function AgentHomePage() {
             throw reason;
           }
           // A 404 can race with a slow first POST. Reuse its ID so a late arrival cannot execute twice.
-          if (recorded?.status === "FAILED") { requestId = crypto.randomUUID(); setApprovalRunId(requestId); }
+          if (recorded?.status === "FAILED") {
+            requestId = crypto.randomUUID(); setApprovalRunId(requestId);
+            window.sessionStorage.setItem(outgoingKey(reasoningAccount.current, activeConversationId), JSON.stringify({ ...optimistic, requestId }));
+            setMessages((current) => current.map((item) => item.id === optimisticId ? { ...item, requestId } : item));
+          }
         }
       }
       const completedAssistant = assistant as AgentMessage | null;
@@ -943,6 +954,10 @@ export default function AgentHomePage() {
 
   if (!state && !error) return <main className="ardor-workbench grid h-full place-items-center text-sm text-stone-500">{t("Waking Ardor…", "正在唤醒 Ardor…")}</main>;
   const selected = conversations.find((item) => item.id === state?.conversationId);
+  const dockedDeletions = confirmations.filter((item) => item.kind !== "learning_plan" && ["PENDING", "FAILED", "DELETING"].includes(item.state));
+  const deletionDock = <DeletionPermissions items={dockedDeletions}
+    onKeep={(pending) => setConfirmations((current) => current.map((item) => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item))}
+    onDelete={(pending) => void confirmDeletion(pending)} />;
   const visibleError = error && !retryFailures.some((failure) =>
     failure.detail === error || failure.detail.endsWith(` · ${error}`)
   ) ? error : "";
@@ -1042,10 +1057,8 @@ export default function AgentHomePage() {
                 ))}
                 {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div>}
                 {!runningRun && !busy && streamProgress?.answerPartial && streamProgress.phase !== "COMPLETED" && <details className="max-w-xl rounded-2xl border border-stone-200/70 bg-white/50 p-4"><summary className="cursor-pointer text-xs text-stone-500">{t("Incomplete reply · saved before execution stopped", "未完成回复 · 停止前保留的片段")}</summary><div className="ardor-markdown mt-3 text-sm leading-7"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div></details>}
-                <ToolApprovals key={runningRun?.id ?? approvalRunId} requestId={runningRun?.id ?? approvalRunId} />
-                <QueuedMessages key={state?.conversationId} conversationId={state?.conversationId ?? null} activeRunId={runningRun?.id ?? approvalRunId} onPendingChange={setHasQueuedMessages} onCompleted={load} />
                 {confirmations.length > 0 && <section className="space-y-2">
-                  {confirmations.map((pending) => <div key={confirmationKey(pending)} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : ["DISMISSED", "REMOVED", "EXPIRED"].includes(pending.state) ? "border-stone-200 bg-white/50" : pending.kind === "learning_plan" ? "border-violet-100 bg-white/80" : "border-rose-100 bg-white/80"}`}>
+                  {confirmations.filter((item) => !dockedDeletions.includes(item)).map((pending) => <div key={confirmationKey(pending)} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : ["DISMISSED", "REMOVED", "EXPIRED"].includes(pending.state) ? "border-stone-200 bg-white/50" : pending.kind === "learning_plan" ? "border-violet-100 bg-white/80" : "border-rose-100 bg-white/80"}`}>
                     <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : pending.kind === "learning_plan" ? "bg-violet-50 text-violet-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : pending.kind === "learning_plan" ? <BookOpenText className="size-4" /> : <Trash2 className="size-4" />}</span>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-stone-800">{pending.kind === "learning_plan"
@@ -1079,12 +1092,14 @@ export default function AgentHomePage() {
                     {busy && retryAttempt > 0 && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin" /><span>连接波动，正在进行第 {retryAttempt}/{MAX_MESSAGE_RETRIES} 次重试</span></div>}
                   </div>}
                 </section>}
+                <QueuedMessages key={state?.conversationId} conversationId={state?.conversationId ?? null} activeRunId={runningRun?.id ?? approvalRunId} onPendingChange={setHasQueuedMessages} onCompleted={load} onStarted={setQueuedWakeId} />
                 <div ref={endRef} />
               </div>
             )}
           </div>
 
           {messages.length > 0 && <div className="ardor-composer-enter relative z-10 shrink-0 px-4 pb-5 md:px-8">
+            {deletionDock}
             {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}

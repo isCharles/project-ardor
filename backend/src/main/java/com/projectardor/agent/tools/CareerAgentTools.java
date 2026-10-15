@@ -339,7 +339,7 @@ public class CareerAgentTools {
                     "/api/agent/memory/items/" + id);
         }
 
-        @Tool(name = "update_memory", value = "修正当前用户一条长期记忆，保持原 UUID，不清空或重建其它记忆。先读取原条目；用户界面批准后才执行")
+        @Tool(name = "update_memory", value = "修正当前用户一条长期记忆，保持原 UUID，不清空或重建其它记忆。先读取原条目，只修改用户要求修正的内容")
         public AgentMemoryItemResponse updateMemory(@P("原记忆 UUID") String memoryId, @P("修订后的完整记忆，不超过 1000 字符") String content) {
             return memoryService.edit(userId, uuid(memoryId, "记忆 ID"), content);
         }

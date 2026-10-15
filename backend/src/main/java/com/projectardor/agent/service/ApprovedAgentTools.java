@@ -10,7 +10,7 @@ import dev.langchain4j.agent.tool.ToolSpecifications;
 import dev.langchain4j.service.tool.DefaultToolExecutor;
 import dev.langchain4j.service.tool.ToolExecutor;
 
-/** All executable tools pass this boundary, including legacy synchronous chat. */
+/** Execution fence for all tools. Destructive adapters only prepare UI proposals. */
 final class ApprovedAgentTools {
     // These adapters ONLY construct existing UI confirmation proposals. They never mutate business data.
     private static final Set<String> PROPOSALS = Set.of("create_learning_plan", "delete_learning_plan",
@@ -31,19 +31,18 @@ final class ApprovedAgentTools {
             var delegate = new DefaultToolExecutor(bound, method);
             result.put(specification, (request, memoryId) -> {
                 if (!specification.name().equals(request.name())) throw new IllegalArgumentException("工具名称不匹配");
-                long started = timings.now();
-                boolean allowed = PROPOSALS.contains(specification.name())
-                        ? approvals.canPropose(userId, requestId)
-                        : approvals.await(userId, requestId, specification.name(), request.arguments());
+                boolean destructive = specification.name().startsWith("delete_") || specification.name().equals("clear_all_memories");
+                boolean allowed = (!destructive || PROPOSALS.contains(specification.name()))
+                        && approvals.canPropose(userId, requestId);
                 long approved = timings.now();
                 if (!allowed) {
-                    timings.record(request.id(), started, approved, false);
-                    return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"用户未批准、已拒绝或权限请求过期。未执行工具，本轮不得重复申请或用聊天口令代替批准。\"}";
+                    timings.record(request.id(), approved, approved, false);
+                    return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"请求已停止或操作不受支持，未执行工具。删除只能提出界面确认，不得直接执行。\"}";
                 }
                 java.util.concurrent.atomic.AtomicBoolean executed = new java.util.concurrent.atomic.AtomicBoolean();
                 java.util.function.Supplier<String> call = () -> { executed.set(true); return delegate.execute(request, memoryId); };
                 try { return lease == null ? call.get() : lease.execute(call); }
-                finally { timings.record(request.id(), started, approved, executed.get()); }
+                finally { timings.record(request.id(), approved, approved, executed.get()); }
             });
         }
         return result;

@@ -166,11 +166,13 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
-    if (payload.model === "approval-integration-probe" && isAgentRequest) {
+    if (["approval-integration-probe", "deletion-proposal-integration-probe"].includes(payload.model) && isAgentRequest) {
+      const deletionProbe = payload.model === "deletion-proposal-integration-probe";
+      const memoryId = payload.messages?.filter(message => message.role === "user").at(-1)?.content?.match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0];
       const delta = hasToolResult
         ? { role: "assistant", content: "Permission probe finished." }
         : { role: "assistant", tool_calls: [{ index: 0, id: "approved-memory-probe", type: "function",
-          function: { name: "add_memory", arguments: JSON.stringify({ memory: "Synthetic approved preference" }) } }] };
+          function: { name: deletionProbe ? "delete_memory" : "add_memory", arguments: JSON.stringify(deletionProbe ? { memoryId } : { memory: "Synthetic approved preference" }) } }] };
       response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache" });
       for (const [chunk, finish] of [[delta, null], [{}, hasToolResult ? "stop" : "tool_calls"]]) {
         response.write(`data: ${JSON.stringify({ id: "approval-probe", object: "chat.completion.chunk", model: payload.model,

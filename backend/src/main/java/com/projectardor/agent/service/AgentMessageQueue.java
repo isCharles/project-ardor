@@ -66,7 +66,7 @@ public class AgentMessageQueue {
     }
     public List<Item> list(UUID userId, UUID conversationId) {
         conversations.requireActive(userId, conversationId);
-        return jdbc.query("SELECT * FROM agent_message_queue WHERE user_id = ? AND conversation_id = ? ORDER BY sequence DESC LIMIT 50", rows, userId, conversationId)
+        return jdbc.query("SELECT * FROM agent_message_queue WHERE user_id = ? AND conversation_id = ? ORDER BY created_at DESC,sequence DESC LIMIT 50", rows, userId, conversationId)
                 .reversed();
     }
     public Item get(UUID userId, UUID id) {
@@ -136,6 +136,22 @@ public class AgentMessageQueue {
     }
     private void lockOwner(UUID userId) {
         if (jdbc.queryForList("SELECT id FROM users WHERE id=? FOR UPDATE", UUID.class, userId).isEmpty()) throw new ResourceNotFoundException("用户不存在");
+    }
+    @Transactional
+    public void prioritize(UUID userId, UUID id) {
+        lockOwner(userId);
+        Item item = get(userId, id);
+        if (!item.status().equals("QUEUED")) throw new IllegalStateException("这条消息已开始，请刷新查看状态");
+        if (Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM agent_runs WHERE user_id=? AND status='RUNNING')", Boolean.class, userId))) {
+            throw new IllegalStateException("当前执行仍在停止，请稍后重试；没有重放旧操作");
+        }
+        // Original sequences are globally unique positive BIGSERIAL values. Their negatives
+        // are unique priority slots; payload/id stay immutable and old paused work stays paused.
+        int changed = jdbc.update("""
+                UPDATE agent_message_queue SET sequence=-ABS(sequence),blocked_by=NULL,updated_at=CURRENT_TIMESTAMP
+                WHERE id=? AND user_id=? AND status='QUEUED'
+                """, id, userId);
+        if (changed != 1) throw new IllegalStateException("这条消息已经开始，未重复派发");
     }
     public record Item(UUID id, UUID userId, String status, AgentMessageRequest request, UUID blockedBy, String errorMessage, Instant createdAt) {}
 }

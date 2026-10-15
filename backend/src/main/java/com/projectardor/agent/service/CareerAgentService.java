@@ -91,7 +91,7 @@ public class CareerAgentService {
             29. 用户说“今天投了 N 份”“昨天投了 N 份”时调用 record_application_count 记录当天总数，不要把它当成新增 N 份，也不要写入长期记忆。查询投递进度先调用 get_application_rhythm。
             30. 用户明确提出每周投递目标或提醒时间时，先了解已有设置，再调用 set_application_rhythm；提醒只在用户打开工作台时显示，不要声称关闭应用后也会推送。面试准备优先时，不要机械催促投递。
             31. 修改学习时间或说明用 update_learning_plan，开始学习用 begin_learning_plan；保留已有讲解、练习与评分，不通过删除重建冒充改期。替换主题应另外提议新计划。
-            32. 修改记忆卡用 update_memory_card，修正面经公司、岗位、时间用 update_interview_recap_metadata，修正单条长期记忆用 update_memory。先读取真实原内容，保留未要求修改的字段；所有普通工具须经界面逐次批准，聊天同意不能代替按钮授权。
+            32. 修改记忆卡用 update_memory_card，修正面经公司、岗位、时间用 update_interview_recap_metadata，修正单条长期记忆用 update_memory。先读取真实原内容，保留未要求修改的字段。读取、新增和修改不逐次弹权限；仍须符合用户意图、资源归属与业务校验。只有删除需要界面确认，聊天口令不能代替删除按钮。
             """;
 
     private final AgentConversationStore store;
@@ -543,7 +543,6 @@ public class CareerAgentService {
         steps.add(new RunStep("模型输出与上游等待（非纯思考时间）", Math.max(1, elapsedMs - toolElapsed), "COMPLETED"));
         steps.addAll(toolSteps);
         List<AgentStreamEvent.AgentConfirmation> proposals = pending.stream()
-                .filter(item -> "learning_plan".equals(item.kind()))
                 .map(AgentStreamEvent.AgentConfirmation::from).toList();
         try { return objectMapper.writeValueAsString(new RunTrace(elapsedMs, "COMPLETED", steps, proposals,
                 progress == null ? null : progress.thinkingOutput(), progress == null ? null : progress.firstOutputMs())); }

@@ -595,6 +595,18 @@ async function main() {
   assert.ok(pausedAfterFailure, "Failure must pause its queued successor");
   await sleep(1500);
   assert.equal((await depthOwner.request(`/api/agent/queue?conversationId=${depthConversation.id}`)).find((item) => item.id === pausedQueued.requestId)?.status, "QUEUED");
+  const urgent = { ...queuedSecond, requestId: randomUUID(), message: "Handle this correction first" };
+  await depthOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: urgent });
+  await owner.request(`/api/agent/queue/${urgent.requestId}/steer`, { method: "POST", expected: 404, body: { interruptRunId: null } });
+  await depthOwner.request(`/api/agent/queue/${urgent.requestId}/steer`, { method: "POST", expected: 204, body: { interruptRunId: null } });
+  let urgentFinished = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const queued = await depthOwner.request(`/api/agent/queue?conversationId=${depthConversation.id}`);
+    assert.equal(queued.find(item => item.id === pausedQueued.requestId)?.status, "QUEUED", "Prioritizing a correction must not release older paused work");
+    if (queued.find(item => item.id === urgent.requestId)?.status === "COMPLETED") { urgentFinished = true; break; }
+    await sleep(100);
+  }
+  assert.ok(urgentFinished);
   await owner.request(`/api/agent/queue/${pausedQueued.requestId}/resume`, { method: "POST", expected: 404 });
   await depthOwner.request(`/api/agent/queue/${pausedQueued.requestId}/resume`, { method: "POST", expected: 204 });
   let resumed = false;
@@ -604,8 +616,7 @@ async function main() {
     await sleep(200);
   }
   assert.ok(resumed, "Explicit acknowledgement must resume only the queued successor");
-  // Exercise the real model -> wrapped executor -> HTTP decision -> database boundary.
-  // Each case has a fresh account/conversation so earlier tool results cannot mask a missing gate.
+  // Ordinary writes require no per-tool approval; deletion still only prepares a real UI proposal.
   for (const allow of [false, true]) {
     const permissionOwner = new Client();
     await permissionOwner.request("/api/auth/register", { method: "POST", expected: 201,
@@ -617,35 +628,43 @@ async function main() {
     await permissionOwner.request("/api/agent/queue", { method: "POST", expected: 202,
       body: { requestId: permissionRunId, conversationId: permissionConversation.id, message: "Remember my synthetic preference" } });
     const approvalsPath = `/api/agent/runs/${permissionRunId}/approvals`;
-    let permission;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      try { permission = (await permissionOwner.request(approvalsPath)).find(item => item.status === "PENDING"); }
-      catch (error) { if (!error.message.includes("got 404")) throw error; }
-      if (permission) break;
-      await sleep(100);
-    }
-    assert.ok(permission, "A real tool call must pause for UI permission");
-    assert.equal(permission.tool, "add_memory");
-    assert.deepEqual(JSON.parse(permission.arguments), { memory: "Synthetic approved preference" });
-    await sleep(250);
-    assert.deepEqual(await permissionOwner.request("/api/agent/memory/items"), [], "No write may occur while approval is pending");
-    await stranger.request(approvalsPath, { expected: 404 });
-    await stranger.request(`${approvalsPath}/${permission.id}`, { method: "POST", expected: 404, body: { allow: true } });
-    assert.deepEqual(await permissionOwner.request("/api/agent/memory/items"), [], "A foreign user cannot grant permission");
-    await permissionOwner.request(`${approvalsPath}/${permission.id}`, { method: "POST", expected: 204, body: { allow } });
     let permissionFinished = false;
     for (let attempt = 0; attempt < 100; attempt++) {
-      const run = await permissionOwner.request(`/api/agent/runs/${permissionRunId}`);
-      if (run.status === "COMPLETED") { permissionFinished = true; break; }
-      assert.notEqual(run.status, "FAILED", "The fake provider should complete after the permission decision");
+      try {
+        assert.deepEqual(await permissionOwner.request(approvalsPath), [], "Ordinary tools must not create permission requests");
+        const run = await permissionOwner.request(`/api/agent/runs/${permissionRunId}`);
+        if (run.status === "COMPLETED") { permissionFinished = true; break; }
+        assert.notEqual(run.status, "FAILED");
+      }
+      catch (error) { if (!error.message.includes("got 404")) throw error; }
       await sleep(100);
     }
     assert.ok(permissionFinished);
+    await stranger.request(approvalsPath, { expected: 404 });
     const savedMemories = await permissionOwner.request("/api/agent/memory/items");
-    assert.equal(savedMemories.length, allow ? 1 : 0);
-    if (allow) assert.equal(savedMemories[0].content, "Synthetic approved preference");
-    await permissionOwner.request(`${approvalsPath}/${permission.id}`, { method: "POST", expected: 409, body: { allow: true } });
-    assert.equal((await permissionOwner.request("/api/agent/memory/items")).length, allow ? 1 : 0, "A consumed/denied decision cannot replay a write");
+    assert.equal(savedMemories.length, 1);
+    assert.equal(savedMemories[0].content, "Synthetic approved preference");
+    await permissionOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE",
+      baseUrl: modelBase, model: "deletion-proposal-integration-probe", apiKey: "disposable-fake-model-key" } });
+    const deletionConversation = await permissionOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
+    const deletionRunId = randomUUID();
+    await permissionOwner.request("/api/agent/queue", { method: "POST", expected: 202,
+      body: { requestId: deletionRunId, conversationId: deletionConversation.id, message: `Delete fixture memory ${savedMemories[0].id}` } });
+    let deletionFinished = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const queued = await permissionOwner.request(`/api/agent/queue?conversationId=${deletionConversation.id}`);
+      if (queued.find(item => item.id === deletionRunId)?.status === "COMPLETED") { deletionFinished = true; break; }
+      await sleep(100);
+    }
+    assert.ok(deletionFinished);
+    const deletionHistory = await permissionOwner.request(`/api/agent?conversationId=${deletionConversation.id}`);
+    const deletionReply = deletionHistory.messages.filter(item => item.role === "ASSISTANT").at(-1);
+    const proposal = JSON.parse(deletionReply.runTrace).proposals.find(item => item.kind === "memory_item");
+    assert.equal(proposal.targetId, savedMemories[0].id);
+    assert.equal((await permissionOwner.request("/api/agent/memory/items")).length, 1, "A deletion proposal cannot delete by itself");
+    await stranger.request(proposal.endpoint, { method: "DELETE", expected: 404 });
+    if (allow) await permissionOwner.request(proposal.endpoint, { method: "DELETE", expected: 204 });
+    assert.equal((await permissionOwner.request("/api/agent/memory/items")).length, allow ? 0 : 1, "Only the explicit final delete request may remove data");
   }
 
   const silentOwner = new Client();
@@ -694,8 +713,19 @@ async function main() {
   }
   assert.ok(cancelStarted);
   await owner.request(`/api/agent/runs/${cancelRequest.requestId}/cancel`, { method: "POST", expected: 404 });
-  await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}/cancel`, { method: "POST", expected: 204 });
+  await silentOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+    model: "gpt-5-depth-probe", apiKey: "disposable-fake-model-key" } });
+  const steerRequest = { ...cancelRequest, requestId: randomUUID(), message: "Apply my correction now" };
+  await silentOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: steerRequest });
+  await silentOwner.request(`/api/agent/queue/${steerRequest.requestId}/steer`, { method: "POST", expected: 204, body: { interruptRunId: cancelRequest.requestId } });
   assert.equal((await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}`)).errorCode, "AGENT_RUN_CANCELLED");
+  let steerFinished = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const queued = await silentOwner.request(`/api/agent/queue?conversationId=${silentConversation.id}`);
+    if (queued.find(item => item.id === steerRequest.requestId)?.status === "COMPLETED") { steerFinished = true; break; }
+    await sleep(100);
+  }
+  assert.ok(steerFinished, "Interrupting must dispatch the selected new instruction rather than replaying the old run");
   await sleep(9000); // The fake provider attempts a late tool call after the local run has stopped.
   assert.equal((await silentOwner.request("/api/agent/memory")).content, "", "Late tool chunks must not mutate memory");
   assert.equal((await silentOwner.request(`/api/agent/runs/${silentRequest.requestId}`)).errorCode, "AGENT_UPSTREAM_SILENT");
