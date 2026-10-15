@@ -254,7 +254,7 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="Refresh tasks"]').getAttribute("aria-busy") === "false");
   taskRefreshFails = true;
   await refreshTasks.click();
-  await page.getByRole("alert").waitFor();
+  await page.getByRole("alert").filter({ hasText: "Connection interrupted. Your tasks are saved." }).waitFor();
   await page.waitForFunction(() => document.querySelector('[aria-label="Refresh tasks"]').getAttribute("aria-busy") === "false");
   assert.equal(await refreshTasks.isEnabled(), true);
   assert.equal(await page.getByRole("link", { name: "Open result", exact: true }).count(), 1);
