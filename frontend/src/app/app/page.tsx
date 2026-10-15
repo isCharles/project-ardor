@@ -316,7 +316,6 @@ export default function AgentHomePage() {
     const serviceId = window.sessionStorage.getItem(`${draftStorageKey(result.conversationId)}:service:${reasoningAccount.current}`);
     const feature = featuresRef.current.find((item) => item.id === serviceId);
     setSelectedContexts((current) => [...current.filter((item) => item.type !== "SERVICE"), ...(feature ? [{ type: "SERVICE" as const, id: feature.id, label: feature.label }] : [])]);
-    window.history.replaceState(null, "", result.conversationId ? `/app?conversation=${result.conversationId}` : "/app?new=1");
   }, []);
 
   const load = useCallback(async (conversationId?: string | null) => {
@@ -326,12 +325,17 @@ export default function AgentHomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    const requested = new URLSearchParams(window.location.search).get("conversation");
+    // Consume one-time draft links before any asynchronous work. Updating history
+    // after loading could overwrite a module navigation the user just started.
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("conversation");
+    if (params.get("new") === "1" && (params.has("prefill") || params.has("feature") || params.has("contextId"))) {
+      window.history.replaceState(null, "", "/app?new=1");
+    }
     const query = requested ? `?conversationId=${encodeURIComponent(requested)}` : "";
     api<AgentState>(`/api/agent${query}`)
       .then(async (result) => {
         if (cancelled) return;
-        const params = new URLSearchParams(window.location.search);
         const account = await api<{ id: string }>("/api/auth/me");
         reasoningAccount.current = account.id;
         const response = await api<AgentFeature[]>("/api/agent/features").catch(() => []);
@@ -443,6 +447,7 @@ export default function AgentHomePage() {
     if (busy) return;
     if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false);
     if (conversationId === state?.conversationId) return;
+    window.history.replaceState(null, "", `/app?conversation=${conversationId}`);
     setError(""); setRunningRun(null); setHasQueuedMessages(false); setRunThinking(""); setStreamProgress(null); setConfirmations([]); setMenuId(null);
     try { await load(conversationId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入会话"); }
