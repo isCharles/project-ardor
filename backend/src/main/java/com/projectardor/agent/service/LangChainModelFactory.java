@@ -99,15 +99,19 @@ public class LangChainModelFactory {
     }
 
     public StreamingChatModel createStreaming(UUID userId, ReasoningDepth depth) {
+        return createStreaming(userId, depth, null);
+    }
+    StreamingChatModel createStreaming(UUID userId, ReasoningDepth depth, AgentStreamLease lease) {
         LlmConfigService.LlmRuntimeConfig config = configService.getRuntimeConfig(userId);
         var profile = ModelReasoningPolicy.resolve(config, depth);
+        dev.langchain4j.http.client.HttpClientBuilder transport = lease == null ? httpClientBuilder() : new LeasedHttpClientBuilder(httpClientBuilder(), lease);
         return switch (config.provider()) {
             case OPENAI_COMPATIBLE -> OpenAiStreamingChatModel.builder()
-                    .httpClientBuilder(httpClientBuilder()).baseUrl(config.baseUrl()).apiKey(config.apiKey())
+                    .httpClientBuilder(transport).baseUrl(config.baseUrl()).apiKey(config.apiKey())
                     .modelName(config.model()).reasoningEffort(profile.effort()).customParameters(profile.extra())
                     .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking(), "reasoning_content").timeout(readTimeout).build();
             case ANTHROPIC_COMPATIBLE -> AnthropicStreamingChatModel.builder()
-                    .httpClientBuilder(httpClientBuilder()).baseUrl(config.baseUrl()).apiKey(config.apiKey())
+                    .httpClientBuilder(transport).baseUrl(config.baseUrl()).apiKey(config.apiKey())
                     .modelName(config.model()).maxTokens(profile.maxTokens()).thinkingType(profile.thinkingType())
                     .thinkingBudgetTokens(profile.budget()).customParameters(profile.extra())
                     .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking()).timeout(readTimeout).build();

@@ -152,6 +152,7 @@ export default function AgentHomePage() {
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
   const [hasQueuedMessages, setHasQueuedMessages] = useState(false);
   const [streamAccepted, setStreamAccepted] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
   const queueSubmitting = useRef(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retryFailures, setRetryFailures] = useState<RetryFailure[]>([]);
@@ -601,7 +602,7 @@ export default function AgentHomePage() {
               receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
             } else if (event.type === "status" && event.label) {
-              setRunSteps((current) => current.some((step) => step.key === "status") ? current : [...current, { key: "status", label: event.label!, elapsedMs: 0, done: false }]);
+              setRunSteps((current) => current.some((step) => step.key === "status") ? current.map((step) => step.key === "status" ? { ...step, label: event.label! } : step) : [...current, { key: "status", label: event.label!, elapsedMs: 0, done: false }]);
             } else if (event.type === "tool_start" && event.toolName) {
               receivedToolEvent = true;
               setRunSteps((current) => [...current, { key: `${event.toolName}-${current.length}`, label: event.label ?? "调用工具", elapsedMs: 0, done: false }]);
@@ -688,6 +689,15 @@ export default function AgentHomePage() {
       }
       setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
     } finally { setApprovalRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
+  }
+
+  async function cancelExecution() {
+    const requestId = runningRun?.id ?? approvalRunId;
+    if (!requestId || cancelPending) return;
+    setCancelPending(true);
+    try { await api<void>(`/api/agent/runs/${requestId}/cancel`, { method: "POST" }); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not confirm stop request", "暂时无法确认停止请求")); }
+    finally { setCancelPending(false); }
   }
 
   function updateDraft(value: string) {
@@ -953,6 +963,7 @@ export default function AgentHomePage() {
                     <span className="font-medium text-stone-700">{busy || runningRun ? "Ardor 正在工作" : error ? "Ardor 未完成" : "Ardor 已完成"}</span>
                     <span className="ml-auto text-xs tabular-nums text-stone-400">{formatElapsed(runElapsed)}</span>
                   </button>
+                  {(runningRun || approvalRunId) && <div className="mt-2 flex justify-end"><button type="button" disabled={cancelPending} onClick={() => void cancelExecution()} className="rounded-full px-3 py-1 text-xs text-stone-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50">{cancelPending ? t("Stopping…", "正在停止…") : t("Stop", "停止")}</button></div>}
                   {traceOpen && <div className="mt-3 space-y-2 border-l border-stone-200 pl-4">
                     {runningRun && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin motion-reduce:animate-none" /><span>{streamProgress?.phase === "WAITING_DATA" ? t("Waiting for new upstream data", "等待上游返回新数据") : streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</span></div>}
                     <PublicThinking content={runThinking} />

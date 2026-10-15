@@ -565,6 +565,42 @@ async function main() {
     await sleep(200);
   }
   assert.ok(resumed, "Explicit acknowledgement must resume only the queued successor");
+  const silentOwner = new Client();
+  await silentOwner.request("/api/auth/register", { method: "POST", expected: 201,
+    body: { email: `golden-silence-${suffix}@ardor.invalid`, password, displayName: "Silent stream probe" } });
+  await silentOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+    model: "agent-silence-probe", apiKey: "disposable-fake-model-key" } });
+  const silentConversation = await silentOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
+  const silentRequest = { requestId: randomUUID(), conversationId: silentConversation.id, message: "Silent stream timeout probe", reasoningDepth: "DEEP" };
+  await silentOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: silentRequest });
+  let silenceFailed = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const pending = await silentOwner.request(`/api/agent/queue?conversationId=${silentConversation.id}`);
+    if (pending.find((item) => item.id === silentRequest.requestId)?.status === "FAILED") { silenceFailed = true; break; }
+    await sleep(200);
+  }
+  assert.ok(silenceFailed, "An open HTTP connection without model output must not run indefinitely");
+  const silentRun = await silentOwner.request(`/api/agent/runs/${silentRequest.requestId}`);
+  assert.equal(silentRun.errorCode, "AGENT_UPSTREAM_SILENT");
+  assert.equal(silentRun.retryable, false);
+  await silentOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+    model: "agent-cancel-probe", apiKey: "disposable-fake-model-key" } });
+  const cancelRequest = { ...silentRequest, requestId: randomUUID(), message: "Explicit user cancellation probe" };
+  await silentOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: cancelRequest });
+  await silentOwner.request(`/api/agent/queue/${cancelRequest.requestId}/resume`, { method: "POST", expected: 204 });
+  let cancelStarted = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const pending = await silentOwner.request(`/api/agent/queue?conversationId=${silentConversation.id}`);
+    if (pending.find((item) => item.id === cancelRequest.requestId)?.status === "RUNNING") { cancelStarted = true; break; }
+    await sleep(100);
+  }
+  assert.ok(cancelStarted);
+  await owner.request(`/api/agent/runs/${cancelRequest.requestId}/cancel`, { method: "POST", expected: 404 });
+  await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}/cancel`, { method: "POST", expected: 202 });
+  assert.equal((await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}`)).errorCode, "AGENT_RUN_CANCELLED");
+  await sleep(9000); // The fake provider attempts a late tool call after the local run has stopped.
+  assert.equal((await silentOwner.request("/api/agent/memory/items")).length, 0, "Late tool chunks must not mutate memory");
+  assert.equal((await silentOwner.request(`/api/agent/runs/${silentRequest.requestId}`)).errorCode, "AGENT_UPSTREAM_SILENT");
   await asyncOwner.request("/api/auth/register", { method: "POST", expected: 201,
     body: { email: `golden-async-${suffix}@ardor.invalid`, password, displayName: "Async Assessments" } });
   await asyncOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE",

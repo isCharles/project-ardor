@@ -102,6 +102,9 @@ public class CareerAgentService {
     private final ObjectMapper objectMapper;
     private final AgentStreamProgress streamProgress;
     private final AgentToolApprovals toolApprovals;
+    private final java.time.Duration silenceTimeout;
+    private final java.time.Duration totalTimeout;
+    private final ConcurrentHashMap<UUID, ActiveStream> activeStreams = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Semaphore> userLocks = new ConcurrentHashMap<>();
 
     public void validateQueuedMessage(UUID userId, com.projectardor.agent.web.AgentMessageRequest request) {
@@ -120,7 +123,9 @@ public class CareerAgentService {
             AgentMemoryService memoryService,
             ProfileService profileService,
             ObjectMapper objectMapper,
-            AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals) {
+            AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals,
+            @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:180s}") java.time.Duration silenceTimeout,
+            @org.springframework.beans.factory.annotation.Value("${app.agent.stream.total-timeout:10m}") java.time.Duration totalTimeout) {
         this.store = store;
         this.runStore = runStore;
         this.modelFactory = modelFactory;
@@ -131,6 +136,8 @@ public class CareerAgentService {
         this.objectMapper = objectMapper;
         this.streamProgress = streamProgress;
         this.toolApprovals = toolApprovals;
+        if (silenceTimeout.isNegative() || silenceTimeout.isZero() || totalTimeout.isNegative() || totalTimeout.isZero()) throw new IllegalArgumentException("Agent 运行期限必须大于零");
+        this.silenceTimeout = silenceTimeout; this.totalTimeout = totalTimeout;
     }
 
     public AgentStateResponse state(UUID userId, UUID requestedConversationId) {
@@ -282,6 +289,8 @@ public class CareerAgentService {
         long startedAt = System.nanoTime();
         AtomicBoolean finished = new AtomicBoolean();
         AtomicReference<UUID> persistedRun = new AtomicReference<>();
+        AtomicReference<AgentStreamLease> leaseRef = new AtomicReference<>();
+        UUID progressId = requestId == null ? UUID.randomUUID() : requestId;
         Semaphore lock = userLocks.computeIfAbsent(userId, ignored -> new Semaphore(1));
         boolean acquired = false;
         try {
@@ -311,9 +320,25 @@ public class CareerAgentService {
             }
             MessageWindowChatMemory memory = conversationMemory(userId, conversation.getId());
             ConcurrentHashMap<String, Long> toolStarts = new ConcurrentHashMap<>();
-            UUID progressId = requestId == null ? UUID.randomUUID() : requestId;
             streamProgress.begin(userId, progressId);
             toolApprovals.begin(userId, requestId);
+            AgentStreamLease lease = new AgentStreamLease();
+            leaseRef.set(lease);
+            java.util.function.Consumer<String> terminate = reason -> {
+                if (!finished.compareAndSet(false, true)) return;
+                lease.fence();
+                toolApprovals.close(userId, requestId);
+                streamProgress.finish(progressId, true);
+                try {
+                    sendStreamError(sink, new LlmCallException("USER".equals(reason) ? "AGENT_RUN_CANCELLED" : "TOTAL".equals(reason) ? "AGENT_RUN_DEADLINE" : "AGENT_UPSTREAM_SILENT",
+                            "USER".equals(reason) ? "已停止本轮，后续工具不会执行。已经开始的操作可能仍在完成，请检查结果。"
+                                    : "TOTAL".equals(reason) ? "已达本轮运行时限，后续工具不会执行。已开始的操作请核验结果，不会自动重试。"
+                                    : "上游长时间没有新输出，本轮已停止；这不能证明模型一直在思考，也不一定是断网。不会自动重试，已开始的操作请核验结果。",
+                            false, null), startedAt, userId, persistedRun.get());
+                } finally { lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
+            };
+            activeStreams.put(progressId, new ActiveStream(userId, lease, () -> terminate.accept(lease.totalExpired(totalTimeout) ? "TOTAL" : "SILENCE"), () -> terminate.accept("USER"),
+                    () -> sink.send(AgentStreamEvent.status("上游暂未返回新数据，仍在等待；这不代表模型正在思考", elapsedMs(startedAt)))));
             List<RunStep> persistedSteps = new CopyOnWriteArrayList<>();
             AtomicInteger partialChunks = new AtomicInteger();
             AtomicLong firstPartialAt = new AtomicLong();
@@ -322,13 +347,14 @@ public class CareerAgentService {
             // the agent proposed, so each becomes a button in the transcript.
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
-                    .streamingChatModel(modelFactory.createStreaming(userId, depth))
+                    .streamingChatModel(modelFactory.createStreaming(userId, depth, lease))
                     .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory)
-                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals))
+                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
             sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)
                     .beforeToolExecution(before -> {
+                        if (!lease.toolWaiting()) throw new java.util.concurrent.CancellationException("本轮已停止");
                         String name = before.request().name();
                         streamProgress.tool(progressId, toolLabel(name, false));
                         toolStarts.put(before.request().id(), System.nanoTime());
@@ -336,6 +362,7 @@ public class CareerAgentService {
                         sink.send(AgentStreamEvent.tool("tool_start", name, toolLabel(name, false), elapsedMs(startedAt)));
                     })
                     .onToolExecuted(execution -> {
+                        if (!lease.toolFinished()) throw new java.util.concurrent.CancellationException("本轮已停止");
                         streamProgress.waiting(progressId);
                         Long toolStarted = toolStarts.remove(execution.request().id());
                         long duration = toolStarted == null ? 0 : Math.max(1, elapsedMs(toolStarted));
@@ -345,13 +372,22 @@ public class CareerAgentService {
                         sink.send(AgentStreamEvent.tool("tool_end", execution.request().name(),
                                 toolLabel(execution.request().name(), execution.hasFailed()), duration));
                     })
-                    .onPartialThinking(thinking -> {
+                    .onPartialThinkingWithContext((thinking, context) -> {
+                        if (!lease.attachCancellation(cancellation(context.streamingHandle()))) return;
                         if (finished.get()) return;
+                        lease.data();
                         streamProgress.thinking(progressId, thinking.text());
                         sink.send(AgentStreamEvent.thinking(thinking.text()));
                     })
-                    .onPartialResponse(token -> {
+                    .onPartialToolCallWithContext((tool, context) -> {
+                        if (lease.attachCancellation(cancellation(context.streamingHandle()))) lease.data();
+                    })
+                    .onPartialResponseWithContext((partial, context) -> {
+                        if (!lease.attachCancellation(cancellation(context.streamingHandle()))) return;
                         if (finished.get()) return;
+                        String token = partial.text();
+                        if (token == null || token.isEmpty()) return;
+                        lease.data();
                         streamProgress.answer(progressId, token);
                         firstPartialAt.compareAndSet(0, System.nanoTime());
                         partialChunks.incrementAndGet();
@@ -365,6 +401,7 @@ public class CareerAgentService {
                     })
                     .onCompleteResponse(response -> {
                         if (!finished.compareAndSet(false, true)) return;
+                        lease.fence();
                         try {
                             String answer = response.aiMessage().text();
                             if (answer == null || answer.isBlank()) throw new IllegalStateException("Agent 没有返回可用内容");
@@ -384,22 +421,27 @@ public class CareerAgentService {
                         } catch (RuntimeException exception) {
                             streamProgress.finish(progressId, true);
                             sendStreamError(sink, exception, startedAt, userId, persistedRun.get());
-                        } finally { toolApprovals.close(userId, requestId); lock.release(); }
+                        } finally { toolApprovals.close(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
                     })
                     .onError(exception -> {
                         if (!finished.compareAndSet(false, true)) return;
+                        lease.fence();
                         streamProgress.finish(progressId, true);
                         try { sendStreamError(sink, exception, startedAt, userId, persistedRun.get()); }
-                        finally { toolApprovals.close(userId, requestId); lock.release(); }
+                        finally { toolApprovals.close(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
                     });
-            stream.start();
+            if (!finished.get()) stream.start();
         } catch (RuntimeException exception) {
             if (finished.compareAndSet(false, true)) {
+                if (leaseRef.get() != null) leaseRef.get().fence();
                 try {
                     sendStreamError(sink, exception, startedAt, userId, persistedRun.get());
                 } finally {
-                    if (acquired) lock.release();
                     toolApprovals.close(userId, persistedRun.get());
+                    if (leaseRef.get() != null) {
+                        streamProgress.finish(progressId, true);
+                        leaseRef.get().stop(() -> { activeStreams.remove(progressId); lock.release(); });
+                    } else if (acquired) lock.release();
                 }
             }
         }
@@ -412,6 +454,24 @@ public class CareerAgentService {
             else if ("ASSISTANT".equals(historyMessage.getRole())) memory.add(AiMessage.from(historyMessage.getContent()));
         }
         return memory;
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 1000)
+    public void watchStreams() {
+        activeStreams.values().forEach(active -> {
+            if (active.lease().expired(silenceTimeout, totalTimeout)) active.timeout().run();
+            else if (active.lease().warnSilence()) active.warning().run();
+        });
+    }
+    public void cancelRun(UUID userId, UUID requestId) {
+        runStore.get(userId, requestId);
+        ActiveStream active = activeStreams.get(requestId);
+        if (active == null || !active.userId().equals(userId)) throw new IllegalStateException("执行已结束或当前进程没有可停止的运行，请刷新查看状态");
+        active.cancel().run();
+    }
+    private record ActiveStream(UUID userId, AgentStreamLease lease, Runnable timeout, Runnable cancel, Runnable warning) {}
+    private Runnable cancellation(dev.langchain4j.model.chat.response.StreamingHandle handle) {
+        return handle == null ? () -> {} : handle::cancel;
     }
 
     private void sendStreamError(StreamSink sink, Throwable exception, long startedAt) {

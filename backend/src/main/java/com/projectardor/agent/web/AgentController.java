@@ -96,7 +96,8 @@ public class AgentController {
             @Valid @RequestBody AgentMessageRequest request) {
         response.setHeader("Cache-Control", "no-cache, no-transform");
         response.setHeader("X-Accel-Buffering", "no");
-        SseEmitter emitter = new SseEmitter(300_000L);
+        // The runtime enforces silence and total deadlines. Transport lifetime must not cut off an active run at five minutes.
+        SseEmitter emitter = new SseEmitter(0L);
         AtomicBoolean closed = new AtomicBoolean();
         emitter.onCompletion(() -> closed.set(true));
         emitter.onTimeout(() -> { closed.set(true); emitter.complete(); });
@@ -118,6 +119,12 @@ public class AgentController {
     @GetMapping("/reasoning")
     public java.util.Map<String, Boolean> reasoning(@AuthenticationPrincipal ArdorPrincipal principal) {
         return java.util.Map.of("nativeControl", agentService.nativeReasoningControl(principal.userId()));
+    }
+
+    @PostMapping("/runs/{requestId}/cancel")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void cancelRun(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID requestId) {
+        agentService.cancelRun(principal.userId(), requestId);
     }
 
     @GetMapping("/runs/{requestId}/approvals")

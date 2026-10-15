@@ -30,6 +30,7 @@ try {
   let permissionDecisions = [];
   let queueItems = [];
   let queuedRequests = [];
+  let cancelCalls = 0;
   let learningPlans = [];
   let learningDeleteCalls = 0;
   let learningDeleteFails = false;
@@ -74,6 +75,11 @@ try {
     else if (path.startsWith("/api/agent/queue/") && route.request().method() === "DELETE") {
       queueItems = queueItems.filter((item) => !path.endsWith(item.id));
       return route.fulfill({ status: 204 });
+    }
+    else if (path === "/api/agent/runs/accepted-run/cancel" && route.request().method() === "POST") {
+      cancelCalls++;
+      activeRun = { ...activeRun, status: "FAILED", errorCode: "AGENT_RUN_CANCELLED", errorMessage: "Synthetic stopped run" };
+      return route.fulfill({ status: 202 });
     }
     else if (path.endsWith("/approvals")) body = permissions;
     else if (/\/approvals\/[^/]+$/.test(path) && route.request().method() === "POST") {
@@ -352,6 +358,11 @@ try {
   const secondQueued = page.getByRole("article").filter({ hasText: "Queued follow-up two" });
   await secondQueued.getByRole("button", { name: "Remove from queue", exact: true }).click();
   await secondQueued.waitFor({ state: "detached" });
+  await Promise.all([
+    page.waitForResponse((response) => response.url().endsWith("/runs/accepted-run/cancel") && response.request().method() === "POST"),
+    page.getByRole("button", { name: "Stop", exact: true }).click(),
+  ]);
+  assert.equal(cancelCalls, 1);
   assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).isEnabled(), true);
   activeRun = null;
   userId = "different-outbox-owner";

@@ -18,6 +18,9 @@ final class ApprovedAgentTools {
             "delete_recurring_task", "delete_resume", "delete_interview", "delete_memory_card",
             "delete_all_memory_cards", "delete_interview_recap");
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals) {
+        return wrap(bound, userId, requestId, approvals, null);
+    }
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         for (var method : bound.getClass().getMethods()) {
             if (!method.isAnnotationPresent(Tool.class)) continue;
@@ -31,7 +34,7 @@ final class ApprovedAgentTools {
                 if (!allowed) {
                     return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"用户未批准、已拒绝或权限请求过期。未执行工具，本轮不得重复申请或用聊天口令代替批准。\"}";
                 }
-                return delegate.execute(request, memoryId);
+                return lease == null ? delegate.execute(request, memoryId) : lease.execute(() -> delegate.execute(request, memoryId));
             });
         }
         return result;
