@@ -100,7 +100,7 @@ jobs:
           java -jar backend/target/ardor-backend-0.6.1.jar --server.port=8081 --spring.datasource.url=jdbc:postgresql://127.0.0.1:5432/ardor_fresh_probe --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-fresh.log" 2>&1 &
           probe_pid=$!
           wait_probe
-          test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor_fresh_probe -Atc "SELECT COUNT(*) FROM flyway_schema_history WHERE version='36' AND success")" = "1"
+          test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor_fresh_probe -Atc "SELECT COUNT(*) FROM flyway_schema_history WHERE version='37' AND success")" = "1"
           test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor_fresh_probe -Atc "SELECT COUNT(*) FROM agent_message_queue")" = "0"
           stop_probe
 
@@ -112,7 +112,7 @@ jobs:
           for attempt in {1..90}; do
             if curl --silent --fail http://127.0.0.1:8080/actuator/health \
                 | grep -q '"status":"UP"'; then
-              test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor -Atc "SELECT COUNT(*) FROM flyway_schema_history WHERE version='36' AND success")" = "1"
+              test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor -Atc "SELECT COUNT(*) FROM flyway_schema_history WHERE version='37' AND success")" = "1"
               test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor -Atc "SELECT COUNT(*) FROM messages WHERE id='10000000-0000-4000-8000-000000000003' AND content='Upgrade sentinel preserved'")" = "1"
               node backend/src/test/resources/golden-path-acceptance.mjs
               exit 0

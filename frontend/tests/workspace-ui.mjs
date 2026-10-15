@@ -95,7 +95,9 @@ try {
       return route.fulfill({ status: 204 });
     }
     else if (path === "/api/agent/runs/latest" && activeRun) body = activeRun;
-    else if (path.endsWith("/progress") && activeRun) body = { phase: "WAITING_DATA", label: "Waiting", thinkingOutput: "", answerPartial: "", silentSeconds: 40 };
+    else if (path.endsWith("/progress") && activeRun) body = activeRun.status === "FAILED"
+      ? { phase: "FAILED", label: "Stopped", thinkingOutput: "Saved public reasoning", answerPartial: "Saved incomplete answer", elapsedMs: 1200, steps: [{ label: "Read plans", elapsedMs: 4, status: "COMPLETED" }] }
+      : { phase: "WAITING_DATA", label: "Waiting", thinkingOutput: "", answerPartial: "", silentSeconds: 40 };
     else if (path.startsWith("/api/agent/runs")) return route.fulfill(retryProbe ? { status: 404, json: { message: "Not accepted" } } : { status: 204 });
     else if (path === "/api/agent/reasoning") body = { nativeControl: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
@@ -370,6 +372,10 @@ try {
     page.getByRole("button", { name: "Stop", exact: true }).click(),
   ]);
   assert.equal(cancelCalls, 1);
+  await page.reload();
+  await page.getByText("Incomplete reply · saved before execution stopped", { exact: true }).click();
+  await page.getByText("Saved incomplete answer", { exact: true }).waitFor();
+  await page.getByText("Read plans", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).isEnabled(), true);
   activeRun = null;
   queueItems = [];

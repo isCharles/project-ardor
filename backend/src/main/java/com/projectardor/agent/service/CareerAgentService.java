@@ -370,6 +370,8 @@ public class CareerAgentService {
                         long duration = toolStarted == null ? 0 : Math.max(1, elapsedMs(toolStarted));
                         persistedSteps.add(new RunStep(toolLabel(execution.request().name(), execution.hasFailed()), duration,
                                 execution.hasFailed() ? "FAILED" : "COMPLETED"));
+                        streamProgress.step(progressId, toolLabel(execution.request().name(), execution.hasFailed()), duration,
+                                execution.hasFailed() ? "FAILED" : "COMPLETED");
                         if (requestId != null) runStore.progress(userId, requestId, "正在整理回复", false);
                         sink.send(AgentStreamEvent.tool("tool_end", execution.request().name(),
                                 toolLabel(execution.request().name(), execution.hasFailed()), duration));
