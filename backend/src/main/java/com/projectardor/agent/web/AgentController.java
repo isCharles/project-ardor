@@ -224,6 +224,11 @@ public class AgentController {
         return memoryService.edit(principal.userId(), memoryId, request.content());
     }
 
+    @GetMapping("/memory/items")
+    public java.util.List<AgentMemoryItemResponse> memoryItems(@AuthenticationPrincipal ArdorPrincipal principal) {
+        return memoryService.listItems(principal.userId());
+    }
+
     @PutMapping("/memory")
     public AgentMemoryResponse updateMemory(
             @AuthenticationPrincipal ArdorPrincipal principal,

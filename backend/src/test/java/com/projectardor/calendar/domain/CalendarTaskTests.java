@@ -11,6 +11,15 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class CalendarTaskTests {
+    @Test void editingExplanationPreservesTheOriginalLearningCompletionTime() {
+        CalendarTask task = CalendarTask.createLearning(UUID.randomUUID(), UUID.randomUUID(), "JVM", "Reason",
+                java.time.Instant.now(), CalendarTaskSource.AGENT);
+        task.scheduleLearning("JVM", "Reason", java.time.Instant.now(), true);
+        java.time.Instant original = java.time.Instant.parse("2026-01-01T09:00:00Z");
+        org.springframework.test.util.ReflectionTestUtils.setField(task, "completedAt", original);
+        task.scheduleLearning("JVM", "Revised reason", task.getDueAt(), true);
+        assertThat(task.getCompletedAt()).isEqualTo(original);
+    }
 
     @Test
     void editingAnOccurrenceMarksItForPreservationWhenItsSeriesIsCancelled() {
