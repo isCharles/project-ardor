@@ -517,6 +517,54 @@ async function main() {
   await sleep(500);
   assert.equal((await depthOwner.request("/api/agent/conversations"))[0].title, "我的手动标题");
   const asyncOwner = new Client();
+  // Durable queue: exact retry identity, owner isolation and ordered exchanges.
+  const queuedFirst = { conversationId: depthConversation.id, requestId: randomUUID(), message: "Queue probe one", reasoningDepth: "QUICK" };
+  const queuedSecond = { conversationId: depthConversation.id, requestId: randomUUID(), message: "Queue probe two", reasoningDepth: "DEEP" };
+  const firstAccepted = await depthOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: queuedFirst });
+  assert.equal(firstAccepted.id, queuedFirst.requestId);
+  assert.equal((await depthOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: queuedFirst })).id, queuedFirst.requestId);
+  await depthOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: queuedSecond });
+  await owner.request(`/api/agent/queue?conversationId=${depthConversation.id}`, { expected: 404 });
+  await owner.request(`/api/agent/queue/${queuedFirst.requestId}`, { method: "DELETE", expected: 404 });
+  let queuedComplete = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const queue = await depthOwner.request(`/api/agent/queue?conversationId=${depthConversation.id}`);
+    if (queue.filter((item) => [queuedFirst.requestId, queuedSecond.requestId].includes(item.id) && item.status === "COMPLETED").length === 2) {
+      queuedComplete = true; break;
+    }
+    assert.ok(!queue.some((item) => ["FAILED", "INTERRUPTED"].includes(item.status)), "Synthetic queued calls must not fail");
+    await sleep(200);
+  }
+  assert.ok(queuedComplete, "Queued requests must finish sequentially without an open stream");
+  const queuedHistory = (await depthOwner.request(`/api/agent?conversationId=${depthConversation.id}`)).messages;
+  assert.deepEqual(queuedHistory.filter((item) => item.role === "USER" && item.content.startsWith("Queue probe")).map((item) => item.content), ["Queue probe one", "Queue probe two"]);
+  await depthOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
+    model: "queue-failure-probe", apiKey: "disposable-fake-model-key" } });
+  const failureQueued = { ...queuedFirst, requestId: randomUUID(), message: "Queue failure marker" };
+  const pausedQueued = { ...queuedSecond, requestId: randomUUID(), message: "Queue continuation after review" };
+  await depthOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: failureQueued });
+  await depthOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: pausedQueued });
+  let pausedAfterFailure = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const queued = await depthOwner.request(`/api/agent/queue?conversationId=${depthConversation.id}`);
+    if (queued.find((item) => item.id === failureQueued.requestId)?.status === "FAILED") {
+      assert.equal(queued.find((item) => item.id === pausedQueued.requestId)?.status, "QUEUED");
+      pausedAfterFailure = true; break;
+    }
+    await sleep(200);
+  }
+  assert.ok(pausedAfterFailure, "Failure must pause its queued successor");
+  await sleep(1500);
+  assert.equal((await depthOwner.request(`/api/agent/queue?conversationId=${depthConversation.id}`)).find((item) => item.id === pausedQueued.requestId)?.status, "QUEUED");
+  await owner.request(`/api/agent/queue/${pausedQueued.requestId}/resume`, { method: "POST", expected: 404 });
+  await depthOwner.request(`/api/agent/queue/${pausedQueued.requestId}/resume`, { method: "POST", expected: 204 });
+  let resumed = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const queued = await depthOwner.request(`/api/agent/queue?conversationId=${depthConversation.id}`);
+    if (queued.find((item) => item.id === pausedQueued.requestId)?.status === "COMPLETED") { resumed = true; break; }
+    await sleep(200);
+  }
+  assert.ok(resumed, "Explicit acknowledgement must resume only the queued successor");
   await asyncOwner.request("/api/auth/register", { method: "POST", expected: 201,
     body: { email: `golden-async-${suffix}@ardor.invalid`, password, displayName: "Async Assessments" } });
   await asyncOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE",

@@ -19,6 +19,7 @@ import { ReasoningControl } from "@/components/ardor/reasoning-control";
 import { ServicePicker } from "@/components/ardor/service-picker";
 import { PublicThinking } from "@/components/ardor/public-thinking";
 import { ToolApprovals } from "@/components/ardor/tool-approvals";
+import { QueuedMessages } from "@/components/ardor/queued-messages";
 import type { AgentFeature } from "@/lib/agent-features";
 import { featureHref } from "@/lib/agent-features";
 import { useDismiss } from "@/components/ardor/overlay";
@@ -149,6 +150,9 @@ export default function AgentHomePage() {
   const [titleWatch, setTitleWatch] = useState<{ id: string; title: string } | null>(null);
   const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
+  const [hasQueuedMessages, setHasQueuedMessages] = useState(false);
+  const [streamAccepted, setStreamAccepted] = useState(false);
+  const queueSubmitting = useRef(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [retryFailures, setRetryFailures] = useState<RetryFailure[]>([]);
   const [runSteps, setRunSteps] = useState<RunStep[]>([]);
@@ -436,7 +440,7 @@ export default function AgentHomePage() {
     if (busy) return;
     if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false);
     if (conversationId === state?.conversationId) return;
-    setError(""); setRunningRun(null); setConfirmations([]); setMenuId(null);
+    setError(""); setRunningRun(null); setHasQueuedMessages(false); setRunThinking(""); setStreamProgress(null); setConfirmations([]); setMenuId(null);
     try { await load(conversationId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入会话"); }
   }
@@ -445,6 +449,7 @@ export default function AgentHomePage() {
     if (busy) return;
     setError("");
     setRunningRun(null);
+    setHasQueuedMessages(false);
     setRetryFailures([]);
     setRunThinking(""); setStreamProgress(null);
     setRunSteps([]);
@@ -499,9 +504,34 @@ export default function AgentHomePage() {
 
   async function send(text: string) {
     const message = text.trim();
-    if (!message || busy || runningRun) return;
+    if (!message) return;
     if (message.length > MAX_MESSAGE_LENGTH) {
       setError(`这条消息有 ${message.length.toLocaleString()} 个字符，单条最多 ${MAX_MESSAGE_LENGTH.toLocaleString()} 个字符。请删减或分段发送。`);
+      return;
+    }
+    if (busy || runningRun || hasQueuedMessages) {
+      if (busy && !streamAccepted || queueSubmitting.current || !state?.conversationId) return;
+      queueSubmitting.current = true;
+      const payload = { conversationId: state.conversationId, message, reasoningDepth,
+        contextReferences: selectedContexts.map(({ type, id }) => ({ type, id })) };
+      const slot = `ardor:queue-submit:${reasoningAccount.current}:${state.conversationId}`;
+      try {
+        const stored = JSON.parse(window.sessionStorage.getItem(slot) ?? "null");
+        const requestId = stored?.fingerprint === JSON.stringify(payload) ? stored.requestId : crypto.randomUUID();
+        window.sessionStorage.setItem(slot, JSON.stringify({ requestId, fingerprint: JSON.stringify(payload) }));
+        await api("/api/agent/queue", { method: "POST", body: JSON.stringify({ ...payload, requestId }) });
+        window.sessionStorage.removeItem(slot);
+        const unchanged = readSavedDraft(state.conversationId).trim() === message;
+        if (unchanged) {
+          window.sessionStorage.removeItem(draftStorageKey(state.conversationId));
+          window.sessionStorage.removeItem(`${draftStorageKey(state.conversationId)}:service:${reasoningAccount.current}`);
+        }
+        setDraft((current) => current.trim() === message ? "" : current);
+        if (unchanged) setSelectedContexts((current) => JSON.stringify(current.map(({ type, id }) => ({ type, id }))) === JSON.stringify(payload.contextReferences) ? [] : current);
+        setHasQueuedMessages(true);
+        window.dispatchEvent(new Event("ardor:queue-refresh"));
+      } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not confirm queue submission. Retry uses the same request ID.", "暂时无法确认排队结果，重试会复用请求标识。")); }
+      finally { queueSubmitting.current = false; }
       return;
     }
     const optimisticId = `pending-user-message-${crypto.randomUUID()}`;
@@ -516,7 +546,7 @@ export default function AgentHomePage() {
     setSelectedContexts([]);
     setError(""); setRetryFailures([]); setRunSteps([]); setRunThinking(""); setStreamProgress(null);
     setConfirmations((current) => current.filter((item) => item.kind === "learning_plan"));
-    setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setBusy(true);
+    setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setStreamAccepted(false); setBusy(true);
     try {
       if (!conversationId) {
         const conversation = await api<Conversation>("/api/agent/conversations", { method: "POST" });
@@ -564,6 +594,7 @@ export default function AgentHomePage() {
           let streamFailure: AgentStreamEvent | null = null;
           if (retry > 0) setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: "" } : item));
           await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { requestId, conversationId: activeConversationId, message, reasoningDepth, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
+            if (event.type !== "error") setStreamAccepted(true);
             if (event.type === "thinking" && event.content) {
               setRunThinking((current) => (current + event.content).slice(0, 32_000));
             } else if (event.type === "delta" && event.content) {
@@ -874,7 +905,7 @@ export default function AgentHomePage() {
                     {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
                     <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-                    <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}</div><div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
+                    <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}</div><div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
                   </form>
                 </div>
               </div>
@@ -893,7 +924,9 @@ export default function AgentHomePage() {
                     )}
                   </article>
                 ))}
+                {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div>}
                 <ToolApprovals key={runningRun?.id ?? approvalRunId} requestId={runningRun?.id ?? approvalRunId} />
+                <QueuedMessages key={state?.conversationId} conversationId={state?.conversationId ?? null} activeRunId={runningRun?.id ?? approvalRunId} onPendingChange={setHasQueuedMessages} onCompleted={load} />
                 {confirmations.length > 0 && <section className="space-y-2">
                   {confirmations.map((pending) => <div key={confirmationKey(pending)} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : ["DISMISSED", "REMOVED", "EXPIRED"].includes(pending.state) ? "border-stone-200 bg-white/50" : pending.kind === "learning_plan" ? "border-violet-100 bg-white/80" : "border-rose-100 bg-white/80"}`}>
                     <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : pending.kind === "learning_plan" ? "bg-violet-50 text-violet-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : pending.kind === "learning_plan" ? <BookOpenText className="size-4" /> : <Trash2 className="size-4" />}</span>
@@ -939,7 +972,7 @@ export default function AgentHomePage() {
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
               <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label={t("Send", "发送")} disabled={busy || !!runningRun || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
+              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
             </form>
           </div>}
         </section>

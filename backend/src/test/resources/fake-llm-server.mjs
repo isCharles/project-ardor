@@ -166,6 +166,12 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+      if (payload.model === "queue-failure-probe" && isAgentRequest
+          && payload.messages?.filter((message) => message.role === "user").at(-1)?.content?.includes("Queue failure marker")) {
+        response.writeHead(503, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: { message: "Synthetic queued upstream failure" } }));
+        return;
+      }
     if (payload.model === "gpt-5-depth-probe" && isAgentRequest
       && !["low", "medium", "high"].includes(payload.reasoning_effort)) {
       response.writeHead(400, { "content-type": "application/json; charset=utf-8" });

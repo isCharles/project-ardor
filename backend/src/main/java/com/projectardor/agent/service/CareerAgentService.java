@@ -104,6 +104,13 @@ public class CareerAgentService {
     private final AgentToolApprovals toolApprovals;
     private final ConcurrentHashMap<UUID, Semaphore> userLocks = new ConcurrentHashMap<>();
 
+    public void validateQueuedMessage(UUID userId, com.projectardor.agent.web.AgentMessageRequest request) {
+        normalizeMessage(request.message());
+        store.requireActive(userId, request.conversationId());
+        resolveContexts(userId, request.contextType(), request.contextId(), request.contextReferences());
+        llmConfigService.getRuntimeConfig(userId);
+    }
+
     public CareerAgentService(
             AgentConversationStore store,
             AgentRunStore runStore,
@@ -188,6 +195,7 @@ public class CareerAgentService {
         List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
         String agentInput = contextualMessage(userId, message, references);
         Semaphore lock = userLocks.computeIfAbsent(userId, ignored -> new Semaphore(1));
+        if (runStore.hasEarlierQueuedMessage(userId, requestId)) throw new IllegalStateException("已有排队消息，请按顺序处理");
         if (!lock.tryAcquire()) {
             throw new IllegalStateException("Agent 正在处理上一条消息，请稍后再发送");
         }
@@ -278,10 +286,11 @@ public class CareerAgentService {
         boolean acquired = false;
         try {
             String message = normalizeMessage(rawMessage);
+            if (runStore.hasEarlierQueuedMessage(userId, requestId)) throw new IllegalStateException("已有排队消息，请按顺序处理");
             List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
             String agentInput = contextualMessage(userId, message, references);
             if (!lock.tryAcquire()) {
-                sendStreamError(sink, new IllegalStateException("Agent 正在处理上一条消息，请稍后再发送"), startedAt);
+                sendStreamError(sink, new LlmCallException("AGENT_BUSY", "Agent 正在处理上一条消息，请稍后再发送", true, null), startedAt);
                 return;
             }
             acquired = true;

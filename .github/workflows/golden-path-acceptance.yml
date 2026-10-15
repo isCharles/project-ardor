@@ -62,6 +62,48 @@ jobs:
           node src/test/resources/fake-llm-server.mjs > "$RUNNER_TEMP/fake-llm.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/fake-llm.pid"
 
+      - name: Verify fresh migration and populated V35 upgrade fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe_pid=""
+          trap 'if [[ -n "$probe_pid" ]]; then kill "$probe_pid" 2>/dev/null || true; fi' EXIT
+          wait_probe() {
+            for attempt in {1..90}; do
+              if curl --silent --fail http://127.0.0.1:8081/actuator/health | grep -q '"status":"UP"'; then return; fi
+              sleep 2
+            done
+            echo "Migration probe did not become healthy"
+            exit 1
+          }
+          stop_probe() {
+            test "$probe_pid" -gt 1
+            kill "$probe_pid"
+            for attempt in {1..45}; do
+              if ! kill -0 "$probe_pid" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            if kill -0 "$probe_pid" 2>/dev/null; then echo "Probe did not stop"; exit 1; fi
+            wait "$probe_pid" || true
+            probe_pid=""
+          }
+          java -jar backend/target/ardor-backend-0.6.1.jar --server.port=8081 --spring.flyway.target=35 --app.agent.queue.enabled=false --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-upgrade.log" 2>&1 &
+          probe_pid=$!
+          wait_probe
+          docker exec -i ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO users(id,email,password_hash) VALUES ('10000000-0000-4000-8000-000000000001','migration-sentinel@ardor.invalid','not-a-login-hash');
+          INSERT INTO conversations(id,user_id,title) VALUES ('10000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000001','Upgrade sentinel');
+          INSERT INTO messages(id,user_id,conversation_id,role,content) VALUES ('10000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000002','USER','Upgrade sentinel preserved');
+          SQL
+          stop_probe
+          docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ardor_fresh_probe'
+          java -jar backend/target/ardor-backend-0.6.1.jar --server.port=8081 --spring.datasource.url=jdbc:postgresql://127.0.0.1:5432/ardor_fresh_probe --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-fresh.log" 2>&1 &
+          probe_pid=$!
+          wait_probe
+          test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor_fresh_probe -Atc "SELECT COUNT(*) FROM flyway_schema_history WHERE version='36' AND success")" = "1"
+          test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor_fresh_probe -Atc "SELECT COUNT(*) FROM agent_message_queue")" = "0"
+          stop_probe
+
       - name: Run end-to-end Golden Path
         shell: bash
         run: |
@@ -70,6 +112,8 @@ jobs:
           for attempt in {1..90}; do
             if curl --silent --fail http://127.0.0.1:8080/actuator/health \
                 | grep -q '"status":"UP"'; then
+              test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor -Atc "SELECT COUNT(*) FROM flyway_schema_history WHERE version='36' AND success")" = "1"
+              test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor -Atc "SELECT COUNT(*) FROM messages WHERE id='10000000-0000-4000-8000-000000000003' AND content='Upgrade sentinel preserved'")" = "1"
               node backend/src/test/resources/golden-path-acceptance.mjs
               exit 0
             fi
@@ -133,3 +177,5 @@ jobs:
           tail -n 150 "$RUNNER_TEMP/backend.log" 2>/dev/null || true
           tail -n 80 "$RUNNER_TEMP/fake-llm.log" 2>/dev/null || true
           tail -n 80 "$RUNNER_TEMP/frontend.log" 2>/dev/null || true
+          tail -n 60 "$RUNNER_TEMP/migration-upgrade.log" 2>/dev/null || true
+          tail -n 60 "$RUNNER_TEMP/migration-fresh.log" 2>/dev/null || true

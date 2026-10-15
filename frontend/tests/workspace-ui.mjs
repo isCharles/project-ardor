@@ -28,6 +28,8 @@ try {
   let activeRun = null;
   let permissions = [];
   let permissionDecisions = [];
+  let queueItems = [];
+  let queuedRequests = [];
   let learningPlans = [];
   let learningDeleteCalls = 0;
   let learningDeleteFails = false;
@@ -61,6 +63,18 @@ try {
       conversation = { ...conversation, ...route.request().postDataJSON(), titleManuallySet: true }; body = conversation;
     }
     else if (path === "/api/agent/conversations") body = [conversation];
+    else if (path === "/api/agent/queue" && route.request().method() === "POST") {
+      const request = route.request().postDataJSON();
+      queuedRequests.push(request);
+      const item = { id: request.requestId, owner: userId, request, status: "QUEUED", blockedBy: activeRun?.id ?? null };
+      queueItems.push(item);
+      return route.fulfill({ status: 202, json: item });
+    }
+    else if (path === "/api/agent/queue") body = queueItems.filter((item) => item.owner === userId);
+    else if (path.startsWith("/api/agent/queue/") && route.request().method() === "DELETE") {
+      queueItems = queueItems.filter((item) => !path.endsWith(item.id));
+      return route.fulfill({ status: 204 });
+    }
     else if (path.endsWith("/approvals")) body = permissions;
     else if (/\/approvals\/[^/]+$/.test(path) && route.request().method() === "POST") {
       permissionDecisions.push({ path, ...route.request().postDataJSON() });
@@ -316,6 +330,28 @@ try {
   ]);
   assert.equal(permissionDecisions.length, 2);
   assert.equal(permissionDecisions[1].allow, false);
+  await draftBox.fill("Queued follow-up one");
+  await Promise.all([
+    page.waitForResponse((response) => response.url().endsWith("/api/agent/queue") && response.request().method() === "POST"),
+    page.getByRole("button", { name: "Send", exact: true }).click(),
+  ]);
+  await page.getByRole("region", { name: "Message queue", exact: true }).getByText("Queued follow-up one", { exact: true }).waitFor();
+  assert.equal(queuedRequests[0].reasoningDepth, "QUICK");
+  await draftBox.fill("Queued follow-up two");
+  await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
+  await page.getByRole("button", { name: "Max", exact: true }).click();
+  await draftBox.click();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().endsWith("/api/agent/queue") && response.request().method() === "POST"),
+    page.getByRole("button", { name: "Send", exact: true }).click(),
+  ]);
+  assert.equal(queuedRequests[1].reasoningDepth, "DEEP");
+  assert.notEqual(queuedRequests[0].requestId, queuedRequests[1].requestId);
+  await page.reload();
+  await page.getByRole("region", { name: "Message queue", exact: true }).getByText("Queued follow-up two", { exact: true }).waitFor();
+  const secondQueued = page.getByRole("article").filter({ hasText: "Queued follow-up two" });
+  await secondQueued.getByRole("button", { name: "Remove from queue", exact: true }).click();
+  await secondQueued.waitFor({ state: "detached" });
   assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).isEnabled(), true);
   activeRun = null;
   userId = "different-outbox-owner";
