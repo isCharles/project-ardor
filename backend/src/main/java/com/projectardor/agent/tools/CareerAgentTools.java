@@ -174,6 +174,7 @@ public class CareerAgentTools {
         private final UUID runRequestId;
         private boolean interviewAnswerContext;
         private String interruptedRequest = "";
+        private String dateCorrectionContext = "";
         /* Destructive tools no longer delete. They hand the user a button and
            record it here; the caller of the run turns these into stream
            events, and nothing is removed until the person presses one. */
@@ -191,11 +192,15 @@ public class CareerAgentTools {
             return List.copyOf(pending);
         }
         @Override public boolean permitsWrite(String tool) {
+            if (com.projectardor.agent.service.ToolIntentPolicy.revokesDateCorrection(trustedUserRequest)
+                    && Set.of("update_calendar_task", "update_recurring_task", "update_learning_plan").contains(tool)) return false;
             return tool.equals("submit_interview_answer") && interviewAnswerContext
                     || com.projectardor.agent.service.ToolIntentPolicy.permits(tool, trustedUserRequest)
+                    || com.projectardor.agent.service.ToolIntentPolicy.permitsContextualDateUpdate(tool, trustedUserRequest, dateCorrectionContext)
                     || com.projectardor.agent.service.ToolIntentPolicy.permitsInherited(tool, trustedUserRequest, interruptedRequest);
         }
         public BoundCareerTools withInterviewAnswerContext(boolean active) { interviewAnswerContext = active; return this; }
+        public BoundCareerTools withDateCorrectionContext(String context) { dateCorrectionContext = context == null ? "" : context; return this; }
         public BoundCareerTools withInterruptedRequest(String request) { interruptedRequest = request == null ? "" : request; return this; }
 
         /**

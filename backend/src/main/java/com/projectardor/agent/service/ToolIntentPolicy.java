@@ -16,7 +16,7 @@ public final class ToolIntentPolicy {
     /** A narrowed/revoked instruction cannot inherit an unrestricted old capability.
      * Target-specific exemptions require a fresh positive request, not model interpretation. */
     public static boolean permitsInherited(String tool, String currentRequest, String interruptedRequest) {
-        if (currentRequest != null && Pattern.compile("不要|不用|不需要|别|取消|停止|撤销|保留|除了|除外|仅|只|先不|don['’]?t|do not|never|cancel|stop|revoke|except|only|keep|instead", Pattern.CASE_INSENSITIVE)
+        if (currentRequest != null && Pattern.compile("不要|不用|不需要|别|取消|停止|撤销|算了|保留|除了|除外|仅|只|先不|don['’]?t|do not|never|cancel|stop|revoke|except|only|keep|instead", Pattern.CASE_INSENSITIVE)
                 .matcher(currentRequest).find()) return false;
         return permits(tool, interruptedRequest);
     }
@@ -24,6 +24,7 @@ public final class ToolIntentPolicy {
         String request = trustedRequest == null ? "" : trustedRequest.toLowerCase(Locale.ROOT)
                 .replaceAll("(?s)```.*?```|<untrusted_external_content[^>]*>.*?</untrusted_external_content>", "")
                 .replaceAll("(?m)^\\s*>.*$", "");
+        if (DATE_WRITES.contains(tool) && revokesDateCorrection(request)) return false;
         String domain = switch (tool) {
             case "add_memory", "update_memory" -> "记住|记忆|记一下|remember|memor(?:y|ies)";
             case "create_calendar_task", "update_calendar_task", "create_recurring_task", "update_recurring_task" -> "日历|日程|待办|安排|提醒|calendar|schedule|remind|task";
@@ -36,15 +37,14 @@ public final class ToolIntentPolicy {
             case "record_application_count", "set_application_rhythm" -> "投递|投了|已投|申请|application|applied";
             default -> "(?!)";
         };
-        // An implicit date correction need not repeat the module, but naming a
-        // different module must not grant this capability (e.g. a resume date).
-        if (Set.of("update_calendar_task", "update_recurring_task", "update_learning_plan").contains(tool)
-                && permitsDateCorrection(request)
-                && (Pattern.compile(domain, Pattern.CASE_INSENSITIVE).matcher(request).find()
-                    || !Pattern.compile("日历|日程|待办|安排|提醒|学习|讲解|练习|简历|记忆|面试|面经|复盘|知识库|投递|\\b(?:calendar|schedule|remind|tasks?|learn|lesson|study|practice|resume|résumé|memory|memories|flashcards?|interview|recap|knowledge|application)\\b", Pattern.CASE_INSENSITIVE).matcher(request).find())) return true;
+        if (DATE_WRITES.contains(tool) && permitsDateCorrection(request)) {
+            return java.util.Arrays.stream(request.split("[。！？!?;；\\n，,]"))
+                    .anyMatch(clause -> permitsDateCorrection(clause) && tool.equals(dateContext(clause)));
+        }
         String action = switch (tool) {
             case "add_memory" -> "记住|记一下|记录|保存|remember|record|save";
-            case "update_memory", "update_calendar_task", "update_recurring_task", "update_learning_plan", "update_memory_card", "update_interview_recap_metadata" -> "修改|修正|调整|改成|改到|改为|更新|update|change|edit|correct|reschedule";
+            case "update_calendar_task", "update_recurring_task", "update_learning_plan" -> "修改|修正|调整|改成|改到|改为|更新|update|change|edit|correct|reschedule";
+            case "update_memory", "update_memory_card", "update_interview_recap_metadata" -> "修改|修正|调整|改成|更新|update|change|edit|correct";
             case "create_calendar_task", "create_recurring_task" -> "创建|新增|添加|安排|提醒|create|add|schedule|remind";
             case "begin_learning_plan" -> "开始|学习|讲解|做|start|begin|learn|study|practice";
             case "create_memory_card" -> "创建|新增|添加|生成|整理|制作|create|add|generate|make|prepare";
@@ -73,7 +73,38 @@ public final class ToolIntentPolicy {
         String update = "(?:把|将)[^。！？\\n：:]{1,100}(?:修改|调整|改成|改到|改为|挪到|移到|排到|推迟|提前)|(?:修改|调整|改一下|改下|改成|改到|改为|挪到|移到|排到|推迟|提前|reschedule|change|move|shift|update|postpone)";
         return java.util.Arrays.stream(request.split("[。！？!?;；\\n，,]"))
                 .anyMatch(clause -> Pattern.compile(prefix + "(?:" + update + ")", Pattern.CASE_INSENSITIVE).matcher(clause).find()
-                    && Pattern.compile("日期|时间|明天|后天|今天|下周|本周|[0-9]+[号日点时]|[0-9]{1,2}:[0-9]{2}|date|time|tomorrow|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday", Pattern.CASE_INSENSITIVE).matcher(clause).find());
+                    && Pattern.compile("日期|时间|明天|后天|今天|[上下本这]周|周[一二三四五六日天]|星期[一二三四五六日天]|[0-9]+[号日点时]|[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{1,2}:[0-9]{2}|date|time|tomorrow|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december", Pattern.CASE_INSENSITIVE).matcher(clause).find());
+    }
+    private static final Set<String> DATE_WRITES = Set.of("update_calendar_task", "update_recurring_task", "update_learning_plan");
+    public static boolean revokesDateCorrection(String request) {
+        return request != null && Pattern.compile("算了|撤销|先不改|(?:别|不要|不用|不需要|停止)(?:再)?(?:修改|调整|改|挪|移|排|推迟|提前)|never ?mind|\\b(?:don['’]?t|do not|stop)\\s+(?:change|move|reschedule|edit|update|postpone)|\\bcancel\\b", Pattern.CASE_INSENSITIVE).matcher(request).find();
+    }
+    /** Exactly one module, from authenticated UI context or the user's wording, not assistant prose. */
+    public static String dateContext(String wording) {
+        if (wording == null) return "";
+        String clean = wording.toLowerCase(Locale.ROOT).replaceAll("(?s)```.*?```|<untrusted_external_content[^>]*>.*?</untrusted_external_content>", "").replaceAll("(?m)^\\s*>.*$", "");
+        if (Pattern.compile("简历|合同|记忆|面试|面经|知识库|投递|\\b(?:resume|résumé|contract|memory|interview|knowledge|application)\\b").matcher(clean).find()) return "";
+        boolean learning = Pattern.compile("学习|讲解|练习|\\b(?:learning|lesson|study|practice)\\b").matcher(clean).find();
+        boolean calendar = Pattern.compile("日历|日程|待办|提醒|\\b(?:calendar|tasks?|reminder)\\b").matcher(clean).find();
+        if (learning == calendar) return "";
+        if (learning) return "update_learning_plan";
+        return Pattern.compile("重复|每周|每天|定期|\\b(?:recurring|weekly|daily)\\b").matcher(clean).find() ? "update_recurring_task" : "update_calendar_task";
+    }
+    public static boolean permitsContextualDateUpdate(String tool, String request, String trustedContext) {
+        String wording = request == null ? "" : request.toLowerCase(Locale.ROOT)
+                .replaceAll("(?s)```.*?```|<untrusted_external_content[^>]*>.*?</untrusted_external_content>", "").replaceAll("(?m)^\\s*>.*$", "");
+        if (!DATE_WRITES.contains(tool) || !tool.equals(trustedContext) || revokesDateCorrection(wording) || !permitsDateCorrection(wording)) return false;
+        // Do not reinterpret an arbitrary named object (e.g. a contract) as an
+        // old plan. Only a generic/pronominal date correction can inherit scope.
+        return java.util.Arrays.stream(wording.split("[。！？!?;；\\n，,]")).anyMatch(clause -> {
+            if (!permitsDateCorrection(clause)) return false;
+            String residual = clause.toLowerCase(Locale.ROOT)
+                    .replaceAll("[0-9]{4}-[0-9]{2}-[0-9]{2}(?:t[0-9:.]+z)?", "")
+                    .replaceAll("\\b(?:please|can|could|you|help|me|reschedule|change|move|shift|update|postpone|this|that|it|the|first|second|third|one|to|for|on|at|date|time|tomorrow|next|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)\\b", "")
+                    .replaceAll("请你?|麻烦|帮我|我希望你?|把|将|这个|那个|这些|那些|它|一下|修改|调整|改一下|改下|改成|改到|改为|挪到|移到|排到|推迟|提前|日期|时间|明天|后天|今天|星期|[上下本这]?周|上午|下午|晚上|中午|的|第|[一二三四五六七八九十日天个号点时分秒]", "")
+                    .replaceAll("[\\s\\p{P}0-9]+", "");
+            return residual.isEmpty();
+        });
     }
     /** Personal memory may quote only the user's own supplied wording, not retrieved assertions. */
     public static boolean groundedMemory(String trustedRequest, String memory) {

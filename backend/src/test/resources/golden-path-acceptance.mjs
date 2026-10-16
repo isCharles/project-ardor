@@ -836,7 +836,7 @@ async function main() {
   const dateConversation = await asyncOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
   const correctedDate = new Date(Date.now() + 3 * 86400000).toISOString();
   const dateRequest = { requestId: randomUUID(), conversationId: dateConversation.id,
-    message: `请把这个日期改到${correctedDate}。目标 ${asyncPlanId}` };
+    message: `请把这个日期改到${correctedDate}。目标 ${asyncPlanId}`, contextReferences: [{ type: "LEARNING", id: asyncPlanId }] };
   await asyncOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: dateRequest });
   let dateFinished = false;
   for (let attempt = 0; attempt < 100; attempt++) {

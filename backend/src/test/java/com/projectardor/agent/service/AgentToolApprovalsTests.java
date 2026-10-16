@@ -30,7 +30,7 @@ class AgentToolApprovalsTests {
 
     public static class DateUpdateProbe implements ToolIntentScope {
         final AtomicInteger calls = new AtomicInteger();
-        public boolean permitsWrite(String tool) { return ToolIntentPolicy.permits(tool, "帮我把第二个改到明天"); }
+        public boolean permitsWrite(String tool) { return ToolIntentPolicy.permitsContextualDateUpdate(tool, "帮我把第二个改到明天", "update_learning_plan"); }
         @Tool(name = "update_learning_plan", value = "Synthetic date correction")
         public String update() { calls.incrementAndGet(); return "updated"; }
     }
