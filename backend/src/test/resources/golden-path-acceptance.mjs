@@ -121,6 +121,32 @@ async function main() {
     method: "POST", expected: 201,
     body: { email: `golden-stranger-${suffix}@ardor.invalid`, password, displayName: "Golden Path Stranger" },
   });
+  const sidebarOwner = new Client();
+  const sidebarUser = await sidebarOwner.request("/api/auth/register", { method: "POST", expected: 201,
+    body: { email: `golden-sidebar-${suffix}@ardor.invalid`, password, displayName: "Sidebar sync" } });
+  const initialSidebar = await sidebarOwner.request("/api/profile/sidebar");
+  assert.equal(initialSidebar.configured, false);
+  assert.equal(initialSidebar.revision, 0);
+  const otherDevice = new Client();
+  await otherDevice.request("/api/auth/login", { method: "POST", body: { email: `golden-sidebar-${suffix}@ardor.invalid`, password } });
+  const sharedSidebar = await sidebarOwner.request("/api/profile/sidebar", { method: "PUT",
+    body: { hrefs: ["/app", "/app/learning"], expectedRevision: 0, expectedUserId: sidebarUser.id } });
+  assert.deepEqual(await otherDevice.request("/api/profile/sidebar"), sharedSidebar, "Independent login sessions share account sidebar preferences");
+  assert.equal((await stranger.request("/api/profile/sidebar")).configured, false);
+  await stranger.request("/api/profile/sidebar", { method: "PUT", expected: 400,
+    body: { hrefs: ["/app"], expectedRevision: 0, expectedUserId: sidebarUser.id } });
+  await otherDevice.request("/api/profile/sidebar", { method: "PUT", expected: 409,
+    body: { hrefs: ["/app/cards"], expectedRevision: 0, expectedUserId: sidebarUser.id } });
+  await sidebarOwner.request("/api/profile/sidebar", { method: "PUT", expected: 400,
+    body: { hrefs: ["/app/admin"], expectedRevision: 1, expectedUserId: sidebarUser.id } });
+  const writes = await Promise.allSettled([sidebarOwner, otherDevice].map((client, index) => client.request("/api/profile/sidebar", {
+    method: "PUT", body: { hrefs: [index ? "/app/cards" : "/app/calendar"], expectedRevision: 1, expectedUserId: sidebarUser.id } })));
+  assert.equal(writes.filter(result => result.status === "fulfilled").length, 1, "Concurrent writes cannot silently overwrite each other");
+  assert.match(String(writes.find(result => result.status === "rejected").reason), /got 409/);
+  const savedSidebar = await sidebarOwner.request("/api/profile/sidebar");
+  assert.equal(savedSidebar.revision, 2);
+  await sidebarOwner.request("/api/profile", { method: "PUT", body: { displayName: "Sidebar sync", headline: "Updated profile", targetRoles: [], timezone: "Asia/Shanghai" } });
+  assert.deepEqual(await otherDevice.request("/api/profile/sidebar"), savedSidebar, "Profile edits preserve sidebar preferences");
   await owner.request("/api/settings/llm", {
     method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
       model: "golden-path-model", apiKey: "disposable-fake-model-key" },
