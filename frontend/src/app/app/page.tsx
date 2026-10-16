@@ -20,6 +20,7 @@ import { ServicePicker } from "@/components/ardor/service-picker";
 import { type ToolMeasurement } from "@/components/ardor/tool-duration";
 import { ExecutionTrace } from "@/components/ardor/execution-trace";
 import { DeletionPermissions } from "@/components/ardor/deletion-permissions";
+import { OperationPermissions } from "@/components/ardor/operation-permissions";
 import { QueuedMessages } from "@/components/ardor/queued-messages";
 import type { AgentFeature } from "@/lib/agent-features";
 import { featureHref } from "@/lib/agent-features";
@@ -141,6 +142,7 @@ export default function AgentHomePage() {
   const [streamPhase, setStreamPhase] = useState("WAITING_DATA");
   const [feedback, setFeedback] = useState("");
   const stopNotices = useRef(new Set<string>());
+  const confirmedOperations = useRef(new Set<string>());
   const notifyStopped = useCallback((id: string) => {
     if (stopNotices.current.has(id)) return;
     stopNotices.current.add(id);
@@ -737,6 +739,9 @@ export default function AgentHomePage() {
               setRunSteps((current) => [...current, { key: `${event.toolName}-${current.length}`, label: event.label ?? "调用工具", elapsedMs: 0, done: false }]);
             } else if (event.type === "tool_end" && event.toolName) {
               setStreamPhase("WAITING_DATA");
+              if (confirmedOperations.current.delete(event.toolName)) setFeedback(event.toolStatus === "COMPLETED"
+                ? t("Operation completed. Details are in the work record.", "操作已完成，详情保留在工作记录中。")
+                : t("The operation did not complete successfully. Check the work record.", "操作未成功完成，请查看工作记录。"));
               setRunSteps((current) => { const index = current.findLastIndex((step) => step.key.startsWith(`${event.toolName}-`) && !step.done); return index < 0 ? current : current.map((step, i) => i === index ? { ...step, label: event.label ?? step.label, elapsedMs: event.elapsedMs ?? 0, approvalWaitMs: event.approvalWaitMs, businessMs: event.businessMs, status: event.toolStatus, done: true } : step); });
               if (["analyze_resume", "organize_interview_recap", "research_knowledge_from_web"].includes(event.toolName)) window.dispatchEvent(new Event("ardor:background-refresh"));
             } else if (event.type === "done" && event.messageId && event.conversationId) {
@@ -1177,6 +1182,10 @@ export default function AgentHomePage() {
 
           {messages.length > 0 && <div className="ardor-composer-enter relative z-10 shrink-0 px-4 pb-5 md:px-8">
             {feedbackBanner}
+            {(runningRun?.id ?? approvalRunId) && <OperationPermissions key={runningRun?.id ?? approvalRunId} runId={(runningRun?.id ?? approvalRunId)!}
+              onConfirming={tool => { confirmedOperations.current.add(tool); setFeedback(t("Submitting your confirmation…", "正在提交确认…")); }}
+              onConfirmed={tool => { if (confirmedOperations.current.has(tool)) setFeedback(t("Confirmed. Waiting for the operation result…", "已确认，正在等待执行结果…")); }}
+              onFailed={tool => { if (confirmedOperations.current.delete(tool)) setFeedback(t("Confirmation failed. Nothing has been confirmed.", "确认未成功提交，本次尚未确认。")); }} />}
             {deletionDock}
             {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">

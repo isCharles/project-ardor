@@ -58,6 +58,7 @@ public class CareerAgentService {
             4. 创建面试前必须知道目标岗位；不知道就只问一个最关键的澄清问题。目标公司和简历分析均可为空。
             5. 用户在对话中回答当前面试题时，先读取下一题，再使用返回的面试 ID 和题目 ID 提交答案。
             6. 工具已经完成的动作要明确说明结果；工具失败时解释原因，不要声称已经成功。
+            6a. 查询直接读取；新增、修改、提交、评估等有副作用的工具会在界面展示具体操作建议，等待用户点击确认后才执行。不要以聊天中的同意代替界面确认；拒绝、过期或停止后不要重复尝试，也不能声称已经改动。删除和学习生成使用其已有的具体业务确认卡。
             7. 不要求用户手工提供系统内部 UUID；应通过列表工具自行发现。
             8. 回复使用简洁自然的中文，通常控制在 2 到 6 句话；除非用户要求，不输出大段教程。
             9. 上传文件、修改个人资料或 LLM 设置需要页面操作时，分别引导到“简历分析”或“设置”入口。
@@ -348,7 +349,7 @@ public class CareerAgentService {
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, depth, lease))
                     .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory)
-                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings))
+                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings, sink::waitingForApproval))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
             sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)
@@ -843,5 +844,6 @@ public class CareerAgentService {
     public interface StreamSink {
         void send(AgentStreamEvent event);
         void complete();
+        default void waitingForApproval(boolean waiting) {}
     }
 }

@@ -31,6 +31,7 @@ try {
   let activeRun = null;
   let permissions = [];
   let permissionDecisions = [];
+  let permissionDecisionFails = false;
   let deletionCalls = 0;
   let deletionFails = false;
   const steerRequests = [];
@@ -125,6 +126,7 @@ try {
     }
     else if (path.endsWith("/approvals")) body = permissions;
     else if (/\/approvals\/[^/]+$/.test(path) && route.request().method() === "POST") {
+      if (permissionDecisionFails) return route.fulfill({ status: 503, json: { message: "Synthetic confirmation failure" } });
       permissionDecisions.push({ path, ...route.request().postDataJSON() });
       permissions = [];
       return route.fulfill({ status: 204 });
@@ -142,8 +144,9 @@ try {
     }
     else if (path === "/api/profile") body = { displayName: "Fixture", headline: "", targetRoles: [], timezone: "Asia/Shanghai" };
     else if (path === "/api/resumes") body = [{ id: "resume", originalFilename: "Synthetic resume.pdf" }];
-    else if (path === "/api/memory-cards") body = [];
+    else if (path === "/api/memory-cards") body = [{ id: "card-fixture", front: "Synthetic card to review", back: "Fixture answer" }];
     else if (path === "/api/learning-plans") body = learningPlans;
+    else if (path === "/api/learning-plans/owned-plan") body = { id: "owned-plan", concept: "JVM memory", scheduledAt: "2026-10-18T01:00:00Z" };
     else if (path === "/api/learning-plans/delete-fixture" && route.request().method() === "DELETE") {
       learningDeleteCalls++;
       if (learningDeleteFails) return route.fulfill({ status: 503, json: { message: "Synthetic deletion failure" } });
@@ -419,13 +422,24 @@ try {
   await draftBox.fill("@Learning");
   await page.getByRole("option", { name: "Learning", exact: true }).click();
   await draftBox.fill("Make a study outline");
-  permissions = [{ id: "permission-one", tool: "get_learning_plan", arguments: '{"planId":"exact-owned-target"}', status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
+  permissions = [];
   await page.getByRole("button", { name: "Send", exact: true }).click();
   for (let attempt = 0; attempt < 100 && !releaseStream; attempt++) await page.waitForTimeout(20);
   assert.ok(releaseStream, "Synthetic stream must be in flight");
   const toolPermissions = page.getByRole("region", { name: "Tool permissions", exact: true });
   assert.equal(await toolPermissions.count(), 0, "Ordinary reads must not show permission prompts");
   assert.equal(permissionDecisions.length, 0);
+  permissions = [{ id: "permission-date", tool: "update_learning_plan", arguments: JSON.stringify({ planId: "owned-plan", scheduledAt: "2026-10-19T01:00:00Z" }), status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
+  const suggestedOperations = page.getByRole("region", { name: "Suggested operations", exact: true });
+  await suggestedOperations.getByRole("heading", { name: "Change a learning plan · JVM memory", exact: true }).waitFor();
+  await suggestedOperations.getByText("Lesson content and practice records are preserved.", { exact: true }).waitFor();
+  assert.equal(calendarWrites, 0, "A suggestion must not write business data");
+  const operationBounds = await suggestedOperations.boundingBox();
+  const inputBounds = await draftBox.boundingBox();
+  assert.ok(operationBounds.y + operationBounds.height <= inputBounds.y, "Operation suggestions sit above the composer");
+  await suggestedOperations.getByRole("button", { name: "Reject", exact: true }).click();
+  await suggestedOperations.waitFor({ state: "hidden" });
+  assert.deepEqual(permissionDecisions.map(value => value.allow), [false]);
   assert.equal(await draftBox.isEnabled(), true);
   await draftBox.fill("Next message draft survives completion");
   await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
@@ -474,7 +488,24 @@ try {
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   assert.equal(await draftBox.isEnabled(), true);
   assert.equal(await toolPermissions.count(), 0, "Ordinary writes must not show permission prompts");
-  assert.equal(permissionDecisions.length, 0);
+  assert.equal(permissionDecisions.length, 1);
+  await suggestedOperations.getByRole("heading", { name: "Remember this information", exact: true }).waitFor();
+  permissionDecisionFails = true;
+  await suggestedOperations.getByRole("button", { name: "Confirm", exact: true }).click();
+  await suggestedOperations.getByText("Synthetic confirmation failure", { exact: true }).waitFor();
+  await page.waitForTimeout(2200);
+  await suggestedOperations.getByText("Synthetic confirmation failure", { exact: true }).waitFor();
+  assert.equal(permissionDecisions.length, 1, "Failed decisions do not grant execution");
+  permissionDecisionFails = false;
+  await suggestedOperations.getByRole("button", { name: "Confirm", exact: true }).click();
+  await suggestedOperations.waitFor({ state: "hidden" });
+  assert.deepEqual(permissionDecisions.map(value => value.allow), [false, true]);
+  for (const tool of ["update_memory_card", "review_memory_card", "suspend_memory_card"]) {
+    permissions = [{ id: `permission-${tool}`, tool, arguments: JSON.stringify({ cardId: "card-fixture" }), status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
+    await suggestedOperations.getByRole("heading").filter({ hasText: "Synthetic card to review" }).waitFor();
+    await suggestedOperations.getByRole("button", { name: "Reject", exact: true }).click();
+    await suggestedOperations.waitFor({ state: "hidden" });
+  }
   activeRun = { ...activeRun, id: "queued-active-run", message: "A new queued instruction after the original stopped", progressPhase: "THINKING" };
   await page.reload();
   await page.getByRole("article").filter({ hasText: activeRun.message }).waitFor();

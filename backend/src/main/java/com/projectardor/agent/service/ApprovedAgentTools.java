@@ -24,6 +24,9 @@ final class ApprovedAgentTools {
         return wrap(bound, userId, requestId, approvals, lease, new AgentToolTimings());
     }
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting -> {});
+    }
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, java.util.function.Consumer<Boolean> waiting) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         for (var method : bound.getClass().getMethods()) {
             if (!method.isAnnotationPresent(Tool.class)) continue;
@@ -34,18 +37,24 @@ final class ApprovedAgentTools {
                 boolean destructive = specification.name().startsWith("delete_") || specification.name().equals("clear_all_memories");
                 boolean proposal = PROPOSALS.contains(specification.name());
                 boolean read = ToolIntentPolicy.isRead(specification.name());
-                boolean scopedWrite = requestId != null && bound instanceof ToolIntentScope scope && scope.permitsWrite(specification.name());
-                boolean allowed = (!destructive || proposal) && (proposal || read || scopedWrite)
-                        && approvals.canPropose(userId, requestId);
+                boolean allowed = (!destructive || proposal) && (proposal || read || requestId != null)
+                        && (read ? approvals.canRead(userId, requestId) : approvals.canPropose(userId, requestId));
+                long requested = timings.now();
+                if (allowed && !proposal && !read) {
+                    waiting.accept(true);
+                    try { allowed = approvals.await(userId, requestId, specification.name(), request.arguments())
+                            && approvals.canPropose(userId, requestId); }
+                    finally { waiting.accept(false); }
+                }
                 long approved = timings.now();
                 if (!allowed) {
-                    timings.record(request.id(), approved, approved, false);
-                    return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"本轮用户请求没有授权这类写入，或执行已停止。读取不需确认；需要写入时请先自然澄清用户意图。删除只能提出界面确认。\"}";
+                    timings.record(request.id(), requested, approved, false);
+                    return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"用户未确认、已拒绝、确认已过期或执行已停止。未执行本次操作，不要重复请求或声称已完成。\"}";
                 }
                 java.util.concurrent.atomic.AtomicBoolean executed = new java.util.concurrent.atomic.AtomicBoolean();
                 java.util.function.Supplier<String> call = () -> { executed.set(true); return delegate.execute(request, memoryId); };
                 try { return lease == null ? call.get() : lease.execute(call); }
-                finally { timings.record(request.id(), approved, approved, executed.get()); }
+                finally { timings.record(request.id(), requested, approved, executed.get()); }
             });
         }
         return result;
