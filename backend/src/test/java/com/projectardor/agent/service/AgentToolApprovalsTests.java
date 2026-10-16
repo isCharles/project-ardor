@@ -15,13 +15,17 @@ class AgentToolApprovalsTests {
     private final UUID run = UUID.randomUUID();
     private final AgentToolApprovals gate = new AgentToolApprovals(Duration.ofSeconds(5));
 
-    @Test void conversationalDateUpdateExecutesWithoutPermissionDialogButOnlyForActiveOwner() {
+    @Test void conversationalDateUpdateWaitsForConfirmationAndStillRequiresActiveOwner() throws Exception {
         gate.begin(owner, run);
         var probe = new DateUpdateProbe();
         var call = ToolExecutionRequest.builder().id("date-change").name("update_learning_plan").arguments("{}").build();
         var executor = ApprovedAgentTools.wrap(probe, owner, run, gate).values().iterator().next();
-        assertThat(executor.execute(call, null)).contains("updated");
-        assertThat(gate.list(owner, run)).isEmpty();
+        var pendingResult = CompletableFuture.supplyAsync(() -> executor.execute(call, null));
+        var proposal = pending(gate);
+        assertThat(probe.calls).hasValue(0);
+        gate.decide(owner, run, proposal.id(), true);
+        assertThat(pendingResult.get(2, TimeUnit.SECONDS)).contains("updated");
+        assertThat(gate.list(owner, run).getFirst().status()).isEqualTo("CONSUMED");
         assertThat(probe.calls).hasValue(1);
         gate.close(owner, run);
         assertThat(executor.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
@@ -175,17 +179,20 @@ class AgentToolApprovalsTests {
         public String delete() { calls.incrementAndGet(); return "deleted"; }
     }
 
-    @Test void trustedWriteScopeAndDurableRunAreBothRequired() {
+    @Test void writesRequireAnExactUiConfirmationNotKeywordScope() throws Exception {
         var probe = new WriteProbe();
         var call = ToolExecutionRequest.builder().name("create_calendar_task").arguments("{}").build();
         assertThat(ApprovedAgentTools.wrap(probe, owner, null, gate).values().iterator().next().execute(call, null)).contains("PERMISSION_NOT_GRANTED");
         gate.begin(owner, run);
         probe.request = "Search the web for calendar examples";
         var executor = ApprovedAgentTools.wrap(probe, owner, run, gate).values().iterator().next();
-        assertThat(executor.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
-        probe.request = "Please create a calendar task for tomorrow";
-        assertThat(executor.execute(call, null)).contains("created");
-        assertThat(gate.list(owner, run)).isEmpty();
+        var result = CompletableFuture.supplyAsync(() -> executor.execute(call, null));
+        var proposal = pending(gate);
+        assertThat(probe.calls).hasValue(0);
+        assertThat(proposal.tool()).isEqualTo("create_calendar_task");
+        assertThat(proposal.arguments()).isEqualTo("{}");
+        gate.decide(owner, run, proposal.id(), true);
+        assertThat(result.get(2, TimeUnit.SECONDS)).contains("created");
         gate.close(owner, run);
         assertThat(executor.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
         assertThat(probe.calls).hasValue(1);

@@ -656,7 +656,7 @@ async function main() {
   await snapshotOwner.request("/api/agent/memory/snapshot", { method: "DELETE", expected: 204, body: { ids: [snapshotOld.id] } });
   await snapshotOwner.request("/api/agent/memory/snapshot", { method: "DELETE", expected: 404, body: { ids: [snapshotOld.id] } });
   assert.deepEqual((await snapshotOwner.request("/api/agent/memory/items")).map(item => item.id), [snapshotNew.id]);
-  // Ordinary writes require no per-tool approval; deletion still only prepares a real UI proposal.
+  // Reads are immediate; writes wait for an exact owner confirmation.
   for (const allow of [false, true]) {
     const permissionOwner = new Client();
     await permissionOwner.request("/api/auth/register", { method: "POST", expected: 201,
@@ -668,10 +668,18 @@ async function main() {
     await permissionOwner.request("/api/agent/queue", { method: "POST", expected: 202,
       body: { requestId: permissionRunId, conversationId: permissionConversation.id, message: "Remember Synthetic approved preference" } });
     const approvalsPath = `/api/agent/runs/${permissionRunId}/approvals`;
+    let decisionSent = false;
     let permissionFinished = false;
     for (let attempt = 0; attempt < 100; attempt++) {
       try {
-        assert.deepEqual(await permissionOwner.request(approvalsPath), [], "Ordinary tools must not create permission requests");
+        const proposals = await permissionOwner.request(approvalsPath);
+        const pending = proposals.find(item => item.status === "PENDING");
+        if (pending && !decisionSent) {
+          assert.equal((await permissionOwner.request("/api/agent/memory/items")).length,0,"No write before confirmation");
+          await stranger.request(`${approvalsPath}/${pending.id}`,{method:"POST",expected:404,body:{allow:true}});
+          await permissionOwner.request(`${approvalsPath}/${pending.id}`,{method:"POST",expected:204,body:{allow}});
+          decisionSent = true;
+        }
         const run = await permissionOwner.request(`/api/agent/runs/${permissionRunId}`);
         if (run.status === "COMPLETED") { permissionFinished = true; break; }
         assert.notEqual(run.status, "FAILED");
@@ -680,9 +688,11 @@ async function main() {
       await sleep(100);
     }
     assert.ok(permissionFinished);
+    assert.ok(decisionSent);
     await stranger.request(approvalsPath, { expected: 404 });
     const savedMemories = await permissionOwner.request("/api/agent/memory/items");
-    assert.equal(savedMemories.length, 1);
+    assert.equal(savedMemories.length, allow ? 1 : 0);
+    if (!allow) continue;
     assert.equal(savedMemories[0].content, "Synthetic approved preference");
     await permissionOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE",
       baseUrl: modelBase, model: "deletion-proposal-integration-probe", apiKey: "disposable-fake-model-key" } });
@@ -865,13 +875,24 @@ async function main() {
     message: `请把这个日期改到${correctedDate}。目标 ${asyncPlanId}`, contextReferences: [{ type: "LEARNING", id: asyncPlanId }] };
   await asyncOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: dateRequest });
   let dateFinished = false;
+  let dateConfirmed = false;
   for (let attempt = 0; attempt < 100; attempt++) {
     const queued = await asyncOwner.request(`/api/agent/queue?conversationId=${dateConversation.id}`);
+    if (!dateConfirmed) {
+      try {
+        const proposals=await asyncOwner.request(`/api/agent/runs/${dateRequest.requestId}/approvals`);
+        const pending=proposals.find(item=>item.status==="PENDING");
+        if(pending) {
+          assert.equal((await asyncOwner.request(`/api/learning-plans/${asyncPlanId}`)).scheduledAt,graded.scheduledAt,"Date stays unchanged before confirmation");
+          await asyncOwner.request(`/api/agent/runs/${dateRequest.requestId}/approvals/${pending.id}`,{method:"POST",expected:204,body:{allow:true}});
+          dateConfirmed=true;
+        }
+      } catch(error) { if(!error.message.includes("got 404")) throw error; }
+    }
     if (queued.find(item => item.id === dateRequest.requestId)?.status === "COMPLETED") { dateFinished = true; break; }
     await sleep(100);
   }
-  assert.ok(dateFinished, "An implicit conversational date update must execute without a permission dialog");
-  assert.deepEqual(await asyncOwner.request(`/api/agent/runs/${dateRequest.requestId}/approvals`), []);
+  assert.ok(dateFinished && dateConfirmed, "A date update executes only after explicit confirmation");
   const rescheduledLesson = await asyncOwner.request(`/api/learning-plans/${asyncPlanId}`);
   assert.equal(new Date(rescheduledLesson.scheduledAt).getTime(), new Date(correctedDate).getTime());
   assert.deepEqual(rescheduledLesson.lesson, graded.lesson);
