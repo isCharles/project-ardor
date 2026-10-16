@@ -8,7 +8,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { type TaskSummary } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 import { AppDialog } from "@/components/ui/app-dialog";
@@ -29,12 +29,29 @@ const workspaces = [
 ] as const;
 const defaultHrefs = ["/app", "/app/resumes", "/app/interviews", "/app/cards", "/app/calendar", "/app/applications"];
 function preferenceKey(userId: string) { return `ardor:workspace-rail:v1:${userId}`; }
+function cacheKey(userId: string) { return `ardor:workspace-rail:v2:${userId}`; }
+type SidebarView = { userId: string; hrefs: string[]; revision: number; configured: boolean };
+function validView(value: SidebarView): SidebarView {
+  if (!Array.isArray(value?.hrefs) || typeof value.userId !== "string" || !Number.isSafeInteger(value.revision) || value.revision < 0 || typeof value.configured !== "boolean") throw new Error("Invalid sidebar preferences response");
+  return { ...value, hrefs: ["/app", ...workspaces.filter(item => item.href !== "/app" && value.hrefs.includes(item.href)).map(item => item.href)] };
+}
+function cacheView(owner: string, view: SidebarView) {
+  try {
+    const previous = JSON.parse(window.localStorage.getItem(cacheKey(owner)) ?? "null");
+    if (previous && previous.revision > view.revision) return;
+    window.localStorage.setItem(cacheKey(owner), JSON.stringify(view));
+  } catch { /* Account storage succeeded even when this optional device cache is unavailable. */ }
+}
+function legacyHrefs(userId: string): string[] | null {
+  try { const value: unknown = JSON.parse(window.localStorage.getItem(preferenceKey(userId)) ?? "null"); return Array.isArray(value) ? ["/app", ...workspaces.filter(item => item.href !== "/app" && value.includes(item.href)).map(item => item.href)] : null; }
+  catch { return null; }
+}
 function readHrefs(userId: string): string[] {
   try {
-    const saved: unknown = JSON.parse(window.localStorage.getItem(preferenceKey(userId)) ?? "null");
-    if (!Array.isArray(saved)) return defaultHrefs;
-    return ["/app", ...workspaces.filter((item) => item.href !== "/app" && saved.includes(item.href)).map((item) => item.href)];
-  } catch { return defaultHrefs; }
+    const saved = JSON.parse(window.localStorage.getItem(cacheKey(userId)) ?? "null");
+    if (saved && saved.userId === userId) return validView(saved).hrefs;
+  } catch { /* Retain the original per-device customization for migration. */ }
+  return legacyHrefs(userId) ?? defaultHrefs;
 }
 
 function moduleFor(href: string): string | null {
@@ -48,7 +65,10 @@ export function WorkspaceRail() {
   const { t } = useLocale();
   const [account, setAccount] = useState<{ id: string; email: string; admin: boolean } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [preference, setPreference] = useState<{ userId: string; hrefs: string[] } | null>(null);
+  const [preference, setPreference] = useState<{ userId: string; hrefs: string[]; revision?: number } | null>(null);
+  const [customRevision, setCustomRevision] = useState(0);
+  const [customSaving, setCustomSaving] = useState(false);
+  const savingPreference = useRef(false);
   const [customizing, setCustomizing] = useState(false);
   const [customDraft, setCustomDraft] = useState<string[]>(defaultHrefs);
   const [customError, setCustomError] = useState("");
@@ -83,19 +103,61 @@ export function WorkspaceRail() {
   }, [account, pathname]);
 
   useEffect(() => {
-    const open = () => { if (account) { setCustomDraft(pinnedHrefs); setCustomError(""); setCustomizing(true); setMoreOpen(false); setAccountOpen(false); } };
-    const sync = (event: StorageEvent) => { if (account && event.key === preferenceKey(account.id)) setPreference({ userId: account.id, hrefs: readHrefs(account.id) }); };
+    if (!account?.id) return;
+    const owner = account.id;
+    let cancelled = false;
+    let requestVersion = 0;
+    async function refresh() {
+      if (savingPreference.current || document.hidden) return;
+      const version = ++requestVersion;
+      try {
+        let view = validView(await api<SidebarView>("/api/profile/sidebar"));
+        if (cancelled || version !== requestVersion || view.userId !== owner) return;
+        const legacy = legacyHrefs(owner);
+        if (!view.configured && legacy) {
+          try { view = validView(await api<SidebarView>("/api/profile/sidebar", { method: "PUT", body: JSON.stringify({ hrefs: legacy, expectedRevision: 0, expectedUserId: owner }) })); }
+          catch (reason) {
+            if (!(reason instanceof ApiError) || reason.status !== 409) throw reason;
+            view = validView(await api<SidebarView>("/api/profile/sidebar"));
+          }
+        }
+        if (cancelled || version !== requestVersion || savingPreference.current || view.userId !== owner) return;
+        setPreference(current => current?.userId === owner && (current.revision ?? -1) > view.revision ? current : { userId: owner, hrefs: view.hrefs, revision: view.revision });
+        cacheView(owner, view);
+      } catch { /* Preserve the last known layout. Saving reports failures without pretending to sync. */ }
+    }
+    const wake = () => void refresh();
+    const interval = window.setInterval(wake, 30000);
+    window.addEventListener("focus", wake);
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("ardor:sidebar-refresh", wake);
+    void refresh();
+    return () => { cancelled = true; window.clearInterval(interval); window.removeEventListener("focus", wake); document.removeEventListener("visibilitychange", wake); window.removeEventListener("ardor:sidebar-refresh", wake); };
+  }, [account?.id]);
+
+  useEffect(() => {
+    const open = () => { if (account) { setCustomDraft(pinnedHrefs); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); setMoreOpen(false); setAccountOpen(false); } };
+    const sync = (event: StorageEvent) => { if (account && event.key === cacheKey(account.id)) window.dispatchEvent(new Event("ardor:sidebar-refresh")); };
     window.addEventListener("ardor:customize-sidebar", open);
     window.addEventListener("storage", sync);
     return () => { window.removeEventListener("ardor:customize-sidebar", open); window.removeEventListener("storage", sync); };
-  }, [account, pinnedHrefs]);
+  }, [account, pinnedHrefs, preference?.revision]);
 
-  function saveSidebar() {
-    if (!account) return;
+  async function saveSidebar() {
+    if (!account || customSaving || preference?.revision === undefined) return;
+    setCustomSaving(true); savingPreference.current = true; setCustomError("");
     try {
-      window.localStorage.setItem(preferenceKey(account.id), JSON.stringify(customDraft));
-      setPreference({ userId: account.id, hrefs: customDraft }); setCustomizing(false);
-    } catch { setCustomError(t("Could not save on this device. Check your browser storage settings.", "无法保存到此设备，请检查浏览器存储设置。")); }
+      const view = validView(await api<SidebarView>("/api/profile/sidebar", { method: "PUT", body: JSON.stringify({ hrefs: customDraft, expectedRevision: customRevision, expectedUserId: account.id }) }));
+      if (view.userId !== account.id) throw new Error("Account changed");
+      setPreference({ userId: account.id, hrefs: view.hrefs, revision: view.revision });
+      cacheView(account.id, view);
+      setCustomizing(false);
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 409) {
+        try { const view = validView(await api<SidebarView>("/api/profile/sidebar")); if (view.userId === account.id) { setPreference({ userId: account.id, hrefs: view.hrefs, revision: view.revision }); setCustomRevision(view.revision); } } catch { /* Keep the draft on refresh failure. */ }
+        setCustomError(t("Another device changed your sidebar. Your choices are kept here; review them, then save again to replace the account layout.", "其他设备已更新侧栏。你的选择仍保留在这里，请核对后再次保存，才会替换账户布局。"));
+      } else setCustomError(t("Could not sync your sidebar. Your choices are kept; retry when the server is available.", "侧栏同步失败，你的选择已保留。请在服务恢复后重试。"));
+    } finally { setCustomSaving(false); savingPreference.current = false; }
   }
 
   useEffect(() => {
@@ -240,14 +302,16 @@ export function WorkspaceRail() {
       {moreOpen && !accountOpen && <div ref={morePanel} id="ardor-more-workspaces" className="fixed left-[4.25rem] z-50 w-56 max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 shadow-[0_20px_60px_rgba(70,48,100,0.16)]" style={{ top: moreTop }} onMouseEnter={() => { if (moreCloseTimer.current) clearTimeout(moreCloseTimer.current); }} onMouseLeave={hideMoreSoon}>
         {secondaryWorkspaces.map((item) => { const label = t(item.en, item.zh); const moduleName = moduleFor(item.href); return <Link key={item.href} href={item.href} onClick={() => { acknowledgeBackground(moduleName); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50 ${pathname.startsWith(item.href) ? "bg-violet-50 text-violet-700" : "text-stone-700"}`}><item.icon className="size-4 shrink-0" aria-hidden="true" /><span>{label}</span>{moduleName && backgroundReady[moduleName] && <span className="ml-auto size-2 rounded-full bg-red-500" aria-hidden="true" />}</Link>; })}
         <button type="button" onClick={() => { if (pathname === "/app") window.dispatchEvent(new Event("ardor:open-memory")); else { window.sessionStorage.setItem("ardor:open-memory", "1"); router.push("/app"); } closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-stone-700 hover:bg-violet-50"><Brain className="size-4 shrink-0" aria-hidden="true" />{t("Memory", "总体记忆")}</button>
-        <button type="button" disabled={!account} onClick={() => { closeMore(); setCustomDraft(pinnedHrefs); setCustomError(""); setCustomizing(true); }} className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-stone-100 px-3 py-2.5 text-left text-sm text-violet-700 hover:bg-violet-50"><Settings2 className="size-4" />{t("Customize sidebar", "自定义侧栏")}</button>
+        <button type="button" disabled={!account} onClick={() => { closeMore(); setCustomDraft(pinnedHrefs); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); }} className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-stone-100 px-3 py-2.5 text-left text-sm text-violet-700 hover:bg-violet-50"><Settings2 className="size-4" />{t("Customize sidebar", "自定义侧栏")}</button>
       </div>}
 
       {customizing && <AppDialog title={t("Customize sidebar", "自定义侧栏")} onClose={() => setCustomizing(false)}>
-        <p className="mb-4 text-sm text-stone-500">{t("Selected modules stay in the sidebar. Others go in More. Saved on this device for your account.", "选中项显示在侧栏，其余收进更多。按账户保存在此设备。")}</p>
-        <div className="space-y-1">{workspaces.map((item) => <label key={item.href} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 hover:bg-violet-50"><item.icon className="size-4 text-stone-500" /><span className="flex-1 text-sm">{t(item.en, item.zh)}</span><input type="checkbox" checked={customDraft.includes(item.href)} disabled={item.href === "/app"} onChange={(event) => setCustomDraft((current) => event.target.checked ? [...current, item.href] : current.filter((href) => href !== item.href))} className="size-4 accent-violet-600" /></label>)}</div>
+        <p className="mb-4 text-sm text-stone-500">{t("Selected modules stay in the sidebar. Others go in More. Synced to your account across browser and desktop.", "选中项显示在侧栏，其余收进更多。按账户在浏览器与桌面端同步。")}</p>
+        {preference?.revision === undefined && <p role="status" className="mb-3 text-xs text-stone-500">{t("Waiting to read account settings. Your choices will not be overwritten.", "正在读取账户设置，不会覆盖你的选择。")} <button type="button" className="text-violet-700 underline" onClick={() => window.dispatchEvent(new Event("ardor:sidebar-refresh"))}>{t("Retry sync", "重试同步")}</button></p>}
+        <div className="space-y-1">{workspaces.map((item) => <label key={item.href} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 hover:bg-violet-50"><item.icon className="size-4 text-stone-500" /><span className="flex-1 text-sm">{t(item.en, item.zh)}</span><input type="checkbox" checked={customDraft.includes(item.href)} disabled={item.href === "/app" || customSaving} onChange={(event) => setCustomDraft((current) => event.target.checked ? [...current, item.href] : current.filter((href) => href !== item.href))} className="size-4 accent-violet-600" /></label>)}</div>
         {customError && <p role="alert" className="mt-3 text-sm text-red-600">{customError}</p>}
-        <div className="mt-5 flex justify-between gap-2"><Button variant="outline" onClick={() => setCustomDraft(defaultHrefs)}>{t("Reset defaults", "恢复默认")}</Button><Button onClick={saveSidebar}>{t("Save", "保存")}</Button></div>
+        {account && legacyHrefs(account.id) && <button type="button" disabled={customSaving} onClick={() => setCustomDraft(legacyHrefs(account.id) ?? defaultHrefs)} className="mt-3 text-xs text-violet-700 underline">{t("Load this device's previous layout", "载入此设备的旧布局")}</button>}
+        <div className="mt-5 flex justify-between gap-2"><Button variant="outline" disabled={customSaving} onClick={() => setCustomDraft(defaultHrefs)}>{t("Reset defaults", "恢复默认")}</Button><Button disabled={customSaving || preference?.revision === undefined} onClick={() => void saveSidebar()}>{customSaving ? t("Syncing…", "正在同步…") : t("Save", "保存")}</Button></div>
       </AppDialog>}
       {accountOpen && (
         <>

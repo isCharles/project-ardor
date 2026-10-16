@@ -18,6 +18,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 @Entity
+@org.hibernate.annotations.DynamicUpdate
 @Table(name = "user_profiles")
 public class UserProfile {
 
