@@ -92,6 +92,7 @@ public class CareerAgentService {
             30. 用户明确提出每周投递目标或提醒时间时，先了解已有设置，再调用 set_application_rhythm；提醒只在用户打开工作台时显示，不要声称关闭应用后也会推送。面试准备优先时，不要机械催促投递。
             31. 修改学习时间或说明用 update_learning_plan，开始学习用 begin_learning_plan；保留已有讲解、练习与评分，不通过删除重建冒充改期。替换主题应另外提议新计划。
             32. 修改记忆卡用 update_memory_card，修正面经公司、岗位、时间用 update_interview_recap_metadata，修正单条长期记忆用 update_memory。先读取真实原内容，保留未要求修改的字段。读取、新增和修改不逐次弹权限；仍须符合用户意图、资源归属与业务校验。只有删除需要界面确认，聊天口令不能代替删除按钮。
+            33. 历史中的已停止请求仍是用户表达，不等于已执行。用户追加“等等、改成、不需要”等补充时，结合原请求，只更改补充所指的部分，其余要求仍然有效。例：原要求“删除1、2、3然后重新生成”，补充“2不需要重新生成”表示仍删除1、2、3，只重建1和3；不能误读为保留2不删除。先核验现状，不能重放已完成副作用，也不能把已停止当作已回滚。
             """;
 
     private final AgentConversationStore store;
@@ -160,9 +161,7 @@ public class CareerAgentService {
         }
         return new AgentStateResponse(
                 selected.getId(), configured, displayName,
-                store.allMessages(userId, selected.getId()).stream()
-                        .map(AgentMessageResponse::from)
-                        .toList(), summaries, archivedSummaries, memory);
+                conversationHistory(userId, selected.getId()), summaries, archivedSummaries, memory);
     }
 
     public AgentRunResponse run(UUID userId, UUID requestId) {
@@ -213,14 +212,7 @@ public class CareerAgentService {
             Conversation conversation = conversationId == null
                     ? store.create(userId)
                     : store.requireActive(userId, conversationId);
-            MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(40);
-            for (ConversationMessage historyMessage : store.recent(userId, conversation.getId())) {
-                if ("USER".equals(historyMessage.getRole())) {
-                    memory.add(UserMessage.from(historyMessage.getContent()));
-                } else if ("ASSISTANT".equals(historyMessage.getRole())) {
-                    memory.add(AiMessage.from(historyMessage.getContent()));
-                }
-            }
+            MessageWindowChatMemory memory = conversationMemory(userId, conversation.getId());
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, requestId,
                     requestId == null ? null : UUID.randomUUID());
 
@@ -349,7 +341,8 @@ public class CareerAgentService {
             // Held rather than inlined: after the run it is asked which deletions
             // the agent proposed, so each becomes a button in the transcript.
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId)
-                    .withInterviewAnswerContext(interviewAnswerContext(userId, conversation.getId()));
+                    .withInterviewAnswerContext(interviewAnswerContext(userId, conversation.getId()))
+                    .withInterruptedRequest(runStore.interruptedRequest(userId, conversation.getId(), requestId));
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, depth, lease))
                     .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory)
@@ -470,11 +463,41 @@ public class CareerAgentService {
 
     private MessageWindowChatMemory conversationMemory(UUID userId, UUID conversationId) {
         MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(40);
-        for (ConversationMessage historyMessage : store.recent(userId, conversationId)) {
-            if ("USER".equals(historyMessage.getRole())) memory.add(UserMessage.from(historyMessage.getContent()));
-            else if ("ASSISTANT".equals(historyMessage.getRole())) memory.add(AiMessage.from(historyMessage.getContent()));
+        var history = conversationHistory(userId, conversationId, true);
+        for (var historyMessage : history.subList(Math.max(0, history.size() - 40), history.size())) {
+            if ("USER".equals(historyMessage.role())) memory.add(UserMessage.from(historyMessage.content()));
+            else if ("ASSISTANT".equals(historyMessage.role())) memory.add(AiMessage.from(historyMessage.content()));
         }
         return memory;
+    }
+
+    private List<AgentMessageResponse> conversationHistory(UUID userId, UUID conversationId) {
+        return conversationHistory(userId, conversationId, false);
+    }
+    private List<AgentMessageResponse> conversationHistory(UUID userId, UUID conversationId, boolean recent) {
+        var history = new java.util.ArrayList<>((recent ? store.recent(userId, conversationId) : store.allMessages(userId, conversationId)).stream().map(AgentMessageResponse::from).toList());
+        var unfinished = new java.util.ArrayList<>(runStore.unfinished(userId, conversationId, recent));
+        unfinished.addAll(runStore.superseded(userId, conversationId, recent));
+        for (var run : unfinished) {
+            UUID userMessageId = UUID.nameUUIDFromBytes(("ardor:interrupted-user:" + run.id()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            UUID statusMessageId = UUID.nameUUIDFromBytes(("ardor:interrupted-status:" + run.id()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            history.add(new AgentMessageResponse(userMessageId, conversationId, "USER", run.message(), List.of(), null, run.createdAt(), run.id()));
+            String note = "SUPERSEDED".equals(run.errorCode()) ? "本条已由后续补充替代，未执行。" : "AGENT_RUN_CANCELLED".equals(run.errorCode()) ? "本轮已停止；已开始的操作请核验结果。" : "本轮未完成；不能假定操作已成功，请先核验结果。";
+            AgentStreamProgress.View progress = null;
+            try { progress = streamProgress.get(userId, run.id()); } catch (com.projectardor.common.web.ResourceNotFoundException absent) { /* Old runs may have no snapshot. */ }
+            var steps = progress == null ? List.<RunStep>of() : progress.steps().stream()
+                    .map(step -> new RunStep(step.label(), step.elapsedMs(), step.status(), step.approvalWaitMs(), step.businessMs())).toList();
+            String trace = objectMapper.writeValueAsString(new RunTrace(Math.max(0, java.time.Duration.between(run.createdAt(), run.updatedAt()).toMillis()),
+                    "STOPPED", steps, List.of(), progress == null ? null : progress.thinkingOutput(), progress == null ? null : progress.firstOutputMs()));
+            history.add(new AgentMessageResponse(statusMessageId, conversationId, "ASSISTANT", note, List.of(), trace, run.updatedAt(), run.id()));
+        }
+        var turnTimes = new java.util.HashMap<UUID, java.time.Instant>();
+        unfinished.forEach(run -> turnTimes.put(run.id(), run.createdAt()));
+        // Keep each interrupted request and its status together before later corrections.
+        // The response timestamps still retain the actual request/status times.
+        history.sort(java.util.Comparator.comparing((AgentMessageResponse item) -> turnTimes.getOrDefault(item.requestId(), item.createdAt()))
+                .thenComparing(item -> "USER".equals(item.role()) ? 0 : 1));
+        return history;
     }
 
     @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 1000)

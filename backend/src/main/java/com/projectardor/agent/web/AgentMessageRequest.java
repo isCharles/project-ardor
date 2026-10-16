@@ -19,7 +19,13 @@ public record AgentMessageRequest(
         @Size(max = 5, message = "一次最多引用 5 份资料")
         List<AgentContextReferenceRequest> contextReferences,
         UUID requestId,
-        ReasoningDepth reasoningDepth) implements QuotaRequestId {
+        ReasoningDepth reasoningDepth,
+        UUID interruptedRunId) implements QuotaRequestId {
+
+    public AgentMessageRequest(UUID conversationId, String message, String contextType, UUID contextId,
+            List<AgentContextReferenceRequest> contextReferences, UUID requestId, ReasoningDepth reasoningDepth) {
+        this(conversationId, message, contextType, contextId, contextReferences, requestId, reasoningDepth, null);
+    }
 
     public AgentMessageRequest(UUID conversationId, String message, String contextType, UUID contextId,
             List<AgentContextReferenceRequest> contextReferences, UUID requestId) {

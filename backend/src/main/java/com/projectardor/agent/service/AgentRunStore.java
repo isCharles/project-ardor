@@ -59,7 +59,7 @@ public class AgentRunStore {
 
     public UUID logicalActionId(UUID userId, UUID requestId, UUID conversationId, String message,
             String contextType, UUID contextId, List<AgentContextReferenceRequest> references, ReasoningDepth depth) {
-        String hash = fingerprint(conversationId, message, contextType, contextId, references, depth);
+        String hash = fingerprint(conversationId, message, contextType, contextId, references, depth, steeringSource(userId, requestId));
         return jdbc.queryForList("""
                 SELECT CASE WHEN status IN ('INTERRUPTED', 'FAILED')
                                  AND (tool_started OR (logical_action_id IS NOT NULL AND logical_action_id <> id))
@@ -79,7 +79,7 @@ public class AgentRunStore {
     public boolean begin(UUID userId, UUID requestId, UUID conversationId, String message,
             String contextType, UUID contextId, List<AgentContextReferenceRequest> references,
             UUID logicalActionId, ReasoningDepth depth) {
-        String hash = fingerprint(conversationId, message, contextType, contextId, references, depth);
+        String hash = fingerprint(conversationId, message, contextType, contextId, references, depth, steeringSource(userId, requestId));
         int inserted = logicalActionId == null
                 ? jdbc.update("""
                     INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message)
@@ -128,6 +128,46 @@ public class AgentRunStore {
                 FROM agent_runs WHERE user_id = ? AND conversation_id = ?
                 ORDER BY created_at DESC, id DESC LIMIT 1
                 """, RUN_MAPPER, userId, conversationId).stream().findFirst();
+    }
+
+    /** Accepted-but-uncompleted user turns are durable even without a successful exchange. */
+    public List<AgentRun> unfinished(UUID userId, UUID conversationId, boolean recent) {
+        return jdbc.query("""
+                SELECT r.* FROM agent_runs r WHERE r.user_id=? AND r.conversation_id=?
+                  AND r.status IN ('FAILED','INTERRUPTED') AND r.assistant_message_id IS NULL
+                  AND NOT (r.status='FAILED' AND r.error_code IS DISTINCT FROM 'AGENT_RUN_CANCELLED' AND NOT r.tool_started AND EXISTS(
+                    SELECT 1 FROM agent_runs newer WHERE newer.user_id=r.user_id AND newer.conversation_id=r.conversation_id
+                      AND newer.request_hash=r.request_hash AND newer.created_at>r.created_at
+                      AND newer.created_at<r.created_at+INTERVAL '2 minutes'))
+                ORDER BY r.created_at DESC,r.id DESC
+                """ + (recent ? " LIMIT 40" : ""), RUN_MAPPER, userId, conversationId).reversed();
+    }
+
+    public List<AgentRun> superseded(UUID userId, UUID conversationId, boolean recent) {
+        return jdbc.query("""
+                SELECT q.id,q.conversation_id,q.payload->>'message' AS message,'CANCELLED' AS status,
+                  '已替代' AS label,'SUPERSEDED' AS error_code,q.error_message,false AS retryable,false AS tool_started,q.created_at,q.updated_at
+                FROM agent_message_queue q WHERE q.user_id=? AND q.conversation_id=? AND q.status='CANCELLED'
+                  AND q.error_message='已由后续补充替代，未执行'
+                  AND NOT EXISTS(SELECT 1 FROM agent_runs r WHERE r.id=q.id AND r.user_id=q.user_id)
+                ORDER BY q.created_at DESC,q.id DESC
+                """ + (recent ? " LIMIT 40" : ""), RUN_MAPPER, userId, conversationId).reversed();
+    }
+
+    /** Scope comes only from an owned, explicitly linked interrupted request, never model output. */
+    public String interruptedRequest(UUID userId, UUID conversationId, UUID currentRequest) {
+        if (currentRequest == null) return "";
+        return jdbc.queryForList("""
+                SELECT r.message FROM agent_message_queue q JOIN agent_runs r
+                  ON r.id::text=COALESCE(q.payload->>'interruptedRunId',
+                    (SELECT p.payload->>'interruptedRunId' FROM agent_message_queue p
+                     WHERE p.user_id=q.user_id AND p.conversation_id=q.conversation_id AND p.created_at<q.created_at
+                       AND p.sequence<0 AND p.created_at>q.created_at-INTERVAL '10 minutes'
+                       AND p.payload->>'interruptedRunId' IS NOT NULL ORDER BY p.created_at DESC LIMIT 1))
+                  AND r.user_id=q.user_id AND r.conversation_id=q.conversation_id
+                WHERE q.id=? AND q.user_id=? AND q.conversation_id=? AND q.sequence<0
+                  AND r.status IN ('FAILED','INTERRUPTED') AND r.error_code IN ('AGENT_RUN_CANCELLED','AGENT_RUN_INTERRUPTED')
+                """, String.class, currentRequest, userId, conversationId).stream().findFirst().orElse("");
     }
 
     public void progress(UUID userId, UUID requestId, String label, boolean toolStarted) {
@@ -205,8 +245,12 @@ public class AgentRunStore {
         }
     }
 
+    private String steeringSource(UUID owner, UUID requestId) {
+        return jdbc.queryForList("SELECT payload->>'interruptedRunId' FROM agent_message_queue WHERE id=? AND user_id=?", String.class, requestId, owner)
+                .stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
+    }
     private String fingerprint(UUID conversationId, String message, String contextType, UUID contextId,
-            List<AgentContextReferenceRequest> references, ReasoningDepth requestedDepth) {
+            List<AgentContextReferenceRequest> references, ReasoningDepth requestedDepth, String steeringSource) {
         StringBuilder input = new StringBuilder().append(conversationId).append('\n')
                 .append(message.length()).append(':').append(message).append('\n')
                 .append(contextType).append(':').append(contextId);
@@ -217,6 +261,7 @@ public class AgentRunStore {
         }
         ReasoningDepth depth = ReasoningDepth.orAuto(requestedDepth);
         if (depth != ReasoningDepth.AUTO) input.append("\nreasoning:").append(depth);
+        if (steeringSource != null) input.append("\ninterrupted:").append(steeringSource);
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(input.toString().getBytes(StandardCharsets.UTF_8)));

@@ -716,7 +716,7 @@ async function main() {
   await owner.request(`/api/agent/runs/${silentRequest.requestId}/progress`, { expected: 404 });
   await silentOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
     model: "agent-cancel-probe", apiKey: "disposable-fake-model-key" } });
-  const cancelRequest = { ...silentRequest, requestId: randomUUID(), message: "Explicit user cancellation probe" };
+  const cancelRequest = { ...silentRequest, requestId: randomUUID(), message: "Explicit user cancellation probe: 删除1、2、3，然后重新生成" };
   await silentOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: cancelRequest });
   await silentOwner.request(`/api/agent/queue/${cancelRequest.requestId}/resume`, { method: "POST", expected: 204 });
   let cancelStarted = false;
@@ -728,10 +728,14 @@ async function main() {
   assert.ok(cancelStarted);
   await owner.request(`/api/agent/runs/${cancelRequest.requestId}/cancel`, { method: "POST", expected: 404 });
   await silentOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
-    model: "gpt-5-depth-probe", apiKey: "disposable-fake-model-key" } });
-  const steerRequest = { ...cancelRequest, requestId: randomUUID(), message: "Apply my correction now" };
-  await silentOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: steerRequest });
-  await silentOwner.request(`/api/agent/queue/${steerRequest.requestId}/steer`, { method: "POST", expected: 204, body: { interruptRunId: cancelRequest.requestId } });
+    model: "steering-context-probe", apiKey: "disposable-fake-model-key" } });
+  const steerRequest = { ...cancelRequest, requestId: randomUUID(), message: "等等，2不需要重新生成", interruptedRunId: cancelRequest.requestId };
+  const unrelatedConversation = await silentOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
+  await silentOwner.request("/api/agent/messages/steer", { method: "POST", expected: 400, body: { ...steerRequest, requestId: randomUUID(), conversationId: unrelatedConversation.id } });
+  assert.equal((await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}`)).status, "RUNNING", "Cross-conversation steering must not stop the original");
+  await owner.request("/api/agent/messages/steer", { method: "POST", expected: 404, body: steerRequest });
+  await silentOwner.request("/api/agent/messages/steer", { method: "POST", expected: 202, body: steerRequest });
+  await silentOwner.request("/api/agent/messages/steer", { method: "POST", expected: 202, body: steerRequest });
   assert.equal((await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}`)).errorCode, "AGENT_RUN_CANCELLED");
   let steerFinished = false;
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -740,6 +744,10 @@ async function main() {
     await sleep(100);
   }
   assert.ok(steerFinished, "Interrupting must dispatch the selected new instruction rather than replaying the old run");
+  const correctedHistory = (await silentOwner.request(`/api/agent?conversationId=${silentConversation.id}`)).messages;
+  assert.equal(correctedHistory.filter(item => item.role === "USER" && item.content === cancelRequest.message).length, 1, "Interrupted original stays in history exactly once");
+  assert.equal(correctedHistory.filter(item => item.role === "USER" && item.content === steerRequest.message).length, 1);
+  assert.ok(correctedHistory.some(item => item.role === "ASSISTANT" && item.content.includes("只重新生成1和3")), "Fake provider requires both actual user turns in its received context");
   await sleep(9000); // The fake provider attempts a late tool call after the local run has stopped.
   assert.equal((await silentOwner.request("/api/agent/memory")).content, "", "Late tool chunks must not mutate memory");
   assert.equal((await silentOwner.request(`/api/agent/runs/${silentRequest.requestId}`)).errorCode, "AGENT_UPSTREAM_SILENT");

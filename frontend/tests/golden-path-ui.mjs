@@ -367,7 +367,7 @@ try {
   assert.equal(restoredAuth.ok(), true);
   const restoredConversations = await (await restoredContext.request.get(`${origin}/api/agent/conversations`)).json();
   const restoredQueue = await (await restoredContext.request.get(`${origin}/api/agent/queue?conversationId=${restoredConversations[0].id}`)).json();
-  const cancelledRequest = restoredQueue.find(item => item.request.message === "Explicit user cancellation probe");
+  const cancelledRequest = restoredQueue.find(item => item.request.message.startsWith("Explicit user cancellation probe"));
   assert.ok(cancelledRequest, "Restore the cancelled request, not a later successful correction");
   const restoredRun = await (await restoredContext.request.get(`${origin}/api/agent/runs/${cancelledRequest.id}`)).json();
   const restoredProgress = await restoredContext.request.get(`${origin}/api/agent/runs/${restoredRun.id}/progress`);

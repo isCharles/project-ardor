@@ -86,7 +86,7 @@ class AgentRunStoreTests {
         assertThat(runs.begin(userId, requestId, conversationId, "你好", null, null, List.of())).isTrue();
         ArgumentCaptor<String> fingerprint = ArgumentCaptor.forClass(String.class);
         verify(jdbc).update(anyString(), eq(requestId), eq(userId), eq(conversationId), fingerprint.capture(), eq("你好"));
-        when(jdbc.queryForList(anyString(), eq(String.class), eq(requestId), eq(userId)))
+        when(jdbc.queryForList(argThat(sql -> sql.contains("SELECT request_hash")), eq(String.class), eq(requestId), eq(userId)))
                 .thenReturn(List.of(fingerprint.getValue()));
         assertThat(runs.begin(userId, requestId, conversationId, "你好", null, null, List.of())).isFalse();
     }
@@ -98,7 +98,7 @@ class AgentRunStoreTests {
         UUID conversationId = UUID.randomUUID();
         when(jdbc.update(anyString(), eq(requestId), eq(userId), eq(conversationId), anyString(), anyString()))
                 .thenReturn(1, 0);
-        when(jdbc.queryForList(anyString(), eq(String.class), eq(requestId), eq(userId)))
+        when(jdbc.queryForList(argThat(sql -> sql.contains("SELECT request_hash")), eq(String.class), eq(requestId), eq(userId)))
                 .thenReturn(List.of("previous-message-hash"));
 
         assertThat(runs.begin(userId, requestId, conversationId, "第一条", null, null, List.of())).isTrue();

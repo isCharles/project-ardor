@@ -166,6 +166,20 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+    if (payload.model === "steering-context-probe" && isAgentRequest) {
+      const turns = payload.messages.filter(message => message.role === "user");
+      const original = turns.filter(message => String(message.content).includes("删除1、2、3，然后重新生成"));
+      const correction = String(turns.at(-1)?.content).includes("等等，2不需要重新生成");
+      if (original.length !== 1 || !correction) {
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "Original user request or latest correction missing/duplicated" } }));
+        return;
+      }
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.write(`data: ${JSON.stringify({ id: "steering-proof", object: "chat.completion.chunk", model: payload.model, choices: [{ index: 0, delta: { role: "assistant", content: "已理解：删除1、2、3，只重新生成1和3；删除仍需界面确认。" }, finish_reason: null }] })}\n\n`);
+      response.write(`data: ${JSON.stringify({ id: "steering-proof", object: "chat.completion.chunk", model: payload.model, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`);
+      response.end("data: [DONE]\n\n"); return;
+    }
     if (["approval-integration-probe", "deletion-proposal-integration-probe"].includes(payload.model) && isAgentRequest) {
       const deletionProbe = payload.model === "deletion-proposal-integration-probe";
       const memoryId = payload.messages?.filter(message => message.role === "user").at(-1)?.content?.match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0];

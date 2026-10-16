@@ -80,8 +80,9 @@ try {
       conversation = { ...conversation, ...route.request().postDataJSON(), titleManuallySet: true }; body = conversation;
     }
     else if (path === "/api/agent/conversations") body = [conversation];
-    else if (path === "/api/agent/queue" && route.request().method() === "POST") {
+    else if (path === "/api/agent/messages/steer" && route.request().method() === "POST") {
       const request = route.request().postDataJSON();
+      steerRequests.push(request);
       queuedRequests.push(request);
       const item = { id: request.requestId, owner: userId, request, status: "QUEUED", blockedBy: activeRun?.id ?? null };
       queueItems.push(item);
@@ -116,7 +117,7 @@ try {
     else if (path === "/api/agent/runs/latest" && activeRun) body = activeRun;
     else if (path.endsWith("/progress") && activeRun) body = activeRun.status === "FAILED"
       ? { phase: "FAILED", label: "Stopped", thinkingOutput: "Saved public reasoning", answerPartial: "Saved incomplete answer", elapsedMs: 1200, steps: [{ label: "Recovered read plans", elapsedMs: 4, status: "COMPLETED" }] }
-      : { phase: "WAITING_DATA", label: "Waiting", thinkingOutput: "", answerPartial: "", silentSeconds: 40 };
+      : { phase: activeRun?.progressPhase ?? "WAITING_DATA", label: "Waiting", thinkingOutput: activeRun?.progressPhase === "THINKING" ? "Provider supplied reasoning" : "", answerPartial: "", silentSeconds: 40 };
     else if (path.startsWith("/api/agent/runs")) return route.fulfill(retryProbe ? { status: 404, json: { message: "Not accepted" } } : { status: 204 });
     else if (path === "/api/agent/reasoning") body = { nativeControl: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
@@ -366,41 +367,37 @@ try {
   assert.equal(await draftBox.isEnabled(), true);
   assert.equal(await toolPermissions.count(), 0, "Ordinary writes must not show permission prompts");
   assert.equal(permissionDecisions.length, 0);
-  activeRun = { ...activeRun, id: "queued-active-run", message: "A new queued instruction after the original stopped" };
+  activeRun = { ...activeRun, id: "queued-active-run", message: "A new queued instruction after the original stopped", progressPhase: "THINKING" };
   await page.reload();
   await page.getByRole("article").filter({ hasText: activeRun.message }).waitFor();
   await page.waitForTimeout(6500); // More than two real recovery polls with a stale predecessor outbox.
+  await page.getByText("Thinking", { exact: true }).waitFor();
   assert.equal(await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).count(), 1);
   assert.equal(await page.getByRole("article").filter({ hasText: activeRun.message }).count(), 1);
   await draftBox.fill("Queued follow-up one");
   await Promise.all([
-    page.waitForResponse((response) => response.url().endsWith("/api/agent/queue") && response.request().method() === "POST"),
+    page.waitForResponse((response) => response.url().endsWith("/api/agent/messages/steer") && response.request().method() === "POST"),
     page.getByRole("button", { name: "Send", exact: true }).click(),
   ]);
   await page.getByRole("region", { name: "Message queue", exact: true }).getByText("Queued follow-up one", { exact: true }).waitFor();
   assert.equal(queuedRequests[0].reasoningDepth, "QUICK");
-  await Promise.all([
-    page.waitForResponse(response => response.url().endsWith(`${queuedRequests[0].requestId}/steer`) && response.request().method() === "POST"),
-    page.getByRole("region", { name: "Message queue", exact: true }).getByRole("button", { name: "Interrupt and handle now", exact: true }).click(),
-  ]);
   assert.equal(steerRequests.length, 1);
-  assert.equal(steerRequests[0].interruptRunId, "queued-active-run");
-  assert.ok(steerRequests[0].path.endsWith(`${queuedRequests[0].requestId}/steer`));
+  assert.equal(steerRequests[0].interruptedRunId, "queued-active-run");
+  assert.equal(await page.getByRole("button", { name: "Interrupt and handle now", exact: true }).count(), 0);
   await draftBox.fill("Queued follow-up two");
   await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
   await page.getByRole("button", { name: "Max", exact: true }).click();
   await draftBox.click();
   await Promise.all([
-    page.waitForResponse((response) => response.url().endsWith("/api/agent/queue") && response.request().method() === "POST"),
+    page.waitForResponse((response) => response.url().endsWith("/api/agent/messages/steer") && response.request().method() === "POST"),
     page.getByRole("button", { name: "Send", exact: true }).click(),
   ]);
   assert.equal(queuedRequests[1].reasoningDepth, "DEEP");
   assert.notEqual(queuedRequests[0].requestId, queuedRequests[1].requestId);
   await page.reload();
   await page.getByRole("region", { name: "Message queue", exact: true }).getByText("Queued follow-up two", { exact: true }).waitFor();
-  const secondQueued = page.getByRole("article").filter({ hasText: "Queued follow-up two" });
-  await secondQueued.getByRole("button", { name: "Remove from queue", exact: true }).click();
-  await secondQueued.waitFor({ state: "detached" });
+  assert.equal(steerRequests.length, 2, "Sending a correction steers directly; no second manual action");
+  assert.equal(await page.getByRole("button", { name: "Remove from queue", exact: true }).count(), 0);
   await Promise.all([
     page.waitForResponse((response) => response.url().endsWith("/runs/queued-active-run/cancel") && response.request().method() === "POST"),
     page.getByRole("button", { name: "Stop", exact: true }).click(),
@@ -418,13 +415,15 @@ try {
   await page.reload();
   await draftBox.fill("Stop during retry backoff");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByText("Ardor is working", { exact: true }).click();
+  await page.getByText("Waiting for model", { exact: true }).click();
   await page.getByText(/Reconnecting · retry 1\/5/).waitFor();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await page.getByText("Sending stopped. No further automatic retries will be sent.", { exact: true }).waitFor();
+  await page.getByText("Stopped. Any operation already started may still finish; check its result.", { exact: true }).waitFor();
   await page.waitForTimeout(2200);
   assert.equal(retryProbeCalls, 1, "Stop must prevent the next retry POST");
   assert.equal(cancelCalls, 1, "Unaccepted requests must not receive server cancellation");
+  await page.waitForTimeout(3200);
+  assert.equal(await page.getByText("Stopped. Any operation already started may still finish; check its result.", { exact: true }).count(), 0, "Stop feedback disappears rather than pinning an error above the composer");
   retryProbe = false;
   userId = "different-outbox-owner";
   await page.reload();
@@ -523,6 +522,10 @@ try {
   await deletionDock.getByRole("button", { name: "Confirm deletion", exact: true }).click();
   await deletionDock.waitFor({ state: "detached" });
   assert.equal(deletionCalls, 2);
+  await page.getByText('Deleted “Synthetic career preference”.', { exact: true }).waitFor();
+  await page.waitForTimeout(5200);
+  assert.equal(await page.getByText('Deleted “Synthetic career preference”.', { exact: true }).count(), 0);
+  assert.equal(await page.getByText('Deleted · Synthetic career preference', { exact: true }).isVisible(), false, "Result belongs inside the collapsed original trace");
   await page.reload();
   await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
   assert.equal(await deletionDock.count(), 0, "Completed deletion must not revive on reload");
