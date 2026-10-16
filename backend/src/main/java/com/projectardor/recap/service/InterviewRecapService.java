@@ -223,6 +223,16 @@ public class InterviewRecapService {
         dates.forEach(date -> refreshDate(userId, date));
     }
 
+    @Transactional
+    public void deleteCardSnapshot(UUID userId, List<UUID> ids) {
+        var cards = ids.stream().distinct().map(id -> getCard(userId, id)).toList();
+        Set<LocalDate> dates = cards.stream().map(card -> localDate(userId, card.getNextReviewAt()))
+                .collect(java.util.stream.Collectors.toSet());
+        cardRepository.deleteAll(cards);
+        cardRepository.flush();
+        dates.forEach(date -> refreshDate(userId, date));
+    }
+
     private MemoryCard getCard(UUID userId, UUID cardId) {
         return cardRepository.findByIdAndUserId(cardId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("记忆卡不存在"));

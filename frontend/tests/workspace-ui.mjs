@@ -499,6 +499,10 @@ try {
   await deletionDock.waitFor({ state: "detached" });
   assert.equal(deletionCalls, 0);
   await page.reload();
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
+  assert.equal(await deletionDock.count(), 0, "Kept proposals must not revive on reload");
+  displayedMessages[0].id = "new-deletion-proposal";
+  await page.reload();
   await deletionDock.waitFor();
   deletionFails = true;
   await deletionDock.getByRole("button", { name: "Confirm deletion", exact: true }).click();
@@ -508,6 +512,9 @@ try {
   await deletionDock.getByRole("button", { name: "Confirm deletion", exact: true }).click();
   await deletionDock.waitFor({ state: "detached" });
   assert.equal(deletionCalls, 2);
+  await page.reload();
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
+  assert.equal(await deletionDock.count(), 0, "Completed deletion must not revive on reload");
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {

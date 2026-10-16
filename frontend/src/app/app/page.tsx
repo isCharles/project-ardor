@@ -40,7 +40,7 @@ type AgentRun = { id: string; conversationId: string; message: string; status: "
    button, and pressing it is an ordinary authenticated DELETE from here — the
    model never gets to destroy anything on its own say-so. */
 type LearningPlanProposal = { concept: string; reason: string | null; sourceType: string; sourceId: string | null; scheduledAt: string | null; requestId: string };
-type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; learningPlan?: LearningPlanProposal | null };
+type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; targetIds?: string[] | null; sourceMessageId?: string; learningPlan?: LearningPlanProposal | null };
 type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "GENERATING" | "DONE" | "DISMISSED" | "FAILED" | "EXPIRED" | "REMOVED"; error?: string; createdPlanId?: string };
 type RunStep = ToolMeasurement & { key: string; label: string; elapsedMs: number; done: boolean };
 type ResumeOption = { id: string; originalFilename: string };
@@ -140,8 +140,14 @@ export default function AgentHomePage() {
   const [reasoningDepth, setReasoningDepth] = useState<ReasoningDepth>("AUTO");
   const [nativeReasoning, setNativeReasoning] = useState(false);
   const reasoningAccount = useRef<string | null>(null);
+  const proposalSources = useRef(new Map<string, string>());
   const draftStorageKey = useCallback((conversationId?: string | null) =>
     `ardor:conversation-draft:${reasoningAccount.current ?? "unavailable"}:${conversationId ?? "new"}`, []);
+  const deletionResolutionKey = useCallback((item: AgentConfirmation, conversationId: string | null) =>
+    `ardor:deletion-result:${reasoningAccount.current}:${conversationId}:${proposalSources.current.get(item.sourceMessageId ?? "") ?? item.sourceMessageId ?? "live"}:${confirmationKey(item)}`, []);
+  function rememberDeletion(item: AgentConfirmation, resolution: "DONE" | "DISMISSED") {
+    try { window.localStorage.setItem(deletionResolutionKey(item, state?.conversationId ?? null), resolution); } catch { /* Snapshot-bound APIs remain safe when local storage is unavailable. */ }
+  }
   const readSavedDraft = useCallback((conversationId?: string | null) =>
     window.sessionStorage.getItem(draftStorageKey(conversationId)) ?? "", [draftStorageKey]);
   const readDraftReferences = useCallback((conversationId?: string | null): SelectedContext[] => {
@@ -310,14 +316,22 @@ export default function AgentHomePage() {
     setState(result);
     const outgoing = readOutgoing(reasoningAccount.current, result.conversationId);
     setMessages(outgoing ? [...result.messages, outgoing] : result.messages);
-    const proposals = [...new Map<string, AgentConfirmation>(result.messages.flatMap((message) => savedRunTrace(message.runTrace)?.proposals ?? [])
+    const proposals = [...new Map<string, AgentConfirmation>(result.messages.flatMap((message) => (savedRunTrace(message.runTrace)?.proposals ?? []).map(item => ({ ...item, sourceMessageId: message.id })))
       .map((item): [string, AgentConfirmation] => [confirmationKey(item), item])).values()].slice(-50);
-    const restored = proposals.map((item) => ({ ...item, state: item.kind === "learning_plan" && window.sessionStorage.getItem(dismissedProposalKey(item)) === "1"
-      ? "DISMISSED" as const : proposalExpired(item) ? "EXPIRED" as const : "PENDING" as const }));
+    const restored = proposals.map((item) => {
+      let resolution: string | null = null;
+      try { resolution = window.localStorage.getItem(deletionResolutionKey(item, result.conversationId)); } catch { /* No automatic permission. */ }
+      const unsafeLegacyBulk = ["all_memories", "all_memory_cards"].includes(item.kind) && !Array.isArray(item.targetIds);
+      return { ...item, state: item.kind === "learning_plan" && window.sessionStorage.getItem(dismissedProposalKey(item)) === "1"
+        ? "DISMISSED" as const : unsafeLegacyBulk || proposalExpired(item) ? "EXPIRED" as const : resolution === "DONE" ? "DONE" as const : resolution === "DISMISSED" ? "DISMISSED" as const : "PENDING" as const };
+    });
     // Queued calls have no open browser stream: recover their proposals without executing them.
     setConfirmations((current) => {
       const merged = new Map(current.filter((item) => item.kind !== "learning_plan").map((item) => [confirmationKey(item), item]));
-      for (const item of restored) if (!merged.has(confirmationKey(item))) merged.set(confirmationKey(item), item);
+      for (const item of restored) {
+        const existing = merged.get(confirmationKey(item));
+        merged.set(confirmationKey(item), existing && existing.sourceMessageId === item.sourceMessageId ? { ...item, ...existing } : item);
+      }
       return [...merged.values()];
     });
     const learningProposals = proposals.filter((item) => item.kind === "learning_plan" && item.learningPlan?.requestId);
@@ -341,7 +355,7 @@ export default function AgentHomePage() {
     const serviceId = window.sessionStorage.getItem(`${draftStorageKey(result.conversationId)}:service:${reasoningAccount.current}`);
     const feature = featuresRef.current.find((item) => item.id === serviceId);
     setSelectedContexts([...readDraftReferences(result.conversationId), ...(feature ? [{ type: "SERVICE" as const, id: feature.id, label: feature.label }] : [])].slice(-5));
-  }, [draftStorageKey, readSavedDraft, readDraftReferences]);
+  }, [draftStorageKey, readSavedDraft, readDraftReferences, deletionResolutionKey]);
 
   const load = useCallback(async (conversationId?: string | null) => {
     const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "";
@@ -518,7 +532,8 @@ export default function AgentHomePage() {
     const key = confirmationKey(pending);
     setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DELETING", error: undefined } : item));
     try {
-      await api<void>(pending.endpoint, { method: "DELETE" });
+      await api<void>(pending.endpoint, { method: "DELETE", ...(pending.targetIds ? { body: JSON.stringify({ ids: pending.targetIds }) } : {}) });
+      rememberDeletion(pending, "DONE");
       setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DONE" } : item));
     } catch (reason) {
       setConfirmations((current) => current.map((item) => confirmationKey(item) === key
@@ -685,6 +700,15 @@ export default function AgentHomePage() {
               const currentConversation = conversations.find((item) => item.id === event.conversationId);
               if (!currentConversation?.titleManuallySet) setTitleWatch({ id: event.conversationId, title: currentConversation?.title ?? conversationTitle(message) });
               assistant = { id: event.messageId, conversationId: event.conversationId, role: "ASSISTANT", content: event.content ?? "", createdAt: new Date().toISOString() };
+              proposalSources.current.set(requestId, event.messageId);
+              setConfirmations((current) => current.map((item) => {
+                if (item.sourceMessageId !== requestId) return item;
+                const saved = { ...item, sourceMessageId: event.messageId! };
+                if (item.state === "DONE" || item.state === "DISMISSED") {
+                  try { window.localStorage.setItem(deletionResolutionKey(saved, event.conversationId), item.state); } catch { /* Snapshot APIs remain bounded. */ }
+                }
+                return saved;
+              }));
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? assistant! : item));
               const totalElapsed = event.elapsedMs ?? Date.now() - runStartedAt.current;
               setRunElapsed(totalElapsed);
@@ -697,9 +721,9 @@ export default function AgentHomePage() {
                   : step);
               });
             } else if (event.type === "confirm" && event.confirmation) {
-              const proposal = event.confirmation;
+              const proposal = { ...event.confirmation, sourceMessageId: requestId };
               setConfirmations((current) => current.some((item) => confirmationKey(item) === confirmationKey(proposal))
-                ? current
+                ? current.map((item) => confirmationKey(item) === confirmationKey(proposal) ? { ...proposal, state: "PENDING" } : item)
                 : [...current, { ...proposal, state: "PENDING" }]);
             } else if (event.type === "error") streamFailure = event;
           }, sendControl.signal);
@@ -956,7 +980,7 @@ export default function AgentHomePage() {
   const selected = conversations.find((item) => item.id === state?.conversationId);
   const dockedDeletions = confirmations.filter((item) => item.kind !== "learning_plan" && ["PENDING", "FAILED", "DELETING"].includes(item.state));
   const deletionDock = <DeletionPermissions items={dockedDeletions}
-    onKeep={(pending) => setConfirmations((current) => current.map((item) => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item))}
+    onKeep={(pending) => { rememberDeletion(pending, "DISMISSED"); setConfirmations((current) => current.map((item) => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item)); }}
     onDelete={(pending) => void confirmDeletion(pending)} />;
   const visibleError = error && !retryFailures.some((failure) =>
     failure.detail === error || failure.detail.endsWith(` · ${error}`)

@@ -32,12 +32,15 @@ final class ApprovedAgentTools {
             result.put(specification, (request, memoryId) -> {
                 if (!specification.name().equals(request.name())) throw new IllegalArgumentException("工具名称不匹配");
                 boolean destructive = specification.name().startsWith("delete_") || specification.name().equals("clear_all_memories");
-                boolean allowed = (!destructive || PROPOSALS.contains(specification.name()))
+                boolean proposal = PROPOSALS.contains(specification.name());
+                boolean read = ToolIntentPolicy.isRead(specification.name());
+                boolean scopedWrite = requestId != null && bound instanceof ToolIntentScope scope && scope.permitsWrite(specification.name());
+                boolean allowed = (!destructive || proposal) && (proposal || read || scopedWrite)
                         && approvals.canPropose(userId, requestId);
                 long approved = timings.now();
                 if (!allowed) {
                     timings.record(request.id(), approved, approved, false);
-                    return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"请求已停止或操作不受支持，未执行工具。删除只能提出界面确认，不得直接执行。\"}";
+                    return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"本轮用户请求没有授权这类写入，或执行已停止。读取不需确认；需要写入时请先自然澄清用户意图。删除只能提出界面确认。\"}";
                 }
                 java.util.concurrent.atomic.AtomicBoolean executed = new java.util.concurrent.atomic.AtomicBoolean();
                 java.util.function.Supplier<String> call = () -> { executed.set(true); return delegate.execute(request, memoryId); };

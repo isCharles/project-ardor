@@ -32,4 +32,9 @@ public class MemoryCardController {
     public void delete(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) { service.deleteCard(principal.userId(), id); }
     @DeleteMapping @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteAll(@AuthenticationPrincipal ArdorPrincipal principal) { service.deleteAllCards(principal.userId()); }
+    @DeleteMapping("/snapshot") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteSnapshot(@AuthenticationPrincipal ArdorPrincipal principal,
+            @Valid @RequestBody com.projectardor.agent.web.DeletionSnapshotRequest request) {
+        service.deleteCardSnapshot(principal.userId(), request.ids());
+    }
 }

@@ -167,11 +167,12 @@ public class CareerAgentTools {
         return new AgentContextReference(type, contextId, label);
     }
 
-    public final class BoundCareerTools {
+    public final class BoundCareerTools implements com.projectardor.agent.service.ToolIntentScope {
         private final UUID userId;
         private final String trustedUserRequest;
         private final UUID logicalActionId;
         private final UUID runRequestId;
+        private boolean interviewAnswerContext;
         /* Destructive tools no longer delete. They hand the user a button and
            record it here; the caller of the run turns these into stream
            events, and nothing is removed until the person presses one. */
@@ -188,6 +189,11 @@ public class CareerAgentTools {
         public List<PendingConfirmation> pendingConfirmations() {
             return List.copyOf(pending);
         }
+        @Override public boolean permitsWrite(String tool) {
+            return tool.equals("submit_interview_answer") && interviewAnswerContext
+                    || com.projectardor.agent.service.ToolIntentPolicy.permits(tool, trustedUserRequest);
+        }
+        public BoundCareerTools withInterviewAnswerContext(boolean active) { interviewAnswerContext = active; return this; }
 
         /**
          * Describes one deletion for the user to approve by clicking.
@@ -209,6 +215,12 @@ public class CareerAgentTools {
                     "detail", detail == null ? "" : detail,
                     "message", "确认按钮已经显示给用户。请用一句话说明将删除什么，并请对方点击按钮；"
                             + "不要要求用户复述确认短语，也不要因为同一个对象重复调用本工具。");
+        }
+
+        private Map<String, Object> proposeSnapshot(String kind, String label, String detail, String endpoint, List<UUID> ids) {
+            if (ids.size() > 5000) throw new IllegalArgumentException("一次最多确认删除 5000 项，请缩小范围");
+            pending.add(new PendingConfirmation(kind, null, label, detail, endpoint, null, List.copyOf(ids)));
+            return Map.of("status", "CONFIRMATION_REQUIRED", "target", label, "message", "请用户点击已显示的确认按钮；尚未删除任何内容。");
         }
 
         @Tool(name = "get_profile", value = "读取当前用户的称呼、当前定位和目标岗位")
@@ -324,6 +336,8 @@ public class CareerAgentTools {
 
         @Tool(name = "add_memory", value = "新增一条跨会话长期记忆。只保存用户明确表达的稳定背景、目标或偏好；成功后必须在回复中告诉用户新增了什么")
         public AgentMemoryItemResponse addMemory(@P("一条简洁、独立的长期记忆，不带项目符号") String memory) {
+            if (!com.projectardor.agent.service.ToolIntentPolicy.groundedMemory(trustedUserRequest, memory))
+                throw new IllegalArgumentException("长期记忆须使用用户本轮明确提供的原话，不能把检索资料或模型推测写成用户偏好");
             return memoryService.add(userId, memory);
         }
 
@@ -341,14 +355,15 @@ public class CareerAgentTools {
 
         @Tool(name = "update_memory", value = "修正当前用户一条长期记忆，保持原 UUID，不清空或重建其它记忆。先读取原条目，只修改用户要求修正的内容")
         public AgentMemoryItemResponse updateMemory(@P("原记忆 UUID") String memoryId, @P("修订后的完整记忆，不超过 1000 字符") String content) {
+            if (!com.projectardor.agent.service.ToolIntentPolicy.groundedMemory(trustedUserRequest, content))
+                throw new IllegalArgumentException("修订后的记忆须有用户本轮明确提供的原话来源");
             return memoryService.edit(userId, uuid(memoryId, "记忆 ID"), content);
         }
 
         @Tool(name = "clear_all_memories", value = "清空当前用户的全部长期记忆。仅当用户明确要求清空全部记忆时使用")
         public Map<String, Object> clearAllMemories() {
-            int count = memoryService.listItems(userId).size();
-            return propose("all_memories", null, "全部长期记忆（" + count + " 条）",
-                    "清空后无法恢复", "/api/agent/memory");
+            var ids = memoryService.listItems(userId).stream().map(AgentMemoryItemResponse::id).toList();
+            return proposeSnapshot("all_memories", "当前长期记忆（" + ids.size() + " 条）", "只删除这次列出的记忆，之后新增的记忆不受影响", "/api/agent/memory/snapshot", ids);
         }
 
         @Tool(name = "get_application_rhythm", value = "查看用户本周投递份数、目标、每天记录和提醒设置；询问投递进度时先用此工具")
@@ -547,6 +562,8 @@ public class CareerAgentTools {
                 @P("面试 UUID") String interviewId,
                 @P("当前题目 UUID") String questionId,
                 @P("用户的回答原文") String answer) {
+            if (!com.projectardor.agent.service.ToolIntentPolicy.groundedMemory(trustedUserRequest, answer))
+                throw new IllegalArgumentException("只能提交用户本轮提供的回答原文，不能提交检索结果或模型生成的回答");
             return InterviewProgressResponse.from(interviewService.submitAnswer(
                     userId,
                     uuid(interviewId, "面试 ID"),
@@ -685,9 +702,8 @@ public class CareerAgentTools {
 
         @Tool(name = "delete_all_memory_cards", value = "永久删除当前用户的全部记忆卡。仅当用户明确说删除全部记忆卡时使用")
         public Map<String, Object> deleteAllMemoryCards() {
-            int count = interviewRecapService.listCards(userId, false).size();
-            return propose("all_memory_cards", null, "全部记忆卡（" + count + " 张）",
-                    "所有复习进度一并丢失", "/api/memory-cards");
+            var ids = interviewRecapService.listCards(userId, false).stream().map(MemoryCard::getId).toList();
+            return proposeSnapshot("all_memory_cards", "当前记忆卡（" + ids.size() + " 张）", "只删除这次列出的卡片及其复习进度，之后新增的卡片不受影响", "/api/memory-cards/snapshot", ids);
         }
 
         @Tool(name = "delete_interview_recap", value = "永久删除当前用户指定面经。只有用户明确要求删除时使用；不会连带删除已经单独建立的记忆卡")
@@ -836,9 +852,12 @@ public class CareerAgentTools {
      */
     public record PendingConfirmation(
             String kind, UUID targetId, String label, String detail, String endpoint,
-            LearningPlanCreateRequest learningPlan) {
+            LearningPlanCreateRequest learningPlan, List<UUID> targetIds) {
         public PendingConfirmation(String kind, UUID targetId, String label, String detail, String endpoint) {
-            this(kind, targetId, label, detail, endpoint, null);
+            this(kind, targetId, label, detail, endpoint, null, null);
+        }
+        public PendingConfirmation(String kind, UUID targetId, String label, String detail, String endpoint, LearningPlanCreateRequest learningPlan) {
+            this(kind, targetId, label, detail, endpoint, learningPlan, null);
         }
     }
 }

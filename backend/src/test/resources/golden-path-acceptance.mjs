@@ -616,6 +616,20 @@ async function main() {
     await sleep(200);
   }
   assert.ok(resumed, "Explicit acknowledgement must resume only the queued successor");
+  // Snapshot deletion cannot expand to later data, replay, or another user's records.
+  const snapshotOwner = new Client();
+  await snapshotOwner.request("/api/auth/register", { method: "POST", expected: 201,
+    body: { email: `golden-snapshot-${suffix}@ardor.invalid`, password, displayName: "Snapshot probe" } });
+  await snapshotOwner.request("/api/agent/memory", { method: "PUT", body: { content: "Old snapshot item" } });
+  const [snapshotOld] = await snapshotOwner.request("/api/agent/memory/items");
+  await snapshotOwner.request("/api/agent/memory", { method: "PUT", body: { content: "Old snapshot item\nLater item" } });
+  const snapshotNew = (await snapshotOwner.request("/api/agent/memory/items")).find(item => item.id !== snapshotOld.id);
+  await stranger.request("/api/agent/memory/snapshot", { method: "DELETE", expected: 404, body: { ids: [snapshotOld.id] } });
+  await snapshotOwner.request("/api/agent/memory/snapshot", { method: "DELETE", expected: 404, body: { ids: [snapshotOld.id, randomUUID()] } });
+  assert.equal((await snapshotOwner.request("/api/agent/memory/items")).length, 2);
+  await snapshotOwner.request("/api/agent/memory/snapshot", { method: "DELETE", expected: 204, body: { ids: [snapshotOld.id] } });
+  await snapshotOwner.request("/api/agent/memory/snapshot", { method: "DELETE", expected: 404, body: { ids: [snapshotOld.id] } });
+  assert.deepEqual((await snapshotOwner.request("/api/agent/memory/items")).map(item => item.id), [snapshotNew.id]);
   // Ordinary writes require no per-tool approval; deletion still only prepares a real UI proposal.
   for (const allow of [false, true]) {
     const permissionOwner = new Client();
@@ -626,7 +640,7 @@ async function main() {
     const permissionConversation = await permissionOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
     const permissionRunId = randomUUID();
     await permissionOwner.request("/api/agent/queue", { method: "POST", expected: 202,
-      body: { requestId: permissionRunId, conversationId: permissionConversation.id, message: "Remember my synthetic preference" } });
+      body: { requestId: permissionRunId, conversationId: permissionConversation.id, message: "Remember Synthetic approved preference" } });
     const approvalsPath = `/api/agent/runs/${permissionRunId}/approvals`;
     let permissionFinished = false;
     for (let attempt = 0; attempt < 100; attempt++) {

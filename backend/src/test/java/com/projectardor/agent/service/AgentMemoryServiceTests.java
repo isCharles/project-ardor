@@ -48,6 +48,25 @@ class AgentMemoryServiceTests {
     private final AgentMemoryItemRepository itemRepository = mock(AgentMemoryItemRepository.class);
     private final AgentMemoryService service = new AgentMemoryService(repository, itemRepository);
 
+    @Test void snapshotDeletesOnlyTheListedOwnedItems() {
+        UUID owner = UUID.randomUUID();
+        var old = AgentMemoryItem.create(owner, "Old");
+        var newer = AgentMemoryItem.create(owner, "New");
+        when(itemRepository.findByIdAndUserId(old.getId(), owner)).thenReturn(java.util.Optional.of(old));
+        service.removeSnapshot(owner, List.of(old.getId(), old.getId()));
+        verify(itemRepository).deleteAll(List.of(old));
+        verify(itemRepository, never()).delete(newer);
+        verify(itemRepository, never()).deleteAllByUserId(owner);
+    }
+    @Test void snapshotValidatesEveryTargetBeforeDeletingAnything() {
+        UUID owner = UUID.randomUUID();
+        var old = AgentMemoryItem.create(owner, "Old");
+        when(itemRepository.findByIdAndUserId(old.getId(), owner)).thenReturn(java.util.Optional.of(old));
+        assertThatThrownBy(() -> service.removeSnapshot(owner, List.of(old.getId(), UUID.randomUUID())))
+                .isInstanceOf(com.projectardor.common.web.ResourceNotFoundException.class);
+        verify(itemRepository, never()).deleteAll(any());
+    }
+
     @Test
     void returnsEmptyMemoryForNewUser() {
         UUID userId = UUID.randomUUID();

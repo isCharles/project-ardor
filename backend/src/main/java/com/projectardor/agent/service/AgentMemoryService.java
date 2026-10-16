@@ -101,6 +101,14 @@ public class AgentMemoryService {
     }
 
     @Transactional
+    public void removeSnapshot(UUID userId, java.util.List<UUID> ids) {
+        itemRepository.lockOwner(userId);
+        var items = ids.stream().distinct().map(id -> itemRepository.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("确认列表已变化，请重新生成删除建议"))).toList();
+        itemRepository.deleteAll(items);
+    }
+
+    @Transactional
     public AgentMemoryItemResponse edit(UUID userId, UUID memoryId, String rawContent) {
         itemRepository.lockOwner(userId);
         AgentMemoryItem item = itemRepository.findByIdAndUserId(memoryId, userId)
