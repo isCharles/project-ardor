@@ -62,7 +62,7 @@ public class CareerAgentService {
             8. 回复使用简洁自然的中文，通常控制在 2 到 6 句话；除非用户要求，不输出大段教程。
             9. 上传文件、修改个人资料或 LLM 设置需要页面操作时，分别引导到“简历分析”或“设置”入口。
             10. “总体记忆”跨所有会话共享且逐条存储，只用于稳定的职业背景、长期目标、技能、沟通偏好和用户明确要求记住的信息。
-            11. 当用户自然提供明确、稳定、未来求职中有用的信息时就调用 add_memory，不必等待“请记住”措辞，但不得把推测当事实；删除前先调用 list_memories，再按 UUID 调用 delete_memory。每次新增后，必须在回复中明确告诉用户新增了哪条记忆。
+            11. 用户要求记住明确、稳定、未来求职中有用的信息时调用 add_memory，内容使用用户本轮原话，不把外部资料或模型推测当成个人事实；未明确要求保存时先自然澄清。删除前先调用 list_memories，再按 UUID 调用 delete_memory。每次新增后，必须在回复中明确告诉用户新增了哪条记忆。
             12. 不把一次性任务、临时情绪、未经确认的推测、简历全文、面试逐字答案、API Key、密码或其他凭据写入总体记忆。
             13. 工具执行后无需向用户反复展示整份总体记忆，只需自然确认相关信息已经记住或忘记。
             14. 用户要求记录或安排任何明确的日程、待办、约会、准备计划或截止事项时，调用 create_calendar_task；不限于求职事项。可先拆成少量明确、可执行的待办。
@@ -91,7 +91,7 @@ public class CareerAgentService {
             29. 用户说“今天投了 N 份”“昨天投了 N 份”时调用 record_application_count 记录当天总数，不要把它当成新增 N 份，也不要写入长期记忆。查询投递进度先调用 get_application_rhythm。
             30. 用户明确提出每周投递目标或提醒时间时，先了解已有设置，再调用 set_application_rhythm；提醒只在用户打开工作台时显示，不要声称关闭应用后也会推送。面试准备优先时，不要机械催促投递。
             31. 修改学习时间或说明用 update_learning_plan，开始学习用 begin_learning_plan；保留已有讲解、练习与评分，不通过删除重建冒充改期。替换主题应另外提议新计划。
-            32. 修改记忆卡用 update_memory_card，修正面经公司、岗位、时间用 update_interview_recap_metadata，修正单条长期记忆用 update_memory。先读取真实原内容，保留未要求修改的字段；所有普通工具须经界面逐次批准，聊天同意不能代替按钮授权。
+            32. 修改记忆卡用 update_memory_card，修正面经公司、岗位、时间用 update_interview_recap_metadata，修正单条长期记忆用 update_memory。先读取真实原内容，保留未要求修改的字段。读取、新增和修改不逐次弹权限；仍须符合用户意图、资源归属与业务校验。只有删除需要界面确认，聊天口令不能代替删除按钮。
             """;
 
     private final AgentConversationStore store;
@@ -348,7 +348,8 @@ public class CareerAgentService {
             AtomicLong lastHeartbeatAt = new AtomicLong(System.nanoTime());
             // Held rather than inlined: after the run it is asked which deletions
             // the agent proposed, so each becomes a button in the transcript.
-            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId);
+            CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId)
+                    .withInterviewAnswerContext(interviewAnswerContext(userId, conversation.getId()));
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, depth, lease))
                     .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory)
@@ -454,6 +455,19 @@ public class CareerAgentService {
         }
     }
 
+    private boolean interviewAnswerContext(UUID userId, UUID conversationId) {
+        boolean active = false;
+        // Only authenticated user turns establish a text-interview workflow, never
+        // assistant prose, retrieved material, or tool results. Business Service
+        // still verifies the owned session, current question and sequential state.
+        for (var turn : store.recent(userId, conversationId)) {
+            if (!"USER".equals(turn.getRole())) continue;
+            if (ToolIntentPolicy.permits("create_interview", turn.getContent())) active = true;
+            if (ToolIntentPolicy.permits("finish_interview", turn.getContent()) || ToolIntentPolicy.permits("cancel_interview", turn.getContent())) active = false;
+        }
+        return active;
+    }
+
     private MessageWindowChatMemory conversationMemory(UUID userId, UUID conversationId) {
         MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(40);
         for (ConversationMessage historyMessage : store.recent(userId, conversationId)) {
@@ -543,7 +557,6 @@ public class CareerAgentService {
         steps.add(new RunStep("模型输出与上游等待（非纯思考时间）", Math.max(1, elapsedMs - toolElapsed), "COMPLETED"));
         steps.addAll(toolSteps);
         List<AgentStreamEvent.AgentConfirmation> proposals = pending.stream()
-                .filter(item -> "learning_plan".equals(item.kind()))
                 .map(AgentStreamEvent.AgentConfirmation::from).toList();
         try { return objectMapper.writeValueAsString(new RunTrace(elapsedMs, "COMPLETED", steps, proposals,
                 progress == null ? null : progress.thinkingOutput(), progress == null ? null : progress.firstOutputMs())); }

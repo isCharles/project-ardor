@@ -28,6 +28,9 @@ try {
   let activeRun = null;
   let permissions = [];
   let permissionDecisions = [];
+  let deletionCalls = 0;
+  let deletionFails = false;
+  const steerRequests = [];
   let queueItems = [];
   let queuedRequests = [];
   let cancelCalls = 0;
@@ -85,13 +88,23 @@ try {
       return route.fulfill({ status: 202, json: item });
     }
     else if (path === "/api/agent/queue") body = queueItems.filter((item) => item.owner === userId);
+    else if (path.startsWith("/api/agent/queue/") && path.endsWith("/steer") && route.request().method() === "POST") {
+      steerRequests.push({ path, ...route.request().postDataJSON() });
+      return route.fulfill({ status: 204 });
+    }
     else if (path.startsWith("/api/agent/queue/") && route.request().method() === "DELETE") {
       queueItems = queueItems.filter((item) => !path.endsWith(item.id));
       return route.fulfill({ status: 204 });
     }
-    else if (path === "/api/agent/runs/accepted-run/cancel" && route.request().method() === "POST") {
+    else if (["/api/agent/runs/accepted-run/cancel", "/api/agent/runs/queued-active-run/cancel"].includes(path) && route.request().method() === "POST") {
       cancelCalls++;
       activeRun = { ...activeRun, status: "FAILED", errorCode: "AGENT_RUN_CANCELLED", errorMessage: "Synthetic stopped run" };
+      return route.fulfill({ status: 204 });
+    }
+    else if (path === "/api/agent/memory/items/dock-fixture" && route.request().method() === "DELETE") {
+      deletionCalls++;
+      await new Promise(resolve => setTimeout(resolve, 200));
+      if (deletionFails) return route.fulfill({ status: 503, json: { message: "Synthetic dock deletion failure" } });
       return route.fulfill({ status: 204 });
     }
     else if (path.endsWith("/approvals")) body = permissions;
@@ -302,23 +315,8 @@ try {
   for (let attempt = 0; attempt < 100 && !releaseStream; attempt++) await page.waitForTimeout(20);
   assert.ok(releaseStream, "Synthetic stream must be in flight");
   const toolPermissions = page.getByRole("region", { name: "Tool permissions", exact: true });
-  await toolPermissions.getByText("get_learning_plan", { exact: true }).waitFor();
-  await page.waitForFunction(() => {
-    const region = document.querySelector('[aria-label="Tool permissions"]');
-    if (!region) return false;
-    const bounds = region.getBoundingClientRect();
-    return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
-  });
+  assert.equal(await toolPermissions.count(), 0, "Ordinary reads must not show permission prompts");
   assert.equal(permissionDecisions.length, 0);
-  await toolPermissions.getByText("Exact parameters", { exact: true }).click();
-  await toolPermissions.getByText('{"planId":"exact-owned-target"}', { exact: true }).waitFor();
-  await Promise.all([
-    page.waitForResponse((response) => response.url().endsWith("/approvals/permission-one") && response.request().method() === "POST"),
-    toolPermissions.getByRole("button", { name: "Allow once", exact: true }).click(),
-  ]);
-  assert.equal(permissionDecisions.length, 1);
-  assert.equal(permissionDecisions[0].allow, true);
-  assert.ok(permissionDecisions[0].path.endsWith("/approvals/permission-one"));
   assert.equal(await draftBox.isEnabled(), true);
   await draftBox.fill("Next message draft survives completion");
   await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
@@ -357,12 +355,14 @@ try {
   await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).waitFor();
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   assert.equal(await draftBox.isEnabled(), true);
-  await Promise.all([
-    page.waitForResponse((response) => response.url().endsWith("/approvals/permission-two") && response.request().method() === "POST"),
-    toolPermissions.getByRole("button", { name: "Deny", exact: true }).click(),
-  ]);
-  assert.equal(permissionDecisions.length, 2);
-  assert.equal(permissionDecisions[1].allow, false);
+  assert.equal(await toolPermissions.count(), 0, "Ordinary writes must not show permission prompts");
+  assert.equal(permissionDecisions.length, 0);
+  activeRun = { ...activeRun, id: "queued-active-run", message: "A new queued instruction after the original stopped" };
+  await page.reload();
+  await page.getByRole("article").filter({ hasText: activeRun.message }).waitFor();
+  await page.waitForTimeout(6500); // More than two real recovery polls with a stale predecessor outbox.
+  assert.equal(await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).count(), 1);
+  assert.equal(await page.getByRole("article").filter({ hasText: activeRun.message }).count(), 1);
   await draftBox.fill("Queued follow-up one");
   await Promise.all([
     page.waitForResponse((response) => response.url().endsWith("/api/agent/queue") && response.request().method() === "POST"),
@@ -370,6 +370,13 @@ try {
   ]);
   await page.getByRole("region", { name: "Message queue", exact: true }).getByText("Queued follow-up one", { exact: true }).waitFor();
   assert.equal(queuedRequests[0].reasoningDepth, "QUICK");
+  await Promise.all([
+    page.waitForResponse(response => response.url().endsWith(`${queuedRequests[0].requestId}/steer`) && response.request().method() === "POST"),
+    page.getByRole("region", { name: "Message queue", exact: true }).getByRole("button", { name: "Interrupt and handle now", exact: true }).click(),
+  ]);
+  assert.equal(steerRequests.length, 1);
+  assert.equal(steerRequests[0].interruptRunId, "queued-active-run");
+  assert.ok(steerRequests[0].path.endsWith(`${queuedRequests[0].requestId}/steer`));
   await draftBox.fill("Queued follow-up two");
   await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
   await page.getByRole("button", { name: "Max", exact: true }).click();
@@ -386,7 +393,7 @@ try {
   await secondQueued.getByRole("button", { name: "Remove from queue", exact: true }).click();
   await secondQueued.waitFor({ state: "detached" });
   await Promise.all([
-    page.waitForResponse((response) => response.url().endsWith("/runs/accepted-run/cancel") && response.request().method() === "POST"),
+    page.waitForResponse((response) => response.url().endsWith("/runs/queued-active-run/cancel") && response.request().method() === "POST"),
     page.getByRole("button", { name: "Stop", exact: true }).click(),
   ]);
   assert.equal(cancelCalls, 1);
@@ -472,6 +479,42 @@ try {
   await page.getByRole("button", { name: "Change service", exact: true }).waitFor();
   assert.match(await draftBox.inputValue(), /Change the recurring schedule “Weekly sync”/);
   assert.equal(calendarWrites, 0, "Guided creation/editing must not mutate the calendar before sending and approving");
+  displayedMessages = [{ id: "deletion-proposal", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic history.\n\n".repeat(120), createdAt: new Date().toISOString(),
+    runTrace: JSON.stringify({ elapsedMs: 20, status: "COMPLETED", steps: [], proposals: [{ kind: "memory_item", targetId: "dock-fixture", label: "Synthetic career preference", detail: "Remove only this item from long-term memory.", endpoint: "/api/agent/memory/items/dock-fixture" }] }) }];
+  await page.goto(`${origin}/app?conversation=chat-one`);
+  const deletionDock = page.getByRole("region", { name: "Deletion confirmation", exact: true });
+  await deletionDock.getByText('Delete “Synthetic career preference”?', { exact: true }).waitFor();
+  await deletionDock.getByText("Remove only this item from long-term memory.", { exact: true }).waitFor();
+  assert.equal(deletionCalls, 0);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const bounds = await page.evaluate(() => {
+      const dock = document.querySelector('[aria-label="Deletion confirmation"]').getBoundingClientRect();
+      const input = document.querySelector('textarea[aria-label="Message Ardor"]').getBoundingClientRect();
+      return { top: dock.top, bottom: dock.bottom, inputTop: input.top, inputBottom: input.bottom, height: innerHeight };
+    });
+    assert.ok(bounds.top >= 0 && bounds.bottom <= bounds.inputTop && bounds.inputBottom <= bounds.height, "Confirmation must be visible directly above the composer, without covering it");
+  }
+  await deletionDock.getByRole("button", { name: "Keep", exact: true }).click();
+  await deletionDock.waitFor({ state: "detached" });
+  assert.equal(deletionCalls, 0);
+  await page.reload();
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
+  assert.equal(await deletionDock.count(), 0, "Kept proposals must not revive on reload");
+  displayedMessages[0].id = "new-deletion-proposal";
+  await page.reload();
+  await deletionDock.waitFor();
+  deletionFails = true;
+  await deletionDock.getByRole("button", { name: "Confirm deletion", exact: true }).click();
+  await deletionDock.getByRole("alert").waitFor();
+  assert.equal(deletionCalls, 1);
+  deletionFails = false;
+  await deletionDock.getByRole("button", { name: "Confirm deletion", exact: true }).click();
+  await deletionDock.waitFor({ state: "detached" });
+  assert.equal(deletionCalls, 2);
+  await page.reload();
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
+  assert.equal(await deletionDock.count(), 0, "Completed deletion must not revive on reload");
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {

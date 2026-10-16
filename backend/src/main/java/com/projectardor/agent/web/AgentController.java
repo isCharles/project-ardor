@@ -64,6 +64,20 @@ public class AgentController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void resumeQueued(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID id) { queue.resume(principal.userId(), id); }
 
+    public record SteerRequest(java.util.UUID interruptRunId) {}
+    @PostMapping("/queue/{id}/steer")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void steerQueued(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID id,
+            @RequestBody SteerRequest request) {
+        queue.steer(principal.userId(), id, queued -> {
+        if (request.interruptRunId() != null) {
+            var active = agentService.run(principal.userId(), request.interruptRunId());
+            if (!active.conversationId().equals(queued.request().conversationId())) throw new IllegalArgumentException("不能打断其他会话");
+            if ("RUNNING".equals(active.status())) agentService.cancelRun(principal.userId(), active.id());
+        }
+        });
+    }
+
     @GetMapping
     public AgentStateResponse state(
             @AuthenticationPrincipal ArdorPrincipal principal,
@@ -240,6 +254,13 @@ public class AgentController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void clearMemory(@AuthenticationPrincipal ArdorPrincipal principal) {
         memoryService.clear(principal.userId());
+    }
+
+    @DeleteMapping("/memory/snapshot")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteMemorySnapshot(@AuthenticationPrincipal ArdorPrincipal principal,
+            @Valid @RequestBody DeletionSnapshotRequest request) {
+        memoryService.removeSnapshot(principal.userId(), request.ids());
     }
 
     /** One memory, removed by the user — this is where a confirmation button lands. */

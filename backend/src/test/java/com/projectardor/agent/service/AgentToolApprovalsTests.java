@@ -16,34 +16,30 @@ class AgentToolApprovalsTests {
     private final AgentToolApprovals gate = new AgentToolApprovals(Duration.ofSeconds(5));
 
     @Test
-    void authorizationWaitAndBusinessExecutionHaveIndependentMeasurements() throws Exception {
+    void ordinaryToolsExecuteWithoutApprovalAndHaveZeroApprovalWait() throws Exception {
         gate.begin(owner, run);
         var nanos = new java.util.concurrent.atomic.AtomicLong();
         var timings = new AgentToolTimings(nanos::get);
         var probe = new TimedProbe(nanos);
         var executor = ApprovedAgentTools.wrap(probe, owner, run, gate, null, timings).values().iterator().next();
-        var call = ToolExecutionRequest.builder().id("timed-call").name("timed_read").arguments("{}").build();
-        var result = CompletableFuture.supplyAsync(() -> executor.execute(call, null));
-        var permission = pending(gate);
-        nanos.set(TimeUnit.SECONDS.toNanos(40));
-        gate.decide(owner, run, permission.id(), true);
-        assertThat(result.get(2, TimeUnit.SECONDS)).contains("result");
+        var call = ToolExecutionRequest.builder().id("timed-call").name("get_profile").arguments("{}").build();
+        assertThat(executor.execute(call, null)).contains("result");
+        assertThat(gate.list(owner, run)).isEmpty();
         var measured = timings.remove(call.id());
-        assertThat(measured.approvalWaitMs()).isEqualTo(40_000);
+        assertThat(measured.approvalWaitMs()).isZero();
         assertThat(measured.businessMs()).isEqualTo(3);
         assertThat(measured.executed()).isTrue();
     }
 
     @Test
-    void deniedToolReportsZeroBusinessExecution() throws Exception {
+    void closedRunReportsZeroBusinessExecution() throws Exception {
         gate.begin(owner, run);
         var timings = new AgentToolTimings();
         var probe = new Probe();
         var executor = ApprovedAgentTools.wrap(probe, owner, run, gate, null, timings).values().iterator().next();
-        var call = ToolExecutionRequest.builder().id("denied-call").name("read_private_data").arguments("{}").build();
-        var result = CompletableFuture.supplyAsync(() -> executor.execute(call, null));
-        gate.decide(owner, run, pending(gate).id(), false);
-        assertThat(result.get(2, TimeUnit.SECONDS)).contains("PERMISSION_NOT_GRANTED");
+        var call = ToolExecutionRequest.builder().id("denied-call").name("get_profile").arguments("{}").build();
+        gate.close(owner, run);
+        assertThat(executor.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
         var denied = timings.remove(call.id());
         assertThat(denied.businessMs()).isZero();
         assertThat(denied.executed()).isFalse();
@@ -53,30 +49,25 @@ class AgentToolApprovalsTests {
     public static class TimedProbe {
         private final java.util.concurrent.atomic.AtomicLong nanos;
         TimedProbe(java.util.concurrent.atomic.AtomicLong nanos) { this.nanos = nanos; }
-        @Tool(name = "timed_read", value = "Read fixture")
+        @Tool(name = "get_profile", value = "Read fixture")
         public String read() { nanos.addAndGet(TimeUnit.MILLISECONDS.toNanos(3)); return "result"; }
     }
 
     @Test
-    void executorCannotReadOrWriteBeforeAnExactSingleUseApproval() throws Exception {
+    void ordinaryReadUsesActiveOwnerRunWithoutCreatingPermissionRequests() throws Exception {
         gate.begin(owner, run);
         Probe probe = new Probe();
         var tools = ApprovedAgentTools.wrap(probe, owner, run, gate);
         var executor = tools.values().iterator().next();
-        var call = ToolExecutionRequest.builder().id("call-one").name("read_private_data").arguments("{}").build();
-        var result = CompletableFuture.supplyAsync(() -> executor.execute(call, null));
-        var permission = pending(gate);
-        assertThat(probe.calls).hasValue(0);
-        assertThat(permission.tool()).isEqualTo("read_private_data");
-        assertThat(permission.arguments()).isEqualTo("{}");
-        assertThat(gate.list(UUID.randomUUID(), run)).isEmpty();
-        assertThatThrownBy(() -> gate.decide(UUID.randomUUID(), run, permission.id(), true))
-                .isInstanceOf(com.projectardor.common.web.ResourceNotFoundException.class);
-        gate.decide(owner, run, permission.id(), true);
-        assertThat(result.get(2, TimeUnit.SECONDS)).contains("result");
+        var call = ToolExecutionRequest.builder().id("call-one").name("get_profile").arguments("{}").build();
+        assertThat(executor.execute(call, null)).contains("result");
+        assertThat(gate.list(owner, run)).isEmpty();
         assertThat(probe.calls).hasValue(1);
-        assertThatThrownBy(() -> gate.decide(owner, run, permission.id(), true)).isInstanceOf(IllegalStateException.class);
-        assertThat(gate.list(owner, run).getFirst().status()).isEqualTo("CONSUMED");
+        var foreign = ApprovedAgentTools.wrap(probe, UUID.randomUUID(), run, gate).values().iterator().next();
+        assertThat(foreign.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
+        gate.close(owner, run);
+        assertThat(executor.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
+        assertThat(probe.calls).hasValue(1);
     }
 
     @Test
@@ -108,12 +99,12 @@ class AgentToolApprovalsTests {
     }
 
     @Test
-    void legacyChatWithoutAnInteractiveRunCannotExecuteBusinessTools() {
+    void synchronousChatCanUseOrdinaryBusinessToolsWithoutAnApprovalChannel() {
         Probe probe = new Probe();
         var executor = ApprovedAgentTools.wrap(probe, owner, null, gate).values().iterator().next();
-        assertThat(executor.execute(ToolExecutionRequest.builder().name("read_private_data").arguments("{}").build(), null))
-                .contains("PERMISSION_NOT_GRANTED");
-        assertThat(probe.calls).hasValue(0);
+        assertThat(executor.execute(ToolExecutionRequest.builder().name("get_profile").arguments("{}").build(), null))
+                .contains("result");
+        assertThat(probe.calls).hasValue(1);
     }
 
     @Test
@@ -141,12 +132,49 @@ class AgentToolApprovalsTests {
     }
     public static class Probe {
         final AtomicInteger calls = new AtomicInteger();
-        @Tool(name = "read_private_data", value = "Read owner data")
+        @Tool(name = "get_profile", value = "Read owner data")
         public String read() { calls.incrementAndGet(); return "result"; }
     }
     public static class ProposalProbe {
         final AtomicInteger calls = new AtomicInteger();
         @Tool(name = "delete_memory", value = "Prepare confirmation metadata")
         public String propose() { calls.incrementAndGet(); return "proposal"; }
+    }
+
+    @Test void unregisteredDestructiveToolCannotBypassTheProposalBoundary() {
+        gate.begin(owner, run);
+        var probe = new UnsafeDeletionProbe();
+        var executor = ApprovedAgentTools.wrap(probe, owner, run, gate).values().iterator().next();
+        assertThat(executor.execute(ToolExecutionRequest.builder().name("delete_unregistered").arguments("{}").build(), null))
+                .contains("PERMISSION_NOT_GRANTED");
+        assertThat(probe.calls).hasValue(0);
+    }
+    public static class UnsafeDeletionProbe {
+        final AtomicInteger calls = new AtomicInteger();
+        @Tool(name = "delete_unregistered", value = "Unsafe direct deletion fixture")
+        public String delete() { calls.incrementAndGet(); return "deleted"; }
+    }
+
+    @Test void trustedWriteScopeAndDurableRunAreBothRequired() {
+        var probe = new WriteProbe();
+        var call = ToolExecutionRequest.builder().name("create_calendar_task").arguments("{}").build();
+        assertThat(ApprovedAgentTools.wrap(probe, owner, null, gate).values().iterator().next().execute(call, null)).contains("PERMISSION_NOT_GRANTED");
+        gate.begin(owner, run);
+        probe.request = "Search the web for calendar examples";
+        var executor = ApprovedAgentTools.wrap(probe, owner, run, gate).values().iterator().next();
+        assertThat(executor.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
+        probe.request = "Please create a calendar task for tomorrow";
+        assertThat(executor.execute(call, null)).contains("created");
+        assertThat(gate.list(owner, run)).isEmpty();
+        gate.close(owner, run);
+        assertThat(executor.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
+        assertThat(probe.calls).hasValue(1);
+    }
+    public static class WriteProbe implements ToolIntentScope {
+        String request;
+        final AtomicInteger calls = new AtomicInteger();
+        public boolean permitsWrite(String tool) { return ToolIntentPolicy.permits(tool, request); }
+        @Tool(name = "create_calendar_task", value = "Write fixture")
+        public String write() { calls.incrementAndGet(); return "created"; }
     }
 }

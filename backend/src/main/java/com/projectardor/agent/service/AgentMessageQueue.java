@@ -66,7 +66,7 @@ public class AgentMessageQueue {
     }
     public List<Item> list(UUID userId, UUID conversationId) {
         conversations.requireActive(userId, conversationId);
-        return jdbc.query("SELECT * FROM agent_message_queue WHERE user_id = ? AND conversation_id = ? ORDER BY sequence DESC LIMIT 50", rows, userId, conversationId)
+        return jdbc.query("SELECT * FROM agent_message_queue WHERE user_id = ? AND conversation_id = ? ORDER BY created_at DESC,sequence DESC LIMIT 50", rows, userId, conversationId)
                 .reversed();
     }
     public Item get(UUID userId, UUID id) {
@@ -136,6 +136,32 @@ public class AgentMessageQueue {
     }
     private void lockOwner(UUID userId) {
         if (jdbc.queryForList("SELECT id FROM users WHERE id=? FOR UPDATE", UUID.class, userId).isEmpty()) throw new ResourceNotFoundException("用户不存在");
+    }
+    @Transactional
+    public void prioritize(UUID userId, UUID id) {
+        steer(userId, id, ignored -> {});
+    }
+    @Transactional
+    public void steer(UUID userId, UUID id, java.util.function.Consumer<Item> interrupt) {
+        lockOwner(userId);
+        Item item = jdbc.query("SELECT * FROM agent_message_queue WHERE id=? AND user_id=? FOR UPDATE", rows, id, userId)
+                .stream().findFirst().orElseThrow(() -> new ResourceNotFoundException("排队消息不存在"));
+        if (!item.status().equals("QUEUED")) throw new IllegalStateException("这条消息已开始，请刷新查看状态");
+        // Reserve the replacement before stopping anything. Cancel/removal and the worker
+        // cannot consume this row between validation and prioritization.
+        interrupt.accept(item);
+        if (Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM agent_runs WHERE user_id=? AND status='RUNNING')", Boolean.class, userId))) {
+            throw new IllegalStateException("当前执行仍在停止，请稍后重试；没有重放旧操作");
+        }
+        // Serialize priority allocation across owners because sequence is globally unique.
+        // Every explicit choice gets a lower slot, so the latest choice wins.
+        jdbc.execute("SELECT pg_advisory_xact_lock(714073811)");
+        Long priority = jdbc.queryForObject("SELECT LEAST(0,COALESCE(MIN(sequence),0))-1 FROM agent_message_queue", Long.class);
+        int changed = jdbc.update("""
+                UPDATE agent_message_queue SET sequence=?,blocked_by=NULL,updated_at=CURRENT_TIMESTAMP
+                WHERE id=? AND user_id=? AND status='QUEUED'
+                """, priority, id, userId);
+        if (changed != 1) throw new IllegalStateException("这条消息已经开始，未重复派发");
     }
     public record Item(UUID id, UUID userId, String status, AgentMessageRequest request, UUID blockedBy, String errorMessage, Instant createdAt) {}
 }
