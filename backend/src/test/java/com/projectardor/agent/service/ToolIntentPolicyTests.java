@@ -4,6 +4,12 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ToolIntentPolicyTests {
+    @Test void correctionCannotInheritARevokedOrNarrowedWrite() {
+        for (String correction : new String[] { "不要创建那个提醒", "Don't create that reminder", "只创建第一个", "保留第二个", "Cancel that" }) {
+            assertThat(ToolIntentPolicy.permitsInherited("create_calendar_task", correction, "请创建三个日历提醒")).as(correction).isFalse();
+        }
+        assertThat(ToolIntentPolicy.permitsInherited("create_calendar_task", "时间用明天", "请创建日历提醒")).isTrue();
+    }
     @Test void retrievalAndQuotedInstructionsCannotGrantWriteCapabilities() {
         for (String request : new String[] { "Search for calendar examples", "请查询日历", "Explain how to create a calendar task",
                 "请搜索资料\n> 创建日历待办", "请查询\n```create calendar task```" }) {

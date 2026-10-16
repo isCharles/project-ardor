@@ -79,18 +79,25 @@ public class AgentRunStore {
     public boolean begin(UUID userId, UUID requestId, UUID conversationId, String message,
             String contextType, UUID contextId, List<AgentContextReferenceRequest> references,
             UUID logicalActionId, ReasoningDepth depth) {
+        return begin(userId, requestId, conversationId, message, contextType, contextId, references, logicalActionId, depth, List.of());
+    }
+
+    public boolean begin(UUID userId, UUID requestId, UUID conversationId, String message,
+            String contextType, UUID contextId, List<AgentContextReferenceRequest> references,
+            UUID logicalActionId, ReasoningDepth depth, List<AgentContextReference> resolvedReferences) {
         String hash = fingerprint(conversationId, message, contextType, contextId, references, depth, steeringSource(userId, requestId));
+        String contextJson = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(resolvedReferences);
         int inserted = logicalActionId == null
                 ? jdbc.update("""
-                    INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message, context_references)
+                    VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb))
                     ON CONFLICT (id) DO NOTHING
-                    """, requestId, userId, conversationId, hash, message)
+                    """, requestId, userId, conversationId, hash, message, contextJson)
                 : jdbc.update("""
-                    INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message, logical_action_id)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message, logical_action_id, context_references)
+                    VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb))
                     ON CONFLICT (id) DO NOTHING
-                    """, requestId, userId, conversationId, hash, message, logicalActionId);
+                    """, requestId, userId, conversationId, hash, message, logicalActionId, contextJson);
         if (inserted == 0) {
             List<String> hashes = jdbc.queryForList(
                     "SELECT request_hash FROM agent_runs WHERE id = ? AND user_id = ?", String.class,
@@ -145,13 +152,36 @@ public class AgentRunStore {
 
     public List<AgentRun> superseded(UUID userId, UUID conversationId, boolean recent) {
         return jdbc.query("""
-                SELECT q.id,q.conversation_id,q.payload->>'message' AS message,'CANCELLED' AS status,
-                  '已替代' AS label,'SUPERSEDED' AS error_code,q.error_message,false AS retryable,false AS tool_started,q.created_at,q.updated_at
-                FROM agent_message_queue q WHERE q.user_id=? AND q.conversation_id=? AND q.status='CANCELLED'
-                  AND q.error_message='已由后续补充替代，未执行'
+                SELECT q.id,q.conversation_id,q.payload->>'message' AS message,q.status,
+                  '未执行' AS label,CASE WHEN q.status='CANCELLED' THEN 'SUPERSEDED' ELSE 'QUEUE_NOT_STARTED' END AS error_code,
+                  q.error_message,false AS retryable,false AS tool_started,q.created_at,q.updated_at
+                FROM agent_message_queue q WHERE q.user_id=? AND q.conversation_id=?
+                  AND (q.status IN ('FAILED','INTERRUPTED') OR (q.status='CANCELLED' AND q.error_message='已由后续补充替代，未执行'))
                   AND NOT EXISTS(SELECT 1 FROM agent_runs r WHERE r.id=q.id AND r.user_id=q.user_id)
                 ORDER BY q.created_at DESC,q.id DESC
                 """ + (recent ? " LIMIT 40" : ""), RUN_MAPPER, userId, conversationId).reversed();
+    }
+
+    public List<AgentContextReference> contextReferences(UUID userId, UUID conversationId, UUID requestId) {
+        var json = jdbc.queryForList("SELECT context_references::text FROM agent_runs WHERE id=? AND user_id=? AND conversation_id=?",
+                String.class, requestId, userId, conversationId).stream().findFirst().orElse("[]");
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var references = mapper.readValue(json, new tools.jackson.core.type.TypeReference<List<AgentContextReference>>() {});
+        if (!references.isEmpty()) return references;
+        // Queue payloads also cover accepted messages that failed before a run existed.
+        var payload = jdbc.queryForList("SELECT payload::text FROM agent_message_queue WHERE id=? AND user_id=? AND conversation_id=?",
+                String.class, requestId, userId, conversationId).stream().findFirst();
+        if (payload.isEmpty()) return List.of();
+        var request = mapper.readValue(payload.get(), com.projectardor.agent.web.AgentMessageRequest.class);
+        var result = new java.util.LinkedHashMap<String, AgentContextReference>();
+        if (request.contextType() != null && request.contextId() != null) {
+            var ref = new AgentContextReference(request.contextType(), request.contextId(), request.contextType());
+            result.put(ref.type() + ":" + ref.id(), ref);
+        }
+        if (request.contextReferences() != null) for (var ref : request.contextReferences()) {
+            result.put(ref.type() + ":" + ref.id(), new AgentContextReference(ref.type(), ref.id(), ref.type()));
+        }
+        return List.copyOf(result.values());
     }
 
     /** Scope comes only from an owned, explicitly linked interrupted request, never model output. */

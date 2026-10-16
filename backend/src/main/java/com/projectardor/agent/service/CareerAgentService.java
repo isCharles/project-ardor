@@ -303,7 +303,7 @@ public class CareerAgentService {
                     conversation.getId(), message, contextType, contextId, requestedReferences, depth);
             if (requestId != null) {
                 if (!runStore.begin(userId, requestId, conversation.getId(), message,
-                        contextType, contextId, requestedReferences, logicalActionId, depth)) {
+                        contextType, contextId, requestedReferences, logicalActionId, depth, references)) {
                     sink.send(AgentStreamEvent.error("RUN_ALREADY_STARTED",
                             "请求已被接收，请读取已有执行状态", false, elapsedMs(startedAt)));
                     sink.complete();
@@ -465,7 +465,7 @@ public class CareerAgentService {
         MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(40);
         var history = conversationHistory(userId, conversationId, true);
         for (var historyMessage : history.subList(Math.max(0, history.size() - 40), history.size())) {
-            if ("USER".equals(historyMessage.role())) memory.add(UserMessage.from(historyMessage.content()));
+            if ("USER".equals(historyMessage.role())) memory.add(UserMessage.from(recoveredContextualMessage(userId, historyMessage)));
             else if ("ASSISTANT".equals(historyMessage.role())) memory.add(AiMessage.from(historyMessage.content()));
         }
         return memory;
@@ -481,8 +481,11 @@ public class CareerAgentService {
         for (var run : unfinished) {
             UUID userMessageId = UUID.nameUUIDFromBytes(("ardor:interrupted-user:" + run.id()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             UUID statusMessageId = UUID.nameUUIDFromBytes(("ardor:interrupted-status:" + run.id()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            history.add(new AgentMessageResponse(userMessageId, conversationId, "USER", run.message(), List.of(), null, run.createdAt(), run.id()));
-            String note = "SUPERSEDED".equals(run.errorCode()) ? "本条已由后续补充替代，未执行。" : "AGENT_RUN_CANCELLED".equals(run.errorCode()) ? "本轮已停止；已开始的操作请核验结果。" : "本轮未完成；不能假定操作已成功，请先核验结果。";
+            history.add(new AgentMessageResponse(userMessageId, conversationId, "USER", run.message(),
+                    runStore.contextReferences(userId, conversationId, run.id()), null, run.createdAt(), run.id()));
+            String note = "SUPERSEDED".equals(run.errorCode()) ? "本条已由后续补充替代，未执行。" : "QUEUE_NOT_STARTED".equals(run.errorCode())
+                    ? "本条未能开始：" + (run.errorMessage() == null ? "请检查引用资料和模型配置。" : run.errorMessage())
+                    : "AGENT_RUN_CANCELLED".equals(run.errorCode()) ? "本轮已停止；已开始的操作请核验结果。" : "本轮未完成；不能假定操作已成功，请先核验结果。";
             AgentStreamProgress.View progress = null;
             try { progress = streamProgress.get(userId, run.id()); } catch (com.projectardor.common.web.ResourceNotFoundException absent) { /* Old runs may have no snapshot. */ }
             var steps = progress == null ? List.<RunStep>of() : progress.steps().stream()
@@ -697,6 +700,17 @@ public class CareerAgentService {
                 .map(reference -> tools.contextHint(userId, reference.type(), reference.id()))
                 .collect(java.util.stream.Collectors.joining("\n"));
         return message + "\n\n<selected_context>\n" + hints + "\n</selected_context>";
+    }
+
+    private String recoveredContextualMessage(UUID userId, AgentMessageResponse message) {
+        if (message.contextReferences() == null || message.contextReferences().isEmpty()) return message.content();
+        String hints = message.contextReferences().stream().map(reference -> {
+            try { return tools.contextHint(userId, reference.type(), reference.id()); }
+            catch (com.projectardor.common.web.ResourceNotFoundException unavailable) {
+                return "此前引用的资料已不可用：" + reference.type() + "（ID：" + reference.id() + "）。不得假装已读取内容。";
+            }
+        }).collect(java.util.stream.Collectors.joining("\n"));
+        return message.content() + "\n\n<selected_context>\n" + hints + "\n</selected_context>";
     }
 
     public AgentConversationResponse renameConversation(UUID userId, UUID conversationId, String title) {

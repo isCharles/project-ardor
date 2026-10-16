@@ -69,18 +69,12 @@ public class AgentController {
             var original = agentService.run(principal.userId(), request.interruptedRunId());
             if (!original.conversationId().equals(request.conversationId())) throw new IllegalArgumentException("不能打断其他会话");
         }
-        var item = queue.enqueue(principal.userId(), request);
-        if (!"QUEUED".equals(item.status())) return item; // Idempotent retry, never stop a newer run.
-        try { queue.replace(principal.userId(), item.id(), reserved -> {
+        return queue.enqueueAndReplace(principal.userId(), request, reserved -> {
             if (request.interruptedRunId() != null) {
                 var original = agentService.run(principal.userId(), request.interruptedRunId());
                 if ("RUNNING".equals(original.status())) agentService.cancelRun(principal.userId(), original.id());
             }
-        }); } catch (IllegalStateException changed) {
-            var latest = queue.get(principal.userId(), item.id());
-            if (!java.util.List.of("DISPATCHING", "RUNNING", "COMPLETED").contains(latest.status())) throw changed;
-        }
-        return queue.get(principal.userId(), item.id());
+        });
     }
     @DeleteMapping("/queue/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

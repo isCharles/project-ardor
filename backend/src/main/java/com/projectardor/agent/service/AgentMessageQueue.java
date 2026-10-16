@@ -149,6 +149,15 @@ public class AgentMessageQueue {
     public void replace(UUID userId, UUID id, java.util.function.Consumer<Item> interrupt) {
         steerLocked(userId, id, interrupt, true);
     }
+    /** Keep acceptance and replacement under the same owner lock and transaction. */
+    @Transactional
+    public Item enqueueAndReplace(UUID userId, AgentMessageRequest request, java.util.function.Consumer<Item> interrupt) {
+        lockOwner(userId);
+        Item item = enqueue(userId, request);
+        if (!"QUEUED".equals(item.status())) return item;
+        steerLocked(userId, item.id(), interrupt, true);
+        return get(userId, item.id());
+    }
     private void steerLocked(UUID userId, UUID id, java.util.function.Consumer<Item> interrupt, boolean replacePending) {
         lockOwner(userId);
         Item item = jdbc.query("SELECT * FROM agent_message_queue WHERE id=? AND user_id=? FOR UPDATE", rows, id, userId)
@@ -170,9 +179,12 @@ public class AgentMessageQueue {
                 """, priority, id, userId);
         if (changed != 1) throw new IllegalStateException("这条消息已经开始，未重复派发");
         if (replacePending) jdbc.update("""
-                UPDATE agent_message_queue SET status='CANCELLED',error_message='已由后续补充替代，未执行',updated_at=CURRENT_TIMESTAMP
-                WHERE user_id=? AND conversation_id=? AND id<>? AND status='QUEUED'
-                """, userId, item.request().conversationId(), id);
+                WITH superseded AS (
+                  UPDATE agent_message_queue SET status='CANCELLED',error_message='已由后续补充替代，未执行',updated_at=CURRENT_TIMESTAMP
+                  WHERE user_id=? AND conversation_id=? AND id<>? AND status='QUEUED' RETURNING id
+                ) UPDATE agent_message_queue SET blocked_by=?
+                  WHERE user_id=? AND status='QUEUED' AND blocked_by IN (SELECT id FROM superseded)
+                """, userId, item.request().conversationId(), id, id, userId);
     }
     public record Item(UUID id, UUID userId, String status, AgentMessageRequest request, UUID blockedBy, String errorMessage, Instant createdAt) {}
 }

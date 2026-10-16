@@ -193,7 +193,7 @@ public class CareerAgentTools {
         @Override public boolean permitsWrite(String tool) {
             return tool.equals("submit_interview_answer") && interviewAnswerContext
                     || com.projectardor.agent.service.ToolIntentPolicy.permits(tool, trustedUserRequest)
-                    || com.projectardor.agent.service.ToolIntentPolicy.permits(tool, interruptedRequest);
+                    || com.projectardor.agent.service.ToolIntentPolicy.permitsInherited(tool, trustedUserRequest, interruptedRequest);
         }
         public BoundCareerTools withInterviewAnswerContext(boolean active) { interviewAnswerContext = active; return this; }
         public BoundCareerTools withInterruptedRequest(String request) { interruptedRequest = request == null ? "" : request; return this; }

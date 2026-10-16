@@ -713,6 +713,7 @@ export default function AgentHomePage() {
               receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
             } else if (event.type === "status" && event.label) {
+              setStreamPhase("WAITING_DATA");
               setRunSteps((current) => current.some((step) => step.key === "status") ? current.map((step) => step.key === "status" ? { ...step, label: event.label! } : step) : [...current, { key: "status", label: event.label!, elapsedMs: 0, done: false }]);
             } else if (event.type === "tool_start" && event.toolName) {
               setStreamPhase("TOOL");

@@ -170,7 +170,8 @@ http.createServer((request, response) => {
       const turns = payload.messages.filter(message => message.role === "user");
       const original = turns.filter(message => String(message.content).includes("删除1、2、3，然后重新生成"));
       const correction = String(turns.at(-1)?.content).includes("等等，2不需要重新生成");
-      if (original.length !== 1 || !correction) {
+      const attachmentPreserved = original.length === 1 && String(original[0].content).includes("简历 ID：");
+      if (original.length !== 1 || !correction || !attachmentPreserved) {
         response.writeHead(400, { "content-type": "application/json" });
         response.end(JSON.stringify({ error: { message: "Original user request or latest correction missing/duplicated" } }));
         return;

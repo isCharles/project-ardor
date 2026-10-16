@@ -716,7 +716,11 @@ async function main() {
   await owner.request(`/api/agent/runs/${silentRequest.requestId}/progress`, { expected: 404 });
   await silentOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
     model: "agent-cancel-probe", apiKey: "disposable-fake-model-key" } });
-  const cancelRequest = { ...silentRequest, requestId: randomUUID(), message: "Explicit user cancellation probe: 删除1、2、3，然后重新生成" };
+  const steeringResumeUpload = new FormData();
+  steeringResumeUpload.set("file", new Blob([syntheticResumePdf()], { type: "application/pdf" }), "steering-context.pdf");
+  const steeringResume = await silentOwner.request("/api/resumes", { method: "POST", expected: 201, body: steeringResumeUpload });
+  const cancelRequest = { ...silentRequest, requestId: randomUUID(), message: "Explicit user cancellation probe: 删除1、2、3，然后重新生成",
+    contextReferences: [{ type: "RESUME", id: steeringResume.id }] };
   await silentOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: cancelRequest });
   await silentOwner.request(`/api/agent/queue/${cancelRequest.requestId}/resume`, { method: "POST", expected: 204 });
   let cancelStarted = false;
@@ -729,8 +733,17 @@ async function main() {
   await owner.request(`/api/agent/runs/${cancelRequest.requestId}/cancel`, { method: "POST", expected: 404 });
   await silentOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
     model: "steering-context-probe", apiKey: "disposable-fake-model-key" } });
-  const steerRequest = { ...cancelRequest, requestId: randomUUID(), message: "等等，2不需要重新生成", interruptedRunId: cancelRequest.requestId };
+  const steerRequest = { ...cancelRequest, contextReferences: [], requestId: randomUUID(), message: "等等，2不需要重新生成", interruptedRunId: cancelRequest.requestId };
   const unrelatedConversation = await silentOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
+  const supersededRequest = { ...steerRequest, requestId: randomUUID(), message: "Synthetic superseded follow-up" };
+  await silentOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: supersededRequest });
+  const missingResumeUpload = new FormData();
+  missingResumeUpload.set("file", new Blob([syntheticResumePdf()], { type: "application/pdf" }), "removed-before-dispatch.pdf");
+  const missingResume = await silentOwner.request("/api/resumes", { method: "POST", expected: 201, body: missingResumeUpload });
+  const dependentRequest = { ...steerRequest, requestId: randomUUID(), conversationId: unrelatedConversation.id,
+    interruptedRunId: null, contextReferences: [{ type: "RESUME", id: missingResume.id }], message: "Synthetic other-conversation dependent" };
+  await silentOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: dependentRequest });
+  await silentOwner.request(`/api/resumes/${missingResume.id}`, { method: "DELETE", expected: 204 });
   await silentOwner.request("/api/agent/messages/steer", { method: "POST", expected: 400, body: { ...steerRequest, requestId: randomUUID(), conversationId: unrelatedConversation.id } });
   assert.equal((await silentOwner.request(`/api/agent/runs/${cancelRequest.requestId}`)).status, "RUNNING", "Cross-conversation steering must not stop the original");
   await owner.request("/api/agent/messages/steer", { method: "POST", expected: 404, body: steerRequest });
@@ -746,8 +759,24 @@ async function main() {
   assert.ok(steerFinished, "Interrupting must dispatch the selected new instruction rather than replaying the old run");
   const correctedHistory = (await silentOwner.request(`/api/agent?conversationId=${silentConversation.id}`)).messages;
   assert.equal(correctedHistory.filter(item => item.role === "USER" && item.content === cancelRequest.message).length, 1, "Interrupted original stays in history exactly once");
+  assert.equal(correctedHistory.find(item => item.role === "USER" && item.content === cancelRequest.message).contextReferences[0].id, steeringResume.id,
+    "Interrupted attachments survive without a completed message row");
+  assert.equal(correctedHistory.filter(item => item.role === "USER" && item.content === supersededRequest.message).length, 1,
+    "Superseded pending messages remain in history");
   assert.equal(correctedHistory.filter(item => item.role === "USER" && item.content === steerRequest.message).length, 1);
   assert.ok(correctedHistory.some(item => item.role === "ASSISTANT" && item.content.includes("只重新生成1和3")), "Fake provider requires both actual user turns in its received context");
+  let dependentReleased = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const item = (await silentOwner.request(`/api/agent/queue?conversationId=${unrelatedConversation.id}`)).find(item => item.id === dependentRequest.requestId);
+    if (item?.status === "FAILED") { dependentReleased = true; break; }
+    await sleep(100);
+  }
+  assert.ok(dependentReleased, "Superseding one conversation must rewire another conversation's dependency");
+  await silentOwner.request(`/api/agent/runs/${dependentRequest.requestId}`, { expected: 404 });
+  const preRunHistory = (await silentOwner.request(`/api/agent?conversationId=${unrelatedConversation.id}`)).messages;
+  assert.equal(preRunHistory.filter(item => item.role === "USER" && item.content === dependentRequest.message).length, 1,
+    "Accepted messages that fail before run creation remain visible");
+  assert.ok(preRunHistory.some(item => item.role === "ASSISTANT" && item.content.includes("本条未能开始")));
   await sleep(9000); // The fake provider attempts a late tool call after the local run has stopped.
   assert.equal((await silentOwner.request("/api/agent/memory")).content, "", "Late tool chunks must not mutate memory");
   assert.equal((await silentOwner.request(`/api/agent/runs/${silentRequest.requestId}`)).errorCode, "AGENT_UPSTREAM_SILENT");

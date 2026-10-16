@@ -13,6 +13,13 @@ public final class ToolIntentPolicy {
             "get_next_question", "get_ai_job", "get_interview_evaluation", "list_interview_recap_jobs", "list_interview_recaps",
             "get_interview_recap", "list_due_memory_cards", "list_memory_cards");
     public static boolean isRead(String tool) { return READS.contains(tool); }
+    /** A narrowed/revoked instruction cannot inherit an unrestricted old capability.
+     * Target-specific exemptions require a fresh positive request, not model interpretation. */
+    public static boolean permitsInherited(String tool, String currentRequest, String interruptedRequest) {
+        if (currentRequest != null && Pattern.compile("不要|不用|不需要|别|取消|停止|撤销|保留|除了|除外|仅|只|先不|don['’]?t|do not|never|cancel|stop|revoke|except|only|keep|instead", Pattern.CASE_INSENSITIVE)
+                .matcher(currentRequest).find()) return false;
+        return permits(tool, interruptedRequest);
+    }
     public static boolean permits(String tool, String trustedRequest) {
         String request = trustedRequest == null ? "" : trustedRequest.toLowerCase(Locale.ROOT)
                 .replaceAll("(?s)```.*?```|<untrusted_external_content[^>]*>.*?</untrusted_external_content>", "")
