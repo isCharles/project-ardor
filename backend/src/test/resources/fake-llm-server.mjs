@@ -11,7 +11,8 @@ const analysis = {
   strengths: ["后端技术栈聚焦", "有可验证的项目经验"],
   weaknesses: ["缺少量化业务结果"],
   possibleTargetRoles: ["Java 后端工程师"],
-  recommendations: ["为项目补充性能、规模或业务结果数据", "用动词开头重写核心职责"],
+  criterionRatings: ["completeness", "timeline", "responsibilities", "ownership", "outcomes", "verification", "structure", "precision", "consistency", "requiredSkills", "appliedSkills", "scopeFit"].map(id => ({ id, level: 0, evidence: "", rationale: "Synthetic fixture has no verified criterion evidence" })),
+  recommendations: [{ priority: "P1", criterionId: "outcomes", evidence: "", problem: "缺少核实过的结果口径", action: "补充自己能够核实的基线和结果", example: "将[待核实的基线]改进至[待核实的结果]" }],
 };
 
 const questions = {

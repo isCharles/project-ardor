@@ -954,6 +954,44 @@ async function main() {
   assert.equal(resumeTask.unread,true);
   assert.equal(resumeTask.resultPath,`/app/resumes?selected=${resume.id}`);
   await stranger.request(`/api/background-tasks/RESUME_ANALYSIS/${resumeJob.jobId}`,{expected:404});
+  const firstScore = await asyncOwner.request(`/api/resumes/${resume.id}/analysis`);
+  assert.equal(firstScore.promptVersion,"resume-analysis-v3");
+  assert.equal(firstScore.analysis.rubricVersion,"ardor-resume-rubric-v1");
+  assert.equal(firstScore.analysis.overallScore,0,"The server must ignore the fixture model's arbitrary overallScore=82");
+  assert.equal(firstScore.analysis.criterionRatings.length,12);
+  assert.equal(firstScore.analysis.recommendations[0].priority,"P1");
+  const duplicateUpload = new FormData();
+  duplicateUpload.set("file",new Blob([syntheticResumePdf()],{type:"application/pdf"}),"different-filename-same-text.pdf");
+  const duplicateResume = await asyncOwner.request("/api/resumes",{method:"POST",expected:201,body:duplicateUpload});
+  await asyncOwner.request(`/api/resumes/${duplicateResume.id}/analysis`,{method:"POST",expected:202});
+  for (let attempt=0;attempt<100;attempt++) {
+    const status = await asyncOwner.request(`/api/resumes/${duplicateResume.id}/analysis/status`);
+    if(status.status==="COMPLETED") break;
+    if(status.status==="FAILED") throw new Error(status.errorMessage);
+    await sleep(100);
+  }
+  const duplicateScore = await asyncOwner.request(`/api/resumes/${duplicateResume.id}/analysis`);
+  assert.deepEqual(duplicateScore.analysis,firstScore.analysis,"Identical owned text and conditions reuse the canonical assessment");
+  assert.notEqual(duplicateScore.id,firstScore.id,"Each uploaded resume retains its own report association");
+  await stranger.request(`/api/resumes/${resume.id}/analysis/history`,{expected:404});
+  await stranger.request(`/api/resumes/${resume.id}/analysis?analysisId=${firstScore.id}`,{expected:404});
+  const changedConditions={targetRole:"Java backend",jobDescription:"Design services with Redis and PostgreSQL. Explain reliability and performance tradeoffs."};
+  const versionJob=await asyncOwner.request(`/api/resumes/${resume.id}/analysis`,{method:"POST",expected:202,body:changedConditions});
+  assert.notEqual(versionJob.analysisId,firstScore.id);
+  assert.equal((await asyncOwner.request(`/api/resumes/${resume.id}/analysis?analysisId=${firstScore.id}`)).id,firstScore.id,"Old reports stay readable while a new assessment runs");
+  for(let attempt=0;attempt<100;attempt++) {
+    const status=await asyncOwner.request(`/api/resumes/${resume.id}/analysis/status`);
+    if(status.status==="COMPLETED") break;
+    if(status.status==="FAILED") throw new Error(status.errorMessage);
+    await sleep(100);
+  }
+  const changedScore=await asyncOwner.request(`/api/resumes/${resume.id}/analysis`);
+  assert.notEqual(changedScore.analysis.evaluationKey,firstScore.analysis.evaluationKey);
+  assert.equal(changedScore.analysis.scoringContext.mode,"USER_JD");
+  assert.equal((await asyncOwner.request(`/api/resumes/${resume.id}/analysis/history`)).length,2);
+  const repeatScore=await asyncOwner.request(`/api/resumes/${resume.id}/analysis`,{method:"POST",expected:202,body:changedConditions});
+  assert.equal(repeatScore.status,"COMPLETED");
+  assert.equal(repeatScore.analysisId,changedScore.id);
   const taskRecap = await asyncOwner.request("/api/interview-recaps",{method:"POST",expected:202,body:{content:"后台任务验收：技术面试中被问到 Redis 的 RDB 和 AOF 区别，我只说了快照，没能解释日志、重写及故障恢复的数据丢失窗口。"}});
   const taskRecapId=taskRecap.recapId ?? await waitForRecap(asyncOwner,taskRecap.jobId);
   const taskRecapDetail=await asyncOwner.request(`/api/interview-recaps/${taskRecapId}`);

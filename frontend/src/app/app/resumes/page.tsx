@@ -9,6 +9,7 @@ import { ApiError, api } from "@/lib/api";
 import { markBackgroundPending } from "@/lib/background-notifications";
 import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
+import { ResumeScoringPanel } from "@/components/ardor/resume-scoring-panel";
 
 type ResumeItem = {
   id: string; originalFilename: string; sizeBytes: number;
@@ -43,10 +44,10 @@ function reportScores(data: Record<string, unknown>, t: (en: string, zh: string)
   return { overall: explicit ?? clampScore(cards.reduce((sum, card) => sum + card.value, 0) / cards.length), cards, estimated: explicit === null };
 }
 function statusMeta(resume: ResumeItem, t: (en: string, zh: string) => string) {
-  if (resume.analysisId) return { label: t("Report ready", "报告已完成"), className: "bg-emerald-50 text-emerald-700" };
   if (resume.analysisStatus === "QUEUED") return { label: t("Queued", "等待分析"), className: "bg-blue-50 text-blue-700" };
   if (resume.analysisStatus === "RUNNING") return { label: t("Analyzing", "正在分析"), className: "bg-violet-50 text-violet-700" };
   if (resume.analysisStatus === "FAILED") return { label: t("Analysis failed", "分析失败"), className: "bg-red-50 text-red-700" };
+  if (resume.analysisId) return { label: t("Report ready", "报告已完成"), className: "bg-emerald-50 text-emerald-700" };
   if (resume.parseStatus === "FAILED") return { label: t("Parsing failed", "解析失败"), className: "bg-red-50 text-red-700" };
   return { label: t("Ready to analyze", "可以分析"), className: "bg-stone-100 text-stone-600" };
 }
@@ -57,6 +58,7 @@ export default function ResumesPage() {
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [history, setHistory] = useState<Analysis[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState("");
@@ -91,12 +93,14 @@ export default function ResumesPage() {
     return () => window.clearInterval(timer);
   }, [resumes, load]);
   useEffect(() => {
-    if (!selected?.analysisId || analysis?.resumeId === selected.id) return;
+    if (!selected?.analysisId) return;
     let active = true;
-    api<Analysis>(`/api/resumes/${selected.id}/analysis`).then((result) => { if (active) setAnalysis(result); })
+    const id = selected.id;
+    api<Analysis>(`/api/resumes/${id}/analysis`).then((result) => { if (active) setAnalysis(result); })
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("Could not load report", "无法载入报告")); });
+    api<Analysis[]>(`/api/resumes/${id}/analysis/history`).then(items => { if (active) setHistory(items); }).catch(() => { if (active) setHistory([]); });
     return () => { active = false; };
-  }, [selected, analysis?.resumeId, t]);
+  }, [selected?.id, selected?.analysisId, t]);
 
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget;
@@ -109,18 +113,18 @@ export default function ResumesPage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("Upload failed", "上传失败")); }
     finally { setBusy(""); }
   }
-  async function analyze(resume: ResumeItem) {
-    setBusy("analyze"); setError(""); setNotice(""); setAnalysis(null);
+  async function analyze(resume: ResumeItem, role = "", jd = "") {
+    setBusy("analyze"); setError(""); setNotice("");
     try {
-      const task = await api<AnalysisTask>(`/api/resumes/${resume.id}/analysis`, { method: "POST" });
-      if (task.status === "COMPLETED" && task.analysisId) setAnalysis(await api<Analysis>(`/api/resumes/${resume.id}/analysis`));
+      const task = await api<AnalysisTask>(`/api/resumes/${resume.id}/analysis`, { method: "POST", body: JSON.stringify({ targetRole: role, jobDescription: jd }) });
+      if (task.status === "COMPLETED" && task.analysisId) setAnalysis(await api<Analysis>(`/api/resumes/${resume.id}/analysis?analysisId=${task.analysisId}`));
       else { markBackgroundPending("resumes"); setNotice(t("Ardor is analyzing this resume in the background. You can leave this page; the report will appear when ready.", "Ardor 正在后台分析这份简历。你可以离开页面，完成后报告会自动出现。")); }
       await load();
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("Analysis failed", "分析失败")); }
     finally { setBusy(""); }
   }
   function chooseFile(event: ChangeEvent<HTMLInputElement>) { setFileName(event.target.files?.[0]?.name ?? ""); }
-  function openResume(resume: ResumeItem) { setSelectedId(resume.id); setAnalysis(null); setError(""); setNotice(""); }
+  function openResume(resume: ResumeItem) { setSelectedId(resume.id); setAnalysis(null); setHistory([]); setError(""); setNotice(""); }
 
   if (selected) {
     const data = analysis?.analysis ?? {}, scores = reportScores(data, t);
@@ -139,6 +143,8 @@ export default function ResumesPage() {
       <button onClick={() => { setSelectedId(null); setAnalysis(null); setError(""); }} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 transition hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("All resumes", "所有简历")}</button>
       <header className="pb-12 pt-10 md:pb-16 md:pt-16"><p className="text-sm font-medium text-violet-600">RESUME REPORT</p><h1 className="mt-4 text-4xl font-semibold tracking-[-0.045em] md:text-6xl">{t("Resume report", "简历报告")}</h1><p className="mt-4 max-w-2xl truncate text-sm text-stone-500">{selected.originalFilename}</p></header>
       {(error || notice) && <div className={`mb-8 rounded-2xl px-5 py-4 text-sm ${error ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{error || notice}</div>}
+      {selected.analysisError && <p role="status" className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">{selected.analysisError}</p>}
+      {selected.parseStatus === "PARSED" && <ResumeScoringPanel key={selected.id} report={analysis} history={history} busy={busy === "analyze"} pending={selected.analysisStatus === "QUEUED" || selected.analysisStatus === "RUNNING"} onAnalyze={(role, jd) => void analyze(selected, role, jd)} onChoose={item => setAnalysis(item as Analysis)} />}
       {!analysis ? <section className="overflow-hidden rounded-[2.25rem] bg-white p-7 shadow-[0_20px_80px_rgba(0,0,0,0.06)] md:p-12"><div className="mx-auto max-w-2xl py-10 text-center"><span className="mx-auto grid size-16 place-items-center rounded-2xl bg-gradient-to-br from-violet-500 to-blue-500 text-white shadow-lg shadow-violet-200"><BrainCircuit className="size-7" /></span><h2 className="mt-7 text-3xl font-semibold tracking-tight">{selected.analysisStatus === "QUEUED" || selected.analysisStatus === "RUNNING" || selected.analysisId ? t("Generating report", "正在生成报告") : t("Create a detailed report", "生成深度报告")}</h2><p className="mt-3 text-sm text-stone-500">{t("Score · strengths · suggestions", "评分 · 优势 · 建议")}</p>{selected.analysisStatus === "QUEUED" || selected.analysisStatus === "RUNNING" || selected.analysisId ? <div className="mx-auto mt-8 h-1.5 max-w-sm overflow-hidden rounded-full bg-stone-100"><div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-violet-500 to-blue-500" /></div> : <button onClick={() => analyze(selected)} disabled={selected.parseStatus !== "PARSED" || busy === "analyze"} className="mt-8 rounded-full bg-[#1d1d1f] px-7 py-3.5 text-sm font-medium text-white transition hover:scale-[1.02] hover:bg-black disabled:opacity-40">{busy === "analyze" ? t("Submitting…", "提交中…") : selected.analysisStatus === "FAILED" ? t("Try again", "重新分析") : t("Analyze", "开始分析")}</button>}</div></section> : <div className="space-y-6">
         <section className="grid overflow-hidden rounded-[2.5rem] bg-[#101014] text-white shadow-[0_28px_100px_rgba(0,0,0,0.16)] lg:grid-cols-[0.8fr_1.2fr]"><div className="grid place-items-center p-9 md:p-14"><div className="relative grid size-52 place-items-center rounded-full" style={{ background: `conic-gradient(#a78bfa ${scores.overall * 3.6}deg, #27272a 0deg)` }}><div className="grid size-[11.5rem] place-items-center rounded-full bg-[#101014] text-center"><div><strong className="text-6xl font-semibold tracking-[-0.06em]">{scores.overall}</strong><p className="mt-2 text-xs uppercase tracking-[0.2em] text-zinc-400">{t("Overall score", "综合评分")}</p></div></div></div>{scores.estimated && <p className="mt-5 text-xs text-zinc-500">{t("Estimated from an older report", "旧版报告按现有内容完整度补算")}</p>}</div><div className="border-t border-white/10 p-8 md:p-12 lg:border-l lg:border-t-0"><p className="text-xs font-medium uppercase tracking-[0.2em] text-violet-300">{t("Executive summary", "报告摘要")}</p><h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">{typeof data.summary === "string" ? data.summary : strengths[0] ?? t("Your resume has a clear professional foundation.", "你的简历已经具备清晰的职业基础。")}</h2><div className="mt-9 grid gap-3 sm:grid-cols-2">{scores.cards.map((card) => <div key={card.label} className="rounded-2xl bg-white/[0.07] p-4"><div className="flex items-end justify-between"><span className="text-sm text-zinc-300">{card.label}</span><strong className="text-2xl">{card.value}</strong></div><div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-blue-400" style={{ width: `${card.value}%` }} /></div><p className="mt-2 text-xs text-zinc-500">{card.note}</p></div>)}</div></div></section>
         <section className="grid gap-6 lg:grid-cols-2"><ReportPanel tone="emerald" icon={<Check className="size-5" />} eyebrow="WHAT WORKS" title={t("Your strongest points", "最有竞争力的部分")} items={strengths} empty={t("No clear strengths listed in the report.", "报告中暂无明确优势。")}/><ReportPanel tone="orange" icon={<TrendingUp className="size-5" />} eyebrow="NEXT LEVEL" title={t("How to improve", "下一步如何提升")} items={generatedRecommendations} empty={t("No specific improvements suggested yet.", "当前没有明显短板建议。")}/></section>

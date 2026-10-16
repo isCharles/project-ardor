@@ -39,6 +39,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Workspace UI regression (mock APIs)
         run: node tests/workspace-ui.mjs
+      - name: Resume scoring UI regression (mock APIs)
+        run: node tests/resume-scoring-ui.mjs
 
   desktop-window:
     runs-on: windows-latest

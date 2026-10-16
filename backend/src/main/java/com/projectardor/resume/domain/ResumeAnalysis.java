@@ -38,6 +38,9 @@ public class ResumeAnalysis {
     @Column(name = "prompt_version", nullable = false, length = 64)
     private String promptVersion;
 
+    @Column(name = "evaluation_key", length = 64)
+    private String evaluationKey;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -64,6 +67,13 @@ public class ResumeAnalysis {
         return new ResumeAnalysis(userId, resumeId, analysis, modelName);
     }
 
+    public static ResumeAnalysis scored(UUID userId, UUID resumeId, Map<String, Object> analysis, String modelName, String evaluationKey) {
+        ResumeAnalysis result = new ResumeAnalysis(userId, resumeId, analysis, modelName);
+        result.promptVersion = "resume-analysis-v3";
+        result.evaluationKey = evaluationKey;
+        return result;
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
@@ -80,5 +90,6 @@ public class ResumeAnalysis {
     public Map<String, Object> getAnalysis() { return Map.copyOf(analysis); }
     public String getModelName() { return modelName; }
     public String getPromptVersion() { return promptVersion; }
+    public String getEvaluationKey() { return evaluationKey; }
     public Instant getCreatedAt() { return createdAt; }
 }
