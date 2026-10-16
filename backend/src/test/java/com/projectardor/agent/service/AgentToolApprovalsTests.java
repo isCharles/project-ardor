@@ -15,6 +15,26 @@ class AgentToolApprovalsTests {
     private final UUID run = UUID.randomUUID();
     private final AgentToolApprovals gate = new AgentToolApprovals(Duration.ofSeconds(5));
 
+    @Test void conversationalDateUpdateExecutesWithoutPermissionDialogButOnlyForActiveOwner() {
+        gate.begin(owner, run);
+        var probe = new DateUpdateProbe();
+        var call = ToolExecutionRequest.builder().id("date-change").name("update_learning_plan").arguments("{}").build();
+        var executor = ApprovedAgentTools.wrap(probe, owner, run, gate).values().iterator().next();
+        assertThat(executor.execute(call, null)).contains("updated");
+        assertThat(gate.list(owner, run)).isEmpty();
+        assertThat(probe.calls).hasValue(1);
+        gate.close(owner, run);
+        assertThat(executor.execute(call, null)).contains("PERMISSION_NOT_GRANTED");
+        assertThat(probe.calls).hasValue(1);
+    }
+
+    public static class DateUpdateProbe implements ToolIntentScope {
+        final AtomicInteger calls = new AtomicInteger();
+        public boolean permitsWrite(String tool) { return ToolIntentPolicy.permits(tool, "帮我把第二个改到明天"); }
+        @Tool(name = "update_learning_plan", value = "Synthetic date correction")
+        public String update() { calls.incrementAndGet(); return "updated"; }
+    }
+
     @Test
     void ordinaryToolsExecuteWithoutApprovalAndHaveZeroApprovalWait() throws Exception {
         gate.begin(owner, run);

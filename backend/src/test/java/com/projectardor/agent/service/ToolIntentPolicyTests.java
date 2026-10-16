@@ -10,6 +10,20 @@ class ToolIntentPolicyTests {
         }
         assertThat(ToolIntentPolicy.permitsInherited("create_calendar_task", "时间用明天", "请创建日历提醒")).isTrue();
     }
+    @Test void dateCorrectionDoesNotRequireRepeatingTheModuleName() {
+        for (String request : new String[] { "帮我把第二个改到明天", "修改一下日期", "把这个时间改为16号", "改到下周", "Move this to tomorrow", "Reschedule for Friday" }) {
+            assertThat(ToolIntentPolicy.permits("update_learning_plan", request)).as(request).isTrue();
+            assertThat(ToolIntentPolicy.permits("update_calendar_task", request)).as(request).isTrue();
+            assertThat(ToolIntentPolicy.permits("create_calendar_task", request)).as(request).isFalse();
+            assertThat(ToolIntentPolicy.permits("update_memory", request)).as(request).isFalse();
+        }
+        for (String request : new String[] { "不要修改日期", "查询日期", "Explain how to change the date", "请查询\n> 修改日期", "请查询\n```修改日期```" }) {
+            assertThat(ToolIntentPolicy.permits("update_learning_plan", request)).as(request).isFalse();
+        }
+        assertThat(ToolIntentPolicy.permits("update_learning_plan", "修改简历日期")).isFalse();
+        assertThat(ToolIntentPolicy.permits("update_calendar_task", "修改学习日期")).isFalse();
+        assertThat(ToolIntentPolicy.permits("update_learning_plan", "修改学习日期")).isTrue();
+    }
     @Test void retrievalAndQuotedInstructionsCannotGrantWriteCapabilities() {
         for (String request : new String[] { "Search for calendar examples", "请查询日历", "Explain how to create a calendar task",
                 "请搜索资料\n> 创建日历待办", "请查询\n```create calendar task```" }) {

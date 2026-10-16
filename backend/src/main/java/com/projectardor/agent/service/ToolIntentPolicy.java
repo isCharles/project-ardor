@@ -36,9 +36,15 @@ public final class ToolIntentPolicy {
             case "record_application_count", "set_application_rhythm" -> "投递|投了|已投|申请|application|applied";
             default -> "(?!)";
         };
+        // An implicit date correction need not repeat the module, but naming a
+        // different module must not grant this capability (e.g. a resume date).
+        if (Set.of("update_calendar_task", "update_recurring_task", "update_learning_plan").contains(tool)
+                && permitsDateCorrection(request)
+                && (Pattern.compile(domain, Pattern.CASE_INSENSITIVE).matcher(request).find()
+                    || !Pattern.compile("日历|日程|待办|安排|提醒|学习|讲解|练习|简历|记忆|面试|面经|复盘|知识库|投递|\\b(?:calendar|schedule|remind|tasks?|learn|lesson|study|practice|resume|résumé|memory|memories|flashcards?|interview|recap|knowledge|application)\\b", Pattern.CASE_INSENSITIVE).matcher(request).find())) return true;
         String action = switch (tool) {
             case "add_memory" -> "记住|记一下|记录|保存|remember|record|save";
-            case "update_memory", "update_calendar_task", "update_recurring_task", "update_learning_plan", "update_memory_card", "update_interview_recap_metadata" -> "修改|修正|调整|改成|更新|update|change|edit|correct|reschedule";
+            case "update_memory", "update_calendar_task", "update_recurring_task", "update_learning_plan", "update_memory_card", "update_interview_recap_metadata" -> "修改|修正|调整|改成|改到|改为|更新|update|change|edit|correct|reschedule";
             case "create_calendar_task", "create_recurring_task" -> "创建|新增|添加|安排|提醒|create|add|schedule|remind";
             case "begin_learning_plan" -> "开始|学习|讲解|做|start|begin|learn|study|practice";
             case "create_memory_card" -> "创建|新增|添加|生成|整理|制作|create|add|generate|make|prepare";
@@ -61,6 +67,13 @@ public final class ToolIntentPolicy {
         return java.util.Arrays.stream(request.split("[。！？!?;；\\n，,]"))
                 .anyMatch(clause -> domainPattern.matcher(clause).find() && (actionPattern.matcher(clause).find()
                     || tool.equals("record_application_count") && clause.matches("(?s).*(?:今天|昨天|today|yesterday).*(?:投了|已投|applied).*[0-9]+.*")));
+    }
+    private static boolean permitsDateCorrection(String request) {
+        String prefix = "^\\s*(?:(?:请你?|麻烦|帮我|我希望你?|please|can you|could you|help me)\\s*)*";
+        String update = "(?:把|将)[^。！？\\n：:]{1,100}(?:修改|调整|改成|改到|改为|挪到|移到|排到|推迟|提前)|(?:修改|调整|改一下|改下|改成|改到|改为|挪到|移到|排到|推迟|提前|reschedule|change|move|shift|update|postpone)";
+        return java.util.Arrays.stream(request.split("[。！？!?;；\\n，,]"))
+                .anyMatch(clause -> Pattern.compile(prefix + "(?:" + update + ")", Pattern.CASE_INSENSITIVE).matcher(clause).find()
+                    && Pattern.compile("日期|时间|明天|后天|今天|下周|本周|[0-9]+[号日点时]|[0-9]{1,2}:[0-9]{2}|date|time|tomorrow|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday", Pattern.CASE_INSENSITIVE).matcher(clause).find());
     }
     /** Personal memory may quote only the user's own supplied wording, not retrieved assertions. */
     public static boolean groundedMemory(String trustedRequest, String memory) {
