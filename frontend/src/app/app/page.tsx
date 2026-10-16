@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { type AiJob } from "@/lib/ai-jobs";
@@ -288,6 +288,11 @@ export default function AgentHomePage() {
       }} />;
   }
 
+  const selectChatFromRail = useEffectEvent((event: Event) => {
+    const id = (event as CustomEvent<unknown>).detail;
+    if (typeof id === "string" && id) void selectConversation(id);
+  });
+
   useEffect(() => {
     if (window.sessionStorage.getItem("ardor:open-memory") === "1") {
       window.sessionStorage.removeItem("ardor:open-memory");
@@ -301,13 +306,24 @@ export default function AgentHomePage() {
     window.addEventListener("ardor:close-chat-drawer", closeDrawer);
     window.addEventListener("ardor:toggle-chat-sidebar", toggleSidebar);
     window.addEventListener("ardor:new-chat", newChat);
+    window.addEventListener("ardor:select-chat", selectChatFromRail);
     return () => {
       window.removeEventListener("ardor:open-memory", openMemory);
       window.removeEventListener("ardor:close-chat-drawer", closeDrawer);
       window.removeEventListener("ardor:toggle-chat-sidebar", toggleSidebar);
       window.removeEventListener("ardor:new-chat", newChat);
+      window.removeEventListener("ardor:select-chat", selectChatFromRail);
     };
   }, []);
+
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 768px)");
+    const publish = () => window.dispatchEvent(new CustomEvent("ardor:chat-sidebar-state", { detail: sidebarOpen ?? desktop.matches }));
+    desktop.addEventListener("change", publish);
+    window.addEventListener("ardor:request-chat-sidebar-state", publish);
+    publish();
+    return () => { desktop.removeEventListener("change", publish); window.removeEventListener("ardor:request-chat-sidebar-state", publish); };
+  }, [sidebarOpen]);
 
   const applyState = useCallback((result: AgentState) => {
     // An authenticated conversation response proves ownership of this UUID, so
