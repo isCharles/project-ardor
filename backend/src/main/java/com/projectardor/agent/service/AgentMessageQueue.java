@@ -36,7 +36,7 @@ public class AgentMessageQueue {
         String payload = mapper.writeValueAsString(request);
         var existing = jdbc.query("SELECT * FROM agent_message_queue WHERE id = ? AND user_id = ?", rows, request.requestId(), userId);
         if (!existing.isEmpty()) {
-            Boolean same = jdbc.queryForObject("SELECT payload = CAST(? AS jsonb) FROM agent_message_queue WHERE id = ? AND user_id = ?",
+            Boolean same = jdbc.queryForObject("SELECT jsonb_strip_nulls(payload) = jsonb_strip_nulls(CAST(? AS jsonb)) FROM agent_message_queue WHERE id = ? AND user_id = ?",
                     Boolean.class, payload, request.requestId(), userId);
             if (!Boolean.TRUE.equals(same)) throw new IllegalArgumentException("请求标识已用于另一条消息");
             return existing.getFirst();
@@ -143,6 +143,22 @@ public class AgentMessageQueue {
     }
     @Transactional
     public void steer(UUID userId, UUID id, java.util.function.Consumer<Item> interrupt) {
+        steerLocked(userId, id, interrupt, false);
+    }
+    @Transactional
+    public void replace(UUID userId, UUID id, java.util.function.Consumer<Item> interrupt) {
+        steerLocked(userId, id, interrupt, true);
+    }
+    /** Keep acceptance and replacement under the same owner lock and transaction. */
+    @Transactional
+    public Item enqueueAndReplace(UUID userId, AgentMessageRequest request, java.util.function.Consumer<Item> interrupt) {
+        lockOwner(userId);
+        Item item = enqueue(userId, request);
+        if (!"QUEUED".equals(item.status())) return item;
+        steerLocked(userId, item.id(), interrupt, true);
+        return get(userId, item.id());
+    }
+    private void steerLocked(UUID userId, UUID id, java.util.function.Consumer<Item> interrupt, boolean replacePending) {
         lockOwner(userId);
         Item item = jdbc.query("SELECT * FROM agent_message_queue WHERE id=? AND user_id=? FOR UPDATE", rows, id, userId)
                 .stream().findFirst().orElseThrow(() -> new ResourceNotFoundException("排队消息不存在"));
@@ -162,6 +178,13 @@ public class AgentMessageQueue {
                 WHERE id=? AND user_id=? AND status='QUEUED'
                 """, priority, id, userId);
         if (changed != 1) throw new IllegalStateException("这条消息已经开始，未重复派发");
+        if (replacePending) jdbc.update("""
+                WITH superseded AS (
+                  UPDATE agent_message_queue SET status='CANCELLED',error_message='已由后续补充替代，未执行',updated_at=CURRENT_TIMESTAMP
+                  WHERE user_id=? AND conversation_id=? AND id<>? AND status='QUEUED' RETURNING id
+                ) UPDATE agent_message_queue SET blocked_by=?
+                  WHERE user_id=? AND status='QUEUED' AND blocked_by IN (SELECT id FROM superseded)
+                """, userId, item.request().conversationId(), id, id, userId);
     }
     public record Item(UUID id, UUID userId, String status, AgentMessageRequest request, UUID blockedBy, String errorMessage, Instant createdAt) {}
 }

@@ -33,6 +33,21 @@ class AgentRunStoreTests {
     private final EntityManager entityManager = mock(EntityManager.class);
     private final AgentRunStore runs = new AgentRunStore(jdbc, conversations, entityManager);
 
+    @Test void attachmentSnapshotIsPartOfInitialRunInsertAndOwnerScopedRecovery() {
+        UUID owner = UUID.randomUUID(), request = UUID.randomUUID(), conversation = UUID.randomUUID(), resume = UUID.randomUUID();
+        var references = List.of(new com.projectardor.agent.AgentContextReference("RESUME", resume, "合成测试简历.pdf"));
+        String json = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(references);
+        when(jdbc.update(argThat(sql -> sql.contains("context_references") && sql.contains("INSERT INTO agent_runs")),
+                eq(request), eq(owner), eq(conversation), anyString(), eq("请分析附件"), eq(request), eq(json))).thenReturn(1);
+        assertThat(runs.begin(owner, request, conversation, "请分析附件", null, null,
+                List.of(new com.projectardor.agent.web.AgentContextReferenceRequest("RESUME", resume)), request,
+                com.projectardor.agent.ReasoningDepth.AUTO, references)).isTrue();
+        when(jdbc.queryForList(argThat(sql -> sql.contains("context_references::text") && sql.contains("user_id=?") && sql.contains("conversation_id=?")),
+                eq(String.class), eq(request), eq(owner), eq(conversation))).thenReturn(List.of(json));
+        assertThat(runs.contextReferences(owner, conversation, request)).isEqualTo(references);
+        assertThat(runs.contextReferences(UUID.randomUUID(), conversation, request)).isEmpty();
+    }
+
     @Test
     void interruptedReplacementReusesLogicalToolActionId() {
         UUID userId = UUID.randomUUID();
@@ -43,7 +58,7 @@ class AgentRunStoreTests {
                 eq(UUID.class), anyString(), eq(requestId), eq(userId), eq(conversationId)))
                 .thenReturn(List.of(originalAction));
         when(jdbc.update(argThat(sql -> sql.contains("logical_action_id")),
-                eq(requestId), eq(userId), eq(conversationId), anyString(), eq("学习 JVM"), eq(originalAction)))
+                eq(requestId), eq(userId), eq(conversationId), anyString(), eq("学习 JVM"), eq(originalAction), eq("[]")))
                 .thenReturn(1);
 
         UUID action = runs.logicalActionId(userId, requestId, conversationId, "学习 JVM", null, null, List.of());
@@ -81,12 +96,12 @@ class AgentRunStoreTests {
         UUID userId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
-        when(jdbc.update(anyString(), eq(requestId), eq(userId), eq(conversationId), anyString(), eq("你好")))
+        when(jdbc.update(anyString(), eq(requestId), eq(userId), eq(conversationId), anyString(), eq("你好"), eq("[]")))
                 .thenReturn(1, 0);
         assertThat(runs.begin(userId, requestId, conversationId, "你好", null, null, List.of())).isTrue();
         ArgumentCaptor<String> fingerprint = ArgumentCaptor.forClass(String.class);
-        verify(jdbc).update(anyString(), eq(requestId), eq(userId), eq(conversationId), fingerprint.capture(), eq("你好"));
-        when(jdbc.queryForList(anyString(), eq(String.class), eq(requestId), eq(userId)))
+        verify(jdbc).update(anyString(), eq(requestId), eq(userId), eq(conversationId), fingerprint.capture(), eq("你好"), eq("[]"));
+        when(jdbc.queryForList(argThat(sql -> sql.contains("SELECT request_hash")), eq(String.class), eq(requestId), eq(userId)))
                 .thenReturn(List.of(fingerprint.getValue()));
         assertThat(runs.begin(userId, requestId, conversationId, "你好", null, null, List.of())).isFalse();
     }
@@ -96,9 +111,9 @@ class AgentRunStoreTests {
         UUID userId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
-        when(jdbc.update(anyString(), eq(requestId), eq(userId), eq(conversationId), anyString(), anyString()))
+        when(jdbc.update(anyString(), eq(requestId), eq(userId), eq(conversationId), anyString(), anyString(), eq("[]")))
                 .thenReturn(1, 0);
-        when(jdbc.queryForList(anyString(), eq(String.class), eq(requestId), eq(userId)))
+        when(jdbc.queryForList(argThat(sql -> sql.contains("SELECT request_hash")), eq(String.class), eq(requestId), eq(userId)))
                 .thenReturn(List.of("previous-message-hash"));
 
         assertThat(runs.begin(userId, requestId, conversationId, "第一条", null, null, List.of())).isTrue();
@@ -150,7 +165,7 @@ class AgentRunStoreTests {
         UUID userId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
-        when(jdbc.update(anyString(), eq(requestId), eq(userId), eq(conversationId), anyString(), eq("你好")))
+        when(jdbc.update(anyString(), eq(requestId), eq(userId), eq(conversationId), anyString(), eq("你好"), eq("[]")))
                 .thenReturn(1);
         runs.begin(userId, requestId, conversationId, "你好", null, null, List.of());
 

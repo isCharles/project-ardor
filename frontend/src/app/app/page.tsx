@@ -137,6 +137,20 @@ export default function AgentHomePage() {
   const [archivedConversations, setArchivedConversations] = useState<Conversation[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [terminalRunId, setTerminalRunId] = useState<string | null>(null);
+  const [streamPhase, setStreamPhase] = useState("WAITING_DATA");
+  const [feedback, setFeedback] = useState("");
+  const stopNotices = useRef(new Set<string>());
+  const notifyStopped = useCallback((id: string) => {
+    if (stopNotices.current.has(id)) return;
+    stopNotices.current.add(id);
+    setFeedback(t("Stopped. Any operation already started may still finish; check its result.", "已停止；已开始的操作仍可能完成，请核验结果。"));
+  }, [t]);
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = window.setTimeout(() => setFeedback(""), 5000);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
   const [reasoningDepth, setReasoningDepth] = useState<ReasoningDepth>("AUTO");
   const [nativeReasoning, setNativeReasoning] = useState(false);
   const reasoningAccount = useRef<string | null>(null);
@@ -316,7 +330,10 @@ export default function AgentHomePage() {
     // A committed response owns its process record. Discard the transient copy.
     setRunSteps([]); setRunThinking(""); setStreamProgress(null); setRetryFailures([]); setRunElapsed(0);
     const outgoing = readOutgoing(reasoningAccount.current, result.conversationId);
-    setMessages(outgoing ? [...result.messages, outgoing] : result.messages);
+    const outgoingSaved = outgoing && result.messages.some((item) => item.id === outgoing.id || item.role === "USER" && item.requestId &&
+      (outgoing.requestId ? item.requestId === outgoing.requestId : item.content === outgoing.content));
+    if (outgoingSaved && result.conversationId) window.sessionStorage.removeItem(outgoingKey(reasoningAccount.current, result.conversationId));
+    setMessages(outgoing && !outgoingSaved ? [...result.messages, outgoing] : result.messages);
     const proposals = [...new Map<string, AgentConfirmation>(result.messages.flatMap((message) => (savedRunTrace(message.runTrace)?.proposals ?? []).map(item => ({ ...item, sourceMessageId: message.id })))
       .map((item): [string, AgentConfirmation] => [confirmationKey(item), item])).values()].slice(-50);
     const restored = proposals.map((item) => {
@@ -434,6 +451,7 @@ export default function AgentHomePage() {
         const run = await api<AgentRun>(`/api/agent/runs/latest?conversationId=${encodeURIComponent(conversationId)}`);
         if (stopped) return;
         if (run.status === "RUNNING") {
+          setTerminalRunId(null);
           runStartedAt.current = new Date(run.createdAt).getTime();
           setRunningRun(run);
           const outgoing = readOutgoing(reasoningAccount.current, conversationId);
@@ -454,8 +472,9 @@ export default function AgentHomePage() {
           timer = window.setTimeout(() => void check(), 3000);
         } else {
           setRunningRun(null);
+          setTerminalRunId(run.id);
           if (run.status !== "COMPLETED") {
-            setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
+            if (run.errorCode !== "AGENT_RUN_CANCELLED") setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
             try {
               const progress = await api<StreamProgress>(`/api/agent/runs/${encodeURIComponent(run.id)}/progress`);
               if (!stopped) {
@@ -471,16 +490,15 @@ export default function AgentHomePage() {
               window.sessionStorage.removeItem(outgoingKey(reasoningAccount.current, conversationId));
               await load(conversationId);
             } else {
-              setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
-              setDraft((current) => current || readSavedDraft(conversationId));
+              if (run.errorCode === "AGENT_RUN_CANCELLED") notifyStopped(run.id);
+              else setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
+              await load(conversationId);
             }
           } else if (readSavedDraft(conversationId) === run.message) {
             if (run.status === "COMPLETED") {
               window.sessionStorage.removeItem(draftStorageKey(conversationId));
               setDraft((current) => current === run.message ? "" : current);
-            } else {
-              setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
-            }
+            } else if (run.errorCode !== "AGENT_RUN_CANCELLED") setError(run.errorMessage ?? "请求未完成，请检查操作结果后再试");
           }
         }
       } catch (reason) {
@@ -490,7 +508,7 @@ export default function AgentHomePage() {
     };
     void check();
     return () => { stopped = true; if (timer) window.clearTimeout(timer); };
-  }, [state?.conversationId, busy, load, runningRunId, queuedWakeId, draftStorageKey, readSavedDraft]);
+  }, [state?.conversationId, busy, load, runningRunId, queuedWakeId, draftStorageKey, readSavedDraft, notifyStopped]);
   useEffect(() => {
     if (!busy && !runningRunId) return;
     const timer = window.setInterval(() => setRunElapsed(Date.now() - runStartedAt.current), 250);
@@ -535,6 +553,7 @@ export default function AgentHomePage() {
     try {
       await api<void>(pending.endpoint, { method: "DELETE", ...(pending.targetIds ? { body: JSON.stringify({ ids: pending.targetIds }) } : {}) });
       rememberDeletion(pending, "DONE");
+      setFeedback(t(`Deleted “${pending.label}”.`, `已删除「${pending.label}」。`));
       setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DONE" } : item));
     } catch (reason) {
       setConfirmations((current) => current.map((item) => confirmationKey(item) === key
@@ -582,9 +601,11 @@ export default function AgentHomePage() {
       const slot = `ardor:queue-submit:${reasoningAccount.current}:${state.conversationId}`;
       try {
         const stored = JSON.parse(window.sessionStorage.getItem(slot) ?? "null");
-        const requestId = stored?.fingerprint === JSON.stringify(payload) ? stored.requestId : crypto.randomUUID();
-        window.sessionStorage.setItem(slot, JSON.stringify({ requestId, fingerprint: JSON.stringify(payload) }));
-        await api("/api/agent/queue", { method: "POST", body: JSON.stringify({ ...payload, requestId }) });
+        const sameSubmission = stored?.fingerprint === JSON.stringify(payload);
+        const requestId = sameSubmission ? stored.requestId : crypto.randomUUID();
+        const interruptedRunId = sameSubmission && "interruptedRunId" in stored ? stored.interruptedRunId : runningRun?.id ?? approvalRunId;
+        window.sessionStorage.setItem(slot, JSON.stringify({ requestId, fingerprint: JSON.stringify(payload), interruptedRunId }));
+        await api("/api/agent/messages/steer", { method: "POST", body: JSON.stringify({ ...payload, requestId, interruptedRunId }) });
         window.sessionStorage.removeItem(slot);
         const unchanged = readSavedDraft(state.conversationId).trim() === message;
         if (unchanged) {
@@ -617,7 +638,7 @@ export default function AgentHomePage() {
     window.sessionStorage.removeItem(`${savedDraftKey}:references`);
     setDraft("");
     setSelectedContexts([]);
-    setError(""); setRetryFailures([]); setRunSteps([]); setRunThinking(""); setStreamProgress(null);
+    setError(""); setRetryFailures([]); setRunSteps([]); setRunThinking(""); setStreamProgress(null); setTerminalRunId(null); setStreamPhase("WAITING_DATA");
     setConfirmations((current) => current.filter((item) => item.kind === "learning_plan"));
     setRunElapsed(0); runStartedAt.current = Date.now(); setStreamAccepted(false); setBusy(true);
     try {
@@ -685,16 +706,21 @@ export default function AgentHomePage() {
             }
             if (event.type !== "error") setStreamAccepted(true);
             if (event.type === "thinking" && event.content) {
+              setStreamPhase("THINKING");
               setRunThinking((current) => (current + event.content).slice(0, 32_000));
             } else if (event.type === "delta" && event.content) {
+              setStreamPhase("OUTPUT");
               receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
             } else if (event.type === "status" && event.label) {
+              setStreamPhase("WAITING_DATA");
               setRunSteps((current) => current.some((step) => step.key === "status") ? current.map((step) => step.key === "status" ? { ...step, label: event.label! } : step) : [...current, { key: "status", label: event.label!, elapsedMs: 0, done: false }]);
             } else if (event.type === "tool_start" && event.toolName) {
+              setStreamPhase("TOOL");
               receivedToolEvent = true;
               setRunSteps((current) => [...current, { key: `${event.toolName}-${current.length}`, label: event.label ?? "调用工具", elapsedMs: 0, done: false }]);
             } else if (event.type === "tool_end" && event.toolName) {
+              setStreamPhase("WAITING_DATA");
               setRunSteps((current) => { const index = current.findLastIndex((step) => step.key.startsWith(`${event.toolName}-`) && !step.done); return index < 0 ? current : current.map((step, i) => i === index ? { ...step, label: event.label ?? step.label, elapsedMs: event.elapsedMs ?? 0, approvalWaitMs: event.approvalWaitMs, businessMs: event.businessMs, status: event.toolStatus, done: true } : step); });
               if (["analyze_resume", "organize_interview_recap", "research_knowledge_from_web"].includes(event.toolName)) window.dispatchEvent(new Event("ardor:background-refresh"));
             } else if (event.type === "done" && event.messageId && event.conversationId) {
@@ -763,7 +789,7 @@ export default function AgentHomePage() {
             : reason instanceof Error ? reason.message : "浏览器无法连接 Ardor 服务";
           setRetryFailures((current) => [...current, { label, detail }]);
           if (!retryable || retry === MAX_MESSAGE_RETRIES) {
-            if (recorded?.errorMessage) throw new Error(recorded.errorMessage);
+            if (recorded?.errorMessage) throw Object.assign(new Error(recorded.errorMessage), { code: recorded.errorCode });
             throw reason;
           }
           // A 404 can race with a slow first POST. Reuse its ID so a late arrival cannot execute twice.
@@ -795,7 +821,11 @@ export default function AgentHomePage() {
           return restored;
         });
       }
-      setError(sendControl.signal.aborted ? t("Sending stopped. No further automatic retries will be sent.", "已停止发送，不会继续自动重试。") : reason instanceof Error ? reason.message : "Agent 暂时无法回复");
+      if (sendControl.signal.aborted || (reason as { code?: string }).code === "AGENT_RUN_CANCELLED") {
+        setTerminalRunId(requestId);
+        setError(""); notifyStopped(requestId);
+        if (conversationId) await load(conversationId);
+      } else setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
     } finally { if (activeSend.current === sendControl) activeSend.current = null; setApprovalRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
   }
 
@@ -825,6 +855,7 @@ export default function AgentHomePage() {
         catch (reason) { if (!(reason instanceof ApiError && reason.status === 404)) throw reason; }
       }
       if (run?.status === "RUNNING") await stopRunOnce(requestId);
+      notifyStopped(requestId);
     }
     catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not confirm stop request", "暂时无法确认停止请求")); }
     finally { setCancelPending(false); }
@@ -987,14 +1018,24 @@ export default function AgentHomePage() {
     failure.detail === error || failure.detail.endsWith(` · ${error}`)
   ) ? error : "";
   const liveAssistant = !runningRun && busy ? messages.findLast((message) => message.role === "ASSISTANT") : undefined;
-  const showLiveTrace = !liveAssistant?.runTrace && (runSteps.length > 0 || !!runThinking || busy || !!runningRun || retryFailures.length > 0);
-  const liveTrace = showLiveTrace ? <ExecutionTrace title={busy || runningRun ? t("Ardor is working", "Ardor 正在工作") : t("Execution stopped", "执行已停止")}
+  const terminalInHistory = !!terminalRunId && messages.some((message) => message.role === "ASSISTANT" && message.requestId === terminalRunId);
+  const showLiveTrace = !terminalInHistory && !liveAssistant?.runTrace && (runSteps.length > 0 || !!runThinking || busy || !!runningRun || retryFailures.length > 0);
+  const phase = runningRun ? streamProgress?.phase : streamPhase;
+  const liveTitle = !(busy || runningRun) ? t("Execution stopped", "执行已停止") : phase === "THINKING" ? t("Thinking", "思考中") : phase === "TOOL" ? t("Using tools", "正在调用工具") : phase === "OUTPUT" ? t("Writing reply", "正在生成回复") : t("Waiting for model", "等待模型回应");
+  const liveTrace = showLiveTrace ? <ExecutionTrace title={liveTitle}
     elapsed={formatElapsed(runElapsed)} thinking={runThinking} steps={runSteps}
     action={(runningRun || approvalRunId) && <button type="button" disabled={cancelPending} onClick={() => void cancelExecution()} className="shrink-0 py-1 text-xs text-stone-500 hover:text-rose-700 disabled:opacity-50">{cancelPending ? t("Stopping…", "正在停止…") : t("Stop", "停止")}</button>}>
     {runningRun && <p>{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
     {retryFailures.map((failure, index) => <p key={index} className="text-amber-700">{failure.label} · {failure.detail}</p>)}
     {busy && retryAttempt > 0 && <p>{t(`Reconnecting · retry ${retryAttempt}/${MAX_MESSAGE_RETRIES}`, `正在重新连接 · 第 ${retryAttempt}/${MAX_MESSAGE_RETRIES} 次重试`)}</p>}
   </ExecutionTrace> : null;
+  const deletionResults = (message: AgentMessage) => (savedRunTrace(message.runTrace)?.proposals ?? []).filter((item) => item.kind !== "learning_plan").map((proposal) => {
+    const item = { ...proposal, sourceMessageId: message.id };
+    let resolution = confirmations.find((current) => current.sourceMessageId === message.id && confirmationKey(current) === confirmationKey(item))?.state as string | undefined;
+    try { resolution = window.localStorage.getItem(deletionResolutionKey(item, message.conversationId)) ?? resolution; } catch { /* Device storage can be unavailable. */ }
+    return resolution && ["DONE", "DISMISSED", "EXPIRED"].includes(resolution) ? <p key={confirmationKey(item)}>{resolution === "DONE" ? t("Deleted", "已删除") : resolution === "DISMISSED" ? t("Kept", "已保留") : t("Expired proposal", "建议已过期")} · {item.label}</p> : null;
+  });
+  const feedbackBanner = feedback && <div role="status" className="mx-auto mb-2 flex max-w-3xl items-center gap-3 px-3 py-1 text-xs text-stone-500"><span className="min-w-0 flex-1">{feedback}</span><button type="button" aria-label={t("Dismiss notice", "关闭提示")} onClick={() => setFeedback("")}><X className="size-3.5" /></button></div>;
 
   return (
     <main className="ardor-workbench h-full overflow-hidden text-stone-900">
@@ -1083,7 +1124,7 @@ export default function AgentHomePage() {
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         {message === liveAssistant && liveTrace}
-                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps} />; })()}
+                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps}>{deletionResults(message)}</ExecutionTrace>; })()}
                         <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
                       </div>
                     )}
@@ -1091,9 +1132,9 @@ export default function AgentHomePage() {
                 ))}
                 {!liveAssistant && liveTrace}
                 {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div>}
-                {!runningRun && !busy && streamProgress?.answerPartial && streamProgress.phase !== "COMPLETED" && <details className="max-w-xl rounded-2xl border border-stone-200/70 bg-white/50 p-4"><summary className="cursor-pointer text-xs text-stone-500">{t("Incomplete reply · saved before execution stopped", "未完成回复 · 停止前保留的片段")}</summary><div className="ardor-markdown mt-3 text-sm leading-7"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div></details>}
-                {confirmations.length > 0 && <section className="space-y-2">
-                  {confirmations.filter((item) => !dockedDeletions.includes(item)).map((pending) => <div key={confirmationKey(pending)} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : ["DISMISSED", "REMOVED", "EXPIRED"].includes(pending.state) ? "border-stone-200 bg-white/50" : pending.kind === "learning_plan" ? "border-violet-100 bg-white/80" : "border-rose-100 bg-white/80"}`}>
+                {!terminalInHistory && !runningRun && !busy && streamProgress?.answerPartial && streamProgress.phase !== "COMPLETED" && <details className="max-w-xl rounded-2xl border border-stone-200/70 bg-white/50 p-4"><summary className="cursor-pointer text-xs text-stone-500">{t("Incomplete reply · saved before execution stopped", "未完成回复 · 停止前保留的片段")}</summary><div className="ardor-markdown mt-3 text-sm leading-7"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div></details>}
+                {confirmations.some((item) => item.kind === "learning_plan") && <section className="space-y-2">
+                  {confirmations.filter((item) => item.kind === "learning_plan").map((pending) => <div key={confirmationKey(pending)} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : ["DISMISSED", "REMOVED", "EXPIRED"].includes(pending.state) ? "border-stone-200 bg-white/50" : "border-violet-100 bg-white/80"}`}>
                     <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : pending.kind === "learning_plan" ? "bg-violet-50 text-violet-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : pending.kind === "learning_plan" ? <BookOpenText className="size-4" /> : <Trash2 className="size-4" />}</span>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-stone-800">{pending.kind === "learning_plan"
@@ -1119,6 +1160,7 @@ export default function AgentHomePage() {
           </div>
 
           {messages.length > 0 && <div className="ardor-composer-enter relative z-10 shrink-0 px-4 pb-5 md:px-8">
+            {feedbackBanner}
             {deletionDock}
             {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">

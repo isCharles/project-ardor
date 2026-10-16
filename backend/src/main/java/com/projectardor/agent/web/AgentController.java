@@ -57,6 +57,25 @@ public class AgentController {
     @GetMapping("/queue")
     public java.util.List<com.projectardor.agent.service.AgentMessageQueue.Item> queued(@AuthenticationPrincipal ArdorPrincipal principal,
             @RequestParam java.util.UUID conversationId) { return queue.list(principal.userId(), conversationId); }
+
+    @PostMapping("/messages/steer")
+    @QuotaProtected(value = UsageFeature.AGENT_CHAT, idempotentRequest = true)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public com.projectardor.agent.service.AgentMessageQueue.Item steerMessage(@AuthenticationPrincipal ArdorPrincipal principal,
+            @Valid @RequestBody AgentMessageRequest request) {
+        if (request.conversationId() == null) throw new IllegalArgumentException("补充消息需要已有会话");
+        agentService.validateQueuedMessage(principal.userId(), request);
+        if (request.interruptedRunId() != null) {
+            var original = agentService.run(principal.userId(), request.interruptedRunId());
+            if (!original.conversationId().equals(request.conversationId())) throw new IllegalArgumentException("不能打断其他会话");
+        }
+        return queue.enqueueAndReplace(principal.userId(), request, reserved -> {
+            if (request.interruptedRunId() != null) {
+                var original = agentService.run(principal.userId(), request.interruptedRunId());
+                if ("RUNNING".equals(original.status())) agentService.cancelRun(principal.userId(), original.id());
+            }
+        });
+    }
     @DeleteMapping("/queue/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancelQueued(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID id) { queue.cancel(principal.userId(), id); }

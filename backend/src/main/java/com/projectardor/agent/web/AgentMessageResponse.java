@@ -14,7 +14,12 @@ public record AgentMessageResponse(
         String content,
         List<AgentContextReference> contextReferences,
         String runTrace,
-        Instant createdAt) {
+        Instant createdAt,
+        UUID requestId) {
+    public AgentMessageResponse(UUID id, UUID conversationId, String role, String content,
+            List<AgentContextReference> references, String trace, Instant createdAt) {
+        this(id, conversationId, role, content, references, trace, createdAt, null);
+    }
     public static AgentMessageResponse from(ConversationMessage message) {
         return new AgentMessageResponse(
                 message.getId(), message.getConversationId(), message.getRole(),

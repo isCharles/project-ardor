@@ -173,6 +173,7 @@ public class CareerAgentTools {
         private final UUID logicalActionId;
         private final UUID runRequestId;
         private boolean interviewAnswerContext;
+        private String interruptedRequest = "";
         /* Destructive tools no longer delete. They hand the user a button and
            record it here; the caller of the run turns these into stream
            events, and nothing is removed until the person presses one. */
@@ -191,9 +192,11 @@ public class CareerAgentTools {
         }
         @Override public boolean permitsWrite(String tool) {
             return tool.equals("submit_interview_answer") && interviewAnswerContext
-                    || com.projectardor.agent.service.ToolIntentPolicy.permits(tool, trustedUserRequest);
+                    || com.projectardor.agent.service.ToolIntentPolicy.permits(tool, trustedUserRequest)
+                    || com.projectardor.agent.service.ToolIntentPolicy.permitsInherited(tool, trustedUserRequest, interruptedRequest);
         }
         public BoundCareerTools withInterviewAnswerContext(boolean active) { interviewAnswerContext = active; return this; }
+        public BoundCareerTools withInterruptedRequest(String request) { interruptedRequest = request == null ? "" : request; return this; }
 
         /**
          * Describes one deletion for the user to approve by clicking.
