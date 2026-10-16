@@ -166,6 +166,20 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+    if (payload.model === "date-correction-probe" && isAgentRequest) {
+      const message = String(payload.messages.filter(item => item.role === "user").at(-1)?.content);
+      const planId = message.match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0];
+      const scheduledAt = message.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/)?.[0];
+      const delta = hasToolResult ? { role: "assistant", content: "Synthetic date correction finished." }
+        : { role: "assistant", tool_calls: [{ index: 0, id: "date-correction", type: "function",
+          function: { name: "update_learning_plan", arguments: JSON.stringify({ planId, reason: null, scheduledAt }) } }] };
+      response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
+      for (const [chunk, finish] of [[delta, null], [{}, hasToolResult ? "stop" : "tool_calls"]]) {
+        response.write(`data: ${JSON.stringify({ id: "date-correction", object: "chat.completion.chunk", model: payload.model,
+          choices: [{ index: 0, delta: chunk, finish_reason: finish }] })}\n\n`);
+      }
+      response.end("data: [DONE]\n\n"); return;
+    }
     if (payload.model === "steering-context-probe" && isAgentRequest) {
       const turns = payload.messages.filter(message => message.role === "user");
       const original = turns.filter(message => String(message.content).includes("删除1、2、3，然后重新生成"));
