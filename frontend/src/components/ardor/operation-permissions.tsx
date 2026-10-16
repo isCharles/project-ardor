@@ -74,7 +74,7 @@ function Operation({ item, disabled, onDecision }: { item: Approval; disabled: b
     }
     const resources: Record<string, [string, string, string]> = {
       update_calendar_task: ["/api/calendar/tasks", "taskId", "title"], update_recurring_task: ["/api/calendar/series", "seriesId", "title"],
-      update_memory_card: ["/api/memory-cards", "cardId", "question"], review_memory_card: ["/api/memory-cards", "cardId", "question"], suspend_memory_card: ["/api/memory-cards", "cardId", "question"],
+      update_memory_card: ["/api/memory-cards", "cardId", "front"], review_memory_card: ["/api/memory-cards", "cardId", "front"], suspend_memory_card: ["/api/memory-cards", "cardId", "front"],
       update_memory: ["/api/agent/memory/items", "memoryId", "content"], update_interview_recap_metadata: ["/api/interview-recaps", "recapId", "title"],
       cancel_interview: ["/api/interviews", "interviewId", "targetRole"], analyze_resume: ["/api/resumes", "resumeId", "originalFilename"],
     };

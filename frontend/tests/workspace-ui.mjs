@@ -144,7 +144,7 @@ try {
     }
     else if (path === "/api/profile") body = { displayName: "Fixture", headline: "", targetRoles: [], timezone: "Asia/Shanghai" };
     else if (path === "/api/resumes") body = [{ id: "resume", originalFilename: "Synthetic resume.pdf" }];
-    else if (path === "/api/memory-cards") body = [];
+    else if (path === "/api/memory-cards") body = [{ id: "card-fixture", front: "Synthetic card to review", back: "Fixture answer" }];
     else if (path === "/api/learning-plans") body = learningPlans;
     else if (path === "/api/learning-plans/owned-plan") body = { id: "owned-plan", concept: "JVM memory", scheduledAt: "2026-10-18T01:00:00Z" };
     else if (path === "/api/learning-plans/delete-fixture" && route.request().method() === "DELETE") {
@@ -500,6 +500,12 @@ try {
   await suggestedOperations.getByRole("button", { name: "Confirm", exact: true }).click();
   await suggestedOperations.waitFor({ state: "hidden" });
   assert.deepEqual(permissionDecisions.map(value => value.allow), [false, true]);
+  for (const tool of ["update_memory_card", "review_memory_card", "suspend_memory_card"]) {
+    permissions = [{ id: `permission-${tool}`, tool, arguments: JSON.stringify({ cardId: "card-fixture" }), status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
+    await suggestedOperations.getByRole("heading").filter({ hasText: "Synthetic card to review" }).waitFor();
+    await suggestedOperations.getByRole("button", { name: "Reject", exact: true }).click();
+    await suggestedOperations.waitFor({ state: "hidden" });
+  }
   activeRun = { ...activeRun, id: "queued-active-run", message: "A new queued instruction after the original stopped", progressPhase: "THINKING" };
   await page.reload();
   await page.getByRole("article").filter({ hasText: activeRun.message }).waitFor();
