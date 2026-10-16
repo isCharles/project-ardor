@@ -309,6 +309,15 @@ export default function AgentHomePage() {
     };
   }, []);
 
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 768px)");
+    const publish = () => window.dispatchEvent(new CustomEvent("ardor:chat-sidebar-state", { detail: sidebarOpen ?? desktop.matches }));
+    desktop.addEventListener("change", publish);
+    window.addEventListener("ardor:request-chat-sidebar-state", publish);
+    publish();
+    return () => { desktop.removeEventListener("change", publish); window.removeEventListener("ardor:request-chat-sidebar-state", publish); };
+  }, [sidebarOpen]);
+
   const applyState = useCallback((result: AgentState) => {
     // An authenticated conversation response proves ownership of this UUID, so
     // its legacy draft can be migrated. The shared old "new" slot has no owner.
