@@ -12,6 +12,7 @@ import { api, ApiError } from "@/lib/api";
 import { type TaskSummary } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 import { AppDialog } from "@/components/ui/app-dialog";
+import { ChatRailLink } from "./chat-rail-link";
 import { Button } from "@/components/ui/button";
 
 const workspaces = [
@@ -260,13 +261,16 @@ export function WorkspaceRail() {
           const active = item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
           const label = t(item.en, item.zh);
           const itemModule = moduleFor(item.href);
+          if (item.href === "/app") return <ChatRailLink key={`${pathname}:${account?.id ?? "loading"}`} userId={account?.id ?? null} active={active}
+            onOpen={() => { setTooltip(null); closeMore(); setAccountOpen(false); }}
+            className={`relative mb-3 grid size-11 shrink-0 place-items-center rounded-2xl transition-colors focus-visible:outline-2 focus-visible:outline-violet-500 ${active ? "bg-violet-100 text-violet-700" : "text-stone-500 hover:bg-white hover:text-stone-900 hover:shadow-sm"}`} />;
           return (
             <Link
               key={item.href}
               href={item.href}
               aria-label={label}
               aria-current={active ? "page" : undefined}
-              onClick={(event) => { if (item.href === "/app" && pathname === "/app") event.preventDefault(); acknowledgeBackground(itemModule); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }}
+              onClick={() => { acknowledgeBackground(itemModule); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }}
               onMouseEnter={(event) => setTooltip({ label, top: event.currentTarget.getBoundingClientRect().top + 8 })}
               onMouseLeave={() => setTooltip(null)}
               onFocus={(event) => setTooltip({ label, top: event.currentTarget.getBoundingClientRect().top + 8 })}
