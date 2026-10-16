@@ -27,7 +27,7 @@ const fields: Record<string, [string, string]> = {
   enabled: ["Enabled", "启用"], suspended: ["Pause reviews", "暂停复习"], concept: ["Concept", "概念"], reason: ["Reason", "原因"],
 };
 
-export function OperationPermissions({ runId, onConfirmed }: { runId: string; onConfirmed: (tool: string) => void }) {
+export function OperationPermissions({ runId, onConfirming, onConfirmed, onFailed }: { runId: string; onConfirming: (tool: string) => void; onConfirmed: (tool: string) => void; onFailed: (tool: string) => void }) {
   const { t } = useLocale();
   const [items, setItems] = useState<Approval[]>([]);
   const [error, setError] = useState("");
@@ -37,7 +37,7 @@ export function OperationPermissions({ runId, onConfirmed }: { runId: string; on
     const poll = async () => {
       try {
         const value = await api<Approval[]>(`/api/agent/runs/${encodeURIComponent(runId)}/approvals`);
-        if (active) { setItems(value.filter(item => item.status === "PENDING")); setError(""); }
+        if (active) setItems(value.filter(item => item.status === "PENDING"));
       } catch { /* The run may not yet be persisted; no approval is inferred from a failed read. */ }
       if (active) timer = setTimeout(() => void poll(), 1000);
     };
@@ -46,11 +46,12 @@ export function OperationPermissions({ runId, onConfirmed }: { runId: string; on
   }, [runId]);
   async function decide(item: Approval, allow: boolean) {
     setSaving(item.id); setError("");
+    if (allow) onConfirming(item.tool);
     try {
       await api<void>(`/api/agent/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify({ allow }) });
       setItems(current => current.filter(value => value.id !== item.id));
       if (allow) onConfirmed(item.tool);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not submit your decision.", "无法提交你的决定。")); }
+    } catch (reason) { if (allow) onFailed(item.tool); setError(reason instanceof Error ? reason.message : t("Could not submit your decision.", "无法提交你的决定。")); }
     finally { setSaving(null); }
   }
   if (!items.length) return null;

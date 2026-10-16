@@ -349,7 +349,7 @@ public class CareerAgentService {
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, depth, lease))
                     .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory)
-                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings))
+                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings, sink::waitingForApproval))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
             sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)
@@ -844,5 +844,6 @@ public class CareerAgentService {
     public interface StreamSink {
         void send(AgentStreamEvent event);
         void complete();
+        default void waitingForApproval(boolean waiting) {}
     }
 }

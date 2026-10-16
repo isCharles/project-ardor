@@ -103,6 +103,14 @@ class AgentToolApprovalsTests {
         assertThat(result.get(2, TimeUnit.SECONDS)).isFalse();
         assertThat(gate.await(owner, run, "different_write", "{}")).isFalse();
         assertThat(gate.list(owner, run)).hasSize(1);
+        assertThat(gate.canRead(owner, run)).isTrue();
+        var probe = new Probe();
+        var read = ApprovedAgentTools.wrap(probe, owner, run, gate).values().iterator().next();
+        assertThat(read.execute(ToolExecutionRequest.builder().name("get_profile").arguments("{}").build(), null)).contains("result");
+        assertThat(probe.calls).hasValue(1);
+        assertThat(gate.canRead(UUID.randomUUID(), run)).isFalse();
+        gate.close(owner, run);
+        assertThat(gate.canRead(owner, run)).isFalse();
     }
 
     @Test
@@ -112,6 +120,7 @@ class AgentToolApprovalsTests {
         assertThat(shortGate.await(owner, run, "write", "{}")).isFalse();
         var expired = shortGate.list(owner, run).getFirst();
         assertThat(expired.status()).isEqualTo("EXPIRED");
+        assertThat(shortGate.canRead(owner, run)).isTrue();
         assertThatThrownBy(() -> shortGate.decide(owner, run, expired.id(), true)).isInstanceOf(IllegalStateException.class);
         assertThat(new AgentToolApprovals().await(owner, run, "write", "{}")).isFalse();
         gate.begin(owner, run);

@@ -18,7 +18,7 @@ public class AgentMessageQueueWorker {
     private final CareerAgentService agent;
     private final AgentRunStore runs;
     private final Semaphore slots = new Semaphore(2);
-    private final ExecutorService executor = Executors.newFixedThreadPool(2, Thread.ofPlatform().name("agent-queue-", 0).factory());
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     public AgentMessageQueueWorker(AgentMessageQueue queue, CareerAgentService agent, AgentRunStore runs) {
         this.queue = queue; this.agent = agent; this.runs = runs;
     }
@@ -35,6 +35,7 @@ public class AgentMessageQueueWorker {
         } catch (RuntimeException failure) { slots.release(); throw failure; }
     }
     private void dispatch(AgentMessageQueue.Item item) {
+        AgentQueueSlot slot = new AgentQueueSlot(slots);
         AtomicBoolean released = new AtomicBoolean();
         AtomicReference<String> errorCode = new AtomicReference<>();
         var request = item.request();
@@ -42,6 +43,9 @@ public class AgentMessageQueueWorker {
             agent.chatStream(item.userId(), request.conversationId(), request.message(), request.contextType(),
                     request.contextId(), request.contextReferences(), request.requestId(), request.reasoningDepth(),
                     new CareerAgentService.StreamSink() {
+                        @Override public void waitingForApproval(boolean waiting) {
+                            if (waiting) slot.pause(); else slot.resume();
+                        }
                         @Override public void send(AgentStreamEvent event) {
                             if ("error".equals(event.type())) errorCode.set(event.errorCode());
                         }
@@ -53,12 +57,12 @@ public class AgentMessageQueueWorker {
                                     if ("AGENT_BUSY".equals(errorCode.get())) queue.notStarted(item);
                                     else queue.failedBeforeStart(item);
                                 }
-                            } finally { slots.release(); }
+                            } finally { slot.close(); }
                         }
                     });
         } catch (RuntimeException failure) {
             if (released.compareAndSet(false, true)) {
-                try { queue.interrupted(item); } finally { slots.release(); }
+                try { queue.interrupted(item); } finally { slot.close(); }
             }
         }
     }

@@ -79,6 +79,13 @@ public class AgentToolApprovals {
         }
     }
 
+    public boolean canRead(UUID userId, UUID requestId) {
+        if (requestId == null) return true;
+        Run run = runs.get(new RunKey(userId, requestId));
+        if (run == null) return false;
+        synchronized (run) { return !run.closed; }
+    }
+
     public void decide(UUID userId, UUID requestId, UUID approvalId, boolean allow) {
         Run run = runs.get(new RunKey(userId, requestId));
         if (run == null) throw missing();

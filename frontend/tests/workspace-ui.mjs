@@ -31,6 +31,7 @@ try {
   let activeRun = null;
   let permissions = [];
   let permissionDecisions = [];
+  let permissionDecisionFails = false;
   let deletionCalls = 0;
   let deletionFails = false;
   const steerRequests = [];
@@ -125,6 +126,7 @@ try {
     }
     else if (path.endsWith("/approvals")) body = permissions;
     else if (/\/approvals\/[^/]+$/.test(path) && route.request().method() === "POST") {
+      if (permissionDecisionFails) return route.fulfill({ status: 503, json: { message: "Synthetic confirmation failure" } });
       permissionDecisions.push({ path, ...route.request().postDataJSON() });
       permissions = [];
       return route.fulfill({ status: 204 });
@@ -488,6 +490,13 @@ try {
   assert.equal(await toolPermissions.count(), 0, "Ordinary writes must not show permission prompts");
   assert.equal(permissionDecisions.length, 1);
   await suggestedOperations.getByRole("heading", { name: "Remember this information", exact: true }).waitFor();
+  permissionDecisionFails = true;
+  await suggestedOperations.getByRole("button", { name: "Confirm", exact: true }).click();
+  await suggestedOperations.getByText("Synthetic confirmation failure", { exact: true }).waitFor();
+  await page.waitForTimeout(2200);
+  await suggestedOperations.getByText("Synthetic confirmation failure", { exact: true }).waitFor();
+  assert.equal(permissionDecisions.length, 1, "Failed decisions do not grant execution");
+  permissionDecisionFails = false;
   await suggestedOperations.getByRole("button", { name: "Confirm", exact: true }).click();
   await suggestedOperations.waitFor({ state: "hidden" });
   assert.deepEqual(permissionDecisions.map(value => value.allow), [false, true]);

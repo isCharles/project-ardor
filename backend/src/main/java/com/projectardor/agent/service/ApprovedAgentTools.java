@@ -24,6 +24,9 @@ final class ApprovedAgentTools {
         return wrap(bound, userId, requestId, approvals, lease, new AgentToolTimings());
     }
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting -> {});
+    }
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, java.util.function.Consumer<Boolean> waiting) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         for (var method : bound.getClass().getMethods()) {
             if (!method.isAnnotationPresent(Tool.class)) continue;
@@ -35,11 +38,13 @@ final class ApprovedAgentTools {
                 boolean proposal = PROPOSALS.contains(specification.name());
                 boolean read = ToolIntentPolicy.isRead(specification.name());
                 boolean allowed = (!destructive || proposal) && (proposal || read || requestId != null)
-                        && approvals.canPropose(userId, requestId);
+                        && (read ? approvals.canRead(userId, requestId) : approvals.canPropose(userId, requestId));
                 long requested = timings.now();
                 if (allowed && !proposal && !read) {
-                    allowed = approvals.await(userId, requestId, specification.name(), request.arguments())
-                            && approvals.canPropose(userId, requestId);
+                    waiting.accept(true);
+                    try { allowed = approvals.await(userId, requestId, specification.name(), request.arguments())
+                            && approvals.canPropose(userId, requestId); }
+                    finally { waiting.accept(false); }
                 }
                 long approved = timings.now();
                 if (!allowed) {
