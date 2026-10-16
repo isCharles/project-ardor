@@ -34,7 +34,7 @@ class Client {
     }
   }
 
-  async request(path, { method = "GET", body, expected = 200 } = {}) {
+  async request(path, { method = "GET", body, expected = 200, retryRateLimit = false } = {}) {
     const headers = { Accept: "application/json" };
     if (this.cookies.size) {
       headers.Cookie = [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
@@ -50,6 +50,15 @@ class Client {
     });
     this.captureCookies(response);
     const text = await response.text();
+    if (response.status === 429 && expected !== 429 && retryRateLimit) {
+      const failure = JSON.parse(text);
+      const reset = Date.parse(failure.fields?.resetAt ?? "");
+      const delay = reset - Date.now();
+      if (failure.fields?.dimension === "USER_MINUTE_LIMIT" && Number.isFinite(delay) && delay >= -1000 && delay <= 60000) {
+        await sleep(Math.max(0, delay) + 100);
+        return this.request(path, { method, body, expected });
+      }
+    }
     if (response.status !== expected) {
       throw new Error(`${method} ${path}: expected HTTP ${expected}, got ${response.status}: ${text.slice(0, 400)}`);
     }
@@ -1010,7 +1019,7 @@ async function main() {
   assert.notEqual(changedScore.analysis.evaluationKey,firstScore.analysis.evaluationKey);
   assert.equal(changedScore.analysis.scoringContext.mode,"USER_JD");
   assert.equal((await asyncOwner.request(`/api/resumes/${resume.id}/analysis/history`)).length,2);
-  const repeatScore=await asyncOwner.request(`/api/resumes/${resume.id}/analysis`,{method:"POST",expected:202,body:changedConditions});
+  const repeatScore=await asyncOwner.request(`/api/resumes/${resume.id}/analysis`,{method:"POST",expected:202,body:changedConditions,retryRateLimit:true});
   assert.equal(repeatScore.status,"COMPLETED");
   assert.equal(repeatScore.analysisId,changedScore.id);
   const taskRecap = await asyncOwner.request("/api/interview-recaps",{method:"POST",expected:202,body:{content:"后台任务验收：技术面试中被问到 Redis 的 RDB 和 AOF 区别，我只说了快照，没能解释日志、重写及故障恢复的数据丢失窗口。"}});
