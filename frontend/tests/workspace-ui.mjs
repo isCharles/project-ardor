@@ -45,6 +45,7 @@ try {
   let learningDeleteFails = false;
   let failRename = true;
   let renameCalls = 0;
+  let previewScenario = true;
   let conversation = { id: "chat-one", title: "Original chat", pinned: false, titleManuallySet: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   await context.addInitScript(() => { window.prompt = () => { throw new Error("Native prompt must not be used"); }; });
   const handleApi = async (route) => {
@@ -87,13 +88,13 @@ try {
       ];
       return route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "thinking", content: "Synthetic public reasoning" })}\n\ndata: ${JSON.stringify({ type: "done", conversationId: conversation.id, messageId: "sent-assistant", content: "Synthetic agent reply", elapsedMs: 100 })}\n\n` });
     }
-    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, displayName: "Fixture", conversations: [conversation], archivedConversations: [], messages: displayedMessages, memory: { content: "", updatedAt: null } };
+    else if (path === "/api/agent") body = { conversationId: url.searchParams.get("conversationId") || conversation.id, llmConfigured: true, displayName: "Fixture", conversations: [conversation, ...(previewScenario ? [{ ...conversation, id: "chat-two", title: "Second preview chat" }] : [])], archivedConversations: [], messages: url.searchParams.get("conversationId") === "chat-two" ? [{ id: "preview-message", role: "ASSISTANT", content: "Second conversation content", createdAt: new Date().toISOString() }] : displayedMessages, memory: { content: "", updatedAt: null } };
     else if (path === "/api/agent/conversations/chat-one") {
       renameCalls++;
       if (failRename) return route.fulfill({ status: 503, json: { message: "Synthetic save failure" } });
       conversation = { ...conversation, ...route.request().postDataJSON(), titleManuallySet: true }; body = conversation;
     }
-    else if (path === "/api/agent/conversations") body = [conversation];
+    else if (path === "/api/agent/conversations") body = [conversation, { ...conversation, id: "chat-two", title: "Second preview chat" }];
     else if (path === "/api/agent/messages/steer" && route.request().method() === "POST") {
       const request = route.request().postDataJSON();
       steerRequests.push(request);
@@ -195,6 +196,16 @@ try {
   await page.waitForFunction(() => document.activeElement?.id === "ardor-chat-preview");
   await chatPreview.press("Escape");
   await chatPreview.waitFor({ state: "hidden" });
+  await home.hover();
+  await chatPreview.getByRole("link", { name: "Second preview chat", exact: true }).click();
+  await page.getByText("Second conversation content", { exact: true }).waitFor();
+  assert.equal(await sidebar.isVisible(), false);
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).fill("Second conversation draft");
+  await home.hover();
+  await chatPreview.getByRole("link", { name: "New chat", exact: true }).click();
+  await page.getByText("Second conversation content", { exact: true }).waitFor({ state: "hidden" });
+  assert.equal(await page.getByRole("textbox", { name: "Message Ardor", exact: true }).inputValue(), "");
+  previewScenario = false;
   await home.hover();
   await chatPreview.getByRole("link", { name: "Original chat", exact: true }).click();
   await chatPreview.waitFor({ state: "hidden" });

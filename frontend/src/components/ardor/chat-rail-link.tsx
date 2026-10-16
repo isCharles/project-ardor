@@ -94,11 +94,22 @@ export function ChatRailLink({ userId, active, className, onOpen }: {
       {expanded && <div className="min-h-0 overflow-y-auto">
         {error ? <div role="status" className="px-2 py-4 text-xs text-stone-500">{error} <button type="button" className="text-violet-700 underline" onClick={() => { setError(""); setItems(null); setAttempt(value => value + 1); }}>{t("Retry", "重试")}</button></div>
           : items === null ? <p role="status" className="flex items-center gap-2 px-2 py-4 text-xs text-stone-400"><LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />{t("Loading chats…", "正在读取对话…")}</p>
-          : items.length ? items.map(item => <Link key={item.id} href={`/app?conversation=${encodeURIComponent(item.id)}`} onClick={close} title={item.title}
+          : items.length ? items.map(item => <Link key={item.id} href={`/app?conversation=${encodeURIComponent(item.id)}`} onClick={event => {
+              close();
+              if (active && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+                event.preventDefault();
+                window.dispatchEvent(new CustomEvent("ardor:select-chat", { detail: item.id }));
+              }
+            }} title={item.title}
               className="block truncate rounded-xl px-3 py-2.5 text-sm text-stone-700 transition-colors hover:bg-violet-50 focus-visible:outline-2 focus-visible:outline-violet-500">{item.title}</Link>)
             : <p className="px-2 py-4 text-xs text-stone-400">{t("No recent chats yet.", "暂无最近对话。")}</p>}
       </div>}
-      <Link href="/app?new=1" onClick={close} className="mt-2 flex items-center gap-2 rounded-xl border-t border-stone-100 px-3 py-2.5 text-sm text-violet-700 hover:bg-violet-50"><Plus className="size-4" />{t("New chat", "新对话")}</Link>
+      <Link href="/app?new=1" onClick={event => {
+        close();
+        if (active && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+          event.preventDefault(); window.dispatchEvent(new Event("ardor:new-chat"));
+        }
+      }} className="mt-2 flex items-center gap-2 rounded-xl border-t border-stone-100 px-3 py-2.5 text-sm text-violet-700 hover:bg-violet-50"><Plus className="size-4" />{t("New chat", "新对话")}</Link>
     </section>}
   </>;
 }
