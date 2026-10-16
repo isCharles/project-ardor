@@ -857,6 +857,28 @@ async function main() {
   await asyncOwner.request(assessmentPath, { method: "POST", expected: 400,
     body: { ...asyncInput, answers: ["changed", "changed"] } });
   assert.equal((await asyncOwner.request(`/api/learning-plans/${asyncPlanId}`)).attemptCount, 1);
+  await asyncOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE",
+    baseUrl: modelBase, model: "date-correction-probe", apiKey: "disposable-fake-model-key" } });
+  const dateConversation = await asyncOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
+  const correctedDate = new Date(Date.now() + 3 * 86400000).toISOString();
+  const dateRequest = { requestId: randomUUID(), conversationId: dateConversation.id,
+    message: `请把这个日期改到${correctedDate}。目标 ${asyncPlanId}`, contextReferences: [{ type: "LEARNING", id: asyncPlanId }] };
+  await asyncOwner.request("/api/agent/queue", { method: "POST", expected: 202, body: dateRequest });
+  let dateFinished = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const queued = await asyncOwner.request(`/api/agent/queue?conversationId=${dateConversation.id}`);
+    if (queued.find(item => item.id === dateRequest.requestId)?.status === "COMPLETED") { dateFinished = true; break; }
+    await sleep(100);
+  }
+  assert.ok(dateFinished, "An implicit conversational date update must execute without a permission dialog");
+  assert.deepEqual(await asyncOwner.request(`/api/agent/runs/${dateRequest.requestId}/approvals`), []);
+  const rescheduledLesson = await asyncOwner.request(`/api/learning-plans/${asyncPlanId}`);
+  assert.equal(new Date(rescheduledLesson.scheduledAt).getTime(), new Date(correctedDate).getTime());
+  assert.deepEqual(rescheduledLesson.lesson, graded.lesson);
+  assert.equal(rescheduledLesson.attemptCount, 1);
+  assert.equal(rescheduledLesson.lastScore, 65);
+  await asyncOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE",
+    baseUrl: modelBase, model: "async-evaluation-probe", apiKey: "disposable-fake-model-key" } });
   const interview = await asyncOwner.request("/api/interviews", { method: "POST", expected: 201,
     body: { targetRole: "Java 后端工程师", questionCount: 3, modality: "TEXT" } });
   for (let index = 0; index < 3; index++) {

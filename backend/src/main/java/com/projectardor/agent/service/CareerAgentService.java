@@ -340,9 +340,11 @@ public class CareerAgentService {
             AtomicLong lastHeartbeatAt = new AtomicLong(System.nanoTime());
             // Held rather than inlined: after the run it is asked which deletions
             // the agent proposed, so each becomes a button in the transcript.
+            String interruptedRequest = runStore.interruptedRequest(userId, conversation.getId(), requestId);
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId)
                     .withInterviewAnswerContext(interviewAnswerContext(userId, conversation.getId()))
-                    .withInterruptedRequest(runStore.interruptedRequest(userId, conversation.getId(), requestId));
+                    .withInterruptedRequest(interruptedRequest)
+                    .withDateCorrectionContext(dateCorrectionContext(userId, conversation.getId(), references, interruptedRequest));
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, depth, lease))
                     .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory)
@@ -459,6 +461,26 @@ public class CareerAgentService {
             if (ToolIntentPolicy.permits("finish_interview", turn.getContent()) || ToolIntentPolicy.permits("cancel_interview", turn.getContent())) active = false;
         }
         return active;
+    }
+
+    private String dateCorrectionContext(UUID userId, UUID conversationId, List<AgentContextReference> references, String interrupted) {
+        if (!references.isEmpty()) {
+            var candidates = new java.util.HashSet<String>();
+            for (var reference : references) {
+                if ("LEARNING".equals(reference.type())) candidates.add("update_learning_plan");
+                else if ("SERVICE".equals(reference.type()) && reference.id().equals(com.projectardor.agent.AgentFeature.LEARNING.id())) candidates.add("update_learning_plan");
+                else if ("SERVICE".equals(reference.type()) && reference.id().equals(com.projectardor.agent.AgentFeature.CALENDAR.id())) candidates.add("update_calendar_task");
+                else return "";
+            }
+            return candidates.size() == 1 ? candidates.iterator().next() : "";
+        }
+        if (interrupted != null && !interrupted.isBlank()) return ToolIntentPolicy.dateContext(interrupted);
+        var previous = store.recent(userId, conversationId).reversed().stream()
+                .filter(turn -> "USER".equals(turn.getRole())).findFirst();
+        if (previous.isEmpty()) return "";
+        var selected = previous.get().getContextReferences();
+        if (selected != null && !selected.isEmpty()) return dateCorrectionContext(userId, conversationId, selected, "");
+        return ToolIntentPolicy.dateContext(previous.get().getContent());
     }
 
     private MessageWindowChatMemory conversationMemory(UUID userId, UUID conversationId) {

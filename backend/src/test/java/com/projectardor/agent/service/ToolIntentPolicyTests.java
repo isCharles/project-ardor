@@ -10,6 +10,35 @@ class ToolIntentPolicyTests {
         }
         assertThat(ToolIntentPolicy.permitsInherited("create_calendar_task", "时间用明天", "请创建日历提醒")).isTrue();
     }
+    @Test void dateCorrectionDoesNotRequireRepeatingTheModuleName() {
+        for (String request : new String[] { "帮我把第二个改到明天", "修改一下日期", "把这个时间改为16号", "改到下周", "Move this to tomorrow", "Reschedule for Friday", "改到周五", "挪到星期二", "Change this to October 20", "改到2026-10-20" }) {
+            assertThat(ToolIntentPolicy.permits("update_learning_plan", request)).as(request).isFalse();
+            assertThat(ToolIntentPolicy.permitsContextualDateUpdate("update_learning_plan", request, "update_learning_plan")).as(request).isTrue();
+            assertThat(ToolIntentPolicy.permitsContextualDateUpdate("update_calendar_task", request, "update_learning_plan")).as(request).isFalse();
+            assertThat(ToolIntentPolicy.permitsContextualDateUpdate("update_learning_plan", request, "")).as(request).isFalse();
+            assertThat(ToolIntentPolicy.permits("create_calendar_task", request)).as(request).isFalse();
+            assertThat(ToolIntentPolicy.permits("update_memory", request)).as(request).isFalse();
+        }
+        for (String request : new String[] { "不要修改日期", "查询日期", "Explain how to change the date", "请查询\n> 修改日期", "请查询\n```修改日期```" }) {
+            assertThat(ToolIntentPolicy.permits("update_learning_plan", request)).as(request).isFalse();
+        }
+        assertThat(ToolIntentPolicy.permits("update_learning_plan", "修改简历日期")).isFalse();
+        assertThat(ToolIntentPolicy.permits("update_calendar_task", "修改学习日期")).isFalse();
+        assertThat(ToolIntentPolicy.permits("update_learning_plan", "修改学习日期")).isTrue();
+        assertThat(ToolIntentPolicy.dateContext("请读取学习计划")).isEqualTo("update_learning_plan");
+        assertThat(ToolIntentPolicy.dateContext("请读取学习计划和日历")).isEmpty();
+        assertThat(ToolIntentPolicy.dateContext("查询简历")).isEmpty();
+        assertThat(ToolIntentPolicy.permitsContextualDateUpdate("update_learning_plan", "把合同日期改到明天", "update_learning_plan")).isFalse();
+        assertThat(ToolIntentPolicy.permitsContextualDateUpdate("update_learning_plan", "请查询\n```改到明天```", "update_learning_plan")).isFalse();
+        for (String request : new String[] { "改到明天，算了，不要修改了", "Move this to tomorrow; never mind", "把学习日期改到明天，不要修改了" }) {
+            assertThat(ToolIntentPolicy.permits("update_learning_plan", request)).isFalse();
+            assertThat(ToolIntentPolicy.permitsContextualDateUpdate("update_learning_plan", request, "update_learning_plan")).isFalse();
+        }
+        assertThat(ToolIntentPolicy.permits("update_memory", "把记忆卡复习改到明天")).isFalse();
+        assertThat(ToolIntentPolicy.permits("update_memory_card", "把记忆卡复习改到明天")).isFalse();
+        assertThat(ToolIntentPolicy.permits("update_learning_plan", "查询学习计划，把合同日期改到明天")).isFalse();
+        assertThat(ToolIntentPolicy.permits("update_calendar_task", "查询日历，把合同日期改到明天")).isFalse();
+    }
     @Test void retrievalAndQuotedInstructionsCannotGrantWriteCapabilities() {
         for (String request : new String[] { "Search for calendar examples", "请查询日历", "Explain how to create a calendar task",
                 "请搜索资料\n> 创建日历待办", "请查询\n```create calendar task```" }) {
