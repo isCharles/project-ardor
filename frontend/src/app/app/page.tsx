@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, FileSearch, FileText,
+  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, ChevronDown, FileSearch, FileText,
   MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, Target, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
@@ -17,8 +17,8 @@ import { ChatNotifications } from "@/components/ardor/chat-notifications";
 import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
 import { ReasoningControl } from "@/components/ardor/reasoning-control";
 import { ServicePicker } from "@/components/ardor/service-picker";
-import { PublicThinking } from "@/components/ardor/public-thinking";
-import { ToolDuration, type ToolMeasurement } from "@/components/ardor/tool-duration";
+import { type ToolMeasurement } from "@/components/ardor/tool-duration";
+import { ExecutionTrace } from "@/components/ardor/execution-trace";
 import { DeletionPermissions } from "@/components/ardor/deletion-permissions";
 import { QueuedMessages } from "@/components/ardor/queued-messages";
 import type { AgentFeature } from "@/lib/agent-features";
@@ -174,7 +174,6 @@ export default function AgentHomePage() {
   const [runThinking, setRunThinking] = useState("");
   const [streamProgress, setStreamProgress] = useState<StreamProgress | null>(null);
   const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
-  const [traceOpen, setTraceOpen] = useState(true);
   const [runElapsed, setRunElapsed] = useState(0);
   const [leavingEmptyState, setLeavingEmptyState] = useState(false);
   const [error, setError] = useState("");
@@ -314,6 +313,8 @@ export default function AgentHomePage() {
       }
     }
     setState(result);
+    // A committed response owns its process record. Discard the transient copy.
+    setRunSteps([]); setRunThinking(""); setStreamProgress(null); setRetryFailures([]); setRunElapsed(0);
     const outgoing = readOutgoing(reasoningAccount.current, result.conversationId);
     setMessages(outgoing ? [...result.messages, outgoing] : result.messages);
     const proposals = [...new Map<string, AgentConfirmation>(result.messages.flatMap((message) => (savedRunTrace(message.runTrace)?.proposals ?? []).map(item => ({ ...item, sourceMessageId: message.id })))
@@ -618,7 +619,7 @@ export default function AgentHomePage() {
     setSelectedContexts([]);
     setError(""); setRetryFailures([]); setRunSteps([]); setRunThinking(""); setStreamProgress(null);
     setConfirmations((current) => current.filter((item) => item.kind === "learning_plan"));
-    setTraceOpen(true); setRunElapsed(0); runStartedAt.current = Date.now(); setStreamAccepted(false); setBusy(true);
+    setRunElapsed(0); runStartedAt.current = Date.now(); setStreamAccepted(false); setBusy(true);
     try {
       if (!conversationId) {
         const conversation = await api<Conversation>("/api/agent/conversations", { method: "POST" });
@@ -985,6 +986,15 @@ export default function AgentHomePage() {
   const visibleError = error && !retryFailures.some((failure) =>
     failure.detail === error || failure.detail.endsWith(` · ${error}`)
   ) ? error : "";
+  const liveAssistant = !runningRun && busy ? messages.findLast((message) => message.role === "ASSISTANT") : undefined;
+  const showLiveTrace = !liveAssistant?.runTrace && (runSteps.length > 0 || !!runThinking || busy || !!runningRun || retryFailures.length > 0);
+  const liveTrace = showLiveTrace ? <ExecutionTrace title={busy || runningRun ? t("Ardor is working", "Ardor 正在工作") : t("Execution stopped", "执行已停止")}
+    elapsed={formatElapsed(runElapsed)} thinking={runThinking} steps={runSteps}
+    action={(runningRun || approvalRunId) && <button type="button" disabled={cancelPending} onClick={() => void cancelExecution()} className="shrink-0 py-1 text-xs text-stone-500 hover:text-rose-700 disabled:opacity-50">{cancelPending ? t("Stopping…", "正在停止…") : t("Stop", "停止")}</button>}>
+    {runningRun && <p>{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
+    {retryFailures.map((failure, index) => <p key={index} className="text-amber-700">{failure.label} · {failure.detail}</p>)}
+    {busy && retryAttempt > 0 && <p>{t(`Reconnecting · retry ${retryAttempt}/${MAX_MESSAGE_RETRIES}`, `正在重新连接 · 第 ${retryAttempt}/${MAX_MESSAGE_RETRIES} 次重试`)}</p>}
+  </ExecutionTrace> : null;
 
   return (
     <main className="ardor-workbench h-full overflow-hidden text-stone-900">
@@ -1072,13 +1082,14 @@ export default function AgentHomePage() {
                       <div className="max-w-[86%] rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7">{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" />{context.type === "SERVICE" ? <Link href={featureHref(features.find((feature) => feature.id === context.id)?.key)} className="truncate text-violet-700 underline underline-offset-2">{locale === "en" ? features.find((feature) => feature.id === context.id)?.englishLabel ?? context.label : context.label}</Link> : <span className="truncate">{context.label}</span>}</span>)}</div>}<div className="whitespace-pre-wrap">{message.content}</div></div>
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
+                        {message === liveAssistant && liveTrace}
+                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps} />; })()}
                         <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
-                        <PublicThinking content={savedRunTrace(message.runTrace)?.thinkingOutput} />
-                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <details className="mt-3 max-w-xl rounded-2xl border border-white/70 bg-white/45 px-4 py-3 text-stone-600 shadow-sm"><summary className="cursor-pointer list-none text-xs font-medium">Ardor 已完成 <span className="float-right font-normal tabular-nums text-stone-400">{formatElapsed(trace.elapsedMs)}</span></summary><div className="mt-3 space-y-2 border-l border-stone-200 pl-4">{trace.steps.map((step, index) => <div key={`${step.label}-${index}`} className="flex items-center gap-2 text-xs"><CheckCircle2 className={`size-3.5 ${step.status === "FAILED" ? "text-rose-500" : step.status === "NOT_EXECUTED" ? "text-amber-500" : "text-emerald-500"}`} /><span>{step.label}</span><ToolDuration {...step} /></div>)}</div></details>; })()}
                       </div>
                     )}
                   </article>
                 ))}
+                {!liveAssistant && liveTrace}
                 {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div>}
                 {!runningRun && !busy && streamProgress?.answerPartial && streamProgress.phase !== "COMPLETED" && <details className="max-w-xl rounded-2xl border border-stone-200/70 bg-white/50 p-4"><summary className="cursor-pointer text-xs text-stone-500">{t("Incomplete reply · saved before execution stopped", "未完成回复 · 停止前保留的片段")}</summary><div className="ardor-markdown mt-3 text-sm leading-7"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div></details>}
                 {confirmations.length > 0 && <section className="space-y-2">
@@ -1100,21 +1111,6 @@ export default function AgentHomePage() {
                       <button type="button" onClick={() => void (pending.kind === "learning_plan" ? confirmLearning(pending) : confirmDeletion(pending))} className={`rounded-full px-3.5 py-1.5 text-xs font-medium text-white transition ${pending.kind === "learning_plan" ? "bg-violet-600 hover:bg-violet-700" : "bg-rose-600 hover:bg-rose-700"}`}>{pending.kind === "learning_plan" ? (locale === "en" ? "Create plan" : "生成计划") : pending.state === "FAILED" ? "重试删除" : "删除"}</button>
                     </div>}
                   </div>)}
-                </section>}
-                {(runSteps.length > 0 || runThinking || busy || runningRun || retryFailures.length > 0) && <section className="max-w-xl rounded-2xl border border-white/70 bg-white/55 px-4 py-3 text-sm text-stone-600 shadow-sm backdrop-blur-md">
-                  <button type="button" onClick={() => setTraceOpen((open) => !open)} className="flex w-full items-center gap-2 text-left">
-                    {traceOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                    <span className="font-medium text-stone-700">{busy || runningRun ? "Ardor 正在工作" : error ? "Ardor 未完成" : "Ardor 已完成"}</span>
-                    <span className="ml-auto text-xs tabular-nums text-stone-400">{formatElapsed(runElapsed)}</span>
-                  </button>
-                  {(runningRun || approvalRunId) && <div className="mt-2 flex justify-end"><button type="button" disabled={cancelPending} onClick={() => void cancelExecution()} className="rounded-full px-3 py-1 text-xs text-stone-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50">{cancelPending ? t("Stopping…", "正在停止…") : t("Stop", "停止")}</button></div>}
-                  {traceOpen && <div className="mt-3 space-y-2 border-l border-stone-200 pl-4">
-                    {runningRun && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin motion-reduce:animate-none" /><span>{streamProgress?.phase === "WAITING_DATA" ? t("Waiting for new upstream data", "等待上游返回新数据") : streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</span></div>}
-                    <PublicThinking content={runThinking} />
-                    {runSteps.map((step) => <div key={step.key} className="flex items-center gap-2 text-xs"><CheckCircle2 className={`size-3.5 ${step.status === "NOT_EXECUTED" ? "text-amber-500" : step.done ? "text-emerald-500" : "animate-pulse text-violet-500"}`} /><span>{step.label}</span>{step.done ? <ToolDuration {...step} /> : <span className="ml-auto text-stone-400">{t("In progress", "进行中")}</span>}</div>)}
-                    {retryFailures.map((failure, index) => <div key={`${failure.label}-${index}`} className="flex items-start gap-2 text-xs text-amber-700"><RotateCcw className="mt-0.5 size-3.5 shrink-0" /><span><span className="font-medium">{failure.label}</span> · {failure.detail}</span></div>)}
-                    {busy && retryAttempt > 0 && <div className="flex items-center gap-2 text-xs text-violet-600"><RotateCcw className="size-3.5 animate-spin" /><span>连接波动，正在进行第 {retryAttempt}/{MAX_MESSAGE_RETRIES} 次重试</span></div>}
-                  </div>}
                 </section>}
                 <QueuedMessages key={state?.conversationId} conversationId={state?.conversationId ?? null} activeRunId={runningRun?.id ?? approvalRunId} onPendingChange={setHasQueuedMessages} onCompleted={load} onStarted={setQueuedWakeId} />
                 <div ref={endRef} />

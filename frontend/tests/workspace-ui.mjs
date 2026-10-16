@@ -327,21 +327,30 @@ try {
   await page.getByText("Synthetic agent reply", { exact: true }).waitFor();
   // The live progress card is replaced after completion. Inspect the persisted
   // assistant article so a click cannot land on the soon-to-be-unmounted card.
-  const reasoning = page.getByRole("article").filter({ hasText: "Synthetic agent reply" }).locator("details")
-    .filter({ has: page.getByText("Model reasoning output", { exact: true }) }).first();
+  const replyArticle = page.getByRole("article").filter({ hasText: "Synthetic agent reply" });
+  const replyTrace = replyArticle.locator("[data-execution-trace] > div > details");
+  assert.equal(await page.locator("[data-execution-trace]").count(), 1, "Live state must not survive beside the committed trace");
+  assert.equal(await replyTrace.getAttribute("open"), null, "Process defaults to collapsed");
+  assert.ok(await replyArticle.evaluate(element => {
+    const trace = element.querySelector('[data-execution-trace]');
+    const answer = element.querySelector('.ardor-markdown');
+    return !!(trace.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }), "Execution process must precede the final answer");
+  await replyTrace.locator(":scope > summary").click();
+  const reasoning = replyTrace.locator("details");
   await reasoning.locator("summary").click();
   await reasoning.getByText("Synthetic public reasoning", { exact: true }).waitFor();
   assert.deepEqual(sentMessage.contextReferences, [{ type: "SERVICE", id: "f1111111-1111-3111-8111-111111111111" }]);
   const sentBubble = page.getByRole("article").filter({ hasText: "Make a study outline" });
   await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
-  const replyTrace = page.getByRole("article").filter({ hasText: "Synthetic agent reply" }).locator("details").last();
-  await replyTrace.locator("summary").click();
   await replyTrace.getByText("Approval wait 40.0 s", { exact: true }).waitFor();
   await replyTrace.getByText("Not executed", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Change service" }).count(), 0);
   await page.reload();
   await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
+  assert.equal(await page.locator("[data-execution-trace]").count(), 1);
+  assert.equal(await replyTrace.getAttribute("open"), null, "Reload restores one collapsed trace");
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   // Reconnect to an accepted run: it is history, never the next-message draft.
   activeRun = { id: "accepted-run", conversationId: conversation.id, message: "Accepted message after disconnect", status: "RUNNING", label: "Waiting", createdAt: new Date().toISOString() };
@@ -400,6 +409,7 @@ try {
   await page.reload();
   await page.getByText("Incomplete reply · saved before execution stopped", { exact: true }).click();
   await page.getByText("Saved incomplete answer", { exact: true }).waitFor();
+  await page.getByText("Execution stopped", { exact: true }).click();
   await page.getByText("Recovered read plans", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).isEnabled(), true);
   activeRun = null;
@@ -408,7 +418,8 @@ try {
   await page.reload();
   await draftBox.fill("Stop during retry backoff");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByText(/正在进行第 1\/5 次重试/).waitFor();
+  await page.getByText("Ardor is working", { exact: true }).click();
+  await page.getByText(/Reconnecting · retry 1\/5/).waitFor();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.getByText("Sending stopped. No further automatic retries will be sent.", { exact: true }).waitFor();
   await page.waitForTimeout(2200);
