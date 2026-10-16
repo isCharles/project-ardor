@@ -30,7 +30,8 @@ export function DesktopFrame({ children }: { children: ReactNode }) {
     catch { setError(t("Navigation unavailable", "暂时无法导航")); }
   }
   return <div data-desktop-chrome={enabled || undefined} className="flex h-dvh flex-col overflow-hidden">
-    {enabled && <header aria-label={t("Window toolbar", "窗口工具栏")} className="ardor-window-titlebar flex h-[46px] shrink-0 items-center gap-1 bg-gradient-to-r from-[#fff7ed] via-[#f8faf8] to-[#eef5ff] px-2 pr-40 text-stone-500">
+    {enabled && <header aria-label={t("Window toolbar", "窗口工具栏")} className="ardor-window-titlebar flex h-[46px] shrink-0 items-center gap-1 bg-[#faf9f6] px-2 pr-40 text-stone-500"
+      style={{ backgroundImage: "linear-gradient(to right, #fff7ed, #f8faf8, #faf9f6)", backgroundSize: "calc(100% - 160px) 100%", backgroundRepeat: "no-repeat" }}>
       <button type="button" disabled={!navigation.back} aria-label={t("Back", "后退")} onClick={() => void go("back")} className="ardor-window-control rounded-lg p-2 hover:bg-white/70 disabled:opacity-30"><ArrowLeft className="size-4" /></button>
       <button type="button" disabled={!navigation.forward} aria-label={t("Forward", "前进")} onClick={() => void go("forward")} className="ardor-window-control rounded-lg p-2 hover:bg-white/70 disabled:opacity-30"><ArrowRight className="size-4" /></button>
       <button type="button" disabled={pathname !== "/app"} aria-label={t("Toggle conversations", "折叠对话栏")} onClick={() => window.dispatchEvent(new Event("ardor:toggle-chat-sidebar"))} className="ardor-window-control mr-3 rounded-lg p-2 hover:bg-white/70 disabled:opacity-30"><PanelLeft className="size-4" /></button>

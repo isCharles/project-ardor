@@ -43,6 +43,12 @@ try {
   await page.goto("http://127.0.0.1:3101/app");
   const toolbar = page.getByRole("banner", { name: "Window toolbar" });
   await toolbar.waitFor();
+  const toolbarBackground = await toolbar.evaluate(element => {
+    const style = getComputedStyle(element);
+    return { color: style.backgroundColor, size: style.backgroundSize, repeat: style.backgroundRepeat };
+  });
+  assert.deepEqual(toolbarBackground, { color: "rgb(250, 249, 246)", size: "calc(100% - 160px) 100%", repeat: "no-repeat" },
+    "The gradient must finish before the native window controls, whose overlay is #faf9f6");
   assert.deepEqual(await toolbar.getByRole("button").allTextContents(), ["", "", "", "file", "edit", "view", "help"]);
   assert.equal(await page.locator(".ardor-chat-toggle").isVisible(), false);
   const sidebar = page.getByRole("complementary", { name: "Conversations", exact: true });
