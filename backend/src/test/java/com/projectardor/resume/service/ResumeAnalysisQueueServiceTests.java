@@ -22,7 +22,7 @@ class ResumeAnalysisQueueServiceTests {
         ResumeRepository resumes = mock(ResumeRepository.class);
         ResumeAnalysisRepository analyses = mock(ResumeAnalysisRepository.class);
         ResumeAnalysisJobRepository jobs = mock(ResumeAnalysisJobRepository.class);
-        ResumeAnalysisQueueService service = new ResumeAnalysisQueueService(resumes, analyses, jobs);
+        ResumeAnalysisQueueService service = new ResumeAnalysisQueueService(resumes, analyses, jobs, new tools.jackson.databind.ObjectMapper());
         UUID userId = UUID.randomUUID();
         UUID resumeId = UUID.randomUUID();
         Resume resume = Resume.create(resumeId, userId, "resume.pdf", "application/pdf", "key", 1, "hash");
@@ -47,7 +47,7 @@ class ResumeAnalysisQueueServiceTests {
         when(jobs.recoverStale(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(3)))
                 .thenReturn(4);
         ResumeAnalysisQueueService service = new ResumeAnalysisQueueService(
-                mock(ResumeRepository.class), mock(ResumeAnalysisRepository.class), jobs);
+                mock(ResumeRepository.class), mock(ResumeAnalysisRepository.class), jobs, new tools.jackson.databind.ObjectMapper());
 
         assertThat(service.recoverStaleJobs()).isEqualTo(6);
     }

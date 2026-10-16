@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -64,9 +66,13 @@ public class ResumeController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ResumeAnalysisTaskResponse analyze(
             @AuthenticationPrincipal ArdorPrincipal principal,
-            @PathVariable UUID resumeId) {
-        return ResumeAnalysisTaskResponse.from(queueService.request(principal.userId(), resumeId));
+            @PathVariable UUID resumeId,
+            @RequestBody(required = false) AnalysisRequest request) {
+        return ResumeAnalysisTaskResponse.from(queueService.request(principal.userId(), resumeId,
+                request == null ? "" : request.targetRole(), request == null ? "" : request.jobDescription()));
     }
+
+    public record AnalysisRequest(String targetRole, String jobDescription) {}
 
     @GetMapping("/{resumeId}/analysis/status")
     public ResumeAnalysisTaskResponse analysisStatus(
@@ -78,8 +84,17 @@ public class ResumeController {
     @GetMapping("/{resumeId}/analysis")
     public ResumeAnalysisResponse getAnalysis(
             @AuthenticationPrincipal ArdorPrincipal principal,
-            @PathVariable UUID resumeId) {
-        return ResumeAnalysisResponse.from(resumeService.getAnalysis(principal.userId(), resumeId));
+            @PathVariable UUID resumeId,
+            @RequestParam(required = false) UUID analysisId) {
+        var report = analysisId == null ? resumeService.getAnalysis(principal.userId(), resumeId)
+                : resumeService.getAnalysisById(principal.userId(), analysisId);
+        if (!report.getResumeId().equals(resumeId)) throw new com.projectardor.common.web.ResourceNotFoundException("简历分析不存在");
+        return ResumeAnalysisResponse.from(report);
+    }
+
+    @GetMapping("/{resumeId}/analysis/history")
+    public List<ResumeAnalysisResponse> history(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID resumeId) {
+        return resumeService.history(principal.userId(), resumeId).stream().map(ResumeAnalysisResponse::from).toList();
     }
 
     @DeleteMapping("/{resumeId}")

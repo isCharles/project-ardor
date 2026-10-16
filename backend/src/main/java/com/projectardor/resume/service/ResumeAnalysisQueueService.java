@@ -31,35 +31,58 @@ public class ResumeAnalysisQueueService {
     private final ResumeRepository resumeRepository;
     private final ResumeAnalysisRepository analysisRepository;
     private final ResumeAnalysisJobRepository jobRepository;
+    private final tools.jackson.databind.ObjectMapper mapper;
 
     public ResumeAnalysisQueueService(
             ResumeRepository resumeRepository,
             ResumeAnalysisRepository analysisRepository,
-            ResumeAnalysisJobRepository jobRepository) {
+            ResumeAnalysisJobRepository jobRepository,
+            tools.jackson.databind.ObjectMapper mapper) {
         this.resumeRepository = resumeRepository;
         this.analysisRepository = analysisRepository;
         this.jobRepository = jobRepository;
+        this.mapper = mapper;
     }
 
     @Transactional
     public TaskResult request(UUID userId, UUID resumeId) {
+        return request(userId, resumeId, "", "");
+    }
+
+    @Transactional
+    public TaskResult request(UUID userId, UUID resumeId, String role, String jobDescription) {
         Resume resume = ownedResume(userId, resumeId);
         if (resume.getParseStatus() != ResumeParseStatus.PARSED || resume.getParsedText() == null) {
             throw new IllegalStateException("简历文本解析未成功，无法进行 AI 分析");
         }
         jobRepository.lockRequestSlot(userId, resumeId);
-        Optional<ResumeAnalysis> analysis = analysisRepository.findByResumeIdAndUserId(resumeId, userId);
-        if (analysis.isPresent()) return TaskResult.completed(resumeId, analysis.get().getId());
+        var context = ResumeScoringContext.freeze(role, jobDescription);
+        String key = ResumeScoringContext.key(resume.getParsedText(), context, mapper);
+        Optional<ResumeAnalysis> analysis = analysisRepository.findByResumeIdAndUserIdAndEvaluationKey(resumeId, userId, key);
         Optional<ResumeAnalysisJob> active = jobRepository
                 .findFirstByUserIdAndResumeIdAndStatusInOrderByCreatedAtDesc(
                         userId, resumeId, ACTIVE_STATUSES);
-        if (active.isPresent()) return TaskResult.from(active.get());
-        return TaskResult.from(jobRepository.saveAndFlush(ResumeAnalysisJob.create(userId, resumeId)));
+        if (active.isPresent()) {
+            if (!active.get().getScoringContext().equals(context)) throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT, "已有另一组条件的分析正在执行，请等待完成");
+            return TaskResult.from(active.get());
+        }
+        if (analysis.isPresent()) {
+            var previous = jobRepository.findFirstByUserIdAndResumeIdOrderByCreatedAtDesc(userId, resumeId);
+            if (previous.isPresent() && previous.get().getStatus() == ResumeAnalysisJobStatus.COMPLETED
+                    && analysis.get().getId().equals(previous.get().getAnalysisId())) return TaskResult.from(previous.get());
+            var completed = ResumeAnalysisJob.create(userId, resumeId, context);
+            completed.complete(analysis.get().getId());
+            return TaskResult.from(jobRepository.saveAndFlush(completed));
+        }
+        return TaskResult.from(jobRepository.saveAndFlush(ResumeAnalysisJob.create(userId, resumeId, context)));
     }
 
     @Transactional(readOnly = true)
     public TaskResult status(UUID userId, UUID resumeId) {
         ownedResume(userId, resumeId);
+        var latest = jobRepository.findFirstByUserIdAndResumeIdOrderByCreatedAtDesc(userId, resumeId);
+        if (latest.isPresent()) return TaskResult.from(latest.get());
         Optional<ResumeAnalysis> analysis = analysisRepository.findByResumeIdAndUserId(resumeId, userId);
         if (analysis.isPresent()) return TaskResult.completed(resumeId, analysis.get().getId());
         ResumeAnalysisJob job = jobRepository.findFirstByUserIdAndResumeIdOrderByCreatedAtDesc(userId, resumeId)
@@ -69,6 +92,8 @@ public class ResumeAnalysisQueueService {
 
     @Transactional(readOnly = true)
     public Optional<TaskResult> statusIfPresent(UUID userId, UUID resumeId) {
+        var latest = jobRepository.findFirstByUserIdAndResumeIdOrderByCreatedAtDesc(userId, resumeId);
+        if (latest.isPresent()) return Optional.of(TaskResult.from(latest.get()));
         Optional<ResumeAnalysis> analysis = analysisRepository.findByResumeIdAndUserId(resumeId, userId);
         if (analysis.isPresent()) return Optional.of(TaskResult.completed(resumeId, analysis.get().getId()));
         return jobRepository.findFirstByUserIdAndResumeIdOrderByCreatedAtDesc(userId, resumeId)

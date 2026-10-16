@@ -2,6 +2,9 @@ package com.projectardor.resume.domain;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.Map;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -29,6 +32,9 @@ public class ResumeAnalysisJob {
     @Column(name = "error_message", length = 1000) private String errorMessage;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "scoring_context", nullable = false, columnDefinition = "jsonb")
+    private Map<String, Object> scoringContext = Map.of();
 
     protected ResumeAnalysisJob() {}
 
@@ -45,6 +51,12 @@ public class ResumeAnalysisJob {
 
     public static ResumeAnalysisJob create(UUID userId, UUID resumeId) {
         return new ResumeAnalysisJob(userId, resumeId);
+    }
+
+    public static ResumeAnalysisJob create(UUID userId, UUID resumeId, Map<String, Object> scoringContext) {
+        ResumeAnalysisJob job = new ResumeAnalysisJob(userId, resumeId);
+        job.scoringContext = Map.copyOf(scoringContext);
+        return job;
     }
 
     public void complete(UUID analysisId) {
@@ -95,4 +107,5 @@ public class ResumeAnalysisJob {
     public String getErrorCode() { return errorCode; }
     public String getErrorMessage() { return errorMessage; }
     public Instant getCreatedAt() { return createdAt; }
+    public Map<String, Object> getScoringContext() { return Map.copyOf(scoringContext); }
 }

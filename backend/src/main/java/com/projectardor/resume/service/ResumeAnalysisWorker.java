@@ -34,7 +34,7 @@ public class ResumeAnalysisWorker {
 
     private void process(ResumeAnalysisJob job) {
         try {
-            var analysis = resumeService.analyze(job.getUserId(), job.getResumeId());
+            var analysis = resumeService.analyze(job.getUserId(), job.getResumeId(), job.getScoringContext());
             queueService.complete(job.getId(), analysis.getId());
         } catch (RuntimeException failure) {
             LOGGER.warn("Resume analysis job {} failed: {}", job.getId(), failure.getClass().getSimpleName());
