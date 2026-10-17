@@ -45,7 +45,7 @@ public class AgentMemoryService {
     }
 
     /** Only facts that are still true are injected or shown as current memory. */
-    private java.util.List<AgentMemoryItem> validItems(UUID userId) {
+    public java.util.List<AgentMemoryItem> validItems(UUID userId) {
         return itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId).stream()
                 .filter(AgentMemoryItem::isValid).toList();
     }

@@ -49,12 +49,17 @@
 
 外部网页/知识库内容不会成为用户事实：候选必须带用户消息中的原话证据。
 
-## 读取路径（P2）
+## 读取路径（P3）
 
-`AgentMemoryService.content()` 按有效条目生成注入文本。当前个人记忆量小（≤50 条），直接全部注入；P3 起改为 pgvector 检索打分并受 token 预算限制。
+`MemoryEmbeddingService.context(userId, userMessage)` 在每轮构建系统提示时选择要注入的记忆：
 
-## 后续（P3）
+- 用户配置了向量模型：用 query embedding 走 pgvector 余弦检索，再按 `0.6 × 相似度 + 0.25 × 重要性 + 0.15 × 时效` 排序，取 2400 字符预算内的条目；
+- 未配置向量模型或检索失败：退回全部有效记忆，按下述规则排序并受预算限制；
+- 记忆写入后由 `MemoryEmbeddingScheduler` 每 120 秒补齐缺失向量（每个用户每轮最多 20 条），写入路径不等待 embedding 调用；
+- 相似度查询按 `(user_id, embedding_dim, embedding_model)` 过滤，换 embedding 模型后旧向量不会被误比较。
 
-- pgvector 检索打分（相似度 + 重要性 + 时效）与上下文预算。
+## 后续（P4）
+
 - 低置信推断自动过期、重复事实定期合并。
 - 记忆面板展示来源与「已过时」状态，支持一键纠正。
+- embedding 模型切换后的旧向量重算。
