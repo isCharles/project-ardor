@@ -330,34 +330,6 @@ export default function OpportunitiesPage() {
                         </button>
                       </td>
                     </tr>
-                    <tr className="border-b border-stone-100">
-                      <td colSpan={8} className="p-0">
-                        <button type="button"
-                          onClick={() => (item.jdContent ? setPreview({ title: t("Job description", "JD"), body: item.jdContent }) : setEditing(item))}
-                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs text-stone-600 transition hover:bg-sky-50">
-                          <FileSearch className="size-3.5 shrink-0 text-sky-600" />
-                          <span className="shrink-0 font-semibold uppercase tracking-wide text-sky-700">JD</span>
-                          <span className={`min-w-0 flex-1 truncate ${item.jdContent ? "" : "text-stone-400"}`}>
-                            {item.jdContent || t("Not filled — click to add", "未填写 — 点击补充")}
-                          </span>
-                          <span className="shrink-0 text-stone-400">{item.jdContent ? t("View", "查看") : t("Add", "补充")}</span>
-                        </button>
-                      </td>
-                    </tr>
-                    <tr className="border-b border-stone-100">
-                      <td colSpan={8} className="p-0">
-                        <button type="button"
-                          onClick={() => (item.inviteContent ? setPreview({ title: t("Invite email", "约面邮件"), body: item.inviteContent }) : setEditing(item))}
-                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs text-stone-600 transition hover:bg-rose-50">
-                          <Mail className="size-3.5 shrink-0 text-rose-500" />
-                          <span className="shrink-0 font-semibold uppercase tracking-wide text-rose-600">{t("Invite", "约面邮件")}</span>
-                          <span className={`min-w-0 flex-1 truncate ${item.inviteContent ? "" : "text-stone-400"}`}>
-                            {item.inviteContent || t("Not filled — click to add", "未填写 — 点击补充")}
-                          </span>
-                          <span className="shrink-0 text-stone-400">{item.inviteContent ? t("View", "查看") : t("Add", "补充")}</span>
-                        </button>
-                      </td>
-                    </tr>
                     {open && (
                       <tr key={`${item.id}-detail`} className="border-b border-stone-100 bg-stone-50/60">
                         <td colSpan={8} className="px-6 py-5">
@@ -388,9 +360,30 @@ export default function OpportunitiesPage() {
                                 <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{plan.status}</span>
                               </Link>
                             ))}
-                            {recapsFor(item).length === 0 && cardsFor(item).length === 0 && plansFor(item).length === 0 && (
-                              <p className="text-sm text-stone-400">{t("Nothing attached to this interview yet.", "这次面试还没有关联任何内容。")}</p>
+                            {item.jdContent && (
+                              <button type="button"
+                                onClick={() => setPreview({ title: t("Job description", "JD"), body: item.jdContent ?? "" })}
+                                className="flex w-full items-center gap-3 rounded-2xl bg-sky-50 px-4 py-2.5 text-left text-sm text-sky-900 transition hover:bg-sky-100">
+                                <FileSearch className="size-4 shrink-0 text-sky-600" />
+                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-sky-600">JD</span>
+                                <span className="min-w-0 flex-1" />
+                                <span className="shrink-0 text-xs text-sky-700">{t("Open", "查看")}</span>
+                              </button>
                             )}
+                            {item.inviteContent && (
+                              <button type="button"
+                                onClick={() => setPreview({ title: t("Invite email", "约面邮件"), body: item.inviteContent ?? "" })}
+                                className="flex w-full items-center gap-3 rounded-2xl bg-rose-50 px-4 py-2.5 text-left text-sm text-rose-900 transition hover:bg-rose-100">
+                                <Mail className="size-4 shrink-0 text-rose-500" />
+                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-rose-500">{t("Invite", "约面邮件")}</span>
+                                <span className="min-w-0 flex-1" />
+                                <span className="shrink-0 text-xs text-rose-700">{t("Open", "查看")}</span>
+                              </button>
+                            )}
+                            {recapsFor(item).length === 0 && cardsFor(item).length === 0 && plansFor(item).length === 0
+                              && !item.jdContent && !item.inviteContent && (
+                                <p className="text-sm text-stone-400">{t("Nothing attached to this interview yet.", "这次面试还没有关联任何内容。")}</p>
+                              )}
                           </div>
                         </td>
                       </tr>
