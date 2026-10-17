@@ -15,6 +15,9 @@ class ResumeScoringRecommendationsTests {
         assertEquals("P0", ResumeScoringRecommendations.validate(input, "Built a queue").get(0).priority());
         ((tools.jackson.databind.node.ObjectNode) input.get(0)).put("evidence", "Invented revenue");
         assertThrows(IllegalArgumentException.class, () -> ResumeScoringRecommendations.validate(input, "Built a queue"));
-        assertThrows(IllegalArgumentException.class, () -> ResumeScoringRecommendations.validate(mapper.createArrayNode(), ""));
+        assertTrue(ResumeScoringRecommendations.validate(mapper.createArrayNode(), "").isEmpty(), "Do not invent defects to fill priority groups");
+        var tooMany = mapper.createArrayNode();
+        for (int i = 0; i < 7; i++) tooMany.add(input.get(1));
+        assertThrows(IllegalArgumentException.class, () -> ResumeScoringRecommendations.validate(tooMany, "Built a queue"));
     }
 }

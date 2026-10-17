@@ -12,9 +12,16 @@ import tools.jackson.databind.ObjectMapper;
 
 /** Frozen at request time; changing a profile while a job waits cannot change its assessment. */
 public final class ResumeScoringContext {
-    public static final String PROMPT_VERSION = "resume-analysis-v3";
+    public static final String PROMPT_VERSION = "resume-analysis-v4";
     public static final int TEXT_LIMIT = 50_000;
     private ResumeScoringContext() {}
+
+    public static void requireSupported(Map<String, Object> context) {
+        if (!ResumeScoringRubric.VERSION.equals(context.get("rubricVersion"))
+                || !PROMPT_VERSION.equals(context.get("promptVersion"))) {
+            throw new IllegalStateException("评分规则已更新，请重新提交新版分析；已有报告不受影响");
+        }
+    }
 
     public static Map<String, Object> freeze(String role, String description) {
         role = clean(role, 240);

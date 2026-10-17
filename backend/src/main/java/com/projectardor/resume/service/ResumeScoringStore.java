@@ -37,6 +37,6 @@ public class ResumeScoringStore {
         var winner = analyses.findFirstByUserIdAndEvaluationKeyOrderByCreatedAtAsc(userId, key);
         return analyses.saveAndFlush(ResumeAnalysis.scored(userId, resumeId,
                 winner.map(ResumeAnalysis::getAnalysis).orElse(candidate),
-                winner.map(ResumeAnalysis::getModelName).orElse(model), key));
+                winner.map(ResumeAnalysis::getModelName).orElse(model), key, ResumeScoringContext.PROMPT_VERSION));
     }
 }

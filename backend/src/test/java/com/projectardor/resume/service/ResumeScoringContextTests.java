@@ -7,6 +7,17 @@ import tools.jackson.databind.ObjectMapper;
 
 class ResumeScoringContextTests {
     private final ObjectMapper mapper = new ObjectMapper();
+    @Test void oldQueuedRulesCannotBeSilentlyScoredWithNewRules() {
+        assertThrows(IllegalStateException.class, () -> ResumeScoringContext.requireSupported(java.util.Map.of()));
+        var current = ResumeScoringContext.freeze("Java", "Requires Redis");
+        assertDoesNotThrow(() -> ResumeScoringContext.requireSupported(current));
+        var previous = new LinkedHashMap<>(current);
+        previous.put("rubricVersion", "ardor-resume-rubric-v1");
+        assertThrows(IllegalStateException.class, () -> ResumeScoringContext.requireSupported(previous));
+        previous.put("rubricVersion", ResumeScoringRubric.VERSION);
+        previous.put("promptVersion", "resume-analysis-v3");
+        assertThrows(IllegalStateException.class, () -> ResumeScoringContext.requireSupported(previous));
+    }
     @Test void sameTextAndConditionsHaveStableIdentityIndependentOfMapOrder() {
         var context = ResumeScoringContext.freeze("Java backend", "Uses Redis");
         var reordered = new LinkedHashMap<String,Object>();
