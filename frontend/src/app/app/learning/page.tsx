@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, CircleAlert, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckCircle2, CircleAlert, Ellipsis, Plus, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -284,16 +284,23 @@ export default function LearningPage() {
           <Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70 hover:text-stone-900">
             <ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}
           </Link>
-          <div className="flex items-center gap-2">{!loading && plans.length > 0 && <button type="button" onClick={() => router.push(agentCreationHref("LEARNING", locale))} className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/65 px-4 py-2.5 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-white">
+          <div className="flex items-center gap-2">
+            {selected && <details className="relative">
+              <summary aria-label={t("More actions", "更多操作")} className="grid size-11 cursor-pointer list-none place-items-center rounded-full border border-white/80 bg-white/65 text-stone-500 shadow-sm transition hover:bg-white hover:text-stone-800 [&::-webkit-details-marker]:hidden"><Ellipsis className="size-4" /></summary>
+              <div className="absolute right-0 z-20 mt-1 w-44 rounded-2xl border border-stone-200 bg-white p-1 shadow-xl">
+                <button type="button" onClick={(event) => { (event.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); setDeleteTarget(selected); setDeleteError(""); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"><Trash2 className="size-4" />{t("Delete plan", "删除计划")}</button>
+              </div>
+            </details>}
+            {!loading && plans.length > 0 && <button type="button" onClick={() => router.push(agentCreationHref("LEARNING", locale))} className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/65 px-4 py-2.5 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-white">
             <Plus className="size-4" />{t("New topic", "新学习")}
           </button>}</div>
         </div>
         {/* A finished creation job is history: the plan list already shows the lesson. */}
         {creation.job && creation.job.status !== "COMPLETED" && <AiJobStatus job={creation.job} retry={creation.retry} pollFailed={creation.pollFailed} />}
 
-        <header className="pb-8 pt-12 md:pb-10 md:pt-16">
-          <h1 className="text-4xl font-semibold tracking-[-0.055em] md:text-6xl">{t("From uncertain to confident.", "从薄弱，到自如。")}</h1>
-        </header>
+        {!loading && !selected && <header className="pb-6 pt-8 md:pb-8 md:pt-10">
+          <h1 className="text-3xl font-semibold tracking-[-0.05em] md:text-4xl">{t("From uncertain to confident.", "从薄弱，到自如。")}</h1>
+        </header>}
         {error && !showCreate && <div role="alert" className="mb-5 rounded-2xl bg-red-50/90 px-5 py-4 text-sm text-red-700">{error}</div>}
 
         {loading ? (
@@ -305,28 +312,33 @@ export default function LearningPage() {
         ) : selected && (
           <>
             <section className="relative mb-7 overflow-hidden rounded-[2.5rem] border border-white/75 bg-white/65 px-6 py-8 shadow-[0_22px_70px_rgba(54,38,88,0.08)] backdrop-blur-xl md:px-10 md:py-10">
-              <div className="pointer-events-none absolute -right-20 -top-44 size-[28rem] rounded-full bg-[radial-gradient(circle,rgba(255,169,112,0.58),rgba(250,134,180,0.31)_42%,transparent_72%)] blur-3xl" />
-              <div className="pointer-events-none absolute -bottom-64 right-20 size-[34rem] rounded-full bg-[radial-gradient(circle,rgba(111,146,255,0.38),transparent_68%)] blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-64 right-20 size-[34rem] rounded-full bg-[radial-gradient(circle,rgba(111,146,255,0.32),transparent_68%)] blur-3xl" />
               <div className="relative grid gap-8 md:grid-cols-[minmax(0,1fr)_13rem] md:items-center">
                 <div>
-                  <p className="text-xs font-medium tracking-wide text-violet-700">{t("Next", "接下来")} · {t(statusLabel[selected.status].en, statusLabel[selected.status].zh)}</p>
-                  <h2 className="mt-3 max-w-3xl break-words text-4xl font-semibold tracking-[-0.05em] md:text-6xl">{selected.concept}</h2>
-                  <p className="mt-3 text-sm text-stone-600">{selected.status === "NEEDS_REVIEW" ? t("Try a new round to confirm your understanding.", "再练一次，确认真正掌握。") : selected.status === "IN_PROGRESS" ? t("Explain it in your own words.", "学过之后，用自己的话回答。") : selected.status === "COMPLETED" ? t("This topic is complete.", "这一步已完成。") : t("Understand first, then practice.", "先理解，再检验。")}</p>
-                  <div className="mt-7 flex flex-wrap items-center gap-3">
-                    <button type="button" aria-label={t("Delete learning plan", "删除学习计划")} disabled={busy || deleting} onClick={() => { setDeleteTarget(selected); setDeleteError(""); }} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm text-stone-500 transition hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"><Trash2 className="size-4" />{t("Delete", "删除")}</button>
+                  <p className="text-xs font-medium tracking-wide text-violet-700">{t(statusLabel[selected.status].en, statusLabel[selected.status].zh)}</p>
+                  <h2 className="mt-2 max-w-3xl break-words text-2xl font-semibold tracking-[-0.04em] md:text-3xl">{selected.concept}</h2>
+                  <div className="mt-5 flex flex-wrap items-center gap-3">
                     {selected.status === "SCHEDULED" && <button type="button" onClick={() => void begin()} disabled={busy} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-stone-800 disabled:opacity-50">{busy ? t("Starting…", "正在开始…") : t("Start learning", "开始学习")}<ArrowRight className="size-4" /></button>}
                     {(selected.status === "IN_PROGRESS" || selected.status === "NEEDS_REVIEW") && <button type="button" onClick={() => document.getElementById("learning-practice")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-stone-800">{t("Practice", "去练习")}<ArrowRight className="size-4" /></button>}
                     {selected.sourceType === "RECAP" && selected.sourceId ? <Link href={`/app/recaps?source=${selected.sourceId}`} className="text-sm text-stone-600 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">{t("View interview notes", "查看来源面经")}</Link> : <span className="text-xs text-stone-500">{t(sourceLabel[selected.sourceType].en, sourceLabel[selected.sourceType].zh)}</span>}
                   </div>
                 </div>
-                <div className="relative mx-auto grid size-40 place-items-center rounded-full border border-white/70 bg-white/35 shadow-[0_18px_55px_rgba(114,93,179,0.13)] md:size-48" aria-label={selected.lastScore !== null ? t(`Latest score ${selected.lastScore}`, `最近得分 ${selected.lastScore} 分`) : t("Not scored yet", "尚未评分")}>
-                  <div className="absolute inset-3 rounded-full border border-white/70" />
-                  {selected.lastScore !== null ? <div className="text-center"><strong className="text-6xl font-semibold tracking-[-0.06em]">{selected.lastScore}</strong><span className="block text-xs text-stone-500">{t("Latest score", "最近得分")}</span></div> : <BookOpen className="size-11 text-violet-600" strokeWidth={1.3} />}
+                <div className="relative mx-auto grid size-24 place-items-center rounded-full border border-white/70 bg-white/35 shadow-[0_14px_40px_rgba(114,93,179,0.12)] md:size-28" aria-label={selected.lastScore !== null ? t(`Latest score ${selected.lastScore}`, `最近得分 ${selected.lastScore} 分`) : t("Not scored yet", "尚未评分")}>
+                  <div className="absolute inset-2 rounded-full border border-white/70" />
+                  {selected.lastScore !== null ? <div className="text-center"><strong className="text-4xl font-semibold tracking-[-0.06em]">{selected.lastScore}</strong><span className="block text-[10px] text-stone-500">{t("Latest score", "最近得分")}</span></div> : <BookOpen className="size-7 text-violet-600" strokeWidth={1.3} />}
                 </div>
               </div>
-              <ol className="relative mt-10 grid grid-cols-4 gap-2 border-t border-stone-200/70 pt-5" aria-label={t("Learning progress", "学习进程")}>
-                {journeySteps(selected, t).map((step, index) => <li key={index} className="min-w-0"><div className={`mb-2 grid size-6 place-items-center rounded-full text-xs ${step.done ? "bg-violet-600 text-white" : "border border-stone-300 bg-white/70 text-stone-400"}`}>{step.done ? <Check className="size-3.5" /> : index + 1}</div><span className={`text-xs sm:text-sm ${step.done ? "font-medium text-stone-800" : "text-stone-400"}`}>{step.label}</span></li>)}
-              </ol>
+              <div className="relative mt-8 border-t border-stone-200/70 pt-4" aria-label={t("Learning progress", "学习进程")}>
+                {(() => {
+                  const steps = journeySteps(selected, t);
+                  const doneCount = steps.filter((step) => step.done).length;
+                  const active = steps[Math.max(0, Math.min(doneCount - 1, steps.length - 1))];
+                  return <>
+                    <div className="mb-2 flex items-center justify-between text-xs text-stone-500"><span>{t(`Step ${Math.max(1, doneCount)} of ${steps.length}`, `第 ${Math.max(1, doneCount)} 步 / ${steps.length}`)}</span><span className="font-medium text-stone-700">{active.label}</span></div>
+                    <div className="flex gap-1.5">{steps.map((step, index) => <span key={index} className={`h-1.5 flex-1 rounded-full ${step.done ? "bg-violet-600" : "bg-stone-200"}`} />)}</div>
+                  </>;
+                })()}
+              </div>
             </section>
 
             <div className="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
@@ -344,8 +356,8 @@ export default function LearningPage() {
                   {selected.lesson.summary && <MarkdownContent className="mt-8 text-xl font-medium leading-8">{selected.lesson.summary}</MarkdownContent>}
                   {selected.lesson.keyPoints && selected.lesson.keyPoints.length > 0 && <div className="mt-7 grid gap-3 sm:grid-cols-2">{selected.lesson.keyPoints.map((point) => <div key={point} className="rounded-2xl bg-white/65 p-4 text-sm leading-6"><Sparkles className="mb-3 size-4 text-violet-500" /><MarkdownContent>{point}</MarkdownContent></div>)}</div>}
                   {selected.lesson.explanation && <MarkdownContent className="mt-9 text-[15px] leading-8 text-stone-700">{selected.lesson.explanation}</MarkdownContent>}
-                  {selected.lesson.example && <div className="mt-7 rounded-2xl bg-blue-50/65 p-5"><p className="text-xs font-medium text-blue-600">{t("Example", "例子")}</p><MarkdownContent className="mt-2 text-sm leading-7 text-stone-700">{selected.lesson.example}</MarkdownContent></div>}
-                  {selected.lesson.pitfalls && selected.lesson.pitfalls.length > 0 && <div className="mt-5 rounded-2xl bg-amber-50/70 p-5"><p className="flex items-center gap-2 text-xs font-medium text-amber-700"><CircleAlert className="size-4" />{t("Common pitfalls", "容易踩坑")}</p><ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-stone-700">{selected.lesson.pitfalls.map((item) => <li key={item}><MarkdownContent>{item}</MarkdownContent></li>)}</ul></div>}
+                  {selected.lesson.example && <details className="mt-7 rounded-2xl bg-blue-50/65 p-5"><summary className="cursor-pointer text-xs font-medium text-blue-600">{t("Example", "例子")}</summary><MarkdownContent className="mt-3 text-sm leading-7 text-stone-700">{selected.lesson.example}</MarkdownContent></details>}
+                  {selected.lesson.pitfalls && selected.lesson.pitfalls.length > 0 && <details className="mt-5 rounded-2xl bg-amber-50/70 p-5"><summary className="flex cursor-pointer items-center gap-2 text-xs font-medium text-amber-700 [&::-webkit-details-marker]:hidden"><CircleAlert className="size-4" />{t("Common pitfalls", "容易踩坑")}</summary><ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-stone-700">{selected.lesson.pitfalls.map((item) => <li key={item}><MarkdownContent>{item}</MarkdownContent></li>)}</ul></details>}
                 </section>
 
                 <section id="learning-practice" className="ardor-panel scroll-mt-6 rounded-[2.5rem] p-7 md:p-10" aria-labelledby="practice-title">
