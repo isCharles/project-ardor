@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, FileSearch, FileText, GraduationCap, Layers, Mail, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, FileSearch, FileText, GraduationCap, Layers, Mail, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, Fragment, useEffect, useState } from "react";
@@ -74,6 +74,7 @@ export default function OpportunitiesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ title: string; body: string } | null>(null);
+  const [editing, setEditing] = useState<Opportunity | null>(null);
 
   function fail(reason: unknown, fallbackEn: string, fallbackZh: string) {
     if (reason instanceof ApiError && reason.status === 401) { router.replace("/login"); return; }
@@ -159,8 +160,30 @@ export default function OpportunitiesPage() {
     finally { setBusy(""); }
   }
 
-  async function setStatus(item: Opportunity, status: string) {
-    if (status === item.status) return;
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editing) return;
+    const data = new FormData(event.currentTarget);
+    setBusy(editing.id); setError("");
+    try {
+      await api<Opportunity>(`/api/opportunities/${editing.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          company: String(data.get("company") ?? ""),
+          targetRole: String(data.get("targetRole") ?? ""),
+          platform: String(data.get("platform") ?? ""),
+          jdContent: String(data.get("jdContent") ?? ""),
+          inviteContent: String(data.get("inviteContent") ?? ""),
+          status: String(data.get("status") ?? ""),
+        }),
+      });
+      setEditing(null);
+      await load();
+    } catch (reason) { fail(reason, "Could not save the record", "保存失败"); }
+    finally { setBusy(""); }
+  }
+
+  async function setStatus(item: Opportunity, status: string) {    if (status === item.status) return;
     setBusy(item.id); setError("");
     try {
       await api<Opportunity>(`/api/opportunities/${item.id}`, {
@@ -297,40 +320,44 @@ export default function OpportunitiesPage() {
                       </td>
                       <td className="px-4 py-3 text-stone-600">{round?.durationMinutes ? `${round.durationMinutes}` : "—"}</td>
                       <td className="px-4 py-3 text-right">
+                        <button type="button" aria-label={t("Edit record", "编辑记录")} disabled={busy === item.id}
+                          onClick={() => setEditing(item)} className="rounded-lg p-2 text-stone-300 hover:bg-stone-100 hover:text-stone-700">
+                          <Pencil className="size-4" />
+                        </button>
                         <button type="button" aria-label={t("Delete record", "删除记录")} disabled={busy === item.id}
                           onClick={() => void remove(item)} className="rounded-lg p-2 text-stone-300 hover:bg-rose-50 hover:text-rose-600">
                           <Trash2 className="size-4" />
                         </button>
                       </td>
                     </tr>
-                    {item.jdContent && (
-                      <tr className="border-b border-stone-100">
-                        <td colSpan={8} className="p-0">
-                          <button type="button"
-                            onClick={() => setPreview({ title: t("Job description", "JD"), body: item.jdContent ?? "" })}
-                            className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs text-stone-600 transition hover:bg-sky-50">
-                            <FileSearch className="size-3.5 shrink-0 text-sky-600" />
-                            <span className="shrink-0 font-semibold uppercase tracking-wide text-sky-700">JD</span>
-                            <span className="min-w-0 flex-1 truncate">{item.jdContent}</span>
-                            <span className="shrink-0 text-stone-400">{t("View", "查看")}</span>
-                          </button>
-                        </td>
-                      </tr>
-                    )}
-                    {item.inviteContent && (
-                      <tr className="border-b border-stone-100">
-                        <td colSpan={8} className="p-0">
-                          <button type="button"
-                            onClick={() => setPreview({ title: t("Invite email", "约面邮件"), body: item.inviteContent ?? "" })}
-                            className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs text-stone-600 transition hover:bg-rose-50">
-                            <Mail className="size-3.5 shrink-0 text-rose-500" />
-                            <span className="shrink-0 font-semibold uppercase tracking-wide text-rose-600">{t("Invite", "约面邮件")}</span>
-                            <span className="min-w-0 flex-1 truncate">{item.inviteContent}</span>
-                            <span className="shrink-0 text-stone-400">{t("View", "查看")}</span>
-                          </button>
-                        </td>
-                      </tr>
-                    )}
+                    <tr className="border-b border-stone-100">
+                      <td colSpan={8} className="p-0">
+                        <button type="button"
+                          onClick={() => (item.jdContent ? setPreview({ title: t("Job description", "JD"), body: item.jdContent }) : setEditing(item))}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs text-stone-600 transition hover:bg-sky-50">
+                          <FileSearch className="size-3.5 shrink-0 text-sky-600" />
+                          <span className="shrink-0 font-semibold uppercase tracking-wide text-sky-700">JD</span>
+                          <span className={`min-w-0 flex-1 truncate ${item.jdContent ? "" : "text-stone-400"}`}>
+                            {item.jdContent || t("Not filled — click to add", "未填写 — 点击补充")}
+                          </span>
+                          <span className="shrink-0 text-stone-400">{item.jdContent ? t("View", "查看") : t("Add", "补充")}</span>
+                        </button>
+                      </td>
+                    </tr>
+                    <tr className="border-b border-stone-100">
+                      <td colSpan={8} className="p-0">
+                        <button type="button"
+                          onClick={() => (item.inviteContent ? setPreview({ title: t("Invite email", "约面邮件"), body: item.inviteContent }) : setEditing(item))}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs text-stone-600 transition hover:bg-rose-50">
+                          <Mail className="size-3.5 shrink-0 text-rose-500" />
+                          <span className="shrink-0 font-semibold uppercase tracking-wide text-rose-600">{t("Invite", "约面邮件")}</span>
+                          <span className={`min-w-0 flex-1 truncate ${item.inviteContent ? "" : "text-stone-400"}`}>
+                            {item.inviteContent || t("Not filled — click to add", "未填写 — 点击补充")}
+                          </span>
+                          <span className="shrink-0 text-stone-400">{item.inviteContent ? t("View", "查看") : t("Add", "补充")}</span>
+                        </button>
+                      </td>
+                    </tr>
                     {open && (
                       <tr key={`${item.id}-detail`} className="border-b border-stone-100 bg-stone-50/60">
                         <td colSpan={8} className="px-6 py-5">
@@ -378,6 +405,40 @@ export default function OpportunitiesPage() {
       {preview && (
         <AppDialog title={preview.title} wide onClose={() => setPreview(null)}>
           <pre className="max-h-[60dvh] overflow-auto whitespace-pre-wrap rounded-2xl bg-stone-50 p-4 text-sm leading-6 text-stone-700">{preview.body}</pre>
+        </AppDialog>
+      )}
+      {editing && (
+        <AppDialog title={t("Edit interview", "编辑面试")} wide onClose={() => setEditing(null)}>
+          <form onSubmit={saveEdit} className="space-y-3 text-sm">
+            <label className="block font-medium">{t("Company", "公司")}
+              <input name="company" defaultValue={editing.company} required maxLength={160} className="field mt-1" />
+            </label>
+            <label className="block font-medium">{t("Role / posting title", "岗位 / 招聘标题")}
+              <input name="targetRole" defaultValue={editing.targetRole ?? ""} maxLength={160} className="field mt-1" />
+            </label>
+            <label className="block font-medium">{t("Platform", "面试平台")}
+              <input name="platform" defaultValue={editing.platform ?? ""} maxLength={80} className="field mt-1" />
+            </label>
+            <label className="block font-medium">JD
+              <textarea name="jdContent" defaultValue={editing.jdContent ?? ""} rows={5} maxLength={50000} className="field mt-1 resize-y" />
+            </label>
+            <label className="block font-medium">{t("Invite email", "约面邮件")}
+              <textarea name="inviteContent" defaultValue={editing.inviteContent ?? ""} rows={5} maxLength={50000} className="field mt-1 resize-y" />
+            </label>
+            <label className="block font-medium">{t("Status", "状态")}
+              <select name="status" defaultValue={editing.status} className="field mt-1">
+                {STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status, en)}</option>)}
+              </select>
+            </label>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setEditing(null)} className="rounded-full border border-stone-300 px-4 py-2">
+                {t("Cancel", "取消")}
+              </button>
+              <button disabled={busy === editing.id} className="rounded-full bg-stone-950 px-4 py-2 text-white disabled:opacity-50">
+                {busy === editing.id ? t("Saving…", "保存中…") : t("Save", "保存")}
+              </button>
+            </div>
+          </form>
         </AppDialog>
       )}
     </main>
