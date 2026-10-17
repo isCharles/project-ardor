@@ -354,6 +354,13 @@ export default function LearningPage() {
                   {previousAttempts.length > 0 && <div className="mt-5 space-y-2">{[...previousAttempts].reverse().map((attempt, index) => <details key={`${attempt.submittedAt}-${index}`} open={index === 0} className="rounded-2xl border border-stone-200/75 bg-white/60 p-4">
                     <summary className="cursor-pointer text-sm font-medium">{t(`Attempt ${previousAttempts.length - index} · ${attempt.score} points`, `第 ${previousAttempts.length - index} 次回答 · ${attempt.score} 分`)}</summary>
                     <div className="mt-4 space-y-4">{attempt.feedback && <MarkdownContent className="text-sm leading-6 text-stone-700">{attempt.feedback}</MarkdownContent>}
+                      {index === 0 && (selected.lastEvaluation?.nextFocus || (selected.lastEvaluation?.gaps?.length ?? 0) > 0) && <div className="rounded-xl bg-amber-50/70 px-3 py-2 text-sm text-stone-700">
+                        {selected.lastEvaluation?.nextFocus && <p><span className="font-medium">{t("Next focus", "下一步")}：</span>{selected.lastEvaluation.nextFocus}</p>}
+                        {selected.lastEvaluation?.gaps && selected.lastEvaluation.gaps.length > 0 && <div className={selected.lastEvaluation?.nextFocus ? "mt-2" : ""}>
+                          <span className="font-medium">{t("Gaps", "薄弱点")}：</span>
+                          <ul className="mt-1 list-disc space-y-1 pl-5">{selected.lastEvaluation.gaps.map((gap, gapIndex) => <li key={gapIndex}><MarkdownContent>{gap}</MarkdownContent></li>)}</ul>
+                        </div>}
+                      </div>}
                       {attempt.items.map((item, itemIndex) => <div key={itemIndex} className="text-sm"><p className="font-medium">{itemIndex + 1}. {item.question}</p><p className="mt-1 whitespace-pre-wrap leading-6 text-stone-600">{t("Your answer", "你的回答")}：{item.answer}</p>{attempt.questionFeedback?.filter((feedback) => feedback.question === item.question).map((feedback, feedbackIndex) => <MarkdownContent key={feedbackIndex} className="mt-2 rounded-xl bg-violet-50/70 px-3 py-2 leading-6 text-violet-900">{feedback.feedback}</MarkdownContent>)}</div>)}
                     </div></details>)}</div>}
                   {selected.status !== "COMPLETED" && previousAttempts.length > 0 && <p className="mt-7 text-sm font-medium text-violet-700">{t("Next practice", "下一轮练习")}</p>}
