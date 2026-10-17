@@ -223,7 +223,7 @@ public class CareerAgentService {
                     .chatMemory(memory)
                     // A synchronous retry keeps the logical request but is a new tool-call attempt.
                     // Reusing requestId as the run ID would make regenerated arguments create a second slot.
-                    .tools(ApprovedAgentTools.wrap(bound, userId, null, toolApprovals))
+                    .tools(ApprovedAgentTools.wrap(bound, userId, null, toolApprovals, message))
                     .maxToolCallingRoundTrips(8)
                     .maxSequentialToolsInvocations(12)
                     .compensateOnToolErrors(true)
@@ -349,7 +349,7 @@ public class CareerAgentService {
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, depth, lease))
                     .systemMessage(systemPrompt(userId) + depth.guidance()).chatMemory(memory)
-                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings, sink::waitingForApproval))
+                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings, sink::waitingForApproval, message))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
             sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)

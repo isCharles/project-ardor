@@ -353,7 +353,8 @@ public class CareerAgentTools {
         @Tool(name = "add_memory", value = "新增一条跨会话长期记忆。只保存用户明确表达的稳定背景、目标或偏好；成功后必须在回复中告诉用户新增了什么")
         public AgentMemoryItemResponse addMemory(@P("一条简洁、独立的长期记忆，不带项目符号") String memory) {
             if (!com.projectardor.agent.service.ToolIntentPolicy.groundedMemory(trustedUserRequest, memory))
-                throw new IllegalArgumentException("长期记忆须使用用户本轮明确提供的原话，不能把检索资料或模型推测写成用户偏好");
+                throw new IllegalArgumentException("长期记忆必须逐字使用用户本轮说过的原话，不能改写或补充，"
+                        + "也不能把检索资料或模型推测写成用户偏好；原话不足以成为一条完整记忆时直接告诉用户");
             return memoryService.add(userId, memory);
         }
 
@@ -372,7 +373,8 @@ public class CareerAgentTools {
         @Tool(name = "update_memory", value = "修正当前用户一条长期记忆，保持原 UUID，不清空或重建其它记忆。先读取原条目，只修改用户要求修正的内容")
         public AgentMemoryItemResponse updateMemory(@P("原记忆 UUID") String memoryId, @P("修订后的完整记忆，不超过 1000 字符") String content) {
             if (!com.projectardor.agent.service.ToolIntentPolicy.groundedMemory(trustedUserRequest, content))
-                throw new IllegalArgumentException("修订后的记忆须有用户本轮明确提供的原话来源");
+                throw new IllegalArgumentException("修订后的记忆必须逐字等于用户本轮说过的原话，不能改写或补充；"
+                        + "原话不足以成为一条完整记忆时直接告诉用户，不要反复换说法重试");
             return memoryService.edit(userId, uuid(memoryId, "记忆 ID"), content);
         }
 
