@@ -27,6 +27,7 @@ public class InterviewRecap {
     @JdbcTypeCode(SqlTypes.JSON) @Column(nullable = false, columnDefinition = "jsonb") private List<String> weaknesses = new ArrayList<>();
     @Column(name = "model_name", length = 120) private String modelName;
     @Column(name = "prompt_version", nullable = false, length = 64) private String promptVersion;
+    @Column(name = "job_opportunity_id") private UUID jobOpportunityId;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
@@ -34,19 +35,27 @@ public class InterviewRecap {
 
     private InterviewRecap(UUID userId, String title, String company, String targetRole, Instant occurredAt,
             InterviewRecapSource sourceType, String rawContent, String inputHash, String overview,
-            List<String> strengths, List<String> weaknesses, String modelName) {
+            List<String> strengths, List<String> weaknesses, String modelName, UUID jobOpportunityId) {
         this.id = UUID.randomUUID(); this.userId = userId; this.title = title; this.company = company;
         this.targetRole = targetRole; this.occurredAt = occurredAt; this.sourceType = sourceType;
         this.rawContent = rawContent; this.inputHash = inputHash; this.overview = overview;
         this.strengths = new ArrayList<>(strengths); this.weaknesses = new ArrayList<>(weaknesses);
         this.modelName = modelName; this.promptVersion = "interview-recap-v1";
+        this.jobOpportunityId = jobOpportunityId;
     }
 
     public static InterviewRecap create(UUID userId, String title, String company, String targetRole, Instant occurredAt,
             InterviewRecapSource sourceType, String rawContent, String inputHash, String overview,
             List<String> strengths, List<String> weaknesses, String modelName) {
+        return create(userId, title, company, targetRole, occurredAt, sourceType, rawContent, inputHash, overview,
+                strengths, weaknesses, modelName, null);
+    }
+
+    public static InterviewRecap create(UUID userId, String title, String company, String targetRole, Instant occurredAt,
+            InterviewRecapSource sourceType, String rawContent, String inputHash, String overview,
+            List<String> strengths, List<String> weaknesses, String modelName, UUID jobOpportunityId) {
         return new InterviewRecap(userId, title, company, targetRole, occurredAt, sourceType, rawContent,
-                inputHash, overview, strengths, weaknesses, modelName);
+                inputHash, overview, strengths, weaknesses, modelName, jobOpportunityId);
     }
 
     public void updateMetadata(String company, String targetRole, Instant occurredAt) {
@@ -70,5 +79,6 @@ public class InterviewRecap {
     public List<String> getWeaknesses() { return List.copyOf(weaknesses); }
     public String getModelName() { return modelName; }
     public String getPromptVersion() { return promptVersion; }
+    public UUID getJobOpportunityId() { return jobOpportunityId; }
     public Instant getCreatedAt() { return createdAt; }
 }

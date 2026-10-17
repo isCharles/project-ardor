@@ -11,7 +11,8 @@ public final class ToolIntentPolicy {
             "list_learning_plans", "get_learning_plan", "list_memories", "get_application_rhythm", "list_calendar_tasks",
             "list_recurring_tasks", "list_resumes", "get_resume_analysis_status", "get_resume_analysis", "list_interviews",
             "get_next_question", "get_ai_job", "get_interview_evaluation", "list_interview_recap_jobs", "list_interview_recaps",
-            "get_interview_recap", "list_due_memory_cards", "list_memory_cards");
+            "get_interview_recap", "list_due_memory_cards", "list_memory_cards", "list_job_opportunities",
+            "get_job_opportunity");
     public static boolean isRead(String tool) { return READS.contains(tool); }
     /** A narrowed/revoked instruction cannot inherit an unrestricted old capability.
      * Target-specific exemptions require a fresh positive request, not model interpretation. */
@@ -32,6 +33,8 @@ public final class ToolIntentPolicy {
             case "create_memory_card", "update_memory_card", "review_memory_card", "suspend_memory_card" -> "记忆卡|卡片|复习|flashcard|card|review";
             case "create_interview", "submit_interview_answer", "finish_interview", "cancel_interview" -> "面试|interview";
             case "organize_interview_recap", "update_interview_recap_metadata" -> "面经|面试|复盘|interview|recap";
+            case "create_job_opportunity", "update_job_opportunity", "add_job_opportunity_round" ->
+                    "面试|邀约|邀请|流程|进度|岗位|interview|opportunit|offer";
             case "research_knowledge_from_web" -> "知识库|收录|资料|knowledge|material";
             case "analyze_resume" -> "简历|resume|résumé";
             case "record_application_count", "set_application_rhythm" -> "投递|投了|已投|申请|application|applied";
@@ -55,6 +58,12 @@ public final class ToolIntentPolicy {
             case "finish_interview" -> "结束|完成|finish|complete";
             case "cancel_interview" -> "取消|cancel";
             case "organize_interview_recap" -> "整理|生成|复盘|organize|generate|recap";
+            case "create_job_opportunity" ->
+                    "创建|新增|添加|记录|记一下|记下|录入|保存|收到|拿到|接到|create|add|record|log|save";
+            case "update_job_opportunity" ->
+                    "修改|更新|改成|改到|变更|标记|设为|设置为|推进|update|change|mark|set|move";
+            case "add_job_opportunity_round" ->
+                    "添加|新增|加|安排|创建|补录|add|create|schedule";
             case "research_knowledge_from_web" -> "收录|添加|保存|整理|收集|save|add|collect|research";
             case "analyze_resume" -> "分析|评估|analy[sz]e|evaluate|review";
             case "record_application_count" -> "记录|record|log";

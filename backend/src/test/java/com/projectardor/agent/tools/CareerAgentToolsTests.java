@@ -25,6 +25,7 @@ import com.projectardor.calendar.service.TaskSeriesService;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.knowledge.service.KnowledgeService;
 import com.projectardor.learning.service.LearningPlanService;
+import com.projectardor.opportunity.service.OpportunityService;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecapService;
@@ -40,7 +41,7 @@ class CareerAgentToolsTests {
         var tools = new CareerAgentTools(mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), interviews,
                 mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class), mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class), mock(TavilySearchService.class),
-                mock(KnowledgeService.class), mock(LearningPlanService.class), mock(ApplicationRhythmService.class), mock(com.projectardor.aijobs.AiJobService.class));
+                mock(KnowledgeService.class), mock(LearningPlanService.class), mock(ApplicationRhythmService.class), mock(OpportunityService.class), mock(com.projectardor.aijobs.AiJobService.class));
         var bound = tools.bind(UUID.randomUUID(), "我会使用 Redis 做缓存", UUID.randomUUID());
         assertThat(bound.permitsWrite("submit_interview_answer")).isFalse();
         bound.withInterviewAnswerContext(true);
@@ -59,7 +60,7 @@ class CareerAgentToolsTests {
                 mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
                 mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class), mock(KnowledgeService.class), service,
-                mock(ApplicationRhythmService.class), mock(com.projectardor.aijobs.AiJobService.class));
+                mock(ApplicationRhythmService.class), mock(OpportunityService.class), mock(com.projectardor.aijobs.AiJobService.class));
         UUID userId = UUID.randomUUID();
         UUID planId = UUID.randomUUID();
         var plan = mock(com.projectardor.learning.domain.LearningPlan.class);
@@ -88,7 +89,7 @@ class CareerAgentToolsTests {
                 mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
                 mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class), mock(KnowledgeService.class), learningPlanService,
-                mock(ApplicationRhythmService.class), mock(com.projectardor.aijobs.AiJobService.class));
+                mock(ApplicationRhythmService.class), mock(OpportunityService.class), mock(com.projectardor.aijobs.AiJobService.class));
         UUID userId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID questionId = UUID.randomUUID();
@@ -128,7 +129,7 @@ class CareerAgentToolsTests {
                 mock(TavilySearchService.class),
                 mock(KnowledgeService.class),
                 mock(LearningPlanService.class),
-                mock(ApplicationRhythmService.class), mock(com.projectardor.aijobs.AiJobService.class));
+                mock(ApplicationRhythmService.class), mock(OpportunityService.class), mock(com.projectardor.aijobs.AiJobService.class));
         UUID userId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
         CalendarTask task = CalendarTask.create(userId, "组会", null, Instant.parse("2026-09-10T01:00:00Z"),
@@ -164,7 +165,7 @@ class CareerAgentToolsTests {
                 mock(TavilySearchService.class),
                 mock(KnowledgeService.class),
                 mock(LearningPlanService.class),
-                mock(ApplicationRhythmService.class), mock(com.projectardor.aijobs.AiJobService.class));
+                mock(ApplicationRhythmService.class), mock(OpportunityService.class), mock(com.projectardor.aijobs.AiJobService.class));
         UUID userId = UUID.randomUUID();
         UUID interviewId = UUID.randomUUID();
         when(interviewService.get(userId, interviewId))
@@ -195,7 +196,7 @@ class CareerAgentToolsTests {
                 mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class), mock(KnowledgeService.class), mock(LearningPlanService.class),
-                mock(ApplicationRhythmService.class), mock(com.projectardor.aijobs.AiJobService.class));
+                mock(ApplicationRhythmService.class), mock(OpportunityService.class), mock(com.projectardor.aijobs.AiJobService.class));
 
         var bound = tools.bind(userId, "搜索一下最近的招聘信息");
         bound.deleteInterview(interviewId.toString());
@@ -220,7 +221,7 @@ class CareerAgentToolsTests {
                 mock(TaskSeriesService.class),
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 searchService, mock(KnowledgeService.class), mock(LearningPlanService.class),
-                mock(ApplicationRhythmService.class), mock(com.projectardor.aijobs.AiJobService.class));
+                mock(ApplicationRhythmService.class), mock(OpportunityService.class), mock(com.projectardor.aijobs.AiJobService.class));
 
         String result = tools.bind(userId, "搜索 Java 招聘").searchWeb("Java 招聘");
 

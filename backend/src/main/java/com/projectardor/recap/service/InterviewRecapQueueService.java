@@ -35,6 +35,11 @@ public class InterviewRecapQueueService {
 
     @Transactional
     public TaskResult request(UUID userId, String rawContent) {
+        return request(userId, rawContent, null);
+    }
+
+    @Transactional
+    public TaskResult request(UUID userId, String rawContent, UUID jobOpportunityId) {
         String content = requiredContent(rawContent);
         String inputHash = inputHash(content);
         jobRepository.lockRequestSlot(userId, inputHash);
@@ -43,7 +48,8 @@ public class InterviewRecapQueueService {
         Optional<InterviewRecapJob> active = jobRepository
                 .findFirstByUserIdAndInputHashAndStatusInOrderByCreatedAtDesc(userId, inputHash, ACTIVE);
         return active.map(TaskResult::from)
-                .orElseGet(() -> TaskResult.from(jobRepository.saveAndFlush(InterviewRecapJob.create(userId, inputHash, content))));
+                .orElseGet(() -> TaskResult.from(jobRepository.saveAndFlush(
+                        InterviewRecapJob.create(userId, inputHash, content, jobOpportunityId))));
     }
 
     @Transactional(readOnly = true)

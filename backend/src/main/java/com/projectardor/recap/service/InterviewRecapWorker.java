@@ -31,7 +31,7 @@ public class InterviewRecapWorker {
 
     private void process(InterviewRecapJob job) {
         try {
-            var recap = recapService.organize(job.getUserId(), job.getRawContent());
+            var recap = recapService.organize(job.getUserId(), job.getRawContent(), null, job.getJobOpportunityId());
             queueService.complete(job.getId(), recap.id());
         } catch (RuntimeException failure) {
             LOGGER.warn("Interview recap job {} failed: {}", job.getId(), failure.getClass().getSimpleName());

@@ -14,8 +14,8 @@ import tools.jackson.databind.ObjectMapper;
 /** Account-owned UI preferences; these never grant business capabilities. */
 @Service
 public class SidebarPreferencesService {
-    private static final List<String> DEFAULTS = List.of("/app", "/app/resumes", "/app/interviews", "/app/cards", "/app/calendar", "/app/applications");
-    private static final Set<String> ALLOWED = Set.of("/app", "/app/resumes", "/app/interviews", "/app/recaps", "/app/cards",
+    private static final List<String> DEFAULTS = List.of("/app", "/app/resumes", "/app/interviews", "/app/opportunities", "/app/cards", "/app/calendar", "/app/applications");
+    private static final Set<String> ALLOWED = Set.of("/app", "/app/resumes", "/app/interviews", "/app/opportunities", "/app/recaps", "/app/cards",
             "/app/knowledge", "/app/learning", "/app/calendar", "/app/applications", "/app/evidence", "/app/tasks");
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;

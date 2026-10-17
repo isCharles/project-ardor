@@ -46,6 +46,11 @@ import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.learning.web.LearningPlanCreateRequest;
 import com.projectardor.learning.web.LearningPlanResponse;
 import com.projectardor.agent.AgentContextReference;
+import com.projectardor.opportunity.service.OpportunityService;
+import com.projectardor.opportunity.web.OpportunityCreateRequest;
+import com.projectardor.opportunity.web.OpportunityResponse;
+import com.projectardor.opportunity.web.OpportunityRoundRequest;
+import com.projectardor.opportunity.web.OpportunityUpdateRequest;
 import com.projectardor.profile.domain.UserProfile;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.resume.domain.Resume;
@@ -83,6 +88,7 @@ public class CareerAgentTools {
     private final KnowledgeService knowledgeService;
     private final LearningPlanService learningPlanService;
     private final ApplicationRhythmService applicationRhythmService;
+    private final OpportunityService opportunityService;
     private final com.projectardor.aijobs.AiJobService aiJobs;
 
     public CareerAgentTools(
@@ -98,7 +104,8 @@ public class CareerAgentTools {
             TavilySearchService tavilySearchService,
             KnowledgeService knowledgeService,
             LearningPlanService learningPlanService,
-            ApplicationRhythmService applicationRhythmService, com.projectardor.aijobs.AiJobService aiJobs) {
+            ApplicationRhythmService applicationRhythmService, OpportunityService opportunityService,
+            com.projectardor.aijobs.AiJobService aiJobs) {
         this.resumeService = resumeService;
         this.resumeAnalysisQueueService = resumeAnalysisQueueService;
         this.interviewService = interviewService;
@@ -112,6 +119,7 @@ public class CareerAgentTools {
         this.knowledgeService = knowledgeService;
         this.learningPlanService = learningPlanService;
         this.applicationRhythmService = applicationRhythmService;
+        this.opportunityService = opportunityService;
         this.aiJobs = aiJobs;
     }
 
@@ -620,10 +628,12 @@ public class CareerAgentTools {
             return interviewRecapQueueService.list(userId).stream().map(InterviewRecapTaskResponse::from).toList();
         }
 
-        @Tool(name = "organize_interview_recap", value = "把用户粘贴的真实面试内容提交到后台整理队列；立即返回任务状态，不自动生成记忆卡")
+        @Tool(name = "organize_interview_recap", value = "把用户粘贴的真实面试内容提交到后台整理队列；立即返回任务状态，不自动生成记忆卡。用户说这是某场面试的复盘或纪要时，传入对应面试流程 UUID，面经会挂到该流程上")
         public InterviewRecapTaskResponse organizeInterviewRecap(
-                @P("用户提供的面试内容，必须完整传入，不得自行补写") String content) {
-            return InterviewRecapTaskResponse.from(interviewRecapQueueService.request(userId, content));
+                @P("用户提供的面试内容，必须完整传入，不得自行补写") String content,
+                @P("关联的面试流程 UUID；不关联传空字符串") String opportunityId) {
+            return InterviewRecapTaskResponse.from(interviewRecapQueueService.request(userId, content,
+                    opportunityId == null || opportunityId.isBlank() ? null : uuid(opportunityId, "面试流程 ID")));
         }
 
         @Tool(name = "list_interview_recaps", value = "列出当前用户已经整理的面经及问题、薄弱题数量")
@@ -720,6 +730,66 @@ public class CareerAgentTools {
             InterviewRecapResponse recap = interviewRecapService.detail(userId, id);
             return propose("interview_recap", id, recap.title(),
                     "已经单独建立的记忆卡不会被删除", "/api/interview-recaps/" + id);
+        }
+
+        @Tool(name = "list_job_opportunities", value = "列出当前用户的真实面试流程（不是模拟面试），含公司、岗位、状态、当前轮次和每一轮时间。用户问面试进度、有哪些面试在等通知时先用此工具")
+        public List<OpportunityResponse> listJobOpportunities() {
+            return opportunityService.list(userId);
+        }
+
+        @Tool(name = "get_job_opportunity", value = "读取当前用户一条真实面试流程的完整信息，包括 JD、原始邀约文本和所有轮次")
+        public OpportunityResponse getJobOpportunity(@P("面试流程 UUID") String opportunityId) {
+            return opportunityService.detail(userId, uuid(opportunityId, "面试流程 ID"));
+        }
+
+        @Tool(name = "create_job_opportunity", value = "为当前用户创建一条真实面试流程记录。用户发来 HR 面试邀请、通知或 JD，或明确说收到面试时使用；公司名不明确时必须先追问，不要猜测。targetRole 填招聘标题或岗位原文。写入前会等待用户确认")
+        public OpportunityResponse createJobOpportunity(
+                @P("公司名，必填；不明确时先追问") String company,
+                @P("招聘标题或岗位原文，例如“后端开发实习生—国际商业化产品与技术”；未知传空字符串") String targetRole,
+                @P("面试平台或工具，例如 Feishu、Workatsea、acmcoder；未知传空字符串") String platform,
+                @P("岗位 JD 原文；未知传空字符串") String jdContent,
+                @P("用户粘贴的面试邀请或 HR 通知原文；未知传空字符串") String inviteContent,
+                @P("本轮环节 HR/TECHNICAL/MANAGER/CROSS/FINAL/OTHER；未知传空字符串") String stage,
+                @P("已确认的面试时间，带时区的 ISO-8601；没有明确时间传空字符串") String scheduledAt,
+                @P("预计时长（分钟）；未知传 0") int durationMinutes,
+                @P("本轮备注；没有传空字符串") String note) {
+            return opportunityService.create(userId, new OpportunityCreateRequest(
+                    company, emptyToNull(targetRole), emptyToNull(platform),
+                    emptyToNull(jdContent), emptyToNull(inviteContent), emptyToNull(stage),
+                    nullableInstant(scheduledAt), durationMinutes > 0 ? durationMinutes : null,
+                    emptyToNull(note)));
+        }
+
+        @Tool(name = "update_job_opportunity", value = "修改当前用户面试流程的公司、岗位、平台、JD 或推进状态。状态只能按流程推进：INVITED→SCHEDULED→INTERVIEWED→AWAITING_RESULT→OFFER/REJECTED/WITHDRAWN/NO_RESPONSE。面完说等通知用 AWAITING_RESULT，说挂了用 REJECTED，拿到 offer 用 OFFER，自己放弃用 WITHDRAWN")
+        public OpportunityResponse updateJobOpportunity(
+                @P("面试流程 UUID") String opportunityId,
+                @P("完整公司名；不修改传空字符串") String company,
+                @P("完整招聘标题或岗位名；不修改传空字符串") String targetRole,
+                @P("完整面试平台；不修改传空字符串") String platform,
+                @P("完整 JD；不修改传空字符串") String jdContent,
+                @P("新状态；不修改传空字符串") String status) {
+            return opportunityService.update(userId, uuid(opportunityId, "面试流程 ID"),
+                    new OpportunityUpdateRequest(emptyToNull(company), emptyToNull(targetRole),
+                            emptyToNull(platform), emptyToNull(jdContent), emptyToNull(status)));
+        }
+
+        @Tool(name = "add_job_opportunity_round", value = "给当前用户一条面试流程增加一轮，或补录这一轮的时间、时长和结果。用户提到第几轮、面试时间或某轮已结束时使用；轮次号不确定传 0，会自动取下一轮")
+        public OpportunityResponse addJobOpportunityRound(
+                @P("面试流程 UUID") String opportunityId,
+                @P("轮次编号，从 1 开始；不确定传 0") int roundNumber,
+                @P("环节 HR/TECHNICAL/MANAGER/CROSS/FINAL/OTHER；未知传 OTHER") String stage,
+                @P("面试时间 ISO-8601；没有传空字符串") String scheduledAt,
+                @P("实际发生时间 ISO-8601；还没发生传空字符串") String occurredAt,
+                @P("时长（分钟）；未知传 0") int durationMinutes,
+                @P("备注；没有传空字符串") String note) {
+            return opportunityService.addRound(userId, uuid(opportunityId, "面试流程 ID"),
+                    new OpportunityRoundRequest(roundNumber > 0 ? roundNumber : null,
+                            emptyToNull(stage), nullableInstant(scheduledAt), nullableInstant(occurredAt),
+                            durationMinutes > 0 ? durationMinutes : null, emptyToNull(note)));
+        }
+
+        private static String emptyToNull(String value) {
+            return value == null || value.isBlank() ? null : value;
         }
 
         private ResumeToolView toView(Resume resume, ResumeAnalysis analysis) {

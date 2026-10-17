@@ -19,6 +19,7 @@ public class InterviewRecapJob {
     @Id private UUID id;
     @Column(name = "user_id", nullable = false) private UUID userId;
     @Column(name = "recap_id") private UUID recapId;
+    @Column(name = "job_opportunity_id") private UUID jobOpportunityId;
     @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "input_hash", nullable = false, length = 64) private String inputHash;
     @Column(name = "raw_content", nullable = false, columnDefinition = "text") private String rawContent;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private InterviewRecapJobStatus status;
@@ -33,14 +34,19 @@ public class InterviewRecapJob {
 
     protected InterviewRecapJob() {}
 
-    private InterviewRecapJob(UUID userId, String inputHash, String rawContent) {
+    private InterviewRecapJob(UUID userId, String inputHash, String rawContent, UUID jobOpportunityId) {
         Instant now = Instant.now();
         this.id = UUID.randomUUID(); this.userId = userId; this.inputHash = inputHash; this.rawContent = rawContent;
+        this.jobOpportunityId = jobOpportunityId;
         this.status = InterviewRecapJobStatus.QUEUED; this.availableAt = now; this.createdAt = now; this.updatedAt = now;
     }
 
     public static InterviewRecapJob create(UUID userId, String inputHash, String rawContent) {
-        return new InterviewRecapJob(userId, inputHash, rawContent);
+        return create(userId, inputHash, rawContent, null);
+    }
+
+    public static InterviewRecapJob create(UUID userId, String inputHash, String rawContent, UUID jobOpportunityId) {
+        return new InterviewRecapJob(userId, inputHash, rawContent, jobOpportunityId);
     }
 
     public void complete(UUID recapId) {
@@ -84,6 +90,7 @@ public class InterviewRecapJob {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public UUID getRecapId() { return recapId; }
+    public UUID getJobOpportunityId() { return jobOpportunityId; }
     public String getInputHash() { return inputHash; }
     public String getRawContent() { return rawContent; }
     public InterviewRecapJobStatus getStatus() { return status; }

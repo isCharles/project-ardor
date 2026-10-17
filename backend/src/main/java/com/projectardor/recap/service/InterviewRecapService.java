@@ -60,6 +60,11 @@ public class InterviewRecapService {
     }
 
     public InterviewRecapResponse organize(UUID userId, String rawContent, InterviewRecapSource sourceType) {
+        return organize(userId, rawContent, sourceType, null);
+    }
+
+    public InterviewRecapResponse organize(UUID userId, String rawContent, InterviewRecapSource sourceType,
+            UUID jobOpportunityId) {
         String content = required(rawContent, "面试内容不能为空", 50000);
         if (content.length() < 30) throw new IllegalArgumentException("面试内容太短，请至少提供一段问题或回忆");
         String inputHash = sha256((sourceType == null ? InterviewRecapSource.NOTES : sourceType).name() + "\n" + content);
@@ -78,7 +83,8 @@ public class InterviewRecapService {
                     nullable(root, "targetRole", 160), parseInstant(nullable(root, "occurredAt", 80)),
                     sourceType == null ? InterviewRecapSource.NOTES : sourceType, content, inputHash,
                     text(root, "overview", "已按原始材料整理逐题复盘。", 12000),
-                    stringList(root.path("strengths"), 20, 1000), stringList(root.path("weaknesses"), 20, 1000), result.model()));
+                    stringList(root.path("strengths"), 20, 1000), stringList(root.path("weaknesses"), 20, 1000), result.model(),
+                    jobOpportunityId));
             List<InterviewRecapQuestion> questions = new ArrayList<>();
             for (int i = 0; i < drafts.size(); i++) {
                 QuestionDraft draft = drafts.get(i);
