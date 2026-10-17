@@ -122,6 +122,17 @@ public class AgentMemoryService {
         return AgentMemoryItemResponse.from(replacement);
     }
 
+    /** Marks one fact as superseded by another without deleting history. */
+    @Transactional
+    public void supersede(UUID userId, UUID memoryId, UUID supersededBy) {
+        itemRepository.lockOwner(userId);
+        AgentMemoryItem item = itemRepository.findByIdAndUserId(memoryId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("记忆不存在"));
+        if (!item.isValid()) return;
+        item.invalidate(Instant.now(), supersededBy);
+        itemRepository.saveAndFlush(item);
+    }
+
     @Transactional
     public void remove(UUID userId, UUID memoryId) {
         itemRepository.lockOwner(userId);

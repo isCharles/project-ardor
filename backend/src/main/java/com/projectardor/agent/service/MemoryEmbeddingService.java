@@ -42,8 +42,9 @@ public class MemoryEmbeddingService {
 
     /** Best-effort embedding backfill; a missing model simply leaves rows pending. */
     public void embedPending(UUID userId) {
-        if (!embeddings.isConfigured(userId)) return;
-        var pending = vectorStore.pendingForUser(userId, 20);
+        String model = embeddings.modelName(userId);
+        if (model == null) return;
+        var pending = vectorStore.pendingForUser(userId, model, 20);
         if (pending.isEmpty()) return;
         List<EmbeddingVector> vectors = embeddings.embedDocuments(userId,
                 pending.stream().map(MemoryVectorStore.Pending::content).toList());

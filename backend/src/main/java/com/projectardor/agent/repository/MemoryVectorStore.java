@@ -41,21 +41,45 @@ public class MemoryVectorStore {
                 vectorLiteral, userId, dimension, model, vectorLiteral, limit);
     }
 
-    public List<UUID> usersWithPending(int limit) {
+    public List<UUID> usersWithStaleEmbeddings(int limit) {
         return jdbc.queryForList("""
-                SELECT DISTINCT user_id FROM user_agent_memory_items
-                WHERE embedding IS NULL AND valid_until IS NULL
+                SELECT DISTINCT m.user_id FROM user_agent_memory_items m
+                JOIN auxiliary_api_configs c
+                  ON c.user_id = m.user_id AND c.service_type = 'EMBEDDING'
+                WHERE m.valid_until IS NULL
+                  AND (m.embedding IS NULL OR m.embedding_model IS DISTINCT FROM c.model)
                 LIMIT ?
                 """, UUID.class, limit);
     }
 
-    public List<Pending> pendingForUser(UUID userId, int limit) {
+    public List<UUID> usersWithMemories(int limit) {
+        return jdbc.queryForList("""
+                SELECT DISTINCT user_id FROM user_agent_memory_items
+                WHERE valid_until IS NULL
+                LIMIT ?
+                """, UUID.class, limit);
+    }
+
+    /** Rows missing a vector, or embedded by a model that is no longer configured. */
+    public List<Pending> pendingForUser(UUID userId, String model, int limit) {
         return jdbc.query("""
                 SELECT id, content FROM user_agent_memory_items
-                WHERE user_id = ? AND valid_until IS NULL AND embedding IS NULL
+                WHERE user_id = ? AND valid_until IS NULL
+                  AND (embedding IS NULL OR embedding_model IS DISTINCT FROM ?)
                 ORDER BY created_at
                 LIMIT ?
                 """, (resultSet, index) -> new Pending(resultSet.getObject("id", UUID.class),
-                        resultSet.getString("content")), userId, limit);
+                        resultSet.getString("content")), userId, model, limit);
+    }
+
+    /** Closes low-confidence inferred facts that have aged out; explicit memories are never touched. */
+    public int expireLowConfidence(UUID userId, double confidenceBelow, int olderThanDays) {
+        return jdbc.update("""
+                UPDATE user_agent_memory_items
+                SET valid_until = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND valid_until IS NULL AND source_kind = 'INFERRED'
+                  AND confidence < ?
+                  AND COALESCE(valid_from, created_at) < CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                """, userId, confidenceBelow, olderThanDays);
     }
 }

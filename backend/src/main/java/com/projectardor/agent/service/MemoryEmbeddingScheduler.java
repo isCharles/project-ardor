@@ -24,7 +24,7 @@ public class MemoryEmbeddingScheduler {
     @Scheduled(initialDelayString = "${app.memory.embedding-backfill-initial-delay:15s}",
             fixedDelayString = "${app.memory.embedding-backfill-interval:120s}")
     public void backfillPendingEmbeddings() {
-        for (UUID userId : vectorStore.usersWithPending(20)) {
+        for (UUID userId : vectorStore.usersWithStaleEmbeddings(20)) {
             try {
                 embeddingService.embedPending(userId);
             } catch (RuntimeException exception) {

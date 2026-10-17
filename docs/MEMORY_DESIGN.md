@@ -58,8 +58,13 @@
 - 记忆写入后由 `MemoryEmbeddingScheduler` 每 120 秒补齐缺失向量（每个用户每轮最多 20 条），写入路径不等待 embedding 调用；
 - 相似度查询按 `(user_id, embedding_dim, embedding_model)` 过滤，换 embedding 模型后旧向量不会被误比较。
 
-## 后续（P4）
+## 维护任务（P4）
 
-- 低置信推断自动过期、重复事实定期合并。
-- 记忆面板展示来源与「已过时」状态，支持一键纠正。
-- embedding 模型切换后的旧向量重算。
+`MemoryMaintenanceService` 每 24 小时运行一次（启动 5 分钟后首跑）：
+
+- **低置信推断过期**：`INFERRED` 且 `confidence < 0.5`、有效超过 60 天的记忆写入失效区间；用户明确提供的记忆永不自动过期；
+- **重复合并**：内容规范化后，较短且被较长事实完整包含的条目失效，`superseded_by` 指向保留的较长条目；不做删除。
+
+`MemoryEmbeddingScheduler` 的补齐范围包含「模型已更换」的旧向量（`embedding_model` 与当前配置不同），切换 embedding 模型后会自动重算。
+
+记忆面板可以勾选「显示已过时的记忆」，查看失效条目的失效日期，并一键「恢复为当前记忆」（新建一条相同内容的有效记忆）。

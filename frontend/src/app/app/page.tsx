@@ -34,7 +34,7 @@ type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING" | "
 type AgentMessage = { id: string; requestId?: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; createdAt: string };
 type Conversation = { id: string; title: string; pinned: boolean; titleManuallySet?: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
-type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean };
+type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null };
 type RetryFailure = { label: string; detail: string };
 type AgentStreamEvent = ToolMeasurement & { type: "status" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string };
 type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number };
@@ -205,6 +205,7 @@ export default function AgentHomePage() {
   const typedHint = useTypewriter(locale === "en" ? typewriterExamples : typewriterExamplesZh, messages.length === 0);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryItems, setMemoryItems] = useState<AgentMemoryItem[] | null>(null);
+  const [showStaleMemory, setShowStaleMemory] = useState(false);
   const [memoryEdits, setMemoryEdits] = useState<Record<string, string>>({});
   const [newMemory, setNewMemory] = useState("");
   const [memorySaving, setMemorySaving] = useState<string | null>(null);
@@ -291,7 +292,7 @@ export default function AgentHomePage() {
     void api<AgentMemoryItem[]>("/api/agent/memory/items")
       .then((items) => {
         if (!active) return;
-        setMemoryItems(items.filter((item) => item.valid));
+        setMemoryItems(items);
         setMemoryEdits(Object.fromEntries(items.map((item) => [item.id, item.content])));
       })
       .catch(() => { if (active) setMemoryItems([]); });
@@ -1040,8 +1041,15 @@ export default function AgentHomePage() {
 
   async function refreshMemoryItems() {
     const items = await api<AgentMemoryItem[]>("/api/agent/memory/items");
-    setMemoryItems(items.filter((item) => item.valid));
+    setMemoryItems(items);
     setMemoryEdits(Object.fromEntries(items.map((item) => [item.id, item.content])));
+  }
+
+  async function restoreMemoryItem(content: string) {
+    setMemorySaving("restore"); setError("");
+    try { await api("/api/agent/memory/items", { method: "POST", body: JSON.stringify({ content }) }); await refreshMemoryItems(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法恢复这条记忆"); }
+    finally { setMemorySaving(null); }
   }
 
   async function saveMemoryItem(id: string) {
@@ -1289,14 +1297,18 @@ export default function AgentHomePage() {
             </div>
             {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
             {!memoryItems ? <p className="mt-6 text-sm text-stone-400">加载中…</p> : <div className="mt-4 space-y-3">
-              {memoryItems.length === 0 && <p className="rounded-2xl border border-dashed border-stone-200 px-4 py-6 text-center text-sm text-stone-400">还没有长期记忆。</p>}
-              {memoryItems.map((item) => <div key={item.id} className="rounded-2xl border border-stone-200 bg-white p-3">
+              {memoryItems.filter((item) => item.valid || showStaleMemory).length === 0 && <p className="rounded-2xl border border-dashed border-stone-200 px-4 py-6 text-center text-sm text-stone-400">还没有长期记忆。</p>}
+              {memoryItems.filter((item) => item.valid || showStaleMemory).map((item) => item.valid ? <div key={item.id} className="rounded-2xl border border-stone-200 bg-white p-3">
                 <div className="flex items-center gap-2 text-[11px] text-stone-400"><span className="rounded-full bg-stone-100 px-2 py-0.5">{item.sourceKind === "INFERRED" ? "推断" : "你说过"}</span><span>{item.kind === "preference" ? "偏好" : item.kind === "goal" ? "目标" : item.kind === "profile" ? "背景" : item.kind === "constraint" ? "约束" : "事实"}</span>{item.confidence < 1 && <span>可信度 {Math.round(item.confidence * 100)}%</span>}</div>
                 <textarea value={memoryEdits[item.id] ?? item.content} onChange={(event) => setMemoryEdits((current) => ({ ...current, [item.id]: event.target.value }))} rows={2} maxLength={1000} className="mt-2 w-full resize-y rounded-xl border border-stone-200 bg-white p-2 text-sm leading-6 outline-none focus:border-violet-300" />
                 <div className="mt-2 flex items-center justify-between">
                   <button type="button" disabled={memorySaving !== null} onClick={() => void deleteMemoryItem(item.id)} className="text-xs text-rose-600 hover:underline disabled:opacity-40">删除</button>
                   <button type="button" disabled={memorySaving !== null || (memoryEdits[item.id] ?? "").trim() === item.content} onClick={() => void saveMemoryItem(item.id)} className="rounded-full bg-stone-950 px-4 py-1.5 text-xs font-medium text-white disabled:opacity-40">{memorySaving === item.id ? "保存中…" : "保存"}</button>
                 </div>
+              </div> : <div key={item.id} className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-3 text-stone-400">
+                <div className="flex flex-wrap items-center gap-2 text-[11px]"><span className="rounded-full bg-stone-200 px-2 py-0.5 text-stone-600">已过时</span><span>{item.sourceKind === "INFERRED" ? "推断" : "你说过"}</span>{item.validUntil && <span>失效于 {new Date(item.validUntil).toLocaleDateString()}</span>}</div>
+                <p className="mt-2 text-sm leading-6 line-through">{item.content}</p>
+                <div className="mt-2 flex justify-end"><button type="button" disabled={memorySaving !== null} onClick={() => void restoreMemoryItem(item.content)} className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs text-stone-600 disabled:opacity-40">恢复为当前记忆</button></div>
               </div>)}
             </div>}
             <div className="mt-4 flex gap-2">
@@ -1304,7 +1316,10 @@ export default function AgentHomePage() {
               <button type="button" disabled={memorySaving !== null || !newMemory.trim()} onClick={() => void addMemoryItem()} className="rounded-xl bg-stone-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">添加</button>
             </div>
             <div className="mt-4 flex items-center justify-between border-t border-stone-200/70 pt-4 text-xs text-stone-400">
-              <span>不应保存 API Key、密码等敏感信息</span>
+              <div className="flex flex-col gap-1">
+                <span>不应保存 API Key、密码等敏感信息</span>
+                {memoryItems && memoryItems.some((item) => !item.valid) && <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={showStaleMemory} onChange={(event) => setShowStaleMemory(event.target.checked)} className="size-3.5" />显示已过时的记忆（{memoryItems.filter((item) => !item.valid).length}）</label>}
+              </div>
               <div className="flex items-center gap-3"><button type="button" onClick={() => void clearMemory()} disabled={busy} className="text-rose-600 hover:underline disabled:opacity-40">清空全部</button><button type="button" onClick={() => setMemoryOpen(false)} className="rounded-full bg-stone-950 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800">完成</button></div>
             </div>
           </section>
