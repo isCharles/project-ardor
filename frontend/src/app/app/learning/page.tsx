@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, CheckCircle2, CircleAlert, Ellipsis, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckCircle2, CircleAlert, Ellipsis, FileText, Plus, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -104,6 +104,8 @@ export default function LearningPage() {
   const [deleteTarget, setDeleteTarget] = useState<LearningPlan | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [error, setError] = useState("");
+  // The role behind a plan's source recap, remembered per plan so switching plans never shows a stale name.
+  const [sourceName, setSourceName] = useState<{ planId: string; name: string; company: string | null } | null>(null);
   const pendingCreate = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const userId = useRef<string | null>(null);
   const selectedRef = useRef<string | null>(null);
@@ -183,6 +185,22 @@ export default function LearningPage() {
     return new Date(left.nextReviewAt ?? left.scheduledAt).getTime()
       - new Date(right.nextReviewAt ?? right.scheduledAt).getTime();
   });
+
+  useEffect(() => {
+    const planId = selected?.id;
+    const recapId = selected?.sourceId;
+    if (!planId || selected?.sourceType !== "RECAP" || !recapId) return;
+    let active = true;
+    void api<{ title: string; jobOpportunityId: string | null }>(`/api/interview-recaps/${recapId}`)
+      .then(async (recap) => {
+        if (!recap.jobOpportunityId) return { planId, name: recap.title, company: null as string | null };
+        const opportunity = await api<{ targetRole: string | null; company: string | null }>(`/api/opportunities/${recap.jobOpportunityId}`);
+        return { planId, name: opportunity.targetRole || recap.title, company: opportunity.company };
+      })
+      .then((resolved) => { if (active) setSourceName(resolved); })
+      .catch(() => { /* fall back to the generic source label */ });
+    return () => { active = false; };
+  }, [selected?.id, selected?.sourceType, selected?.sourceId]);
 
   useEffect(() => {
     for (const job of [assessment.job, creation.job]) {
@@ -320,7 +338,7 @@ export default function LearningPage() {
                   <div className="mt-5 flex flex-wrap items-center gap-3">
                     {selected.status === "SCHEDULED" && <button type="button" onClick={() => void begin()} disabled={busy} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-stone-800 disabled:opacity-50">{busy ? t("Starting…", "正在开始…") : t("Start learning", "开始学习")}<ArrowRight className="size-4" /></button>}
                     {(selected.status === "IN_PROGRESS" || selected.status === "NEEDS_REVIEW") && <button type="button" onClick={() => document.getElementById("learning-practice")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-stone-800">{t("Practice", "去练习")}<ArrowRight className="size-4" /></button>}
-                    {selected.sourceType === "RECAP" && selected.sourceId ? <Link href={`/app/recaps?source=${selected.sourceId}`} className="text-sm text-stone-600 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">{t("View interview notes", "查看来源面经")}</Link> : <span className="text-xs text-stone-500">{t(sourceLabel[selected.sourceType].en, sourceLabel[selected.sourceType].zh)}</span>}
+                    {selected.sourceType === "RECAP" && selected.sourceId ? <Link href={`/app/recaps?source=${selected.sourceId}`} title={sourceName?.planId === selected.id ? [sourceName.company, sourceName.name].filter(Boolean).join(" · ") : undefined} className="inline-flex min-w-0 max-w-xs items-center gap-1.5 text-sm text-stone-600 underline decoration-stone-300 underline-offset-4 hover:text-stone-900"><FileText className="size-3.5 shrink-0" /><span className="truncate">{sourceName?.planId === selected.id ? sourceName.name : t("View interview notes", "查看来源面经")}</span></Link> : <span className="text-xs text-stone-500">{t(sourceLabel[selected.sourceType].en, sourceLabel[selected.sourceType].zh)}</span>}
                   </div>
                 </div>
                 <div className="relative mx-auto grid size-24 place-items-center rounded-full border border-white/70 bg-white/35 shadow-[0_14px_40px_rgba(114,93,179,0.12)] md:size-28" aria-label={selected.lastScore !== null ? t(`Latest score ${selected.lastScore}`, `最近得分 ${selected.lastScore} 分`) : t("Not scored yet", "尚未评分")}>
