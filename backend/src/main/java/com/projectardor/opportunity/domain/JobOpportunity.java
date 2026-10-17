@@ -75,10 +75,15 @@ public class JobOpportunity {
     }
 
     public void updateDetails(String company, String targetRole, String jdContent) {
-        updateDetails(company, targetRole, null, jdContent);
+        updateDetails(company, targetRole, null, jdContent, null);
     }
 
     public void updateDetails(String company, String targetRole, String platform, String jdContent) {
+        updateDetails(company, targetRole, platform, jdContent, null);
+    }
+
+    public void updateDetails(String company, String targetRole, String platform, String jdContent,
+            String inviteContent) {
         if (company != null) {
             if (company.isBlank()) throw new IllegalArgumentException("公司不能为空");
             this.company = company.trim();
@@ -86,6 +91,7 @@ public class JobOpportunity {
         if (targetRole != null) this.targetRole = targetRole;
         if (platform != null) this.platform = platform;
         if (jdContent != null) this.jdContent = jdContent;
+        if (inviteContent != null) this.inviteContent = inviteContent;
     }
 
     @PrePersist void onCreate() { Instant now = Instant.now(); createdAt = now; updatedAt = now; }

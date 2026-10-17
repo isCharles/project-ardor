@@ -81,7 +81,8 @@ public class OpportunityService {
                 blankToNull(request.company()),
                 blankToNull(request.targetRole()),
                 blankToNull(request.platform()),
-                blankToNull(request.jdContent()));
+                blankToNull(request.jdContent()),
+                blankToNull(request.inviteContent()));
         OpportunityStatus target = parseStatus(request.status());
         if (target != null) opportunity.transitionTo(target);
         opportunities.save(opportunity);

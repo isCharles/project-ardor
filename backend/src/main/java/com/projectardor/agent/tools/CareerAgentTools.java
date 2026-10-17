@@ -765,17 +765,19 @@ public class CareerAgentTools {
                     blankToNull(note)));
         }
 
-        @Tool(name = "update_job_opportunity", value = "修改当前用户面试流程的公司、岗位、平台、JD 或状态。只有四个状态：SCHEDULED（已约面）、AWAITING_RESULT（面完等通知）、NEXT_ROUND（本轮通过、等下一轮）、REJECTED（被拒绝）。面完说等通知用 AWAITING_RESULT，说进下一轮用 NEXT_ROUND，约好下一轮时间用 SCHEDULED，说挂了或没戏了用 REJECTED。状态随时可以改回任意一个，用户说记错了就直接改")
+        @Tool(name = "update_job_opportunity", value = "修改当前用户面试流程的公司、岗位、平台、JD、约面邮件或状态。只有四个状态：SCHEDULED（已约面）、AWAITING_RESULT（面完等通知）、NEXT_ROUND（本轮通过、等下一轮）、REJECTED（被拒绝）。面完说等通知用 AWAITING_RESULT，说进下一轮用 NEXT_ROUND，约好下一轮时间用 SCHEDULED，说挂了或没戏了用 REJECTED。状态随时可以改回任意一个，用户说记错了就直接改")
         public OpportunityResponse updateJobOpportunity(
                 @P("面试流程 UUID") String opportunityId,
                 @P("完整公司名；不修改传空字符串") String company,
                 @P("完整招聘标题或岗位名；不修改传空字符串") String targetRole,
                 @P("完整面试平台；不修改传空字符串") String platform,
                 @P("完整 JD；不修改传空字符串") String jdContent,
+                @P("完整的约面邮件/HR 通知原文；不修改传空字符串") String inviteContent,
                 @P("新状态；不修改传空字符串") String status) {
             return opportunityService.update(userId, uuid(opportunityId, "面试流程 ID"),
                     new OpportunityUpdateRequest(blankToNull(company), blankToNull(targetRole),
-                            blankToNull(platform), blankToNull(jdContent), blankToNull(status)));
+                            blankToNull(platform), blankToNull(jdContent), blankToNull(inviteContent),
+                            blankToNull(status)));
         }
 
         @Tool(name = "add_job_opportunity_round", value = "给当前用户一条面试流程增加一轮，或补录这一轮的时间、时长和结果。用户提到第几轮、面试时间或某轮已结束时使用；轮次号不确定传 0，会自动取下一轮")

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, FileSearch, FileText, GraduationCap, Layers, Mail, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, FileText, GraduationCap, Layers, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, Fragment, useEffect, useState } from "react";
@@ -143,7 +143,7 @@ export default function OpportunitiesPage() {
           targetRole: String(data.get("targetRole") ?? ""),
           platform: String(data.get("platform") ?? ""),
           jdContent: String(data.get("jdContent") ?? ""),
-          inviteContent: "",
+          inviteContent: String(data.get("inviteContent") ?? ""),
           stage: String(data.get("stage") ?? ""),
           scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null,
           durationMinutes: Number.isFinite(duration) && duration > 0 ? duration : null,
@@ -229,6 +229,9 @@ export default function OpportunitiesPage() {
             <label className="text-sm font-medium md:col-span-2">{t("JD (optional)", "JD（可选）")}
               <textarea name="jdContent" rows={3} maxLength={50000} className="field mt-2 resize-y" />
             </label>
+            <label className="text-sm font-medium md:col-span-2">{t("Invite email (optional)", "约面邮件（可选）")}
+              <textarea name="inviteContent" rows={3} maxLength={50000} className="field mt-2 resize-y" placeholder={t("Paste the HR email or notification", "粘贴 HR 邮件或通知原文")} />
+            </label>
             <div className="md:col-span-3">
               <button disabled={busy === "create"} className="rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50">
                 {busy === "create" ? t("Saving…", "保存中…") : t("Save record", "保存记录")}
@@ -298,6 +301,26 @@ export default function OpportunitiesPage() {
                         </button>
                       </td>
                     </tr>
+                    {(item.jdContent || item.inviteContent) && (
+                      <tr className="border-b border-stone-100 bg-stone-50/40 align-top">
+                        <td colSpan={4} className="px-4 pb-3 text-xs leading-5 text-stone-600">
+                          {item.jdContent && (
+                            <div>
+                              <span className="mr-1 font-semibold text-sky-700">JD</span>
+                              <span className="line-clamp-2 whitespace-pre-wrap">{item.jdContent}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td colSpan={4} className="px-4 pb-3 text-xs leading-5 text-stone-600">
+                          {item.inviteContent && (
+                            <div>
+                              <span className="mr-1 font-semibold text-rose-600">{t("Invite", "约面邮件")}</span>
+                              <span className="line-clamp-2 whitespace-pre-wrap">{item.inviteContent}</span>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
                     {open && (
                       <tr key={`${item.id}-detail`} className="border-b border-stone-100 bg-stone-50/60">
                         <td colSpan={8} className="px-6 py-5">
@@ -328,30 +351,9 @@ export default function OpportunitiesPage() {
                                 <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{plan.status}</span>
                               </Link>
                             ))}
-                            {item.jdContent && (
-                              <details className="rounded-2xl bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
-                                <summary className="flex cursor-pointer items-center gap-3">
-                                  <FileSearch className="size-4 shrink-0 text-sky-600" />
-                                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-sky-600">JD</span>
-                                  <span className="min-w-0 flex-1 truncate text-stone-600">{item.jdContent.slice(0, 90)}</span>
-                                </summary>
-                                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs leading-5 text-stone-600">{item.jdContent}</pre>
-                              </details>
+                            {recapsFor(item).length === 0 && cardsFor(item).length === 0 && plansFor(item).length === 0 && (
+                              <p className="text-sm text-stone-400">{t("Nothing attached to this interview yet.", "这次面试还没有关联任何内容。")}</p>
                             )}
-                            {item.inviteContent && (
-                              <details className="rounded-2xl bg-rose-50 px-4 py-2.5 text-sm text-rose-900">
-                                <summary className="flex cursor-pointer items-center gap-3">
-                                  <Mail className="size-4 shrink-0 text-rose-500" />
-                                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-rose-500">{t("Invite", "原始邀约")}</span>
-                                  <span className="min-w-0 flex-1 truncate text-stone-600">{item.inviteContent.slice(0, 90)}</span>
-                                </summary>
-                                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs leading-5 text-stone-600">{item.inviteContent}</pre>
-                              </details>
-                            )}
-                            {recapsFor(item).length === 0 && cardsFor(item).length === 0 && plansFor(item).length === 0
-                              && !item.jdContent && !item.inviteContent && (
-                                <p className="text-sm text-stone-400">{t("Nothing attached to this interview yet.", "这次面试还没有关联任何内容。")}</p>
-                              )}
                           </div>
                         </td>
                       </tr>

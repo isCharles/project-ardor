@@ -114,7 +114,7 @@ class OpportunityServiceTests {
         when(rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(any(), any())).thenReturn(List.of());
 
         OpportunityResponse result = service.update(userId, processId,
-                new OpportunityUpdateRequest(null, null, null, null, "AWAITING_RESULT"));
+                new OpportunityUpdateRequest(null, null, null, null, null, "AWAITING_RESULT"));
 
         assertThat(result.status()).isEqualTo("AWAITING_RESULT");
         assertThat(owned.getStatus()).isEqualTo(OpportunityStatus.AWAITING_RESULT);
@@ -129,7 +129,7 @@ class OpportunityServiceTests {
         when(rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(any(), any())).thenReturn(List.of());
 
         OpportunityResponse result = service.update(userId, processId,
-                new OpportunityUpdateRequest(null, null, null, null, "AWAITING_RESULT"));
+                new OpportunityUpdateRequest(null, null, null, null, null, "AWAITING_RESULT"));
 
         assertThat(result.status()).isEqualTo("AWAITING_RESULT");
     }
