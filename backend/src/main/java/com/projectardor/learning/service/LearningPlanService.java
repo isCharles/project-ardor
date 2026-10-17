@@ -206,18 +206,40 @@ public class LearningPlanService {
         List<Map<String, Object>> attempts = new ArrayList<>();
         for (int index = 0; index < answers.size(); index++) {
             Map<String, Object> exercise = plan.getExercises().get(index);
-            attempts.add(Map.of("question", exercise.get("question"),
-                    "rubric", exercise.get("rubric"), "answer", answers.get(index)));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("question", exercise.get("question"));
+            item.put("type", exercise.getOrDefault("type", "SHORT_ANSWER"));
+            item.put("rubric", exercise.get("rubric"));
+            item.put("answer", answers.get(index));
+            if ("MULTIPLE_CHOICE".equals(exercise.get("type"))) {
+                List<String> options = exercise.get("options") instanceof List<?> list
+                        ? list.stream().map(String::valueOf).toList() : List.of();
+                item.put("options", options);
+                // Score the choice here instead of asking the model to judge a selection.
+                if (exercise.get("correctOption") instanceof Number correctIndex
+                        && correctIndex.intValue() >= 0 && correctIndex.intValue() < options.size()) {
+                    String correct = options.get(correctIndex.intValue());
+                    item.put("correctOption", correct);
+                    item.put("choiceCorrect", correct.equals(answers.get(index)));
+                }
+            }
+            attempts.add(item);
         }
         LlmGateway.LlmResult result = llmGateway.completeJson(userId, evaluationPrompt(),
                 "学习主题：" + plan.getConcept() + "\n练习与回答：" + json(attempts));
         JsonNode node = jsonParser.parseObject(result.content());
-        int score = node.path("score").asInt(-1);
-        if (score < 0 || score > 100) throw new IllegalStateException("模型没有返回有效练习分数");
+        int modelScore = node.path("score").asInt(-1);
+        // When the whole exercise set is multiple choice, the score is arithmetic —
+        // asking the model to re-judge selections only invites invented deductions.
+        int gradedScore = attempts.stream().allMatch(item -> item.containsKey("choiceCorrect"))
+                ? (int) Math.round(100.0 * attempts.stream()
+                        .filter(item -> Boolean.TRUE.equals(item.get("choiceCorrect"))).count() / attempts.size())
+                : modelScore;
+        if (gradedScore < 0 || gradedScore > 100) throw new IllegalStateException("模型没有返回有效练习分数");
         // The model call runs without a database lock. Recheck under a row lock and
         // commit the feedback together with its calendar state in one transaction.
         return transactions.execute(status -> commitAttempt(userId, planId, expectedAttemptCount,
-                answers, node, score, requestId, expectedSchedule));
+                answers, node, gradedScore, requestId, expectedSchedule));
     }
 
     private boolean hasSubmission(LearningPlan plan, UUID requestId) {
@@ -306,6 +328,10 @@ public class LearningPlanService {
                 List<String> options = strings(node.path("options"), 0);
                 if (options.size() < 3 || options.size() > 5) continue;
                 exercise.put("options", options);
+                JsonNode correct = node.path("correctOption");
+                if (correct.isInt() && correct.asInt() >= 0 && correct.asInt() < options.size()) {
+                    exercise.put("correctOption", correct.asInt());
+                }
             }
             values.add(exercise);
         }
@@ -349,11 +375,13 @@ public class LearningPlanService {
                 格式：{"lesson":{"summary":"一句话","keyPoints":["..."],"explanation":"系统讲解",
                 "example":"具体例子","pitfalls":["..."]},"exercises":[{"question":"练习题",
                 "type":"SHORT_ANSWER 或 MULTIPLE_CHOICE 或 SCENARIO",
-                "options":["选项一","选项二","选项三"],"rubric":["评分要点"]}]}。
+                "options":["选项一","选项二","选项三"],"correctOption":0,"rubric":["评分要点"]}]}。
                 生成 3 到 5 个关键点和 2 到 4 道练习。讲解要准确、循序渐进、面向求职；
                 explanation 和 example 的字符串使用 Markdown：短小的小标题、分点、关键词加粗，
                 必要时使用代码块或表格。每段聚焦一个知识点，避免大段连续文字。summary 保持一句话。
-                练习至少有一道 MULTIPLE_CHOICE 选择题，其余可为简答或情境题。只有选择题需要 options。
+                练习至少有一道 MULTIPLE_CHOICE 选择题，其余可为简答或情境题。只有选择题需要 options；
+                选择题必须输出 correctOption，它是正确选项在 options 数组中的下标（从 0 开始），
+                其余题型不要输出该字段。
                 练习必须检验理解与应用，不能只问定义，也不得虚构用户经历。
                 """;
     }
@@ -367,6 +395,10 @@ public class LearningPlanService {
                 "type":"SHORT_ANSWER 或 MULTIPLE_CHOICE 或 SCENARIO",
                 "options":["选项一","选项二","选项三"],"rubric":["评分要点"]}]}。
                 score 是 0 到 100 的整数，只能依据评分要点和实际回答评分。
+                选择题（type=MULTIPLE_CHOICE）的 options、标准答案和判定结果已由系统给出：
+                带 choiceCorrect 的题必须以它为准，答对就按满分计，答错指出正确选项即可；
+                不得因为用户没有解释选项、没有补充理由而扣分，也不要要求用户说明选择理由。
+                其余题型按评分要点评估。
                 feedback 和 questionFeedback.feedback 可用 Markdown 分点并加粗关键结论，避免冗长段落。
                 如果得分低于 80，必须根据薄弱点出 2 到 4 道不同于原题的新题，其中至少一道选择题；
                 如果得分达到 80，nextExercises 返回空数组。只有选择题需要 options。
