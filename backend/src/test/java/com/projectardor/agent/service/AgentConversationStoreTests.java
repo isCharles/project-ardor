@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -11,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import com.projectardor.agent.domain.Conversation;
 import com.projectardor.agent.repository.ConversationMessageRepository;
@@ -104,5 +106,38 @@ class AgentConversationStoreTests {
         conversation.titleFromFirstMessage("不要替换我的标题");
         assertThat(conversation.getTitle()).isEqualTo("新对话");
         assertThat(conversation.isTitleManuallySet()).isTrue();
+    }
+
+    @Test
+    void asksForAnAutomaticTitleOnlyOnTheFirstExchange() {
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        AgentConversationStore localStore = new AgentConversationStore(
+                conversationRepository, messageRepository, events);
+        UUID userId = UUID.randomUUID();
+        Conversation conversation = Conversation.create(userId, "新对话");
+        when(conversationRepository.save(any(Conversation.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messageRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messageRepository.countByUserIdAndConversationId(userId, conversation.getId())).thenReturn(0L, 2L);
+
+        localStore.appendExchange(userId, conversation, "帮我准备 Java 面试", "好的");
+        localStore.appendExchange(userId, conversation, "再讲讲 JVM", "好的");
+
+        verify(events).publishEvent(any(ConversationTitleRequested.class));
+    }
+
+    @Test
+    void keepsTheExistingTitleOnceTheConversationHasHistory() {
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        AgentConversationStore localStore = new AgentConversationStore(
+                conversationRepository, messageRepository, events);
+        UUID userId = UUID.randomUUID();
+        Conversation conversation = Conversation.create(userId, "帮我准备 Java 面试");
+        when(conversationRepository.save(any(Conversation.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messageRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messageRepository.countByUserIdAndConversationId(userId, conversation.getId())).thenReturn(2L);
+
+        localStore.appendExchange(userId, conversation, "再讲讲 JVM", "好的");
+
+        verify(events, never()).publishEvent(any(ConversationTitleRequested.class));
     }
 }
