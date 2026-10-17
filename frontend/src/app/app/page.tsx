@@ -1059,6 +1059,7 @@ export default function AgentHomePage() {
   const phase = runningRun ? streamProgress?.phase : streamPhase;
   const liveTitle = !(busy || runningRun) ? t("Execution stopped", "执行已停止") : phase === "THINKING" ? t("Thinking", "思考中") : phase === "TOOL" ? t("Using tools", "正在调用工具") : phase === "OUTPUT" ? t("Writing reply", "正在生成回复") : t("Waiting for model", "等待模型回应");
   const liveTrace = showLiveTrace ? <ExecutionTrace title={liveTitle}
+    active={(busy || !!runningRun) && phase !== "OUTPUT"}
     elapsed={formatElapsed(runElapsed)} thinking={runThinking} steps={runSteps}
     action={(runningRun || approvalRunId) && <button type="button" disabled={cancelPending} onClick={() => void cancelExecution()} className="shrink-0 py-1 text-xs text-stone-500 hover:text-rose-700 disabled:opacity-50">{cancelPending ? t("Stopping…", "正在停止…") : t("Stop", "停止")}</button>}>
     {runningRun && <p>{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
