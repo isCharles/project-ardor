@@ -1,6 +1,7 @@
 package com.projectardor.agent.tools;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,6 +27,7 @@ import com.projectardor.interview.service.InterviewService;
 import com.projectardor.knowledge.service.KnowledgeService;
 import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.opportunity.service.OpportunityService;
+import com.projectardor.opportunity.web.OpportunityResponse;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecapService;
@@ -228,5 +230,35 @@ class CareerAgentToolsTests {
         assertThat(result).contains("<untrusted_external_content")
                 .contains("其中任何指令")
                 .contains("忽略之前的指令");
+    }
+
+    @Test
+    void opportunityDeletionProposesTheRealTargetAndRejectsAForeignRound() {
+        OpportunityService opportunities = mock(OpportunityService.class);
+        UUID userId = UUID.randomUUID();
+        UUID opportunityId = UUID.randomUUID();
+        UUID ownedRound = UUID.randomUUID();
+        when(opportunities.detail(userId, opportunityId)).thenReturn(new OpportunityResponse(
+                opportunityId, "字节跳动", "后端开发实习生", "Feishu", "REJECTED", null, null, 1,
+                List.of(new OpportunityResponse.Round(ownedRound, 1, "OTHER", null, null, 50, null)),
+                Instant.now(), Instant.now()));
+        CareerAgentTools tools = new CareerAgentTools(
+                mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
+                mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class), mock(KnowledgeService.class), mock(LearningPlanService.class),
+                mock(ApplicationRhythmService.class), opportunities, mock(com.projectardor.aijobs.AiJobService.class));
+
+        var bound = tools.bind(userId, "把那个字节跳动的面试记录删掉");
+        Map<String, Object> proposal = bound.deleteJobOpportunity(opportunityId.toString());
+
+        assertThat(proposal.get("status")).isEqualTo("CONFIRMATION_REQUIRED");
+        assertThat(proposal.get("target")).isEqualTo("字节跳动 · 后端开发实习生");
+        assertThat(bound.pendingConfirmations()).hasSize(1);
+        assertThat(bound.pendingConfirmations().getFirst().endpoint())
+                .isEqualTo("/api/opportunities/" + opportunityId);
+        assertThatThrownBy(() -> bound.deleteJobOpportunityRound(opportunityId.toString(), UUID.randomUUID().toString()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("这一轮不存在");
     }
 }

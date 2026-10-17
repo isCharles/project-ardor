@@ -33,7 +33,8 @@ public final class ToolIntentPolicy {
             case "create_memory_card", "update_memory_card", "review_memory_card", "suspend_memory_card" -> "记忆卡|卡片|复习|flashcard|card|review";
             case "create_interview", "submit_interview_answer", "finish_interview", "cancel_interview" -> "面试|interview";
             case "organize_interview_recap", "update_interview_recap_metadata" -> "面经|面试|复盘|interview|recap";
-            case "create_job_opportunity", "update_job_opportunity", "add_job_opportunity_round" ->
+            case "create_job_opportunity", "update_job_opportunity", "add_job_opportunity_round",
+                    "update_job_opportunity_round" ->
                     "面试|邀约|邀请|流程|进度|岗位|interview|opportunit|offer";
             case "research_knowledge_from_web" -> "知识库|收录|资料|knowledge|material";
             case "analyze_resume" -> "简历|resume|résumé";
@@ -60,7 +61,7 @@ public final class ToolIntentPolicy {
             case "organize_interview_recap" -> "整理|生成|复盘|organize|generate|recap";
             case "create_job_opportunity" ->
                     "创建|新增|添加|记录|记一下|记下|录入|保存|收到|拿到|接到|create|add|record|log|save";
-            case "update_job_opportunity" ->
+            case "update_job_opportunity", "update_job_opportunity_round" ->
                     "修改|更新|改成|改到|变更|标记|设为|设置为|推进|update|change|mark|set|move";
             case "add_job_opportunity_round" ->
                     "添加|新增|加|安排|创建|补录|add|create|schedule";

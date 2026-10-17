@@ -793,6 +793,62 @@ public class CareerAgentTools {
                             durationMinutes > 0 ? durationMinutes : null, blankToNull(note)));
         }
 
+        @Tool(name = "update_job_opportunity_round", value = "修改当前用户面试流程中某一轮的时间、时长、环节或备注；只改用户提到的字段，其余保留。先用 get_job_opportunity 读取真实轮次 UUID")
+        public OpportunityResponse updateJobOpportunityRound(
+                @P("面试流程 UUID") String opportunityId,
+                @P("轮次 UUID") String roundId,
+                @P("环节 HR/TECHNICAL/MANAGER/CROSS/FINAL/OTHER；不修改传空字符串") String stage,
+                @P("面试时间 ISO-8601；不修改传空字符串") String scheduledAt,
+                @P("实际发生时间 ISO-8601；不修改传空字符串") String occurredAt,
+                @P("时长（分钟）；不修改传 -1") int durationMinutes,
+                @P("备注；不修改传 null") String note) {
+            UUID opportunity = uuid(opportunityId, "面试流程 ID");
+            UUID round = uuid(roundId, "轮次 ID");
+            OpportunityResponse.Round existing = opportunityService.detail(userId, opportunity).rounds().stream()
+                    .filter(entry -> entry.id().equals(round))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("这一轮不存在"));
+            Instant nextScheduled = nullableInstant(scheduledAt);
+            Instant nextOccurred = nullableInstant(occurredAt);
+            return opportunityService.updateRound(userId, opportunity, round,
+                    new OpportunityRoundRequest(null,
+                            blankToNull(stage) == null ? existing.stage() : stage,
+                            nextScheduled == null ? existing.scheduledAt() : nextScheduled,
+                            nextOccurred == null ? existing.occurredAt() : nextOccurred,
+                            durationMinutes < 0 ? existing.durationMinutes() : durationMinutes,
+                            note == null ? existing.note() : note));
+        }
+
+        @Tool(name = "delete_job_opportunity", value = "提议永久删除当前用户的一条真实面试流程及其全部轮次。只有用户明确要求删除时使用；先列出流程定位真实 UUID。只生成待确认按钮，用户点击后才删除")
+        public Map<String, Object> deleteJobOpportunity(@P("面试流程 UUID") String opportunityId) {
+            UUID id = uuid(opportunityId, "面试流程 ID");
+            OpportunityResponse item = opportunityService.detail(userId, id);
+            return propose("job_opportunity", id, processLabel(item),
+                    "流程和轮次会被删除；已经整理的面经会保留但解除关联", "/api/opportunities/" + id);
+        }
+
+        @Tool(name = "delete_job_opportunity_round", value = "提议删除当前用户面试流程中的某一轮。只有用户明确要求删除某一轮时使用；先读取流程定位轮次 UUID。只生成待确认按钮，用户点击后才删除")
+        public Map<String, Object> deleteJobOpportunityRound(
+                @P("面试流程 UUID") String opportunityId,
+                @P("轮次 UUID") String roundId) {
+            UUID opportunity = uuid(opportunityId, "面试流程 ID");
+            UUID round = uuid(roundId, "轮次 ID");
+            OpportunityResponse item = opportunityService.detail(userId, opportunity);
+            OpportunityResponse.Round target = item.rounds().stream()
+                    .filter(entry -> entry.id().equals(round))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("这一轮不存在"));
+            return propose("job_opportunity_round", round,
+                    processLabel(item) + " · 第 " + target.roundNumber() + " 轮",
+                    "只删除这一轮，流程和其它轮次保留",
+                    "/api/opportunities/" + opportunity + "/rounds/" + round);
+        }
+
+        private static String processLabel(OpportunityResponse item) {
+            String role = item.targetRole() == null || item.targetRole().isBlank() ? "" : " · " + item.targetRole();
+            return item.company() + role;
+        }
+
         private ResumeToolView toView(Resume resume, ResumeAnalysis analysis) {
             var task = resumeAnalysisQueueService.statusIfPresent(userId, resume.getId()).orElse(null);
             return new ResumeToolView(
