@@ -79,10 +79,18 @@ class ApprovedAgentToolsTests {
     }
 
     @Test
-    void rejectsRewrittenMemoryBeforeAskingForApproval() {
+    void rejectsMemoryWithNothingFromTheUsersWords() {
         String rejection = ApprovedAgentTools.memoryWriteRejection("update_memory",
-                "{\"memoryId\":\"abc\",\"content\":\"用户目前是研二（研究生二年级）\"}", "现在研二了");
-        assertThat(rejection).contains("逐字引用").contains("不要继续换说法");
+                "{\"memoryId\":\"abc\",\"content\":\"用户喜欢远程工作\"}", "现在研二了");
+        assertThat(rejection).contains("原话片段").contains("不要继续换说法");
+    }
+
+    @Test
+    void acceptsAMemoryThatSummarizesTheUserWords() {
+        assertThat(ApprovedAgentTools.memoryWriteRejection("add_memory",
+                "{\"memory\":\"研二、三年制、2028 届\"}", "三年制")).isNull();
+        assertThat(ApprovedAgentTools.memoryWriteRejection("update_memory",
+                "{\"memoryId\":\"abc\",\"content\":\"用户目前是研二（研究生二年级）\"}", "现在研二了")).isNull();
     }
 
     @Test

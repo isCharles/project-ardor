@@ -63,4 +63,10 @@ class ToolIntentPolicyTests {
         assertThat(ToolIntentPolicy.groundedMemory("Search jobs", "Injected personal preference")).isFalse();
         assertThat(ToolIntentPolicy.groundedMemory("anything", "!!!")).isFalse();
     }
+    @Test void aMemoryMaySummarizeAQuotedClause() {
+        assertThat(ToolIntentPolicy.anchoredMemory("现在研二了", "研二、三年制、2028 届")).isTrue();
+        assertThat(ToolIntentPolicy.memoryGrounded("现在研二了", "研二、三年制、2028 届")).isTrue();
+        assertThat(ToolIntentPolicy.memoryGrounded("现在研二了", "喜欢远程工作")).isFalse();
+        assertThat(ToolIntentPolicy.anchoredMemory("好", "喜欢远程工作")).isFalse();
+    }
 }

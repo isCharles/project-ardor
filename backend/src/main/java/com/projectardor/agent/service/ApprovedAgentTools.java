@@ -100,9 +100,9 @@ final class ApprovedAgentTools {
         if (value.isBlank()) {
             return tool.equals("update_memory") ? "修订后的记忆不能为空。" : "长期记忆不能为空。";
         }
-        if (ToolIntentPolicy.groundedMemory(userRequest, value)) return null;
-        return "这条记忆必须逐字引用用户本轮说过的原话，不能改写、补充或合并；请直接把原话作为记忆重试一次。"
-                + "如果原话不足以成为一条完整记忆，就告诉用户这样保存不了，不要继续换说法尝试。";
+        if (ToolIntentPolicy.memoryGrounded(userRequest, value)) return null;
+        return "这条记忆必须包含用户本轮说过的原话片段，可以在原话基础上简短归纳；"
+                + "如果用户没有提供可引用的内容，就告诉用户没法这样保存，不要继续换说法尝试。";
     }
 
     /** Reads one top-level string field from a tool-argument JSON without pulling in a parser. */
