@@ -121,8 +121,12 @@ export default function OpportunitiesPage() {
   }
 
   function plansFor(item: Opportunity) {
-    const recapIds = new Set(recapsFor(item).map((recap) => recap.id));
-    return plans.filter((plan) => plan.sourceType === "RECAP" && plan.sourceId !== null && recapIds.has(plan.sourceId));
+    const linked = recapsFor(item);
+    const recapIds = new Set(linked.map((recap) => recap.id));
+    // A plan's source may be the whole recap or one of its questions; both are valid.
+    const questionIds = new Set(linked.flatMap((recap) => recap.questions.map((question) => question.id)));
+    return plans.filter((plan) => plan.sourceType === "RECAP" && plan.sourceId !== null
+      && (recapIds.has(plan.sourceId) || questionIds.has(plan.sourceId)));
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
