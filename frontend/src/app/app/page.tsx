@@ -21,6 +21,7 @@ import { type ToolMeasurement } from "@/components/ardor/tool-duration";
 import { ExecutionTrace } from "@/components/ardor/execution-trace";
 import { DeletionPermissions } from "@/components/ardor/deletion-permissions";
 import { OperationPermissions } from "@/components/ardor/operation-permissions";
+import { LearningPermissions } from "@/components/ardor/learning-permissions";
 import { QueuedMessages } from "@/components/ardor/queued-messages";
 import type { AgentFeature } from "@/lib/agent-features";
 import { featureHref } from "@/lib/agent-features";
@@ -224,6 +225,17 @@ export default function AgentHomePage() {
   const runningRunId = runningRun?.id;
   const learningRequestIds = confirmations.filter((item) => item.kind === "learning_plan" && ["PENDING", "GENERATING", "FAILED", "EXPIRED"].includes(item.state)).map((item) => item.learningPlan?.requestId).filter(Boolean).join(",");
   const generatingLearning = confirmations.some((item) => item.state === "GENERATING");
+  const previousLearningStates = useRef(new Map<string, string>());
+  useEffect(() => {
+    for (const item of confirmations) {
+      if (!item.learningPlan) continue;
+      const key = confirmationKey(item);
+      if (previousLearningStates.current.get(key) === "GENERATING" && item.state === "DONE") {
+        setFeedback(t(`Learning plan created: ${item.label}. Open it from the work record or Learning.`, `学习计划已创建：${item.label}。可从工作记录或学习模块打开。`));
+      }
+      previousLearningStates.current.set(key, item.state);
+    }
+  }, [confirmations, t]);
 
   useEffect(() => {
     if (!learningRequestIds) return;
@@ -597,6 +609,9 @@ export default function AgentHomePage() {
         createdPlanId: job.status === "COMPLETED" && job.resultPath ? new URL(job.resultPath, window.location.origin).searchParams.get("id") ?? undefined : undefined,
       } : item));
       window.dispatchEvent(new Event("ardor:background-refresh"));
+      setFeedback(job.status === "COMPLETED" ? t("Learning plan created. Details are in the work record.", "学习计划已创建，详情保留在工作记录中。")
+        : job.status === "FAILED" ? t("Lesson generation failed. Check the suggestion before retrying.", "学习生成失败，请检查建议后重试。")
+        : t("Confirmed. Preparing the lesson in the background; you can continue chatting.", "已确认，正在后台准备学习内容，可以继续聊天。"));
     } catch (reason) {
       setConfirmations((current) => current.map((item) => confirmationKey(item) === key
         ? { ...item, state: "FAILED", error: reason instanceof Error ? reason.message : "创建学习计划失败" }
@@ -1050,9 +1065,15 @@ export default function AgentHomePage() {
     {retryFailures.map((failure, index) => <p key={index} className="text-amber-700">{failure.label} · {failure.detail}</p>)}
     {busy && retryAttempt > 0 && <p>{t(`Reconnecting · retry ${retryAttempt}/${MAX_MESSAGE_RETRIES}`, `正在重新连接 · 第 ${retryAttempt}/${MAX_MESSAGE_RETRIES} 次重试`)}</p>}
   </ExecutionTrace> : null;
-  const deletionResults = (message: AgentMessage) => (savedRunTrace(message.runTrace)?.proposals ?? []).filter((item) => item.kind !== "learning_plan").map((proposal) => {
+  const proposalResults = (message: AgentMessage) => (savedRunTrace(message.runTrace)?.proposals ?? []).map((proposal) => {
     const item = { ...proposal, sourceMessageId: message.id };
-    let resolution = confirmations.find((current) => current.sourceMessageId === message.id && confirmationKey(current) === confirmationKey(item))?.state as string | undefined;
+    const current = confirmations.find((value) => value.sourceMessageId === message.id && confirmationKey(value) === confirmationKey(item));
+    if (item.kind === "learning_plan") {
+      const status = current?.state;
+      const label = status === "DONE" ? t("Learning plan created", "学习计划已创建") : status === "GENERATING" ? t("Preparing lesson in background", "正在后台准备学习内容") : status === "DISMISSED" ? t("Creation declined", "已拒绝创建") : status === "REMOVED" ? t("Plan removed", "计划已移除") : status === "EXPIRED" ? t("Suggested time has passed", "建议时间已过") : status === "FAILED" ? t("Lesson generation failed", "学习生成失败") : t("Learning suggestion", "学习建议");
+      return <div key={confirmationKey(item)}><p>{label} · {item.label}</p>{current?.createdPlanId && <Link className="text-violet-600 underline" href={`/app/learning?id=${encodeURIComponent(current.createdPlanId)}`}>{t("Open lesson", "打开学习")}</Link>}{current?.error && <p className="text-rose-600">{current.error}</p>}</div>;
+    }
+    let resolution = current?.state as string | undefined;
     try { resolution = window.localStorage.getItem(deletionResolutionKey(item, message.conversationId)) ?? resolution; } catch { /* Device storage can be unavailable. */ }
     return resolution && ["DONE", "DISMISSED", "EXPIRED"].includes(resolution) ? <p key={confirmationKey(item)}>{resolution === "DONE" ? t("Deleted", "已删除") : resolution === "DISMISSED" ? t("Kept", "已保留") : t("Expired proposal", "建议已过期")} · {item.label}</p> : null;
   });
@@ -1145,7 +1166,7 @@ export default function AgentHomePage() {
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         {message === liveAssistant && liveTrace}
-                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps}>{deletionResults(message)}</ExecutionTrace>; })()}
+                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTrace>; })()}
                         <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
                       </div>
                     )}
@@ -1154,26 +1175,6 @@ export default function AgentHomePage() {
                 {!liveAssistant && liveTrace}
                 {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div>}
                 {!terminalInHistory && !runningRun && !busy && streamProgress?.answerPartial && streamProgress.phase !== "COMPLETED" && <details className="max-w-xl rounded-2xl border border-stone-200/70 bg-white/50 p-4"><summary className="cursor-pointer text-xs text-stone-500">{t("Incomplete reply · saved before execution stopped", "未完成回复 · 停止前保留的片段")}</summary><div className="ardor-markdown mt-3 text-sm leading-7"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div></details>}
-                {confirmations.some((item) => item.kind === "learning_plan") && <section className="space-y-2">
-                  {confirmations.filter((item) => item.kind === "learning_plan").map((pending) => <div key={confirmationKey(pending)} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${pending.state === "DONE" ? "border-emerald-100 bg-emerald-50/80" : ["DISMISSED", "REMOVED", "EXPIRED"].includes(pending.state) ? "border-stone-200 bg-white/50" : "border-violet-100 bg-white/80"}`}>
-                    <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl ${pending.state === "DONE" ? "bg-emerald-100 text-emerald-600" : pending.kind === "learning_plan" ? "bg-violet-50 text-violet-600" : "bg-rose-50 text-rose-500"}`}>{pending.state === "DONE" ? <Check className="size-4" /> : pending.kind === "learning_plan" ? <BookOpenText className="size-4" /> : <Trash2 className="size-4" />}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-stone-800">{pending.kind === "learning_plan"
-                        ? pending.state === "DONE" ? (locale === "en" ? "Learning plan created" : "学习计划已创建") : pending.state === "GENERATING" ? (locale === "en" ? "Preparing lesson in the background" : "正在后台准备学习内容") : pending.state === "REMOVED" ? (locale === "en" ? "Plan removed" : "计划已移除") : pending.state === "EXPIRED" ? (locale === "en" ? "Suggested time has passed" : "建议时间已过") : pending.state === "DISMISSED" ? (locale === "en" ? "Not now" : "暂不安排") : pending.state === "DELETING" ? (locale === "en" ? "Submitting plan" : "正在提交计划") : (locale === "en" ? "Suggested learning" : "建议学习")
-                        : pending.state === "DONE" ? "已删除" : pending.state === "DISMISSED" ? "已保留" : pending.state === "DELETING" ? "正在删除" : "确认删除"}<span className="ml-1 font-normal">「{pending.label}」</span></p>
-                      {pending.detail && pending.state === "PENDING" && <p className="mt-1 text-xs leading-5 text-stone-500">{pending.detail}</p>}
-                      {pending.state === "GENERATING" && <p className="mt-1 text-xs text-stone-500">{t("Usually 30–120 seconds. You can continue chatting or come back later.", "通常约 30–120 秒，可以继续聊天或稍后回来。")}</p>}
-                      {pending.kind === "learning_plan" && pending.learningPlan?.scheduledAt && pending.state === "PENDING" && <p className="mt-1 text-xs text-stone-400">{new Date(pending.learningPlan.scheduledAt).toLocaleString(locale === "en" ? "en-US" : "zh-CN")}</p>}
-                      {pending.kind === "learning_plan" && pending.state === "EXPIRED" && <p className="mt-1 text-xs text-stone-500">{locale === "en" ? "Ask Ardor to suggest a new time." : "请 Ardor 重新建议一个时间。"}</p>}
-                      {pending.error && <p className="mt-1 text-xs leading-5 text-rose-600">{pending.error}</p>}
-                      {pending.kind === "learning_plan" && pending.createdPlanId && <Link className="mt-1 inline-block text-xs font-medium text-violet-600 hover:underline" href={`/app/learning?id=${pending.createdPlanId}`}>{locale === "en" ? "Open lesson" : "打开学习"}</Link>}
-                    </div>
-                    {(pending.state === "PENDING" || pending.state === "FAILED") && <div className="flex shrink-0 items-center gap-2">
-                      <button type="button" onClick={() => { if (pending.kind === "learning_plan") window.sessionStorage.setItem(dismissedProposalKey(pending), "1"); setConfirmations((current) => current.map((item) => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item)); }} className="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 transition hover:bg-white hover:text-stone-800">{pending.kind === "learning_plan" ? (locale === "en" ? "Not now" : "暂不安排") : "保留"}</button>
-                      <button type="button" onClick={() => void (pending.kind === "learning_plan" ? confirmLearning(pending) : confirmDeletion(pending))} className={`rounded-full px-3.5 py-1.5 text-xs font-medium text-white transition ${pending.kind === "learning_plan" ? "bg-violet-600 hover:bg-violet-700" : "bg-rose-600 hover:bg-rose-700"}`}>{pending.kind === "learning_plan" ? (locale === "en" ? "Create plan" : "生成计划") : pending.state === "FAILED" ? "重试删除" : "删除"}</button>
-                    </div>}
-                  </div>)}
-                </section>}
                 <QueuedMessages key={state?.conversationId} conversationId={state?.conversationId ?? null} activeRunId={runningRun?.id ?? approvalRunId} onPendingChange={setHasQueuedMessages} onCompleted={load} onStarted={setQueuedWakeId} />
                 <div ref={endRef} />
               </div>
@@ -1187,6 +1188,9 @@ export default function AgentHomePage() {
               onConfirmed={tool => { if (confirmedOperations.current.has(tool)) setFeedback(t("Confirmed. Waiting for the operation result…", "已确认，正在等待执行结果…")); }}
               onFailed={tool => { if (confirmedOperations.current.delete(tool)) setFeedback(t("Confirmation failed. Nothing has been confirmed.", "确认未成功提交，本次尚未确认。")); }} />}
             {deletionDock}
+            <LearningPermissions items={confirmations.filter(item => item.kind === "learning_plan" && ["PENDING", "FAILED", "DELETING"].includes(item.state))}
+              onReject={pending => { window.sessionStorage.setItem(dismissedProposalKey(pending), "1"); setConfirmations(current => current.map(item => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item)); setFeedback(t("Creation declined. No learning plan was created.", "已拒绝创建，未新建学习计划。")); }}
+              onConfirm={pending => void confirmLearning(pending)} />
             {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
