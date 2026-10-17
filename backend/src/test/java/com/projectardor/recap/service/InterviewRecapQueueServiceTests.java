@@ -1,6 +1,7 @@
 package com.projectardor.recap.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -12,25 +13,49 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
+import com.projectardor.common.web.ResourceNotFoundException;
+import com.projectardor.opportunity.domain.JobOpportunity;
+import com.projectardor.opportunity.repository.JobOpportunityRepository;
 import com.projectardor.recap.repository.InterviewRecapJobRepository;
 import com.projectardor.recap.repository.InterviewRecapRepository;
 
 class InterviewRecapQueueServiceTests {
 
+    private static final String CONTENT = "这是一段足够长的面试回忆内容，用于验证并发请求会先锁定同一份输入再创建任务。";
+
     @Test
     void requestLocksTheUserAndContentFingerprintBeforeCreatingAJob() {
         InterviewRecapRepository recaps = mock(InterviewRecapRepository.class);
         InterviewRecapJobRepository jobs = mock(InterviewRecapJobRepository.class);
-        InterviewRecapQueueService service = new InterviewRecapQueueService(recaps, jobs);
+        JobOpportunityRepository opportunities = mock(JobOpportunityRepository.class);
+        InterviewRecapQueueService service = new InterviewRecapQueueService(recaps, jobs, opportunities);
         UUID userId = UUID.randomUUID();
+        UUID opportunityId = UUID.randomUUID();
+        when(opportunities.findByIdAndUserId(opportunityId, userId))
+                .thenReturn(Optional.of(JobOpportunity.create(userId, "字节跳动", "后端", null, null)));
         when(recaps.findByUserIdAndInputHash(eq(userId), any())).thenReturn(Optional.empty());
         when(jobs.findFirstByUserIdAndInputHashAndStatusInOrderByCreatedAtDesc(
                 eq(userId), any(), any())).thenReturn(Optional.empty());
         when(jobs.saveAndFlush(any())).thenAnswer(call -> call.getArgument(0));
 
-        service.request(userId, "这是一段足够长的面试回忆内容，用于验证并发请求会先锁定同一份输入再创建任务。");
+        service.request(userId, CONTENT, opportunityId);
 
         verify(jobs).lockRequestSlot(eq(userId), any());
+    }
+
+    @Test
+    void requestRequiresAnInterviewTheUserOwns() {
+        InterviewRecapQueueService service = new InterviewRecapQueueService(
+                mock(InterviewRecapRepository.class), mock(InterviewRecapJobRepository.class),
+                mock(JobOpportunityRepository.class));
+        UUID userId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.request(userId, CONTENT, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("请选择所属面试");
+        assertThatThrownBy(() -> service.request(userId, CONTENT, UUID.randomUUID()))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("面试流程不存在");
     }
 
     @Test
@@ -39,7 +64,7 @@ class InterviewRecapQueueServiceTests {
         when(jobs.failExhaustedStale(any(), eq(5))).thenReturn(1);
         when(jobs.recoverStale(any(), eq(5))).thenReturn(3);
         InterviewRecapQueueService service = new InterviewRecapQueueService(
-                mock(InterviewRecapRepository.class), jobs);
+                mock(InterviewRecapRepository.class), jobs, mock(JobOpportunityRepository.class));
 
         assertThat(service.recoverStaleJobs()).isEqualTo(4);
     }

@@ -92,7 +92,7 @@ public class CareerAgentService {
             29. 用户说“今天投了 N 份”“昨天投了 N 份”时调用 record_application_count 记录当天总数，不要把它当成新增 N 份，也不要写入长期记忆。查询投递进度先调用 get_application_rhythm。
             30. 用户明确提出每周投递目标或提醒时间时，先了解已有设置，再调用 set_application_rhythm；提醒只在用户打开工作台时显示，不要声称关闭应用后也会推送。面试准备优先时，不要机械催促投递。
             31. 修改学习时间或说明用 update_learning_plan，开始学习用 begin_learning_plan；保留已有讲解、练习与评分，不通过删除重建冒充改期。替换主题应另外提议新计划。
-            32. 修改记忆卡用 update_memory_card，修正面经公司、岗位、时间用 update_interview_recap_metadata，修正单条长期记忆用 update_memory。先读取真实原内容，保留未要求修改的字段。读取、新增和修改不逐次弹权限；仍须符合用户意图、资源归属与业务校验。只有删除需要界面确认，聊天口令不能代替删除按钮。
+            32. 修改记忆卡用 update_memory_card，修正单条长期记忆用 update_memory。先读取真实原内容，保留未要求修改的字段。读取、新增和修改不逐次弹权限；仍须符合用户意图、资源归属与业务校验。只有删除需要界面确认，聊天口令不能代替删除按钮。面经只是挂在面试流程下的文档，公司、岗位和面试时间都属于面试流程本身，要改就改面试流程，不要给面经单独编造这些字段。
             33. 历史中的已停止请求仍是用户表达，不等于已执行。用户追加“等等、改成、不需要”等补充时，结合原请求，只更改补充所指的部分，其余要求仍然有效。例：原要求“删除1、2、3然后重新生成”，补充“2不需要重新生成”表示仍删除1、2、3，只重建1和3；不能误读为保留2不删除。先核验现状，不能重放已完成副作用，也不能把已停止当作已回滚。
             """;
 
@@ -673,7 +673,6 @@ public class CareerAgentService {
             case "begin_learning_plan" -> "开始学习";
             case "update_memory_card" -> "编辑记忆卡";
             case "suspend_memory_card" -> "调整记忆卡复习";
-            case "update_interview_recap_metadata" -> "修改面经信息";
             case "update_calendar_task" -> "修改普通日程";
             case "update_recurring_task" -> "修改重复安排";
             case "update_memory" -> "修正长期记忆";

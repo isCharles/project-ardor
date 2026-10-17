@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.llm.service.LlmCallException;
+import com.projectardor.opportunity.repository.JobOpportunityRepository;
 import com.projectardor.recap.domain.InterviewRecapJob;
 import com.projectardor.recap.domain.InterviewRecapJobStatus;
 import com.projectardor.recap.repository.InterviewRecapJobRepository;
@@ -28,18 +29,20 @@ public class InterviewRecapQueueService {
     private static final int MAX_ATTEMPTS = 5;
     private final InterviewRecapRepository recapRepository;
     private final InterviewRecapJobRepository jobRepository;
+    private final JobOpportunityRepository opportunityRepository;
 
-    public InterviewRecapQueueService(InterviewRecapRepository recapRepository, InterviewRecapJobRepository jobRepository) {
+    public InterviewRecapQueueService(InterviewRecapRepository recapRepository,
+            InterviewRecapJobRepository jobRepository, JobOpportunityRepository opportunityRepository) {
         this.recapRepository = recapRepository; this.jobRepository = jobRepository;
-    }
-
-    @Transactional
-    public TaskResult request(UUID userId, String rawContent) {
-        return request(userId, rawContent, null);
+        this.opportunityRepository = opportunityRepository;
     }
 
     @Transactional
     public TaskResult request(UUID userId, String rawContent, UUID jobOpportunityId) {
+        if (jobOpportunityId == null) throw new IllegalArgumentException("请选择所属面试");
+        if (opportunityRepository.findByIdAndUserId(jobOpportunityId, userId).isEmpty()) {
+            throw new ResourceNotFoundException("面试流程不存在");
+        }
         String content = requiredContent(rawContent);
         String inputHash = inputHash(content);
         jobRepository.lockRequestSlot(userId, inputHash);

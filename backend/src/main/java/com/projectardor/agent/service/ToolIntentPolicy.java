@@ -32,7 +32,7 @@ public final class ToolIntentPolicy {
             case "update_learning_plan", "begin_learning_plan" -> "学习|讲解|练习|learn|lesson|study|practice";
             case "create_memory_card", "update_memory_card", "review_memory_card", "suspend_memory_card" -> "记忆卡|卡片|复习|flashcard|card|review";
             case "create_interview", "submit_interview_answer", "finish_interview", "cancel_interview" -> "面试|interview";
-            case "organize_interview_recap", "update_interview_recap_metadata" -> "面经|面试|复盘|interview|recap";
+            case "organize_interview_recap" -> "面经|面试|复盘|interview|recap";
             case "create_job_opportunity", "update_job_opportunity", "add_job_opportunity_round",
                     "update_job_opportunity_round" ->
                     "面试|邀约|邀请|流程|进度|岗位|interview|opportunit|offer";
@@ -48,7 +48,7 @@ public final class ToolIntentPolicy {
         String action = switch (tool) {
             case "add_memory" -> "记住|记一下|记录|保存|remember|record|save";
             case "update_calendar_task", "update_recurring_task", "update_learning_plan" -> "修改|修正|调整|改成|改到|改为|更新|update|change|edit|correct|reschedule";
-            case "update_memory", "update_memory_card", "update_interview_recap_metadata" -> "修改|修正|调整|改成|更新|update|change|edit|correct";
+            case "update_memory", "update_memory_card" -> "修改|修正|调整|改成|更新|update|change|edit|correct";
             case "create_calendar_task", "create_recurring_task" -> "创建|新增|添加|安排|提醒|create|add|schedule|remind";
             case "begin_learning_plan" -> "开始|学习|讲解|做|start|begin|learn|study|practice";
             case "create_memory_card" -> "创建|新增|添加|生成|整理|制作|create|add|generate|make|prepare";

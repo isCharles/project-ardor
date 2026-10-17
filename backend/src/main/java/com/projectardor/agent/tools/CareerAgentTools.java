@@ -633,12 +633,12 @@ public class CareerAgentTools {
             return interviewRecapQueueService.list(userId).stream().map(InterviewRecapTaskResponse::from).toList();
         }
 
-        @Tool(name = "organize_interview_recap", value = "把用户粘贴的真实面试内容提交到后台整理队列；立即返回任务状态，不自动生成记忆卡。用户说这是某场面试的复盘或纪要时，传入对应面试流程 UUID，面经会挂到该流程上")
+        @Tool(name = "organize_interview_recap", value = "把用户粘贴的真实面试纪要提交到后台整理队列；立即返回任务状态，不自动生成记忆卡。面经必须属于一场面试，先 list_job_opportunities 定位面试流程 UUID，用户没说清是哪场时先追问")
         public InterviewRecapTaskResponse organizeInterviewRecap(
                 @P("用户提供的面试内容，必须完整传入，不得自行补写") String content,
-                @P("关联的面试流程 UUID；不关联传空字符串") String opportunityId) {
+                @P("所属面试流程 UUID，必填；先 list_job_opportunities 定位") String opportunityId) {
             return InterviewRecapTaskResponse.from(interviewRecapQueueService.request(userId, content,
-                    opportunityId == null || opportunityId.isBlank() ? null : uuid(opportunityId, "面试流程 ID")));
+                    uuid(opportunityId, "面试流程 ID")));
         }
 
         @Tool(name = "list_interview_recaps", value = "列出当前用户已经整理的面经及问题、薄弱题数量")
@@ -694,16 +694,6 @@ public class CareerAgentTools {
             UUID id = uuid(cardId, "记忆卡 ID");
             return MemoryCardResponse.from(interviewRecapService.updateCard(userId, id,
                     question, answer, tags == null ? List.of() : List.of(tags.split(","))));
-        }
-
-        @Tool(name = "update_interview_recap_metadata", value = "修改当前用户面经的公司、岗位和面试时间；只补正元数据，不覆盖原文、逐题复盘和弱项。先读取面经，再提交完整元数据，保留未要求修改的值")
-        public InterviewRecapResponse updateInterviewRecapMetadata(@P("面经 UUID") String recapId,
-                @P("完整公司名；清空传空字符串") String company,
-                @P("完整岗位名；清空传空字符串") String targetRole,
-                @P("实际面试日期时间，带时区的 ISO-8601；没有日期传空字符串") String occurredAt) {
-            UUID id = uuid(recapId, "面经 ID");
-            return interviewRecapService.updateMetadata(userId, id, new com.projectardor.recap.web.InterviewRecapMetadataRequest(
-                    company, targetRole, nullableInstant(occurredAt)));
         }
 
         @Tool(name = "delete_memory_card", value = "永久删除当前用户指定的一张记忆卡。只有用户明确要求删除时使用")

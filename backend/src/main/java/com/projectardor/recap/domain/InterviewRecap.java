@@ -10,15 +10,16 @@ import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.*;
 
+/**
+ * One interview's written debrief. The process owns the company, role and date;
+ * a recap only points at its interview and carries the document itself.
+ */
 @Entity
 @Table(name = "interview_recaps")
 public class InterviewRecap {
     @Id private UUID id;
     @Column(name = "user_id", nullable = false) private UUID userId;
     @Column(nullable = false, length = 240) private String title;
-    @Column(length = 160) private String company;
-    @Column(name = "target_role", length = 160) private String targetRole;
-    @Column(name = "occurred_at") private Instant occurredAt;
     @Enumerated(EnumType.STRING) @Column(name = "source_type", nullable = false, length = 32) private InterviewRecapSource sourceType;
     @Column(name = "raw_content", nullable = false, columnDefinition = "text") private String rawContent;
     @Column(name = "input_hash", nullable = false, length = 64) private String inputHash;
@@ -33,35 +34,21 @@ public class InterviewRecap {
 
     protected InterviewRecap() {}
 
-    private InterviewRecap(UUID userId, String title, String company, String targetRole, Instant occurredAt,
-            InterviewRecapSource sourceType, String rawContent, String inputHash, String overview,
-            List<String> strengths, List<String> weaknesses, String modelName, UUID jobOpportunityId) {
-        this.id = UUID.randomUUID(); this.userId = userId; this.title = title; this.company = company;
-        this.targetRole = targetRole; this.occurredAt = occurredAt; this.sourceType = sourceType;
+    private InterviewRecap(UUID userId, String title, InterviewRecapSource sourceType, String rawContent,
+            String inputHash, String overview, List<String> strengths, List<String> weaknesses, String modelName,
+            UUID jobOpportunityId) {
+        this.id = UUID.randomUUID(); this.userId = userId; this.title = title; this.sourceType = sourceType;
         this.rawContent = rawContent; this.inputHash = inputHash; this.overview = overview;
         this.strengths = new ArrayList<>(strengths); this.weaknesses = new ArrayList<>(weaknesses);
         this.modelName = modelName; this.promptVersion = "interview-recap-v1";
         this.jobOpportunityId = jobOpportunityId;
     }
 
-    public static InterviewRecap create(UUID userId, String title, String company, String targetRole, Instant occurredAt,
-            InterviewRecapSource sourceType, String rawContent, String inputHash, String overview,
-            List<String> strengths, List<String> weaknesses, String modelName) {
-        return create(userId, title, company, targetRole, occurredAt, sourceType, rawContent, inputHash, overview,
-                strengths, weaknesses, modelName, null);
-    }
-
-    public static InterviewRecap create(UUID userId, String title, String company, String targetRole, Instant occurredAt,
-            InterviewRecapSource sourceType, String rawContent, String inputHash, String overview,
-            List<String> strengths, List<String> weaknesses, String modelName, UUID jobOpportunityId) {
-        return new InterviewRecap(userId, title, company, targetRole, occurredAt, sourceType, rawContent,
-                inputHash, overview, strengths, weaknesses, modelName, jobOpportunityId);
-    }
-
-    public void updateMetadata(String company, String targetRole, Instant occurredAt) {
-        this.company = company;
-        this.targetRole = targetRole;
-        this.occurredAt = occurredAt;
+    public static InterviewRecap create(UUID userId, String title, InterviewRecapSource sourceType,
+            String rawContent, String inputHash, String overview, List<String> strengths, List<String> weaknesses,
+            String modelName, UUID jobOpportunityId) {
+        return new InterviewRecap(userId, title, sourceType, rawContent, inputHash, overview, strengths, weaknesses,
+                modelName, jobOpportunityId);
     }
 
     /** Attaches a process only when this recap is not linked yet; never moves it. */
@@ -76,9 +63,6 @@ public class InterviewRecap {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public String getTitle() { return title; }
-    public String getCompany() { return company; }
-    public String getTargetRole() { return targetRole; }
-    public Instant getOccurredAt() { return occurredAt; }
     public InterviewRecapSource getSourceType() { return sourceType; }
     public String getRawContent() { return rawContent; }
     public String getOverview() { return overview; }
