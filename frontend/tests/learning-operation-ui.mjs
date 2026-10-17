@@ -47,9 +47,9 @@ try {
   const dock = page.getByRole("region", { name: "Learning creation confirmation", exact: true });
   await dock.getByRole("heading", { name: "Create a learning plan for “JVM memory”?", exact: true }).waitFor();
   assert.equal(submissions, 0);
+  await page.locator(".ardor-composer-enter").evaluateAll(elements => Promise.all(elements.flatMap(element => element.getAnimations()).map(animation => animation.finished.catch(() => undefined))));
   const bounds = await dock.boundingBox(), composer = await page.getByRole("textbox", { name: "Message Ardor", exact: true }).boundingBox();
   assert.ok(bounds.y + bounds.height <= composer.y, "Suggestions sit above the composer");
-  await page.waitForTimeout(350); // Capture after the entrance transition, not its transparent first frame.
   await page.screenshot({ path: ".next/learning-operation.png", fullPage: true });
   await dock.getByRole("button", { name: "Reject", exact: true }).click();
   await dock.waitFor({ state: "hidden" }); assert.equal(submissions, 0);
