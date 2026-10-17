@@ -31,9 +31,15 @@ final class ApprovedAgentTools {
         return wrap(bound, userId, requestId, approvals, lease, timings, waiting -> {}, null);
     }
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, java.util.function.Consumer<Boolean> waiting) {
-        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, null);
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, null, null);
+    }
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, String userRequest, AgentPermissionGrants permissions) {
+        return wrap(bound, userId, requestId, approvals, null, new AgentToolTimings(), waiting -> {}, userRequest, permissions);
     }
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, java.util.function.Consumer<Boolean> waiting, String userRequest) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, null);
+    }
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, java.util.function.Consumer<Boolean> waiting, String userRequest, AgentPermissionGrants permissions) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         for (var method : bound.getClass().getMethods()) {
             if (!method.isAnnotationPresent(Tool.class)) continue;
@@ -55,10 +61,15 @@ final class ApprovedAgentTools {
                         timings.record(request.id(), requested, timings.now(), false);
                         return "{\"status\":\"INVALID_ARGUMENT\",\"message\":\"" + rejection + "\"}";
                     }
-                    waiting.accept(true);
-                    try { allowed = approvals.await(userId, requestId, specification.name(), request.arguments())
-                            && approvals.canPropose(userId, requestId); }
-                    finally { waiting.accept(false); }
+                    if (permissions != null && permissions.autoApproves(userId, specification.name())) {
+                        // A permission level skips the dialog, never the audit trail.
+                        permissions.recordAutoApproval(userId, requestId, specification.name(), request.arguments());
+                    } else {
+                        waiting.accept(true);
+                        try { allowed = approvals.await(userId, requestId, specification.name(), request.arguments())
+                                && approvals.canPropose(userId, requestId); }
+                        finally { waiting.accept(false); }
+                    }
                 }
                 long approved = timings.now();
                 if (!allowed) {

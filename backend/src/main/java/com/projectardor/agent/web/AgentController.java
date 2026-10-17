@@ -37,12 +37,15 @@ public class AgentController {
     private final CareerAgentService agentService;
     private final AgentMemoryService memoryService;
     private final com.projectardor.agent.service.AgentMessageQueue queue;
+    private final com.projectardor.agent.service.AgentPermissionGrants permissionGrants;
 
     public AgentController(CareerAgentService agentService, AgentMemoryService memoryService,
-            com.projectardor.agent.service.AgentMessageQueue queue) {
+            com.projectardor.agent.service.AgentMessageQueue queue,
+            com.projectardor.agent.service.AgentPermissionGrants permissionGrants) {
         this.agentService = agentService;
         this.memoryService = memoryService;
         this.queue = queue;
+        this.permissionGrants = permissionGrants;
     }
 
     @PostMapping("/queue")
@@ -164,6 +167,40 @@ public class AgentController {
     public java.util.List<com.projectardor.agent.service.AgentToolApprovals.View> approvals(
             @AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID requestId) {
         return agentService.approvals(principal.userId(), requestId);
+    }
+
+    @GetMapping("/permissions")
+    public AgentPermissionsResponse permissions(@AuthenticationPrincipal ArdorPrincipal principal) {
+        var permissions = permissionGrants.permissions(principal.userId());
+        var modules = java.util.Arrays.stream(com.projectardor.agent.capability.ToolModule.values())
+                .map(module -> new AgentModuleGrant(module.key(), permissions.modules().getOrDefault(module, 0),
+                        permissionGrants.moduleOverride(principal.userId(), module).isPresent()))
+                .toList();
+        return new AgentPermissionsResponse(permissions.globalLevel(), modules);
+    }
+
+    @PutMapping("/permissions/{module}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void updatePermission(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable String module,
+            @Valid @RequestBody AgentPermissionUpdateRequest request) {
+        if ("*".equals(module)) {
+            permissionGrants.setGlobalLevel(principal.userId(), request.level());
+            return;
+        }
+        permissionGrants.setModuleLevel(principal.userId(),
+                com.projectardor.agent.capability.ToolModule.fromKey(module), request.level());
+    }
+
+    /** Restores the global default for one module, or resets the global level for {@code *}. */
+    @DeleteMapping("/permissions/{module}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resetPermission(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable String module) {
+        if ("*".equals(module)) {
+            permissionGrants.setGlobalLevel(principal.userId(), 0);
+            return;
+        }
+        permissionGrants.clearModuleLevel(principal.userId(),
+                com.projectardor.agent.capability.ToolModule.fromKey(module));
     }
 
     @PostMapping("/runs/{requestId}/approvals/{approvalId}")

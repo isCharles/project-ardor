@@ -61,7 +61,11 @@ public class AgentToolApprovals {
         synchronized (run) {
             return run.approvals.stream().map(approval -> {
                 if (approval.status.equals("PENDING") && !Instant.now().isBefore(approval.expiresAt)) expire(run, approval);
-                return new View(approval.id, approval.tool, approval.arguments, approval.status, approval.expiresAt);
+                var risk = com.projectardor.agent.capability.ToolCatalog.describe(approval.tool);
+                return new View(approval.id, approval.tool, approval.arguments, approval.status, approval.expiresAt,
+                        risk == null ? null : risk.module().key(),
+                        risk == null ? null : risk.capability().name(),
+                        risk == null ? -1 : risk.capability().minimumLevel());
             }).toList();
         }
     }
@@ -125,7 +129,8 @@ public class AgentToolApprovals {
     }
     private static ResourceNotFoundException missing() { return new ResourceNotFoundException("权限请求不存在"); }
     private record RunKey(UUID userId, UUID requestId) {}
-    public record View(UUID id, String tool, String arguments, String status, Instant expiresAt) {}
+    public record View(UUID id, String tool, String arguments, String status, Instant expiresAt,
+            String module, String capability, int suggestedLevel) {}
     private static final class Run {
         final Instant createdAt = Instant.now();
         final java.util.ArrayList<Approval> approvals = new java.util.ArrayList<>();

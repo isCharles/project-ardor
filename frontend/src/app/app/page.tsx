@@ -2,7 +2,7 @@
 
 import {
   Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, ChevronDown, FileSearch, FileText,
-  MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, Target, Trash2, Upload, X,
+  MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, ShieldCheck, Target, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -155,6 +155,9 @@ export default function AgentHomePage() {
     return () => window.clearTimeout(timer);
   }, [feedback]);
   const [reasoningDepth, setReasoningDepth] = useState<ReasoningDepth>("AUTO");
+  // Global quick level: what Ardor may do without asking. Module overrides live in settings.
+  const [permissionLevel, setPermissionLevel] = useState(0);
+  const [permissionOpen, setPermissionOpen] = useState(false);
   const [nativeReasoning, setNativeReasoning] = useState(false);
   const reasoningAccount = useRef<string | null>(null);
   const proposalSources = useRef(new Map<string, string>());
@@ -273,6 +276,8 @@ export default function AgentHomePage() {
     }).catch(() => undefined);
     void api<{ nativeControl: boolean }>("/api/agent/reasoning")
       .then((result) => { if (active) setNativeReasoning(result.nativeControl); }).catch(() => undefined);
+    void api<{ globalLevel: number }>("/api/agent/permissions")
+      .then((result) => { if (active) setPermissionLevel(result.globalLevel ?? 0); }).catch(() => undefined);
     return () => { active = false; };
   }, []);
 
@@ -300,6 +305,30 @@ export default function AgentHomePage() {
         try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:reasoning-depth:${reasoningAccount.current}`, value); }
         catch { /* The current selection remains usable when browser storage is unavailable. */ }
       }} />;
+  }
+
+  async function choosePermission(level: number) {
+    const previous = permissionLevel;
+    setPermissionLevel(level);
+    setPermissionOpen(false);
+    try { await api<void>("/api/agent/permissions/*", { method: "PUT", body: JSON.stringify({ level }) }); }
+    catch { setPermissionLevel(previous); }
+  }
+
+  function permissionPicker() {
+    const labels = [t("View only", "仅查看"), t("View & add", "查 + 增"), t("View, add & edit", "查 + 增 + 改"), t("Full access", "完全权限")];
+    return <div className="relative">
+      <button type="button" aria-haspopup="menu" aria-expanded={permissionOpen} onClick={() => setPermissionOpen((value) => !value)} title={t("What Ardor may do without asking", "Ardor 可以不经询问直接执行的范围")} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600 transition hover:bg-stone-50">
+        <ShieldCheck className="size-3.5" aria-hidden="true" />{labels[permissionLevel] ?? labels[0]}<ChevronDown className="size-3.5" aria-hidden="true" />
+      </button>
+      {permissionOpen && <>
+        <button type="button" aria-label={t("Close permission menu", "关闭权限菜单")} className="fixed inset-0 z-10 cursor-default bg-transparent" onClick={() => setPermissionOpen(false)} />
+        <div role="menu" className="absolute bottom-full left-0 z-20 mb-2 w-56 rounded-2xl border border-stone-200 bg-white p-1 shadow-xl">
+          {labels.map((label, level) => <button key={level} role="menuitemradio" aria-checked={permissionLevel === level} type="button" onClick={() => void choosePermission(level)} className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition ${permissionLevel === level ? "bg-violet-50 font-medium text-violet-700" : "hover:bg-stone-50"}`}><span>{label}</span>{permissionLevel === level && <Check className="size-3.5" />}</button>)}
+          <p className="px-3 pb-1 pt-2 text-[11px] leading-4 text-stone-400">{t("Anything above this level still asks first; deleting always asks.", "超出该等级的操作仍会先询问；删除始终需要确认。")}</p>
+        </div>
+      </>}
+    </div>;
   }
 
   const selectChatFromRail = useEffectEvent((event: Event) => {
@@ -1154,7 +1183,7 @@ export default function AgentHomePage() {
                     {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
                     <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-                    <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}</div><div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
+                    <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{permissionPicker()}{reasoningPicker()}</div><div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
                   </form>
                 </div>
               </div>
@@ -1199,7 +1228,7 @@ export default function AgentHomePage() {
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
               <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
+              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{permissionPicker()}{reasoningPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
             </form>
           </div>}
         </section>

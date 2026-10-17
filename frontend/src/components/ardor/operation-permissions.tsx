@@ -4,7 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
-type Approval = { id: string; tool: string; arguments: string; status: string; expiresAt: string };
+type Approval = { id: string; tool: string; arguments: string; status: string; expiresAt: string; module?: string | null; capability?: string | null; suggestedLevel?: number };
+const moduleNames: Record<string, [string, string]> = {
+  profile: ["profile", "个人资料"], web: ["web search", "网络检索"], knowledge: ["knowledge", "知识库"],
+  learning: ["learning plans", "学习计划"], memory: ["memories", "长期记忆"], applications: ["applications", "投递记录"],
+  calendar: ["calendar", "日历"], resumes: ["resumes", "简历"], interviews: ["interviews", "面试"],
+  recaps: ["interview notes", "面经"], cards: ["flashcards", "记忆卡"], opportunities: ["pipeline records", "面试流程"],
+  system: ["background jobs", "后台任务"],
+};
 const names: Record<string, [string, string]> = {
   update_learning_plan: ["Change a learning plan", "修改学习计划"], begin_learning_plan: ["Start learning", "开始学习"],
   update_calendar_task: ["Change a calendar task", "修改日程"], update_recurring_task: ["Change a recurring schedule", "修改重复安排"],
@@ -66,10 +73,15 @@ export function OperationPermissions({ runId, onConfirming, onConfirmed, onFaile
     void poll();
     return () => { active = false; clearTimeout(timer); };
   }, [runId]);
-  async function decide(item: Approval, allow: boolean) {
+  async function decide(item: Approval, allow: boolean, remember = false) {
     setSaving(item.id); setError("");
     if (allow) onConfirming(item.tool);
     try {
+      // A persistent module grant is optional; the one-off decision still stands if it fails.
+      if (allow && remember && item.module && typeof item.suggestedLevel === "number" && item.suggestedLevel >= 0) {
+        await api<void>(`/api/agent/permissions/${encodeURIComponent(item.module)}`, { method: "PUT", body: JSON.stringify({ level: item.suggestedLevel }) })
+          .catch(() => undefined);
+      }
       await api<void>(`/api/agent/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify({ allow }) });
       setItems(current => current.filter(value => value.id !== item.id));
       if (allow) onConfirmed(item.tool);
@@ -78,13 +90,17 @@ export function OperationPermissions({ runId, onConfirming, onConfirmed, onFaile
   }
   if (!items.length) return null;
   return <section aria-label={t("Suggested operations", "操作建议")} className="ardor-composer-enter mx-auto mb-3 max-h-[40dvh] max-w-3xl space-y-4 overflow-y-auto rounded-2xl border border-violet-200 bg-white/95 p-4 shadow-lg backdrop-blur-xl">
-    {items.map(item => <Operation key={item.id} item={item} disabled={saving !== null} onDecision={allow => void decide(item, allow)} />)}
+    {items.map(item => <Operation key={item.id} item={item} disabled={saving !== null} onDecision={(allow, remember) => void decide(item, allow, remember)} />)}
     {error && <p role="alert" className="break-words text-xs text-rose-600">{error}</p>}
   </section>;
 }
 
-function Operation({ item, disabled, onDecision }: { item: Approval; disabled: boolean; onDecision: (allow: boolean) => void }) {
+function Operation({ item, disabled, onDecision }: { item: Approval; disabled: boolean; onDecision: (allow: boolean, remember?: boolean) => void }) {
   const { t, locale } = useLocale();
+  const [remember, setRemember] = useState(false);
+  const moduleName = item.module ? moduleNames[item.module] : undefined;
+  const canRemember = !!moduleName && item.capability !== "DELETE"
+    && typeof item.suggestedLevel === "number" && item.suggestedLevel >= 0;
   const args = useMemo<Record<string, unknown>>(() => { try { const value = JSON.parse(item.arguments); return value && typeof value === "object" && !Array.isArray(value) ? value : {}; } catch { return {}; } }, [item.arguments]);
   const [target, setTarget] = useState("");
   const [previousTime, setPreviousTime] = useState("");
@@ -124,6 +140,7 @@ function Operation({ item, disabled, onDecision }: { item: Approval; disabled: b
     <dl className="mt-3 space-y-2 text-xs">{entries.map(([key, value]) => { const label = fields[key] ?? [key, key]; return <div key={key}><dt className="text-stone-500">{t(label[0], label[1])}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-stone-800">{text(value)}</dd></div>; })}</dl>
     {item.tool === "update_learning_plan" && <p className="mt-2 text-xs text-stone-500">{t("Lesson content and practice records are preserved.", "讲解内容和练习记录保持不变。")}</p>}
     <details className="mt-2 text-xs text-stone-400"><summary>{t("Technical details", "技术详情")}</summary><pre className="mt-2 whitespace-pre-wrap break-all">{item.arguments}</pre></details>
-    <div className="mt-3 flex justify-end gap-2"><button type="button" disabled={disabled} onClick={() => onDecision(false)} className="rounded-full px-4 py-2 text-xs text-stone-600 hover:bg-stone-100 disabled:opacity-50">{t("Reject", "拒绝")}</button><button type="button" disabled={disabled || needsTarget && !target} onClick={() => onDecision(true)} className="rounded-full bg-violet-600 px-4 py-2 text-xs text-white hover:bg-violet-700 disabled:opacity-50">{disabled ? t("Submitting…", "提交中…") : t("Confirm", "确认")}</button></div>
+    {canRemember && <label className="mt-3 flex items-start gap-2 text-xs text-stone-600"><input type="checkbox" checked={remember} disabled={disabled} onChange={(event) => setRemember(event.target.checked)} className="mt-0.5 size-3.5" /><span>{t(`Always allow changes to ${moduleName[0]}`, `以后都允许 Ardor 修改「${moduleName[1]}」`)}<span className="block text-stone-400">{t("You can change this later in settings. Deleting still asks.", "可在设置中随时改回；删除仍然需要确认。")}</span></span></label>}
+    <div className="mt-3 flex justify-end gap-2"><button type="button" disabled={disabled} onClick={() => onDecision(false)} className="rounded-full px-4 py-2 text-xs text-stone-600 hover:bg-stone-100 disabled:opacity-50">{t("Reject", "拒绝")}</button><button type="button" disabled={disabled || needsTarget && !target} onClick={() => onDecision(true, remember)} className="rounded-full bg-violet-600 px-4 py-2 text-xs text-white hover:bg-violet-700 disabled:opacity-50">{disabled ? t("Submitting…", "提交中…") : t("Confirm", "确认")}</button></div>
   </article>;
 }
