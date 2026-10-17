@@ -69,7 +69,12 @@ public class InterviewRecapService {
         if (content.length() < 30) throw new IllegalArgumentException("面试内容太短，请至少提供一段问题或回忆");
         String inputHash = sha256((sourceType == null ? InterviewRecapSource.NOTES : sourceType).name() + "\n" + content);
         var existing = recapRepository.findByUserIdAndInputHash(userId, inputHash);
-        if (existing.isPresent()) return detail(userId, existing.get().getId());
+        if (existing.isPresent()) {
+            // The same material may be re-sent from a process page. Attach it when the
+            // stored recap has no process yet instead of leaving a stale/absent link.
+            if (existing.get().linkOpportunity(jobOpportunityId)) recapRepository.save(existing.get());
+            return detail(userId, existing.get().getId());
+        }
 
         LlmGateway.LlmResult result = llmGateway.completeJson(userId, PROMPT,
                 "输入类型：" + (sourceType == null ? InterviewRecapSource.NOTES : sourceType) + "\n原始材料：\n" + content);

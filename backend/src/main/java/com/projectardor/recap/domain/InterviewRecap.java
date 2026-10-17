@@ -64,6 +64,13 @@ public class InterviewRecap {
         this.occurredAt = occurredAt;
     }
 
+    /** Attaches a process only when this recap is not linked yet; never moves it. */
+    public boolean linkOpportunity(UUID opportunityId) {
+        if (opportunityId == null || jobOpportunityId != null) return false;
+        this.jobOpportunityId = opportunityId;
+        return true;
+    }
+
     @PrePersist void onCreate() { Instant now = Instant.now(); createdAt = now; updatedAt = now; }
     @PreUpdate void onUpdate() { updatedAt = Instant.now(); }
     public UUID getId() { return id; }
