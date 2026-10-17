@@ -32,6 +32,7 @@ try {
   let permissions = [];
   let permissionDecisions = [];
   let permissionDecisionFails = false;
+  let targetLookupFails = true;
   let deletionCalls = 0;
   let deletionFails = false;
   const steerRequests = [];
@@ -146,7 +147,11 @@ try {
     else if (path === "/api/resumes") body = [{ id: "resume", originalFilename: "Synthetic resume.pdf" }];
     else if (path === "/api/memory-cards") body = [{ id: "card-fixture", front: "Synthetic card to review", back: "Fixture answer" }];
     else if (path === "/api/learning-plans") body = learningPlans;
-    else if (path === "/api/learning-plans/owned-plan") body = { id: "owned-plan", concept: "JVM memory", scheduledAt: "2026-10-18T01:00:00Z" };
+    else if (path === "/api/learning-plans/owned-plan") {
+      if (targetLookupFails) return route.fulfill({ status: 503, json: { message: "Synthetic lookup failure" } });
+      body = { id: "owned-plan", concept: "JVM memory", scheduledAt: "2026-10-18T01:00:00Z" };
+    }
+    else if (path === "/api/interviews") body = [{ id: "interview-fixture", targetRole: "Synthetic Java interview" }];
     else if (path === "/api/learning-plans/delete-fixture" && route.request().method() === "DELETE") {
       learningDeleteCalls++;
       if (learningDeleteFails) return route.fulfill({ status: 503, json: { message: "Synthetic deletion failure" } });
@@ -431,6 +436,11 @@ try {
   assert.equal(permissionDecisions.length, 0);
   permissions = [{ id: "permission-date", tool: "update_learning_plan", arguments: JSON.stringify({ planId: "owned-plan", scheduledAt: "2026-10-19T01:00:00Z" }), status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
   const suggestedOperations = page.getByRole("region", { name: "Suggested operations", exact: true });
+  await suggestedOperations.getByRole("button", { name: "Retry target lookup", exact: true }).waitFor();
+  assert.equal(await suggestedOperations.getByRole("button", { name: "Confirm", exact: true }).isDisabled(), true, "Do not confirm an unidentified target");
+  assert.equal(permissionDecisions.length, 0);
+  targetLookupFails = false;
+  await suggestedOperations.getByRole("button", { name: "Retry target lookup", exact: true }).click();
   await suggestedOperations.getByRole("heading", { name: "Change a learning plan · JVM memory", exact: true }).waitFor();
   await suggestedOperations.getByText("Lesson content and practice records are preserved.", { exact: true }).waitFor();
   assert.equal(calendarWrites, 0, "A suggestion must not write business data");
@@ -503,6 +513,13 @@ try {
   for (const tool of ["update_memory_card", "review_memory_card", "suspend_memory_card"]) {
     permissions = [{ id: `permission-${tool}`, tool, arguments: JSON.stringify({ cardId: "card-fixture" }), status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
     await suggestedOperations.getByRole("heading").filter({ hasText: "Synthetic card to review" }).waitFor();
+    await suggestedOperations.getByRole("button", { name: "Reject", exact: true }).click();
+    await suggestedOperations.waitFor({ state: "hidden" });
+  }
+  for (const tool of ["submit_interview_answer", "finish_interview", "cancel_interview"]) {
+    permissions = [{ id: `permission-${tool}`, tool, arguments: JSON.stringify({ interviewId: "interview-fixture" }), status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
+    await suggestedOperations.getByRole("heading").filter({ hasText: "Synthetic Java interview" }).waitFor();
+    assert.equal(await suggestedOperations.getByRole("button", { name: "Confirm", exact: true }).isEnabled(), true);
     await suggestedOperations.getByRole("button", { name: "Reject", exact: true }).click();
     await suggestedOperations.waitFor({ state: "hidden" });
   }
