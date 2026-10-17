@@ -289,7 +289,8 @@ export default function LearningPage() {
             <Plus className="size-4" />{t("New topic", "新学习")}
           </button>}</div>
         </div>
-        <AiJobStatus job={creation.job} retry={creation.retry} pollFailed={creation.pollFailed} />
+        {/* A finished creation job is history: the plan list already shows the lesson. */}
+        {creation.job && creation.job.status !== "COMPLETED" && <AiJobStatus job={creation.job} retry={creation.retry} pollFailed={creation.pollFailed} />}
 
         <header className="pb-8 pt-12 md:pb-10 md:pt-16">
           <h1 className="text-4xl font-semibold tracking-[-0.055em] md:text-6xl">{t("From uncertain to confident.", "从薄弱，到自如。")}</h1>
