@@ -21,10 +21,13 @@ export function ExecutionTrace({ title, elapsed, thinking, steps, children, acti
   const { t } = useLocale();
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const thinkingRef = useRef<HTMLDetailsElement>(null);
+  const hasThinking = Boolean(thinking);
   useEffect(() => {
     if (detailsRef.current) detailsRef.current.open = active;
+    // The thinking disclosure mounts only when its first text arrives, after this
+    // effect already ran, so it must be re-opened when it appears mid-run.
     if (thinkingRef.current) thinkingRef.current.open = active;
-  }, [active]);
+  }, [active, hasThinking]);
   return <div data-execution-trace className="mb-4 min-w-0 text-xs text-stone-500">
     <div className="flex items-start gap-3">
       <details ref={detailsRef} className="group min-w-0 flex-1">
