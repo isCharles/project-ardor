@@ -174,9 +174,12 @@ export default function LearningPage() {
     } finally { setDeleting(false); }
   }
   const assessing = jobPending(assessment.job);
-  const previousAttempts = selected?.lastEvaluation?.attempts ?? [];
+  const attemptHistory = selected?.lastEvaluation?.attempts ?? [];
+  // The newest attempt is rendered in the summary card above; the history list
+  // must only show the earlier ones or the same review appears twice.
+  const previousAttempts = attemptHistory.slice(0, -1);
   useReadVisibleResult("LEARNING_CREATE",selected?.id,!!selected,"",selected?.requestId);
-  useReadVisibleResult("LEARNING_EVALUATE",selected?.id,!!previousAttempts.at(-1)?.requestId,selected?.attemptCount,previousAttempts.at(-1)?.requestId);
+  useReadVisibleResult("LEARNING_EVALUATE",selected?.id,!!attemptHistory.at(-1)?.requestId,selected?.attemptCount,attemptHistory.at(-1)?.requestId);
   const activeCount = plans.filter((plan) => plan.status !== "COMPLETED").length;
   const orderedPlans = [...plans].sort((left, right) => {
     if ((left.status === "COMPLETED") !== (right.status === "COMPLETED")) return left.status === "COMPLETED" ? 1 : -1;
@@ -362,7 +365,7 @@ export default function LearningPage() {
                     <div className="mt-4 space-y-4">{attempt.feedback && <MarkdownContent className="text-sm leading-6 text-stone-700">{attempt.feedback}</MarkdownContent>}
                       {attempt.items.map((item, itemIndex) => <div key={itemIndex} className="text-sm"><p className="font-medium">{itemIndex + 1}. {item.question}</p><p className="mt-1 whitespace-pre-wrap leading-6 text-stone-600">{t("Your answer", "你的回答")}：{item.answer}</p>{attempt.questionFeedback?.filter((feedback) => feedback.question === item.question).map((feedback, feedbackIndex) => <MarkdownContent key={feedbackIndex} className="mt-2 rounded-xl bg-violet-50/70 px-3 py-2 leading-6 text-violet-900">{feedback.feedback}</MarkdownContent>)}</div>)}
                     </div></details>)}</div>}
-                  {selected.status !== "COMPLETED" && previousAttempts.length > 0 && <p className="mt-7 text-sm font-medium text-violet-700">{t("Next practice", "下一轮练习")}</p>}
+                  {selected.status !== "COMPLETED" && attemptHistory.length > 0 && <p className="mt-7 text-sm font-medium text-violet-700">{t("Next practice", "下一轮练习")}</p>}
                   {selected.status === "COMPLETED" ? <div className="mt-7 flex items-center gap-3 rounded-2xl bg-emerald-50/75 p-5 text-sm text-emerald-800"><CheckCircle2 className="size-5" />{t("Topic complete. The calendar task is complete too.", "本次学习已完成，日历任务也已同步完成。")}</div> : <form onSubmit={submit} className="mt-7 space-y-6">
                     {selected.exercises.map((exercise, index) => <fieldset key={`${exercise.question}-${index}`} disabled={busy || assessing} className="block disabled:opacity-75">
                       <legend className="text-sm font-medium">{index + 1}. {exercise.question}</legend>
