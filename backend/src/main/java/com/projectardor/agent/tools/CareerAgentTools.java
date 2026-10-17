@@ -780,17 +780,18 @@ public class CareerAgentTools {
                             blankToNull(status)));
         }
 
-        @Tool(name = "add_job_opportunity_round", value = "给当前用户一条面试流程增加一轮，或补录这一轮的时间、时长和结果。用户提到第几轮、面试时间或某轮已结束时使用；轮次号不确定传 0，会自动取下一轮")
+        @Tool(name = "add_job_opportunity_round", value = "给当前用户一条面试流程增加一轮，或补录这一轮的时间、时长和结果。用户提到第几轮、面试时间或某轮已结束时使用；不确定轮次号时省略该参数，会自动取下一轮")
         public OpportunityResponse addJobOpportunityRound(
                 @P("面试流程 UUID") String opportunityId,
-                @P("轮次编号，从 1 开始；不确定传 0") int roundNumber,
+                @P(value = "轮次编号，从 1 开始；不确定时省略或传 0，会自动取下一轮", required = false) Integer roundNumber,
                 @P("环节 HR/TECHNICAL/MANAGER/CROSS/FINAL/OTHER；未知传 OTHER") String stage,
                 @P("面试时间 ISO-8601；没有传空字符串") String scheduledAt,
                 @P("实际发生时间 ISO-8601；还没发生传空字符串") String occurredAt,
                 @P("时长（分钟）；未知传 0") int durationMinutes,
                 @P("备注；没有传空字符串") String note) {
+            Integer requestedRound = roundNumber == null || roundNumber < 1 ? null : roundNumber;
             return opportunityService.addRound(userId, uuid(opportunityId, "面试流程 ID"),
-                    new OpportunityRoundRequest(roundNumber > 0 ? roundNumber : null,
+                    new OpportunityRoundRequest(requestedRound,
                             blankToNull(stage), nullableInstant(scheduledAt), nullableInstant(occurredAt),
                             durationMinutes > 0 ? durationMinutes : null, blankToNull(note)));
         }
@@ -812,12 +813,15 @@ public class CareerAgentTools {
                     .orElseThrow(() -> new IllegalArgumentException("这一轮不存在"));
             Instant nextScheduled = nullableInstant(scheduledAt);
             Instant nextOccurred = nullableInstant(occurredAt);
+            // Keep the boxed type on both branches: mixing Integer and int here makes
+            // Java unbox the stored null and throws for a round without a duration.
+            Integer nextDuration = durationMinutes < 0 ? existing.durationMinutes() : Integer.valueOf(durationMinutes);
             return opportunityService.updateRound(userId, opportunity, round,
                     new OpportunityRoundRequest(null,
                             blankToNull(stage) == null ? existing.stage() : stage,
                             nextScheduled == null ? existing.scheduledAt() : nextScheduled,
                             nextOccurred == null ? existing.occurredAt() : nextOccurred,
-                            durationMinutes < 0 ? existing.durationMinutes() : durationMinutes,
+                            nextDuration,
                             note == null ? existing.note() : note));
         }
 

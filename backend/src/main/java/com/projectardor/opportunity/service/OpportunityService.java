@@ -99,7 +99,7 @@ public class OpportunityService {
                 : existing.stream().mapToInt(OpportunityRound::getRoundNumber).max().orElse(0) + 1;
         if (roundNumber < 1) throw new IllegalArgumentException("轮次必须从 1 开始");
         if (existing.stream().anyMatch(item -> item.getRoundNumber() == roundNumber)) {
-            throw new IllegalArgumentException("第 " + roundNumber + " 轮已存在");
+            throw new IllegalArgumentException("第 " + roundNumber + " 轮已存在；要改这一轮请用更新轮次，新增时传 0 或省略轮次号");
         }
         RoundStage stage = parseStage(request.stage());
         rounds.save(OpportunityRound.create(userId, opportunityId, roundNumber,

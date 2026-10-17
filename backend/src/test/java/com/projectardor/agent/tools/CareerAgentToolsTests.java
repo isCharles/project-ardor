@@ -2,6 +2,8 @@ package com.projectardor.agent.tools;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import com.projectardor.applications.service.ApplicationRhythmService;
 import com.projectardor.agent.service.AgentMemoryService;
@@ -28,6 +31,7 @@ import com.projectardor.knowledge.service.KnowledgeService;
 import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.opportunity.service.OpportunityService;
 import com.projectardor.opportunity.web.OpportunityResponse;
+import com.projectardor.opportunity.web.OpportunityRoundRequest;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecapService;
@@ -260,5 +264,58 @@ class CareerAgentToolsTests {
         assertThatThrownBy(() -> bound.deleteJobOpportunityRound(opportunityId.toString(), UUID.randomUUID().toString()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("这一轮不存在");
+    }
+
+    @Test
+    void updatingARoundKeepsANullDurationWithoutUnboxing() {
+        OpportunityService opportunities = mock(OpportunityService.class);
+        UUID userId = UUID.randomUUID();
+        UUID opportunityId = UUID.randomUUID();
+        UUID roundId = UUID.randomUUID();
+        OpportunityResponse response = new OpportunityResponse(
+                opportunityId, "Kuaishou", "AIGC Agent 开发", "ViewCoder", "SCHEDULED", null, null, 1,
+                List.of(new OpportunityResponse.Round(roundId, 1, "OTHER",
+                        Instant.parse("2026-10-19T00:00:00Z"), null, null, null)),
+                Instant.now(), Instant.now());
+        when(opportunities.detail(userId, opportunityId)).thenReturn(response);
+        when(opportunities.updateRound(eq(userId), eq(opportunityId), eq(roundId), any())).thenReturn(response);
+        CareerAgentTools tools = toolsFor(opportunities);
+
+        tools.bind(userId, "把快手那轮改到 10 月 20 日上午十点")
+                .updateJobOpportunityRound(opportunityId.toString(), roundId.toString(), "",
+                        "2026-10-20T02:00:00Z", "", -1, null);
+
+        ArgumentCaptor<OpportunityRoundRequest> captor = ArgumentCaptor.forClass(OpportunityRoundRequest.class);
+        verify(opportunities).updateRound(eq(userId), eq(opportunityId), eq(roundId), captor.capture());
+        assertThat(captor.getValue().durationMinutes()).isNull();
+        assertThat(captor.getValue().scheduledAt()).isEqualTo(Instant.parse("2026-10-20T02:00:00Z"));
+    }
+
+    @Test
+    void addingARoundWithoutANumberLetsTheServicePickTheNextOne() {
+        OpportunityService opportunities = mock(OpportunityService.class);
+        UUID userId = UUID.randomUUID();
+        UUID opportunityId = UUID.randomUUID();
+        OpportunityResponse response = new OpportunityResponse(
+                opportunityId, "Kuaishou", "AIGC Agent 开发", "ViewCoder", "SCHEDULED", null, null, 1,
+                List.of(), Instant.now(), Instant.now());
+        when(opportunities.addRound(eq(userId), eq(opportunityId), any())).thenReturn(response);
+        CareerAgentTools tools = toolsFor(opportunities);
+
+        tools.bind(userId, "给快手加一轮技术面")
+                .addJobOpportunityRound(opportunityId.toString(), null, "TECHNICAL", "", "", 0, "");
+
+        ArgumentCaptor<OpportunityRoundRequest> captor = ArgumentCaptor.forClass(OpportunityRoundRequest.class);
+        verify(opportunities).addRound(eq(userId), eq(opportunityId), captor.capture());
+        assertThat(captor.getValue().roundNumber()).isNull();
+    }
+
+    private static CareerAgentTools toolsFor(OpportunityService opportunities) {
+        return new CareerAgentTools(
+                mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
+                mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class), mock(KnowledgeService.class), mock(LearningPlanService.class),
+                mock(ApplicationRhythmService.class), opportunities, mock(com.projectardor.aijobs.AiJobService.class));
     }
 }
