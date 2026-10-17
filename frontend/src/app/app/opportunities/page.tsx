@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, FileText, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, Fragment, useEffect, useState } from "react";
 
@@ -30,6 +31,8 @@ type Opportunity = {
   createdAt: string;
   updatedAt: string;
 };
+
+type RecapRef = { id: string; title: string; jobOpportunityId: string | null };
 
 const STATUSES = ["INVITED", "SCHEDULED", "INTERVIEWED", "AWAITING_RESULT", "OFFER", "REJECTED", "WITHDRAWN", "NO_RESPONSE"];
 
@@ -68,6 +71,7 @@ export default function OpportunitiesPage() {
   const { locale, t } = useLocale();
   const en = locale === "en";
   const [items, setItems] = useState<Opportunity[]>([]);
+  const [recaps, setRecaps] = useState<RecapRef[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -85,10 +89,15 @@ export default function OpportunitiesPage() {
 
   useEffect(() => {
     let active = true;
-    api<Opportunity[]>("/api/opportunities")
-      .then((result) => {
+    Promise.all([
+      api<Opportunity[]>("/api/opportunities"),
+      // Recaps join client-side, so the pipeline owns no recap schema.
+      api<RecapRef[]>("/api/interview-recaps"),
+    ])
+      .then(([result, recapResult]) => {
         if (!active) return;
         setItems(result);
+        setRecaps(recapResult);
         const requested = new URLSearchParams(window.location.search).get("selected");
         if (requested && result.some((item) => item.id === requested)) setExpanded(requested);
       })
@@ -101,6 +110,10 @@ export default function OpportunitiesPage() {
     // Loaded once; every later write refreshes from its own response.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
+
+  function recapsFor(item: Opportunity) {
+    return recaps.filter((recap) => recap.jobOpportunityId === item.id);
+  }
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -242,6 +255,12 @@ export default function OpportunitiesPage() {
                           <ChevronDown className={`mt-0.5 size-4 shrink-0 text-stone-400 transition ${open ? "rotate-180" : ""}`} />
                           <span className="line-clamp-2">{item.targetRole || t("Untitled role", "未填写岗位")}</span>
                         </button>
+                        {recapsFor(item).length > 0 && (
+                          <Link href={`/app/recaps?selected=${recapsFor(item)[0].id}`}
+                            className="ml-6 mt-1 inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100">
+                            <FileText className="size-3" />{t("Notes", "面经")}
+                          </Link>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <select value={item.status} disabled={busy === item.id} onChange={(event) => void setStatus(item, event.target.value)}
@@ -283,6 +302,24 @@ export default function OpportunitiesPage() {
                               </ul>
                             </div>
                             <div className="space-y-3">
+                              <div>
+                                <h3 className="text-xs font-medium uppercase tracking-wide text-stone-400">{t("Interview notes", "面经")}</h3>
+                                {recapsFor(item).length === 0 ? (
+                                  <p className="mt-2 text-sm text-stone-500">
+                                    {t("No notes for this interview yet. Paste the debrief to the agent and it attaches here.", "这次面试还没有面经。把纪要粘给 Agent，整理完会自动挂到这里。")}
+                                  </p>
+                                ) : (
+                                  <ul className="mt-2 space-y-1 text-sm">
+                                    {recapsFor(item).map((recap) => (
+                                      <li key={recap.id}>
+                                        <Link href={`/app/recaps?selected=${recap.id}`} className="text-violet-700 hover:underline">
+                                          {recap.title}
+                                        </Link>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
                               {item.jdContent && (
                                 <div>
                                   <h3 className="text-xs font-medium uppercase tracking-wide text-stone-400">JD</h3>

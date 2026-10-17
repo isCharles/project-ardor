@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  BookOpenText, Brain, Briefcase, CalendarDays, FileSearch, FileText, GraduationCap,
+  BookOpenText, Brain, Briefcase, CalendarDays, FileSearch, GraduationCap,
   Clock3, Ellipsis, Home, LogOut, MessageSquareText, Settings2, SquareStack, Target, TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
@@ -20,7 +20,6 @@ const workspaces = [
   { href: "/app/resumes", en: "Resumes", zh: "简历", icon: FileSearch },
   { href: "/app/interviews", en: "Mock interviews", zh: "模拟面试", icon: MessageSquareText },
   { href: "/app/opportunities", en: "Interview pipeline", zh: "面试流程", icon: Briefcase },
-  { href: "/app/recaps", en: "Interview notes", zh: "面经", icon: FileText },
   { href: "/app/cards", en: "Flashcards", zh: "记忆卡", icon: SquareStack },
   { href: "/app/knowledge", en: "Knowledge", zh: "知识库", icon: BookOpenText },
   { href: "/app/learning", en: "Learning", zh: "学习", icon: GraduationCap },
