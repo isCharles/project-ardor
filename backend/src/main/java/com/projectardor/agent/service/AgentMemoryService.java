@@ -108,6 +108,21 @@ public class AgentMemoryService {
     }
 
     @Transactional
+    public AgentMemoryItemResponse replace(UUID userId, UUID memoryId, String rawContent, String kind, String sourceKind) {
+        itemRepository.lockOwner(userId);
+        AgentMemoryItem existing = itemRepository.findByIdAndUserId(memoryId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("记忆不存在"));
+        String content = itemContent(rawContent);
+        if (existing.getContent().equalsIgnoreCase(content)) return AgentMemoryItemResponse.from(existing);
+        AgentMemoryItem replacement = itemRepository.save(AgentMemoryItem.create(userId, content,
+                kind == null ? existing.getKind() : kind, sourceKind, null));
+        // The old fact stays as history with a closed validity interval.
+        existing.invalidate(Instant.now(), replacement.getId());
+        itemRepository.saveAndFlush(existing);
+        return AgentMemoryItemResponse.from(replacement);
+    }
+
+    @Transactional
     public void remove(UUID userId, UUID memoryId) {
         itemRepository.lockOwner(userId);
         itemRepository.delete(itemRepository.findByIdAndUserId(memoryId, userId)

@@ -99,6 +99,8 @@ public class AgentConversationStore {
         if (firstExchange) {
             events.publishEvent(new ConversationTitleRequested(userId, conversation.getId(), saved.get(1).getId()));
         }
+        // The consolidator decides on its own whether this exchange contains new stable facts.
+        events.publishEvent(new MemoryConsolidationRequested(userId, conversation.getId()));
         return saved;
     }
 

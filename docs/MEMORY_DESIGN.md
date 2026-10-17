@@ -1,6 +1,6 @@
 # Ardor 长期记忆设计
 
-状态：P1 已落地（2026-10）。本文替代「记忆内容必须逐字引用用户原话」的旧规则。
+状态：P2 已落地（2026-10）。本文替代「记忆内容必须逐字引用用户原话」的旧规则。
 
 ## 为什么重做
 
@@ -20,7 +20,7 @@
 |---|---|
 | `content` | 规范化事实，可以归纳，不必逐字 |
 | `kind` | `profile` / `preference` / `goal` / `constraint` / `state` / `fact` |
-| `confidence` | 0–1；用户明确要求保存为 1.0，推断为 0.6–0.9 |
+| `confidence` | 0–1；用户明确要求保存为 1.0，推断为 0.4–0.9 |
 | `importance` | 0–5，影响注入顺序与保留 |
 | `source_kind` | `USER_EXPLICIT` / `USER_STATED` / `INFERRED` |
 | `source_run_id` | 哪次 Agent 运行写入，便于追溯 |
@@ -29,21 +29,32 @@
 
 读取只取 `valid_until IS NULL` 的条目；历史保留，供审计与用户回看。
 
-## 写入路径（P1）
+## 写入路径
 
-- 用户要求记住 → Agent 调 `add_memory`：内容可归纳，来源记为 `USER_EXPLICIT`。
-- 用户纠正事实 → 先 `list_memories` 找到原条目，用 `update_memory` 原位修正；旧值不再需要逐字引用。
-- 用户直接编辑 → 记忆面板 PATCH 单条，或新增条目。
-- 明确删除 → 现有提案确认流程。
+### 热路径（用户显式要求）
 
-外部网页/知识库内容不得直接写成个人事实：系统提示要求只把用户本轮提供的信息写入记忆；不满足时先向用户澄清。记忆写入仍受 Agent 权限等级与审批弹窗约束。
+用户要求记住 → Agent 调 `add_memory`：内容可归纳，来源记为 `USER_EXPLICIT`，`confidence=1.0`。
 
-## 读取路径（P1）
+纠正事实 → 先 `list_memories` 找到原条目，`update_memory` 原位修正；或后台抽取时以 UPDATE 处理。
 
-`AgentMemoryService.content()` 按有效条目生成注入文本。P2 起按向量相似度 + 重要性 + 时效排序并受 token 预算限制。
+### 后台抽取（P2）
 
-## 后续（P2/P3）
+每次对话交换提交后发布 `MemoryConsolidationRequested`，`MemoryConsolidationService` 在独立线程池中：
 
-- 后台记忆管理器：对话结束后抽取候选，向量相似 top-k 后由模型选择 ADD / UPDATE / NOOP；冲突写入失效区间。
-- pgvector 检索打分、低置信推断过期、合并去重任务。
+1. 取最近 4 条用户消息；没有记忆信号词直接跳过；
+2. 每用户 5 分钟最多运行一次，避免每轮都调模型；
+3. 把最近用户发言与当前有效记忆（≤50 条）交给快速模型，要求输出 `ADD` / `UPDATE` 候选；
+4. 校验：`content` 非空且 ≤500 字，`evidence` 必须是用户消息中的逐字片段（防外部内容注入），UPDATE 目标必须属于该用户且有效；
+5. 应用：ADD 以 `INFERRED` 写入；UPDATE 通过 `replace()` 将旧事实写入失效区间并插入新事实，保留历史。
+
+外部网页/知识库内容不会成为用户事实：候选必须带用户消息中的原话证据。
+
+## 读取路径（P2）
+
+`AgentMemoryService.content()` 按有效条目生成注入文本。当前个人记忆量小（≤50 条），直接全部注入；P3 起改为 pgvector 检索打分并受 token 预算限制。
+
+## 后续（P3）
+
+- pgvector 检索打分（相似度 + 重要性 + 时效）与上下文预算。
+- 低置信推断自动过期、重复事实定期合并。
 - 记忆面板展示来源与「已过时」状态，支持一键纠正。
