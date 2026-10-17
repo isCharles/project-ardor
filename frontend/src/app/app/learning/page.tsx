@@ -188,16 +188,29 @@ export default function LearningPage() {
 
   useEffect(() => {
     const planId = selected?.id;
-    const recapId = selected?.sourceId;
-    if (!planId || selected?.sourceType !== "RECAP" || !recapId) return;
+    const sourceId = selected?.sourceId;
+    if (!planId || selected?.sourceType !== "RECAP" || !sourceId) return;
     let active = true;
-    void api<{ title: string; jobOpportunityId: string | null }>(`/api/interview-recaps/${recapId}`)
+    type RecapSummary = { id: string; title: string; jobOpportunityId: string | null; questions?: Array<{ id: string }> };
+    // Older plans stored a recap question id as the source, so fall back to
+    // searching the recap list when the id is not a recap id itself.
+    const resolveRecap = async (): Promise<RecapSummary | null> => {
+      try {
+        return await api<RecapSummary>(`/api/interview-recaps/${sourceId}`);
+      } catch (reason) {
+        if (!(reason instanceof ApiError) || reason.status !== 404) return null;
+        const recaps = await api<RecapSummary[]>("/api/interview-recaps");
+        return recaps.find((recap) => recap.questions?.some((question) => question.id === sourceId)) ?? null;
+      }
+    };
+    void resolveRecap()
       .then(async (recap) => {
+        if (!recap) return null;
         if (!recap.jobOpportunityId) return { planId, name: recap.title, company: null as string | null };
         const opportunity = await api<{ targetRole: string | null; company: string | null }>(`/api/opportunities/${recap.jobOpportunityId}`);
         return { planId, name: opportunity.targetRole || recap.title, company: opportunity.company };
       })
-      .then((resolved) => { if (active) setSourceName(resolved); })
+      .then((resolved) => { if (active && resolved) setSourceName(resolved); })
       .catch(() => { /* fall back to the generic source label */ });
     return () => { active = false; };
   }, [selected?.id, selected?.sourceType, selected?.sourceId]);
