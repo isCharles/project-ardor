@@ -105,17 +105,19 @@ class OpportunityServiceTests {
     }
 
     @Test
-    void updateRejectsAwaitingResultWhileOnlyTheNextRoundIsPending() {
+    void updateAcceptsCorrectingNextRoundBackToAwaitingResult() {
         UUID userId = UUID.randomUUID();
         UUID processId = UUID.randomUUID();
         JobOpportunity owned = JobOpportunity.create(userId, "Rednote", "Java 实习生", null, null);
         owned.transitionTo(OpportunityStatus.NEXT_ROUND);
         when(opportunities.findByIdAndUserId(processId, userId)).thenReturn(Optional.of(owned));
+        when(rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(any(), any())).thenReturn(List.of());
 
-        assertThatThrownBy(() -> service.update(userId, processId,
-                new OpportunityUpdateRequest(null, null, null, null, "AWAITING_RESULT")))
-                .isInstanceOf(IllegalStateException.class);
-        assertThat(owned.getStatus()).isEqualTo(OpportunityStatus.NEXT_ROUND);
+        OpportunityResponse result = service.update(userId, processId,
+                new OpportunityUpdateRequest(null, null, null, null, "AWAITING_RESULT"));
+
+        assertThat(result.status()).isEqualTo("AWAITING_RESULT");
+        assertThat(owned.getStatus()).isEqualTo(OpportunityStatus.AWAITING_RESULT);
     }
 
     @Test

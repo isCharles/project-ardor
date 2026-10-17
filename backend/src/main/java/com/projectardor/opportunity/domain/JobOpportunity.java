@@ -1,10 +1,6 @@
 package com.projectardor.opportunity.domain;
 
 import java.time.Instant;
-import java.util.EnumMap;
-import java.util.EnumSet;
-import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -28,24 +24,13 @@ import jakarta.persistence.Table;
 @Table(name = "job_opportunities")
 public class JobOpportunity {
     /**
-     * Allowed status moves. NEXT_ROUND cannot jump straight to AWAITING_RESULT
-     * because that round has not happened yet, and REJECTED keeps a correction
-     * edge back to AWAITING_RESULT so a mis-recorded outcome can be fixed.
+     * Any state can move to any other. With only four coarse states there is no
+     * forward-only ordering worth enforcing, and a mis-clicked outcome must stay
+     * editable — a rejected process can be re-opened as scheduled if the rejection
+     * was recorded by mistake. Only null is rejected; same-state moves are no-ops.
      */
-    private static final Map<OpportunityStatus, Set<OpportunityStatus>> TRANSITIONS = moves();
-
-    private static Map<OpportunityStatus, Set<OpportunityStatus>> moves() {
-        Map<OpportunityStatus, Set<OpportunityStatus>> map = new EnumMap<>(OpportunityStatus.class);
-        map.put(OpportunityStatus.SCHEDULED,
-                EnumSet.of(OpportunityStatus.AWAITING_RESULT, OpportunityStatus.NEXT_ROUND,
-                        OpportunityStatus.REJECTED));
-        map.put(OpportunityStatus.AWAITING_RESULT,
-                EnumSet.of(OpportunityStatus.SCHEDULED, OpportunityStatus.NEXT_ROUND,
-                        OpportunityStatus.REJECTED));
-        map.put(OpportunityStatus.NEXT_ROUND,
-                EnumSet.of(OpportunityStatus.SCHEDULED, OpportunityStatus.REJECTED));
-        map.put(OpportunityStatus.REJECTED, EnumSet.of(OpportunityStatus.AWAITING_RESULT));
-        return Map.copyOf(map);
+    public static boolean canMove(OpportunityStatus from, OpportunityStatus to) {
+        return from != null && to != null;
     }
 
     @Id private UUID id;
@@ -84,17 +69,8 @@ public class JobOpportunity {
         return new JobOpportunity(userId, company.trim(), targetRole, platform, jdContent, inviteContent);
     }
 
-    public static boolean canMove(OpportunityStatus from, OpportunityStatus to) {
-        Set<OpportunityStatus> allowed = from == null ? null : TRANSITIONS.get(from);
-        return allowed != null && allowed.contains(to);
-    }
-
     public void transitionTo(OpportunityStatus target) {
         if (target == null) throw new IllegalArgumentException("面试状态不能为空");
-        if (target == status) return;
-        if (!canMove(status, target)) {
-            throw new IllegalStateException("面试流程不能从 " + status + " 变更为 " + target);
-        }
         status = target;
     }
 

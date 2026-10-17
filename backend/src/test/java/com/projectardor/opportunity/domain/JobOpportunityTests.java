@@ -40,13 +40,13 @@ class JobOpportunityTests {
     }
 
     @Test
-    void refusesAwaitingResultFromNextRoundBecauseThatRoundHasNotHappened() {
+    void allowsCorrectingNextRoundBackToAwaitingResult() {
         JobOpportunity opportunity = booked();
         opportunity.transitionTo(OpportunityStatus.NEXT_ROUND);
 
-        assertThatThrownBy(() -> opportunity.transitionTo(OpportunityStatus.AWAITING_RESULT))
-                .isInstanceOf(IllegalStateException.class);
-        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.NEXT_ROUND);
+        opportunity.transitionTo(OpportunityStatus.AWAITING_RESULT);
+
+        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.AWAITING_RESULT);
     }
 
     @Test
@@ -71,12 +71,14 @@ class JobOpportunityTests {
     }
 
     @Test
-    void refusesMovingFromRejectedStraightToTheNextRound() {
+    void reopensARejectedProcessWhenTheRejectionWasRecordedByMistake() {
         JobOpportunity opportunity = booked();
         opportunity.transitionTo(OpportunityStatus.REJECTED);
 
-        assertThatThrownBy(() -> opportunity.transitionTo(OpportunityStatus.NEXT_ROUND))
-                .isInstanceOf(IllegalStateException.class);
+        opportunity.transitionTo(OpportunityStatus.SCHEDULED);
+
+        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.SCHEDULED);
+        assertThat(opportunity.isTerminal()).isFalse();
     }
 
     @Test
@@ -102,6 +104,7 @@ class JobOpportunityTests {
         assertThat(opportunity.getUserId()).isEqualTo(userId);
         assertThat(opportunity.getCompany()).isEqualTo("示例公司");
         assertThat(JobOpportunity.canMove(OpportunityStatus.AWAITING_RESULT, OpportunityStatus.NEXT_ROUND)).isTrue();
-        assertThat(JobOpportunity.canMove(OpportunityStatus.NEXT_ROUND, OpportunityStatus.AWAITING_RESULT)).isFalse();
+        assertThat(JobOpportunity.canMove(OpportunityStatus.REJECTED, OpportunityStatus.SCHEDULED)).isTrue();
+        assertThat(JobOpportunity.canMove(null, OpportunityStatus.SCHEDULED)).isFalse();
     }
 }
