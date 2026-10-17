@@ -1183,6 +1183,7 @@ export default function AgentHomePage() {
 
           {messages.length > 0 && <div className="ardor-composer-enter relative z-10 shrink-0 px-4 pb-5 md:px-8">
             {feedbackBanner}
+            <div className="mx-auto max-h-[45dvh] max-w-3xl overflow-y-auto">
             {(runningRun?.id ?? approvalRunId) && <OperationPermissions key={runningRun?.id ?? approvalRunId} runId={(runningRun?.id ?? approvalRunId)!}
               onConfirming={tool => { confirmedOperations.current.add(tool); setFeedback(t("Submitting your confirmation…", "正在提交确认…")); }}
               onConfirmed={tool => { if (confirmedOperations.current.has(tool)) setFeedback(t("Confirmed. Waiting for the operation result…", "已确认，正在等待执行结果…")); }}
@@ -1191,6 +1192,7 @@ export default function AgentHomePage() {
             <LearningPermissions items={confirmations.filter(item => item.kind === "learning_plan" && ["PENDING", "FAILED", "DELETING"].includes(item.state))}
               onReject={pending => { window.sessionStorage.setItem(dismissedProposalKey(pending), "1"); setConfirmations(current => current.map(item => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item)); setFeedback(t("Creation declined. No learning plan was created.", "已拒绝创建，未新建学习计划。")); }}
               onConfirm={pending => void confirmLearning(pending)} />
+            </div>
             {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
