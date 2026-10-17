@@ -99,22 +99,23 @@ class OpportunityServiceTests {
 
         ArgumentCaptor<JobOpportunity> created = ArgumentCaptor.forClass(JobOpportunity.class);
         verify(opportunities).save(created.capture());
-        assertThat(created.getValue().getStatus()).isEqualTo(OpportunityStatus.INVITED);
+        assertThat(created.getValue().getStatus()).isEqualTo(OpportunityStatus.SCHEDULED);
         assertThat(created.getValue().getTargetRole()).isNull();
         verify(rounds, never()).save(any());
     }
 
     @Test
-    void updateRejectsSkippingStraightToAnOffer() {
+    void updateRejectsAwaitingResultWhileOnlyTheNextRoundIsPending() {
         UUID userId = UUID.randomUUID();
         UUID processId = UUID.randomUUID();
         JobOpportunity owned = JobOpportunity.create(userId, "Rednote", "Java 实习生", null, null);
+        owned.transitionTo(OpportunityStatus.NEXT_ROUND);
         when(opportunities.findByIdAndUserId(processId, userId)).thenReturn(Optional.of(owned));
 
         assertThatThrownBy(() -> service.update(userId, processId,
-                new OpportunityUpdateRequest(null, null, null, null, "OFFER")))
+                new OpportunityUpdateRequest(null, null, null, null, "AWAITING_RESULT")))
                 .isInstanceOf(IllegalStateException.class);
-        assertThat(owned.getStatus()).isEqualTo(OpportunityStatus.INVITED);
+        assertThat(owned.getStatus()).isEqualTo(OpportunityStatus.NEXT_ROUND);
     }
 
     @Test
@@ -126,9 +127,9 @@ class OpportunityServiceTests {
         when(rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(any(), any())).thenReturn(List.of());
 
         OpportunityResponse result = service.update(userId, processId,
-                new OpportunityUpdateRequest(null, null, null, null, "SCHEDULED"));
+                new OpportunityUpdateRequest(null, null, null, null, "AWAITING_RESULT"));
 
-        assertThat(result.status()).isEqualTo("SCHEDULED");
+        assertThat(result.status()).isEqualTo("AWAITING_RESULT");
     }
 
     @Test

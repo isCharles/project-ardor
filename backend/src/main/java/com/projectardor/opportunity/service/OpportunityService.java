@@ -70,10 +70,6 @@ public class OpportunityService {
             rounds.save(OpportunityRound.create(userId, opportunity.getId(), 1,
                     stage == null ? RoundStage.OTHER : stage,
                     request.scheduledAt(), null, request.durationMinutes(), blankToNull(request.note())));
-            if (request.scheduledAt() != null) {
-                opportunity.transitionTo(OpportunityStatus.SCHEDULED);
-                opportunities.save(opportunity);
-            }
         }
         return response(userId, opportunity);
     }
@@ -109,7 +105,8 @@ public class OpportunityService {
                 stage == null ? RoundStage.OTHER : stage,
                 request.scheduledAt(), request.occurredAt(), request.durationMinutes(),
                 blankToNull(request.note())));
-        if (request.scheduledAt() != null && opportunity.getStatus() == OpportunityStatus.INVITED) {
+        // Booking the next round moves "next round" back to "scheduled".
+        if (request.scheduledAt() != null && opportunity.getStatus() == OpportunityStatus.NEXT_ROUND) {
             opportunity.transitionTo(OpportunityStatus.SCHEDULED);
             opportunities.save(opportunity);
         }

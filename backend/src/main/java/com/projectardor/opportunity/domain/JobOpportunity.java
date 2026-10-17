@@ -28,29 +28,23 @@ import jakarta.persistence.Table;
 @Table(name = "job_opportunities")
 public class JobOpportunity {
     /**
-     * Allowed status moves. The correction edges (back to AWAITING_RESULT, or from
-     * AWAITING_RESULT back to INTERVIEWED) exist because a user can record the wrong
-     * outcome and must be able to fix it without deleting the process.
+     * Allowed status moves. NEXT_ROUND cannot jump straight to AWAITING_RESULT
+     * because that round has not happened yet, and REJECTED keeps a correction
+     * edge back to AWAITING_RESULT so a mis-recorded outcome can be fixed.
      */
     private static final Map<OpportunityStatus, Set<OpportunityStatus>> TRANSITIONS = moves();
 
     private static Map<OpportunityStatus, Set<OpportunityStatus>> moves() {
         Map<OpportunityStatus, Set<OpportunityStatus>> map = new EnumMap<>(OpportunityStatus.class);
-        map.put(OpportunityStatus.INVITED,
-                EnumSet.of(OpportunityStatus.SCHEDULED, OpportunityStatus.INTERVIEWED,
-                        OpportunityStatus.WITHDRAWN, OpportunityStatus.REJECTED, OpportunityStatus.NO_RESPONSE));
         map.put(OpportunityStatus.SCHEDULED,
-                EnumSet.of(OpportunityStatus.INVITED, OpportunityStatus.INTERVIEWED,
-                        OpportunityStatus.WITHDRAWN, OpportunityStatus.REJECTED, OpportunityStatus.NO_RESPONSE));
-        map.put(OpportunityStatus.INTERVIEWED,
-                EnumSet.of(OpportunityStatus.AWAITING_RESULT, OpportunityStatus.OFFER,
-                        OpportunityStatus.REJECTED, OpportunityStatus.WITHDRAWN, OpportunityStatus.NO_RESPONSE));
+                EnumSet.of(OpportunityStatus.AWAITING_RESULT, OpportunityStatus.NEXT_ROUND,
+                        OpportunityStatus.REJECTED));
         map.put(OpportunityStatus.AWAITING_RESULT,
-                EnumSet.of(OpportunityStatus.INTERVIEWED, OpportunityStatus.OFFER,
-                        OpportunityStatus.REJECTED, OpportunityStatus.WITHDRAWN, OpportunityStatus.NO_RESPONSE));
-        for (OpportunityStatus terminal : OpportunityStatus.values()) {
-            if (terminal.isTerminal()) map.put(terminal, EnumSet.of(OpportunityStatus.AWAITING_RESULT));
-        }
+                EnumSet.of(OpportunityStatus.SCHEDULED, OpportunityStatus.NEXT_ROUND,
+                        OpportunityStatus.REJECTED));
+        map.put(OpportunityStatus.NEXT_ROUND,
+                EnumSet.of(OpportunityStatus.SCHEDULED, OpportunityStatus.REJECTED));
+        map.put(OpportunityStatus.REJECTED, EnumSet.of(OpportunityStatus.AWAITING_RESULT));
         return Map.copyOf(map);
     }
 
@@ -76,7 +70,7 @@ public class JobOpportunity {
         this.platform = platform;
         this.jdContent = jdContent;
         this.inviteContent = inviteContent;
-        this.status = OpportunityStatus.INVITED;
+        this.status = OpportunityStatus.SCHEDULED;
     }
 
     public static JobOpportunity create(UUID userId, String company, String targetRole,

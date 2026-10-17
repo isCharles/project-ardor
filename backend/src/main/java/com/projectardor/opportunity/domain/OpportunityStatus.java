@@ -1,17 +1,20 @@
 package com.projectardor.opportunity.domain;
 
-/** Lifecycle of a real interview process. Terminal states end the process. */
+/**
+ * The four states a real interview process can be in. Anything finer-grained
+ * lives in the rounds table (round number, stage, time, duration).
+ */
 public enum OpportunityStatus {
-    INVITED,
+    /** Interview is booked (or the invite is in hand and the date is being arranged). */
     SCHEDULED,
-    INTERVIEWED,
+    /** Interview happened; waiting to hear back. */
     AWAITING_RESULT,
-    OFFER,
-    REJECTED,
-    WITHDRAWN,
-    NO_RESPONSE;
+    /** Passed this round; the next round is being arranged. */
+    NEXT_ROUND,
+    /** Process ended without an offer. */
+    REJECTED;
 
     public boolean isTerminal() {
-        return this == OFFER || this == REJECTED || this == WITHDRAWN || this == NO_RESPONSE;
+        return this == REJECTED;
     }
 }

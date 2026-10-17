@@ -36,29 +36,21 @@ type RecapRef = { id: string; title: string; jobOpportunityId: string | null; qu
 type MemoryCardRef = { id: string; recapQuestionId: string | null; front: string; status: string };
 type LearningPlanRef = { id: string; concept: string; sourceType: string; sourceId: string | null; status: string };
 
-const STATUSES = ["INVITED", "SCHEDULED", "INTERVIEWED", "AWAITING_RESULT", "OFFER", "REJECTED", "WITHDRAWN", "NO_RESPONSE"];
+const STATUSES = ["SCHEDULED", "AWAITING_RESULT", "NEXT_ROUND", "REJECTED"];
 
 const STATUS_STYLE: Record<string, string> = {
-  INVITED: "bg-sky-100 text-sky-700",
   SCHEDULED: "bg-violet-100 text-violet-700",
-  INTERVIEWED: "bg-blue-100 text-blue-700",
   AWAITING_RESULT: "bg-amber-100 text-amber-800",
-  OFFER: "bg-emerald-100 text-emerald-700",
+  NEXT_ROUND: "bg-sky-100 text-sky-700",
   REJECTED: "bg-rose-100 text-rose-700",
-  WITHDRAWN: "bg-stone-200 text-stone-600",
-  NO_RESPONSE: "bg-stone-200 text-stone-600",
 };
 
 function statusLabel(status: string, en: boolean) {
   const labels: Record<string, [string, string]> = {
-    INVITED: ["Invited", "已邀请"],
     SCHEDULED: ["Scheduled", "已约面"],
-    INTERVIEWED: ["Interviewed", "已面完"],
     AWAITING_RESULT: ["Awaiting result", "等通知"],
-    OFFER: ["Offer", "已发 offer"],
-    REJECTED: ["Rejected", "未通过"],
-    WITHDRAWN: ["Withdrawn", "已放弃"],
-    NO_RESPONSE: ["No response", "无回复"],
+    NEXT_ROUND: ["Next round", "下一轮"],
+    REJECTED: ["Rejected", "被拒绝"],
   };
   const pair = labels[status] ?? [status, status];
   return en ? pair[0] : pair[1];

@@ -765,7 +765,7 @@ public class CareerAgentTools {
                     blankToNull(note)));
         }
 
-        @Tool(name = "update_job_opportunity", value = "修改当前用户面试流程的公司、岗位、平台、JD 或推进状态。状态只能按流程推进：INVITED→SCHEDULED→INTERVIEWED→AWAITING_RESULT→OFFER/REJECTED/WITHDRAWN/NO_RESPONSE。面完说等通知用 AWAITING_RESULT，说挂了用 REJECTED，拿到 offer 用 OFFER，自己放弃用 WITHDRAWN")
+        @Tool(name = "update_job_opportunity", value = "修改当前用户面试流程的公司、岗位、平台、JD 或状态。只有四个状态：SCHEDULED（已约面）、AWAITING_RESULT（面完等通知）、NEXT_ROUND（本轮通过、等下一轮）、REJECTED（被拒绝）。面完说等通知用 AWAITING_RESULT，说进下一轮用 NEXT_ROUND，约好下一轮时间用 SCHEDULED，说挂了或没戏了用 REJECTED")
         public OpportunityResponse updateJobOpportunity(
                 @P("面试流程 UUID") String opportunityId,
                 @P("完整公司名；不修改传空字符串") String company,

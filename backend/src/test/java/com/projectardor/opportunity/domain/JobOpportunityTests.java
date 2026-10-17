@@ -9,54 +9,49 @@ import org.junit.jupiter.api.Test;
 
 class JobOpportunityTests {
 
-    private static JobOpportunity invite() {
+    private static JobOpportunity booked() {
         return JobOpportunity.create(UUID.randomUUID(), "字节跳动", "后端工程师", null, null);
     }
 
     @Test
-    void startsInvitedAndNotTerminal() {
-        JobOpportunity opportunity = invite();
+    void startsScheduledAndNotTerminal() {
+        JobOpportunity opportunity = booked();
 
-        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.INVITED);
+        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.SCHEDULED);
         assertThat(opportunity.isTerminal()).isFalse();
     }
 
     @Test
-    void schedulesFromInvited() {
-        JobOpportunity opportunity = invite();
+    void movingToTheNextRound() {
+        JobOpportunity opportunity = booked();
 
-        opportunity.transitionTo(OpportunityStatus.SCHEDULED);
+        opportunity.transitionTo(OpportunityStatus.NEXT_ROUND);
 
-        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.SCHEDULED);
+        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.NEXT_ROUND);
     }
 
     @Test
-    void refusesToSkipFromInvitedToOffer() {
-        JobOpportunity opportunity = invite();
+    void awaitsResultAfterTheInterviewHappened() {
+        JobOpportunity opportunity = booked();
 
-        assertThatThrownBy(() -> opportunity.transitionTo(OpportunityStatus.OFFER))
-                .isInstanceOf(IllegalStateException.class);
-        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.INVITED);
-    }
-
-    @Test
-    void awaitsResultOnlyAfterTheInterviewHappened() {
-        JobOpportunity opportunity = invite();
-        opportunity.transitionTo(OpportunityStatus.SCHEDULED);
-
-        assertThatThrownBy(() -> opportunity.transitionTo(OpportunityStatus.AWAITING_RESULT))
-                .isInstanceOf(IllegalStateException.class);
-
-        opportunity.transitionTo(OpportunityStatus.INTERVIEWED);
         opportunity.transitionTo(OpportunityStatus.AWAITING_RESULT);
 
         assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.AWAITING_RESULT);
     }
 
     @Test
-    void terminatesFromAwaitingResult() {
-        JobOpportunity opportunity = invite();
-        opportunity.transitionTo(OpportunityStatus.INTERVIEWED);
+    void refusesAwaitingResultFromNextRoundBecauseThatRoundHasNotHappened() {
+        JobOpportunity opportunity = booked();
+        opportunity.transitionTo(OpportunityStatus.NEXT_ROUND);
+
+        assertThatThrownBy(() -> opportunity.transitionTo(OpportunityStatus.AWAITING_RESULT))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.NEXT_ROUND);
+    }
+
+    @Test
+    void terminatesAsRejected() {
+        JobOpportunity opportunity = booked();
         opportunity.transitionTo(OpportunityStatus.AWAITING_RESULT);
 
         opportunity.transitionTo(OpportunityStatus.REJECTED);
@@ -67,7 +62,7 @@ class JobOpportunityTests {
 
     @Test
     void allowsCorrectingARecordedOutcome() {
-        JobOpportunity opportunity = invite();
+        JobOpportunity opportunity = booked();
         opportunity.transitionTo(OpportunityStatus.REJECTED);
 
         opportunity.transitionTo(OpportunityStatus.AWAITING_RESULT);
@@ -76,21 +71,21 @@ class JobOpportunityTests {
     }
 
     @Test
-    void refusesMovingFromTerminalToAnotherTerminal() {
-        JobOpportunity opportunity = invite();
-        opportunity.transitionTo(OpportunityStatus.WITHDRAWN);
+    void refusesMovingFromRejectedStraightToTheNextRound() {
+        JobOpportunity opportunity = booked();
+        opportunity.transitionTo(OpportunityStatus.REJECTED);
 
-        assertThatThrownBy(() -> opportunity.transitionTo(OpportunityStatus.OFFER))
+        assertThatThrownBy(() -> opportunity.transitionTo(OpportunityStatus.NEXT_ROUND))
                 .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
     void treatsSameStatusAsNoop() {
-        JobOpportunity opportunity = invite();
+        JobOpportunity opportunity = booked();
 
-        opportunity.transitionTo(OpportunityStatus.INVITED);
+        opportunity.transitionTo(OpportunityStatus.SCHEDULED);
 
-        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.INVITED);
+        assertThat(opportunity.getStatus()).isEqualTo(OpportunityStatus.SCHEDULED);
     }
 
     @Test
@@ -106,7 +101,7 @@ class JobOpportunityTests {
 
         assertThat(opportunity.getUserId()).isEqualTo(userId);
         assertThat(opportunity.getCompany()).isEqualTo("示例公司");
-        assertThat(JobOpportunity.canMove(OpportunityStatus.AWAITING_RESULT, OpportunityStatus.OFFER)).isTrue();
-        assertThat(JobOpportunity.canMove(OpportunityStatus.INVITED, OpportunityStatus.AWAITING_RESULT)).isFalse();
+        assertThat(JobOpportunity.canMove(OpportunityStatus.AWAITING_RESULT, OpportunityStatus.NEXT_ROUND)).isTrue();
+        assertThat(JobOpportunity.canMove(OpportunityStatus.NEXT_ROUND, OpportunityStatus.AWAITING_RESULT)).isFalse();
     }
 }
