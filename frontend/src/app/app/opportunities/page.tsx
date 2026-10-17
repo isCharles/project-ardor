@@ -32,7 +32,9 @@ type Opportunity = {
   updatedAt: string;
 };
 
-type RecapRef = { id: string; title: string; jobOpportunityId: string | null };
+type RecapRef = { id: string; title: string; jobOpportunityId: string | null; questions: { id: string }[] };
+type MemoryCardRef = { id: string; recapQuestionId: string | null; front: string; status: string };
+type LearningPlanRef = { id: string; concept: string; sourceType: string; sourceId: string | null; status: string };
 
 const STATUSES = ["INVITED", "SCHEDULED", "INTERVIEWED", "AWAITING_RESULT", "OFFER", "REJECTED", "WITHDRAWN", "NO_RESPONSE"];
 
@@ -72,6 +74,8 @@ export default function OpportunitiesPage() {
   const en = locale === "en";
   const [items, setItems] = useState<Opportunity[]>([]);
   const [recaps, setRecaps] = useState<RecapRef[]>([]);
+  const [cards, setCards] = useState<MemoryCardRef[]>([]);
+  const [plans, setPlans] = useState<LearningPlanRef[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -91,13 +95,17 @@ export default function OpportunitiesPage() {
     let active = true;
     Promise.all([
       api<Opportunity[]>("/api/opportunities"),
-      // Recaps join client-side, so the pipeline owns no recap schema.
+      // Recaps, cards and plans join client-side, so the pipeline owns no recap schema.
       api<RecapRef[]>("/api/interview-recaps"),
+      api<MemoryCardRef[]>("/api/memory-cards"),
+      api<LearningPlanRef[]>("/api/learning-plans"),
     ])
-      .then(([result, recapResult]) => {
+      .then(([result, recapResult, cardResult, planResult]) => {
         if (!active) return;
         setItems(result);
         setRecaps(recapResult);
+        setCards(cardResult);
+        setPlans(planResult);
         const requested = new URLSearchParams(window.location.search).get("selected");
         if (requested && result.some((item) => item.id === requested)) setExpanded(requested);
       })
@@ -113,6 +121,16 @@ export default function OpportunitiesPage() {
 
   function recapsFor(item: Opportunity) {
     return recaps.filter((recap) => recap.jobOpportunityId === item.id);
+  }
+
+  function cardsFor(item: Opportunity) {
+    const questionIds = new Set(recapsFor(item).flatMap((recap) => recap.questions.map((question) => question.id)));
+    return cards.filter((card) => card.recapQuestionId !== null && questionIds.has(card.recapQuestionId));
+  }
+
+  function plansFor(item: Opportunity) {
+    const recapIds = new Set(recapsFor(item).map((recap) => recap.id));
+    return plans.filter((plan) => plan.sourceType === "RECAP" && plan.sourceId !== null && recapIds.has(plan.sourceId));
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -300,6 +318,21 @@ export default function OpportunitiesPage() {
                                   </li>
                                 ))}
                               </ul>
+                              <div className="mt-5">
+                                <h3 className="text-xs font-medium uppercase tracking-wide text-stone-400">{t("Learning plans", "学习计划")}</h3>
+                                {plansFor(item).length === 0 ? (
+                                  <p className="mt-2 text-sm text-stone-500">{t("No learning plan linked to this interview yet.", "还没有关联的学习计划。")}</p>
+                                ) : (
+                                  <ul className="mt-2 space-y-1 text-sm">
+                                    {plansFor(item).map((plan) => (
+                                      <li key={plan.id}>
+                                        <Link href={`/app/learning?id=${plan.id}`} className="text-violet-700 hover:underline">{plan.concept}</Link>
+                                        <span className="ml-2 text-xs text-stone-400">{plan.status}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
                             </div>
                             <div className="space-y-3">
                               <div>
@@ -315,6 +348,20 @@ export default function OpportunitiesPage() {
                                         <Link href={`/app/recaps?selected=${recap.id}`} className="text-violet-700 hover:underline">
                                           {recap.title}
                                         </Link>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                              <div>
+                                <h3 className="text-xs font-medium uppercase tracking-wide text-stone-400">{t("Flashcards", "记忆卡")}</h3>
+                                {cardsFor(item).length === 0 ? (
+                                  <p className="mt-2 text-sm text-stone-500">{t("No flashcards from this interview yet.", "还没有从这次面试生成的记忆卡。")}</p>
+                                ) : (
+                                  <ul className="mt-2 space-y-1 text-sm text-stone-600">
+                                    {cardsFor(item).map((card) => (
+                                      <li key={card.id}>
+                                        <Link href="/app/cards" className="hover:text-violet-700 hover:underline">{card.front}</Link>
                                       </li>
                                     ))}
                                   </ul>

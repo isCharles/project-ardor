@@ -1,9 +1,9 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import React, { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { agentCreationHref } from "@/lib/agent-features";
 import { markBackgroundPending } from "@/lib/background-notifications";
@@ -33,24 +33,6 @@ function localizedError(reason: unknown, locale: Locale, english: string, chines
   return reason instanceof Error && !/[\u3400-\u9fff]/u.test(reason.message) ? reason.message : english;
 }
 
-/* Fans the recaps into a 3D stack around the focused one, draggable like a phone
-   carousel.
-
-   The source design fans four visually distinct cards around a glass centre card,
-   so variant styling is keyed off the card's position rather than repeating one
-   tile — the reference's own guardrail is "do not flatten the source into a generic
-   card grid". Drag state is a fractional index offset, which lets the whole fan
-   track the pointer continuously and then snap to the nearest card. */
-/* Horizontal distance between neighbouring cards. The walk trigger and the fan
-   transform must agree on this, or hovering a card selects a different one. */
-const CARD_PITCH = 150;
-
-const barHeight: Record<Performance, number> = { STRONG: 100, MIXED: 62, WEAK: 34, UNKNOWN: 20 };
-
-function weakCount(recap: Recap) {
-  return recap.questions.filter((q) => q.performance === "WEAK" || q.performance === "MIXED").length;
-}
-
 /* The interview date is the card's headline fact. occurredAt is only set when the
    material stated a date, so fall back to when the recap was filed and say so. */
 function formatInterviewDate(recap: Recap, locale: "en" | "zh-CN") {
@@ -67,113 +49,6 @@ function localInterviewDateInput(occurredAt: string | null) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function RecapStack({
-  recaps, selectedId, onSelect,
-}: { recaps: Recap[]; selectedId: string | null; onSelect: (id: string) => void }) {
-  const { locale, t } = useLocale();
-  const index = Math.max(0, recaps.findIndex((item) => item.id === selectedId));
-
-  /* Selection changes only on an explicit click (or an arrow key).
-
-     Pointer-driven switching was tried twice and removed both times. Press-and-drag
-     needed two sign conventions that disagreed, so the fan slid one way and the
-     release snapped the other. Hover-to-walk replaced it, but any pointer resting
-     off-centre kept stepping, so the stack drifted to one end on its own. Clicking is
-     the only model here that never moves something the user did not ask to move. */
-
-  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const next = Math.min(recaps.length - 1, Math.max(0, index + (event.key === "ArrowRight" ? 1 : -1)));
-    if (next !== index) onSelect(recaps[next].id);
-  }
-
-  return (
-    <div
-      className={styles.stage}
-      role="group"
-      aria-label={t("Interview notes. Click a card or use the arrow keys to switch.", "面经卡组，点击卡片或用左右方向键切换")}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-    >
-      <button type="button" aria-label={t("Previous interview notes", "上一份面经")} disabled={index === 0}
-        onClick={() => onSelect(recaps[index - 1].id)}
-        className={`${styles.navButton} ${styles.navPrev}`}>
-        <ChevronLeft className="size-5" />
-      </button>
-      <button type="button" aria-label={t("Next interview notes", "下一份面经")} disabled={index === recaps.length - 1}
-        onClick={() => onSelect(recaps[index + 1].id)}
-        className={`${styles.navButton} ${styles.navNext}`}>
-        <ChevronRight className="size-5" />
-      </button>
-      <div className={styles.rail}>
-        {recaps.map((recap, position) => {
-          const offset = position - index;
-          const distance = Math.abs(offset);
-          const active = offset === 0;
-
-          return (
-            <button
-              type="button"
-              key={recap.id}
-              onClick={() => onSelect(recap.id)}
-              aria-current={active}
-              aria-label={t(`${recap.title}, ${recap.questions.length} questions`, `${recap.title}，${recap.questions.length} 题`)}
-              tabIndex={distance > 2 ? -1 : 0}
-              className={`${styles.card} ${active ? styles.cardActive : ""}`}
-              style={{
-                // The focused card sits at a positive Z: inside preserve-3d the browser
-                // sorts by real depth and ignores z-index, so depth is what keeps it in front.
-                transform: [
-                  `translateX(${offset * CARD_PITCH}px)`,
-                  `translateY(${active ? 0 : 8}px)`,
-                  `translateZ(${active ? 60 : -140 * distance}px)`,
-                  `rotateY(${offset * -11}deg)`,
-                  `scale(${active ? 1 : 0.9})`,
-                ].join(" "),
-                opacity: distance > 2.4 ? 0 : 1,
-                pointerEvents: distance > 2.4 ? "none" : "auto",
-              }}
-            >
-              <div>
-                <div className="flex items-start justify-between gap-3">
-                  <span className="font-mono text-[11px] tabular-nums opacity-55">
-                    #{recaps.length - position}
-                  </span>
-                  <span className="font-mono text-[11px] tabular-nums opacity-55">
-                    {recap.questions.length} Q
-                  </span>
-                </div>
-                <p className={`${styles.interviewDate} mt-3`}>{formatInterviewDate(recap, locale)}</p>
-                <h3 className={`${styles.cardTitle} mt-2`}>{recap.title}</h3>
-                <p className={`${styles.cardMeta} mt-2`}>
-                  {[recap.company, recap.targetRole].filter(Boolean).join(" · ") || t("Company not specified", "未标注公司")}
-                </p>
-              </div>
-
-              <div className={styles.bars}>
-                {recap.questions.slice(0, 12).map((question, barIndex) => (
-                  <span key={question.id} className={styles.bar} style={{
-                    height: `${barHeight[question.performance]}%`,
-                    background: "currentColor",
-                    opacity: 0.25 + (barHeight[question.performance] / 100) * 0.6,
-                    animationDelay: `${barIndex * 40}ms`,
-                  }} />
-                ))}
-              </div>
-
-              <div className="space-y-2">
-                <div className={styles.statRow}><span>{t("Questions", "题目")}</span><span className="font-medium">{recap.questions.length}</span></div>
-                <div className={styles.statRow}><span>{t("To improve", "待补强")}</span><span className="font-medium">{weakCount(recap)}</span></div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export default function RecapsPage() {
   const router = useRouter();
   const { locale, t } = useLocale();
@@ -183,7 +58,7 @@ export default function RecapsPage() {
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const load = useCallback(async () => { try { const [items, tasks] = await Promise.all([api<Recap[]>("/api/interview-recaps"), api<RecapTask[]>("/api/interview-recaps/jobs")]); setRecaps(items); setJobs(tasks); const params = new URLSearchParams(window.location.search); const requested = params.get("selected"); const source = params.get("source"); const sourceRecap = source ? items.find((item) => item.id === source || item.questions.some((question) => question.id === source)) : null; setSelectedId((id) => id && items.some((x) => x.id === id) ? id : requested && items.some((x) => x.id === requested) ? requested : sourceRecap ? sourceRecap.id : items[0]?.id ?? null); } catch (reason) { if (reason instanceof ApiError && reason.status === 401) router.replace("/login"); else setError(localizedError(reason, locale, "Could not load interview notes", "无法加载面经")); } }, [router, locale]);
+  const load = useCallback(async () => { try { const [items, tasks] = await Promise.all([api<Recap[]>("/api/interview-recaps"), api<RecapTask[]>("/api/interview-recaps/jobs")]); setRecaps(items); setJobs(tasks); const params = new URLSearchParams(window.location.search); const requested = params.get("selected"); const source = params.get("source"); const sourceRecap = source ? items.find((item) => item.id === source || item.questions.some((question) => question.id === source)) : null; setSelectedId((id) => id && items.some((x) => x.id === id) ? id : requested && items.some((x) => x.id === requested) ? requested : sourceRecap ? sourceRecap.id : null); } catch (reason) { if (reason instanceof ApiError && reason.status === 401) router.replace("/login"); else setError(localizedError(reason, locale, "Could not load interview notes", "无法加载面经")); } }, [router, locale]);
   useEffect(() => { const first = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(first); }, [load]);
   const selected = recaps.find((item) => item.id === selectedId) ?? null;
   useReadVisibleResult("RECAP_ORGANIZE",selected?.id,!!selected);
@@ -242,25 +117,24 @@ export default function RecapsPage() {
 
       {recaps.length === 0 ? (
         activeJobs.length === 0 && <Link href={agentCreationHref("RECAPS", locale)} className={`${styles.panel} mx-auto block w-full max-w-md border-dashed px-5 py-16 text-center text-sm text-slate-400 transition hover:text-slate-600`}>{t("Organize your first interview with Ardor", "让 Ardor 整理第一次面试")}</Link>
+      ) : selected ? (
+        <section className={`${styles.panel} mt-8 p-6 md:p-9`}>
+          <Report recap={selected} busy={busy} onMetadata={(company, role, date) => updateMetadata(selected, company, role, date)} onDelete={() => remove(selected)} />
+        </section>
       ) : (
-        <>
-          <RecapStack recaps={recaps} selectedId={selectedId} onSelect={setSelectedId} />
-          <div className="mt-2 flex justify-center gap-2.5">
+        <div className="mx-auto mt-6 max-w-2xl">
+          <p className="mb-3 text-sm text-slate-500">{t("Open an interview from the pipeline, or pick a note below.", "从面试流程进入，或从下面选择一篇面经。")}</p>
+          <ul className={`${styles.panel} divide-y divide-stone-200/70`}>
             {recaps.map((recap) => (
-              <button
-                key={recap.id}
-                type="button"
-                aria-label={t(`Switch to ${recap.title}`, `切换到 ${recap.title}`)}
-                aria-current={recap.id === selectedId}
-                onClick={() => setSelectedId(recap.id)}
-                className={`${styles.dot} ${recap.id === selectedId ? styles.dotActive : ""}`}
-              />
+              <li key={recap.id}>
+                <Link href={`/app/recaps?selected=${recap.id}`} className="flex items-center justify-between gap-4 px-5 py-4 text-sm hover:bg-white/60">
+                  <span className="min-w-0 truncate font-medium">{recap.title}</span>
+                  <span className="shrink-0 text-xs text-slate-400">{formatInterviewDate(recap, locale)}</span>
+                </Link>
+              </li>
             ))}
-          </div>
-          <section className={`${styles.panel} mt-10 p-6 md:p-9`}>
-            {selected ? <Report recap={selected} busy={busy} onMetadata={(company, role, date) => updateMetadata(selected, company, role, date)} onDelete={() => remove(selected)} /> : <div className="grid h-64 place-items-center text-sm text-slate-400">{t("Select interview notes", "选择一份面经")}</div>}
-          </section>
-        </>
+          </ul>
+        </div>
       )}
   </div>{showForm && <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 backdrop-blur-sm"><section className="ardor-panel max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] p-6 md:p-8"><div className="mb-6 flex items-center justify-between"><h2 className="text-2xl font-semibold">{t("Organize an interview", "整理一场面试")}</h2><button aria-label={t("Close", "关闭")} onClick={() => setShowForm(false)} className="rounded-full p-2 text-stone-400 hover:bg-white"><X className="size-5" /></button></div><form onSubmit={organize} className="space-y-4"><textarea name="content" required minLength={30} maxLength={50000} rows={16} className="field resize-y" placeholder={t("Paste a transcript, your recollection, or polished notes…", "粘贴转录、回忆或整理过的内容…")} /><button disabled={busy} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-50">{busy ? t("Organizing questions…", "正在逐题整理…") : t("Create interview notes", "生成面经")}</button></form></section></div>}</main>;
 }
