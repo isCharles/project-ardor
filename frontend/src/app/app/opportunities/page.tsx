@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, FileText, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, FileSearch, FileText, GraduationCap, Layers, Mail, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, Fragment, useEffect, useState } from "react";
@@ -305,81 +305,57 @@ export default function OpportunitiesPage() {
                     {open && (
                       <tr key={`${item.id}-detail`} className="border-b border-stone-100 bg-stone-50/60">
                         <td colSpan={8} className="px-6 py-5">
-                          <div className="grid gap-5 md:grid-cols-2">
-                            <div>
-                              <h3 className="text-xs font-medium uppercase tracking-wide text-stone-400">{t("Rounds", "轮次")}</h3>
-                              {item.rounds.length === 0 && <p className="mt-2 text-sm text-stone-500">{t("No rounds recorded yet.", "还没有轮次记录。")}</p>}
-                              <ul className="mt-2 space-y-1 text-sm text-stone-600">
-                                {item.rounds.map((entry) => (
-                                  <li key={entry.id}>
-                                    {t(`Round ${entry.roundNumber}`, `第 ${entry.roundNumber} 轮`)} · {entry.stage}
-                                    {entry.scheduledAt ? ` · ${formatDate(entry.scheduledAt)}` : ""}
-                                    {entry.durationMinutes ? ` · ${entry.durationMinutes}min` : ""}
-                                  </li>
-                                ))}
-                              </ul>
-                              <div className="mt-5">
-                                <h3 className="text-xs font-medium uppercase tracking-wide text-stone-400">{t("Learning plans", "学习计划")}</h3>
-                                {plansFor(item).length === 0 ? (
-                                  <p className="mt-2 text-sm text-stone-500">{t("No learning plan linked to this interview yet.", "还没有关联的学习计划。")}</p>
-                                ) : (
-                                  <ul className="mt-2 space-y-1 text-sm">
-                                    {plansFor(item).map((plan) => (
-                                      <li key={plan.id}>
-                                        <Link href={`/app/learning?id=${plan.id}`} className="text-violet-700 hover:underline">{plan.concept}</Link>
-                                        <span className="ml-2 text-xs text-stone-400">{plan.status}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                            </div>
-                            <div className="space-y-3">
-                              <div>
-                                <h3 className="text-xs font-medium uppercase tracking-wide text-stone-400">{t("Interview notes", "面经")}</h3>
-                                {recapsFor(item).length === 0 ? (
-                                  <p className="mt-2 text-sm text-stone-500">
-                                    {t("No notes for this interview yet. Paste the debrief to the agent and it attaches here.", "这次面试还没有面经。把纪要粘给 Agent，整理完会自动挂到这里。")}
-                                  </p>
-                                ) : (
-                                  <ul className="mt-2 space-y-1 text-sm">
-                                    {recapsFor(item).map((recap) => (
-                                      <li key={recap.id}>
-                                        <Link href={`/app/recaps?selected=${recap.id}`} className="text-violet-700 hover:underline">
-                                          {recap.title}
-                                        </Link>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                              <div>
-                                <h3 className="text-xs font-medium uppercase tracking-wide text-stone-400">{t("Flashcards", "记忆卡")}</h3>
-                                {cardsFor(item).length === 0 ? (
-                                  <p className="mt-2 text-sm text-stone-500">{t("No flashcards from this interview yet.", "还没有从这次面试生成的记忆卡。")}</p>
-                                ) : (
-                                  <ul className="mt-2 space-y-1 text-sm text-stone-600">
-                                    {cardsFor(item).map((card) => (
-                                      <li key={card.id}>
-                                        <Link href="/app/cards" className="hover:text-violet-700 hover:underline">{card.front}</Link>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                              {item.jdContent && (
-                                <div>
-                                  <h3 className="text-xs font-medium uppercase tracking-wide text-stone-400">JD</h3>
-                                  <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs leading-5 text-stone-600">{item.jdContent}</pre>
-                                </div>
+                          <div className="space-y-2">
+                            {recapsFor(item).map((recap) => (
+                              <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`}
+                                className="flex items-center gap-3 rounded-2xl bg-violet-50 px-4 py-2.5 text-sm text-violet-900 transition hover:bg-violet-100">
+                                <FileText className="size-4 shrink-0 text-violet-600" />
+                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-violet-600">{t("Notes", "面经")}</span>
+                                <span className="min-w-0 flex-1 truncate">{recap.title}</span>
+                              </Link>
+                            ))}
+                            {cardsFor(item).length > 0 && (
+                              <Link href="/app/cards"
+                                className="flex items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900 transition hover:bg-emerald-100">
+                                <Layers className="size-4 shrink-0 text-emerald-600" />
+                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-emerald-600">{t("Flashcards", "记忆卡")}</span>
+                                <span className="min-w-0 flex-1 truncate">{cardsFor(item).map((card) => card.front).join(" · ")}</span>
+                                <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">{cardsFor(item).length}</span>
+                              </Link>
+                            )}
+                            {plansFor(item).map((plan) => (
+                              <Link key={plan.id} href={`/app/learning?id=${plan.id}`}
+                                className="flex items-center gap-3 rounded-2xl bg-amber-50 px-4 py-2.5 text-sm text-amber-900 transition hover:bg-amber-100">
+                                <GraduationCap className="size-4 shrink-0 text-amber-600" />
+                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-amber-600">{t("Learning", "学习")}</span>
+                                <span className="min-w-0 flex-1 truncate">{plan.concept}</span>
+                                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{plan.status}</span>
+                              </Link>
+                            ))}
+                            {item.jdContent && (
+                              <details className="rounded-2xl bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
+                                <summary className="flex cursor-pointer items-center gap-3">
+                                  <FileSearch className="size-4 shrink-0 text-sky-600" />
+                                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-sky-600">JD</span>
+                                  <span className="min-w-0 flex-1 truncate text-stone-600">{item.jdContent.slice(0, 90)}</span>
+                                </summary>
+                                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs leading-5 text-stone-600">{item.jdContent}</pre>
+                              </details>
+                            )}
+                            {item.inviteContent && (
+                              <details className="rounded-2xl bg-rose-50 px-4 py-2.5 text-sm text-rose-900">
+                                <summary className="flex cursor-pointer items-center gap-3">
+                                  <Mail className="size-4 shrink-0 text-rose-500" />
+                                  <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-rose-500">{t("Invite", "原始邀约")}</span>
+                                  <span className="min-w-0 flex-1 truncate text-stone-600">{item.inviteContent.slice(0, 90)}</span>
+                                </summary>
+                                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs leading-5 text-stone-600">{item.inviteContent}</pre>
+                              </details>
+                            )}
+                            {recapsFor(item).length === 0 && cardsFor(item).length === 0 && plansFor(item).length === 0
+                              && !item.jdContent && !item.inviteContent && (
+                                <p className="text-sm text-stone-400">{t("Nothing attached to this interview yet.", "这次面试还没有关联任何内容。")}</p>
                               )}
-                              {item.inviteContent && (
-                                <div>
-                                  <h3 className="text-xs font-medium uppercase tracking-wide text-stone-400">{t("Original invite", "原始邀约")}</h3>
-                                  <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs leading-5 text-stone-600">{item.inviteContent}</pre>
-                                </div>
-                              )}
-                            </div>
                           </div>
                         </td>
                       </tr>
