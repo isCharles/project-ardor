@@ -2,6 +2,27 @@
 
 > 记录日期：2026-10-01，Asia/Shanghai。本文记录本机实测，不把临时恢复称为 Docker 的永久修复。后续 Agent 请先核对当前状态和日志，不要照搬旧结论。
 
+## 2026-10-17：一次安全恢复后，新 Secrets socket 仍阻断部署
+
+本次为简历评分（PR #122 已合并）和操作建议收尾（PR #123 当时待验收）的组合版本做部署预检。提权执行 `docker info` 返回 `dockerDesktopLinuxEngine` 管道不存在，不是受限环境的管道访问拒绝。尚未执行本轮 Compose 构建或替换容器。
+
+按仓库规则只运行一次 `scripts/Start-DockerDesktopSafely.ps1`，日志位于 `%LOCALAPPDATA%\ProjectArdor\docker-recovery.log`：
+
+- 10:47:25.766（Asia/Shanghai）：将 `Docker\run` 原子改名为 `run.socket-backup-20261017-104725-c483fa50`。
+- 10:47:26.224：将 `docker-secrets-engine` 原子改名为 `docker-secrets-engine.socket-backup-20261017-104726-0b3b5d7d`。
+- 10:47:26.228：启动 Desktop，配置等待上限 120 秒。
+- 后端日志 `2026-10-17T02:47:32.184482700Z`（本地 10:47:32）报告 `initializing Secrets Engine` 失败：移除**新路径** `C:/Users/Administrator/AppData/Local/docker-secrets-engine/engine.sock` 返回 `The file cannot be accessed by the system`，同时出现 listener 文件名/路径语法错误。
+- 10:49:45.595：脚本以失败结束并明确停止自动尝试。启动事件到退出约 139 秒，高于配置的 120 秒；配置值不等于本次实际耗时，尚未验证是哪次原生命令探测延长了等待。
+- 后续只读复核仍无可用 Engine 管道，未见 Desktop/后端残留进程。没有再次启动恢复脚本，也没有把“目录已备份”写成“Engine 已修复”。
+
+当前只读系统信息：Windows `10.0.26100`，上次启动为 `2026-10-13 12:22:43`；Docker Desktop 文件版本 `4.77.0.228796`。这些值只说明本次环境，不证明重启或升级必定根治。既有文档中的原生 socket 对照和安全产品线索依然只是线索；本次没有关闭防护、修改 ACL、卸载过滤驱动、重定向运行目录或重启 Windows。
+
+本次保留了两处完整运行时备份，未删除任何 `.socket-backup-*`，未改动 C 盘 Junction、`E:\AppDataMoves\DockerDisk`、VHDX、镜像或数据卷。后端 JAR 可独立打包成功，云端一次性数据库/浏览器验收可继续，但都不能替代本机 Docker 构建、Flyway 和服务健康验收。Engine 恢复后须重新构建前后端、核对活动任务、再部署和验证；不能因代码已合并而宣称本机已升级。
+
+待部署后端包：`backend/target/ardor-backend-0.6.1.jar`，本次 SHA-256 为 `FBA5F37C79D2FF7828774A7B59D6AD2C61D44E9511F391039FBD2EE19BA913FE`。该摘要仅标识本次构建，不是未来构建应固定相同的验收条件；后续改动或重新打包后应重新记录。评分规则为 v2，提示词版本为 v4，与客户端安装包版本号是不同概念。
+
+下一步需要用户方便时保存工作并进行一次 Windows 重启，或另行明确授权的受支持软件/系统修复；不得自动重启、关闭防护或执行 Factory Reset。恢复后先核对 Engine 和上述时间线，不循环套用相同失败操作。
+
 ## 2026-10-15 一次受控启动仍被新 Secrets socket 阻断
 
 08:49（Asia/Shanghai）先分别在受限环境及正常本机权限下核验 Engine，两次均无可用管道，不是仅凭权限错误判断停机。只执行一次恢复脚本：08:49:01 保留 `Docker\run.socket-backup-20261015-084901-b0fcb2ce`，08:49:02 保留 `docker-secrets-engine.socket-backup-20261015-084902-d618e324`，随后启动 Desktop。08:51:04 达到 120 秒上限，脚本中止，未再次尝试。
