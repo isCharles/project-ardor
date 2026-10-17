@@ -34,6 +34,7 @@ type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING" | "
 type AgentMessage = { id: string; requestId?: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; createdAt: string };
 type Conversation = { id: string; title: string; pinned: boolean; titleManuallySet?: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
+type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean };
 type RetryFailure = { label: string; detail: string };
 type AgentStreamEvent = ToolMeasurement & { type: "status" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string };
 type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number };
@@ -203,7 +204,10 @@ export default function AgentHomePage() {
   const [chatSearch, setChatSearch] = useState("");
   const typedHint = useTypewriter(locale === "en" ? typewriterExamples : typewriterExamplesZh, messages.length === 0);
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const [memoryDraft, setMemoryDraft] = useState("");
+  const [memoryItems, setMemoryItems] = useState<AgentMemoryItem[] | null>(null);
+  const [memoryEdits, setMemoryEdits] = useState<Record<string, string>>({});
+  const [newMemory, setNewMemory] = useState("");
+  const [memorySaving, setMemorySaving] = useState<string | null>(null);
   const [selectedContexts, setSelectedContexts] = useState<SelectedContext[]>([]);
   const [features, setFeatures] = useState<AgentFeature[]>([]);
   const featuresRef = useRef<AgentFeature[]>([]);
@@ -280,6 +284,19 @@ export default function AgentHomePage() {
       .then((result) => { if (active) setPermissionLevel(result.globalLevel ?? 0); }).catch(() => undefined);
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!memoryOpen) return;
+    let active = true;
+    void api<AgentMemoryItem[]>("/api/agent/memory/items")
+      .then((items) => {
+        if (!active) return;
+        setMemoryItems(items.filter((item) => item.valid));
+        setMemoryEdits(Object.fromEntries(items.map((item) => [item.id, item.content])));
+      })
+      .catch(() => { if (active) setMemoryItems([]); });
+    return () => { active = false; };
+  }, [memoryOpen]);
 
   useEffect(() => {
     if (busy || !titleWatch) return;
@@ -427,7 +444,6 @@ export default function AgentHomePage() {
     }
     setConversations(result.conversations);
     setArchivedConversations(result.archivedConversations);
-    setMemoryDraft(result.memory.content);
     setDraft(readSavedDraft(result.conversationId));
     const serviceId = window.sessionStorage.getItem(`${draftStorageKey(result.conversationId)}:service:${reasoningAccount.current}`);
     const feature = featuresRef.current.find((item) => item.id === serviceId);
@@ -1022,24 +1038,45 @@ export default function AgentHomePage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "无法恢复会话"); }
   }
 
-  async function saveMemory() {
-    setBusy(true); setError("");
-    try {
-      const memory = await api<AgentMemory>("/api/agent/memory", { method: "PUT", body: JSON.stringify({ content: memoryDraft }) });
-      setState((current) => current ? { ...current, memory } : current);
-      setMemoryOpen(false);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法保存总体记忆"); }
-    finally { setBusy(false); }
+  async function refreshMemoryItems() {
+    const items = await api<AgentMemoryItem[]>("/api/agent/memory/items");
+    setMemoryItems(items.filter((item) => item.valid));
+    setMemoryEdits(Object.fromEntries(items.map((item) => [item.id, item.content])));
+  }
+
+  async function saveMemoryItem(id: string) {
+    const content = (memoryEdits[id] ?? "").trim();
+    if (!content) return;
+    setMemorySaving(id); setError("");
+    try { await api(`/api/agent/memory/items/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ content }) }); await refreshMemoryItems(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法保存这条记忆"); }
+    finally { setMemorySaving(null); }
+  }
+
+  async function deleteMemoryItem(id: string) {
+    setMemorySaving(id); setError("");
+    try { await api(`/api/agent/memory/items/${encodeURIComponent(id)}`, { method: "DELETE" }); await refreshMemoryItems(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法删除这条记忆"); }
+    finally { setMemorySaving(null); }
+  }
+
+  async function addMemoryItem() {
+    const content = newMemory.trim();
+    if (!content) return;
+    setMemorySaving("new"); setError("");
+    try { await api("/api/agent/memory/items", { method: "POST", body: JSON.stringify({ content }) }); setNewMemory(""); await refreshMemoryItems(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法新增记忆"); }
+    finally { setMemorySaving(null); }
   }
 
   async function clearMemory() {
-    if (!memoryDraft || !window.confirm("清空所有跨会话总体记忆？")) return;
+    if (!window.confirm("清空所有长期记忆？")) return;
     setBusy(true);
     try {
       await api<void>("/api/agent/memory", { method: "DELETE" });
-      setMemoryDraft("");
-      setState((current) => current ? { ...current, memory: { content: "", updatedAt: null } } : current);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法清空总体记忆"); }
+      setMemoryItems([]);
+      setMemoryEdits({});
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法清空记忆"); }
     finally { setBusy(false); }
   }
 
@@ -1245,16 +1282,30 @@ export default function AgentHomePage() {
 
       {memoryOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setMemoryOpen(false); }}>
-          <section className="w-full max-w-xl rounded-3xl border border-stone-200 bg-[#fffefa] p-5 shadow-2xl md:p-6">
+          <section className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-stone-200 bg-[#fffefa] p-5 shadow-2xl md:p-6">
             <div className="flex items-start justify-between gap-4">
-              <div><div className="flex items-center gap-2 text-lg font-semibold"><Brain className="size-5 text-violet-500" />总体记忆</div><p className="mt-1 text-sm leading-6 text-stone-500">每行一条，跨所有对话共享。Ardor 新增或删除时会在对话里告诉你。</p></div>
+              <div><div className="flex items-center gap-2 text-lg font-semibold"><Brain className="size-5 text-violet-500" />长期记忆</div><p className="mt-1 text-sm leading-6 text-stone-500">跨所有对话共享。可以归纳你的信息，不必逐字复述；每条都能单独修改或删除。</p></div>
               <button aria-label="关闭" onClick={() => setMemoryOpen(false)} className="rounded-xl p-2 text-stone-400 hover:bg-stone-100"><X className="size-5" /></button>
             </div>
-            <textarea value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} maxLength={4000} rows={12} placeholder={"例如：\n- 目标岗位：Java 后端工程师\n- 偏好简洁、直接的反馈\n- 近期目标：两个月内完成换工作"} className="mt-5 w-full resize-none rounded-2xl border border-stone-200 bg-white p-4 text-sm leading-6 outline-none transition focus:border-violet-300 focus:ring-4 focus:ring-violet-100" />
-            <div className="mt-2 flex items-center justify-between text-xs text-stone-400"><span>不应保存 API Key、密码等敏感信息</span><span>{memoryDraft.length}/4000</span></div>
-            <div className="mt-5 flex items-center justify-between gap-3">
-              <button onClick={clearMemory} disabled={busy || !memoryDraft} className="rounded-xl px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-40">清空记忆</button>
-              <div className="flex gap-2"><button onClick={() => setMemoryOpen(false)} className="rounded-xl px-4 py-2 text-sm hover:bg-stone-100">取消</button><button onClick={saveMemory} disabled={busy} className="rounded-xl bg-stone-950 px-5 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50">保存</button></div>
+            {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+            {!memoryItems ? <p className="mt-6 text-sm text-stone-400">加载中…</p> : <div className="mt-4 space-y-3">
+              {memoryItems.length === 0 && <p className="rounded-2xl border border-dashed border-stone-200 px-4 py-6 text-center text-sm text-stone-400">还没有长期记忆。</p>}
+              {memoryItems.map((item) => <div key={item.id} className="rounded-2xl border border-stone-200 bg-white p-3">
+                <div className="flex items-center gap-2 text-[11px] text-stone-400"><span className="rounded-full bg-stone-100 px-2 py-0.5">{item.sourceKind === "INFERRED" ? "推断" : "你说过"}</span><span>{item.kind === "preference" ? "偏好" : item.kind === "goal" ? "目标" : item.kind === "profile" ? "背景" : item.kind === "constraint" ? "约束" : "事实"}</span>{item.confidence < 1 && <span>可信度 {Math.round(item.confidence * 100)}%</span>}</div>
+                <textarea value={memoryEdits[item.id] ?? item.content} onChange={(event) => setMemoryEdits((current) => ({ ...current, [item.id]: event.target.value }))} rows={2} maxLength={1000} className="mt-2 w-full resize-y rounded-xl border border-stone-200 bg-white p-2 text-sm leading-6 outline-none focus:border-violet-300" />
+                <div className="mt-2 flex items-center justify-between">
+                  <button type="button" disabled={memorySaving !== null} onClick={() => void deleteMemoryItem(item.id)} className="text-xs text-rose-600 hover:underline disabled:opacity-40">删除</button>
+                  <button type="button" disabled={memorySaving !== null || (memoryEdits[item.id] ?? "").trim() === item.content} onClick={() => void saveMemoryItem(item.id)} className="rounded-full bg-stone-950 px-4 py-1.5 text-xs font-medium text-white disabled:opacity-40">{memorySaving === item.id ? "保存中…" : "保存"}</button>
+                </div>
+              </div>)}
+            </div>}
+            <div className="mt-4 flex gap-2">
+              <input value={newMemory} onChange={(event) => setNewMemory(event.target.value)} maxLength={1000} placeholder="新增一条记忆，例如：偏好简洁直接的反馈" className="field flex-1" />
+              <button type="button" disabled={memorySaving !== null || !newMemory.trim()} onClick={() => void addMemoryItem()} className="rounded-xl bg-stone-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">添加</button>
+            </div>
+            <div className="mt-4 flex items-center justify-between border-t border-stone-200/70 pt-4 text-xs text-stone-400">
+              <span>不应保存 API Key、密码等敏感信息</span>
+              <div className="flex items-center gap-3"><button type="button" onClick={() => void clearMemory()} disabled={busy} className="text-rose-600 hover:underline disabled:opacity-40">清空全部</button><button type="button" onClick={() => setMemoryOpen(false)} className="rounded-full bg-stone-950 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800">完成</button></div>
             </div>
           </section>
         </div>

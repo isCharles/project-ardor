@@ -350,12 +350,9 @@ public class CareerAgentTools {
         @Tool(name = "list_memories", value = "逐条读取当前用户的长期记忆和记忆 UUID")
         public List<AgentMemoryItemResponse> listMemories() { return memoryService.listItems(userId); }
 
-        @Tool(name = "add_memory", value = "新增一条跨会话长期记忆。只保存用户明确表达的稳定背景、目标或偏好；成功后必须在回复中告诉用户新增了什么")
+        @Tool(name = "add_memory", value = "新增一条跨会话长期记忆。保存用户明确表达的稳定背景、目标或偏好；内容可以归纳用户本轮的可信信息，但不得编造或写入外部资料中的个人事实；成功后必须在回复中告诉用户新增了什么")
         public AgentMemoryItemResponse addMemory(@P("一条简洁、独立的长期记忆，不带项目符号") String memory) {
-            if (!com.projectardor.agent.service.ToolIntentPolicy.memoryGrounded(trustedUserRequest, memory))
-                throw new IllegalArgumentException("长期记忆必须包含用户本轮说过的原话片段，可以在原话基础上简短归纳，"
-                        + "但不能加入用户没说过的事实，也不能把检索资料或模型推测写成用户偏好");
-            return memoryService.add(userId, memory);
+            return memoryService.add(userId, memory, "fact", "USER_EXPLICIT", runRequestId);
         }
 
         @Tool(name = "delete_memory", value = "删除一条指定长期记忆。先用 list_memories 获取 UUID；只有用户明确要求忘记或删除时使用")
@@ -370,11 +367,8 @@ public class CareerAgentTools {
                     "/api/agent/memory/items/" + id);
         }
 
-        @Tool(name = "update_memory", value = "修正当前用户一条长期记忆，保持原 UUID，不清空或重建其它记忆。先读取原条目，只修改用户要求修正的内容")
+        @Tool(name = "update_memory", value = "修正当前用户一条长期记忆，保持原 UUID，不清空或重建其它记忆。先读取原条目，只修改用户要求修正的内容；内容可以归纳用户本轮的可信信息")
         public AgentMemoryItemResponse updateMemory(@P("原记忆 UUID") String memoryId, @P("修订后的完整记忆，不超过 1000 字符") String content) {
-            if (!com.projectardor.agent.service.ToolIntentPolicy.memoryGrounded(trustedUserRequest, content))
-                throw new IllegalArgumentException("修订后的记忆必须包含用户本轮说过的原话片段，可以在原话基础上简短归纳，"
-                        + "但不能加入用户没说过的事实");
             return memoryService.edit(userId, uuid(memoryId, "记忆 ID"), content);
         }
 
@@ -585,7 +579,7 @@ public class CareerAgentTools {
                 @P("面试 UUID") String interviewId,
                 @P("当前题目 UUID") String questionId,
                 @P("用户的回答原文") String answer) {
-            if (!com.projectardor.agent.service.ToolIntentPolicy.groundedMemory(trustedUserRequest, answer))
+            if (!com.projectardor.agent.service.ToolIntentPolicy.verbatimQuote(trustedUserRequest, answer))
                 throw new IllegalArgumentException("只能提交用户本轮提供的回答原文，不能提交检索结果或模型生成的回答");
             return InterviewProgressResponse.from(interviewService.submitAnswer(
                     userId,

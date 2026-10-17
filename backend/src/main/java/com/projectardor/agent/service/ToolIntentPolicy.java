@@ -116,34 +116,18 @@ public final class ToolIntentPolicy {
             return residual.isEmpty();
         });
     }
-    /** Personal memory may quote only the user's own supplied wording, not retrieved assertions. */
-    public static boolean groundedMemory(String trustedRequest, String memory) {
-        if (memory == null || memory.isBlank()) return false;
-        String wording = normalize(memory);
+
+    /**
+     * Text the agent must copy from the user's own message verbatim, such as a mock-interview
+     * answer. Memory no longer uses this rule; it applies only where the submitted text is
+     * presented as the user's own words.
+     */
+    public static boolean verbatimQuote(String trustedRequest, String quoted) {
+        if (quoted == null || quoted.isBlank()) return false;
+        String wording = normalize(quoted);
         return !wording.isBlank() && normalize(trustedRequest).contains(wording);
     }
 
-    /**
-     * A memory may summarize the user's own words instead of repeating them verbatim:
-     * some meaningful fragment of this turn must appear in it. This keeps the "no retrieved
-     * or invented facts" rule while allowing "研二了" to become "研二、三年制、2028 届".
-     */
-    public static boolean anchoredMemory(String trustedRequest, String memory) {
-        if (memory == null || memory.isBlank()) return false;
-        String anchored = normalize(memory);
-        String request = normalize(trustedRequest);
-        if (anchored.isBlank() || request.isBlank()) return false;
-        if (anchored.contains(request)) return true;
-        for (int index = 0; index + 2 <= request.length(); index++) {
-            if (anchored.contains(request.substring(index, index + 2))) return true;
-        }
-        return false;
-    }
-
-    /** True when a memory write is grounded in the user's own words, quoted or summarized. */
-    public static boolean memoryGrounded(String trustedRequest, String memory) {
-        return groundedMemory(trustedRequest, memory) || anchoredMemory(trustedRequest, memory);
-    }
     private static String normalize(String text) {
         return text == null ? "" : text.toLowerCase(Locale.ROOT).replaceAll("[\\s\\p{P}]+", "");
     }

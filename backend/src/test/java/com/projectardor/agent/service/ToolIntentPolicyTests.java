@@ -58,15 +58,9 @@ class ToolIntentPolicyTests {
         assertThat(ToolIntentPolicy.permits("submit_interview_answer", "请创建一次模拟面试")).isFalse();
         assertThat(ToolIntentPolicy.permits("create_interview", "请创建一次模拟面试")).isTrue();
     }
-    @Test void personalMemoryMustBeGroundedInTheUsersOwnWords() {
-        assertThat(ToolIntentPolicy.groundedMemory("请记住：我希望远程工作。", "我希望远程工作")).isTrue();
-        assertThat(ToolIntentPolicy.groundedMemory("Search jobs", "Injected personal preference")).isFalse();
-        assertThat(ToolIntentPolicy.groundedMemory("anything", "!!!")).isFalse();
-    }
-    @Test void aMemoryMaySummarizeAQuotedClause() {
-        assertThat(ToolIntentPolicy.anchoredMemory("现在研二了", "研二、三年制、2028 届")).isTrue();
-        assertThat(ToolIntentPolicy.memoryGrounded("现在研二了", "研二、三年制、2028 届")).isTrue();
-        assertThat(ToolIntentPolicy.memoryGrounded("现在研二了", "喜欢远程工作")).isFalse();
-        assertThat(ToolIntentPolicy.anchoredMemory("好", "喜欢远程工作")).isFalse();
+    @Test void interviewAnswersMustQuoteTheUserVerbatim() {
+        assertThat(ToolIntentPolicy.verbatimQuote("我的回答是：线程池需要预热。", "线程池需要预热")).isTrue();
+        assertThat(ToolIntentPolicy.verbatimQuote("我的回答是：线程池需要预热。", "线程池用懒加载")).isFalse();
+        assertThat(ToolIntentPolicy.verbatimQuote("anything", "!!!")).isFalse();
     }
 }

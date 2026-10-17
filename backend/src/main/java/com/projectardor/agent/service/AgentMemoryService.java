@@ -28,7 +28,7 @@ public class AgentMemoryService {
 
     @Transactional(readOnly = true)
     public AgentMemoryResponse get(UUID userId) {
-        var items = itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId);
+        var items = validItems(userId);
         Instant updatedAt = items.stream()
                 .map(AgentMemoryItem::getUpdatedAt)
                 .filter(java.util.Objects::nonNull)
@@ -40,8 +40,14 @@ public class AgentMemoryService {
 
     @Transactional(readOnly = true)
     public String content(UUID userId) {
-        return itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId).stream()
+        return validItems(userId).stream()
                 .map(item -> "- " + item.getContent()).collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    /** Only facts that are still true are injected or shown as current memory. */
+    private java.util.List<AgentMemoryItem> validItems(UUID userId) {
+        return itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId).stream()
+                .filter(AgentMemoryItem::isValid).toList();
     }
 
     @Transactional
@@ -59,7 +65,7 @@ public class AgentMemoryService {
                                 (left, right) -> left,
                                 java.util.LinkedHashMap::new),
                         values -> values.values().stream().limit(50).toList()));
-        var existing = itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId);
+        var existing = validItems(userId);
         java.util.Set<String> desiredKeys = desired.stream()
                 .map(line -> line.toLowerCase(java.util.Locale.ROOT))
                 .collect(java.util.stream.Collectors.toSet());
@@ -83,14 +89,22 @@ public class AgentMemoryService {
 
     @Transactional
     public AgentMemoryItemResponse add(UUID userId, String rawContent) {
+        return add(userId, rawContent, "fact", "USER_EXPLICIT", null);
+    }
+
+    @Transactional
+    public AgentMemoryItemResponse add(UUID userId, String rawContent, String kind, String sourceKind, UUID sourceRunId) {
         itemRepository.lockOwner(userId);
         String content = itemContent(rawContent);
         if (itemRepository.existsByUserIdAndContentIgnoreCase(userId, content)) {
             return itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId).stream()
-                    .filter(item -> item.getContent().equalsIgnoreCase(content)).findFirst()
-                    .map(AgentMemoryItemResponse::from).orElseThrow();
+                    .filter(item -> item.isValid() && item.getContent().equalsIgnoreCase(content)).findFirst()
+                    .map(AgentMemoryItemResponse::from)
+                    .orElseGet(() -> AgentMemoryItemResponse.from(
+                            itemRepository.save(AgentMemoryItem.create(userId, content, kind, sourceKind, sourceRunId))));
         }
-        return AgentMemoryItemResponse.from(itemRepository.save(AgentMemoryItem.create(userId, content)));
+        return AgentMemoryItemResponse.from(
+                itemRepository.save(AgentMemoryItem.create(userId, content, kind, sourceKind, sourceRunId)));
     }
 
     @Transactional

@@ -299,6 +299,12 @@ public class AgentController {
         return memoryService.listItems(principal.userId());
     }
 
+    @PostMapping("/memory/items")
+    public AgentMemoryItemResponse addMemoryItem(@AuthenticationPrincipal ArdorPrincipal principal,
+            @Valid @RequestBody AgentMemoryItemUpdateRequest request) {
+        return memoryService.add(principal.userId(), request.content());
+    }
+
     @PutMapping("/memory")
     public AgentMemoryResponse updateMemory(
             @AuthenticationPrincipal ArdorPrincipal principal,
