@@ -11,7 +11,7 @@ public final class ResumeScoringRecommendations {
     public record Recommendation(String priority, String criterionId, String evidence, String problem, String action, String example) {}
 
     public static List<Recommendation> validate(JsonNode input, String text) {
-        if (input == null || !input.isArray() || input.isEmpty() || input.size() > 20) throw invalid();
+        if (input == null || !input.isArray() || input.size() > 6) throw invalid();
         List<Recommendation> result = new ArrayList<>();
         for (JsonNode node : input) {
             String priority = value(node, "priority", false);

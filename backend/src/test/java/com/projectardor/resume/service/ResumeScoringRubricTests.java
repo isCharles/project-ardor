@@ -14,8 +14,12 @@ class ResumeScoringRubricTests {
 
     private ArrayNode ratings(int level) {
         ArrayNode nodes = mapper.createArrayNode();
-        ResumeScoringRubric.CRITERIA.forEach(c -> nodes.addObject().put("id", c.id()).put("level", level)
-                .put("evidence", level == 0 ? "" : "Designed a queue.").put("rationale", "Synthetic fixture assessment"));
+        ResumeScoringRubric.CRITERIA.forEach(c -> {
+            var node = nodes.addObject().put("id", c.id())
+                    .put("evidence", level == 0 ? "" : "Designed a queue.").put("rationale", "Synthetic fixture assessment");
+            var checks = node.putArray("checks");
+            for (int i = 0; i < 4; i++) checks.add(i < level);
+        });
         return nodes;
     }
 
@@ -26,7 +30,7 @@ class ResumeScoringRubricTests {
         assertEquals(75, result.overallScore());
         assertTrue(result.categoryScores().values().stream().allMatch(score -> score == 75));
         assertEquals(result, ResumeScoringRubric.evaluate(input, SOURCE));
-        ((ObjectNode) input.get(0)).put("level", 4);
+        ((ArrayNode) input.get(0).get("checks")).set(3, mapper.getNodeFactory().booleanNode(true));
         assertEquals(78, ResumeScoringRubric.evaluate(input, SOURCE).overallScore());
         assertEquals(85, ResumeScoringRubric.evaluate(input, SOURCE).categoryScores().get("content"));
     }
@@ -45,10 +49,18 @@ class ResumeScoringRubricTests {
         assertThrows(IllegalArgumentException.class, () -> ResumeScoringRubric.evaluate(duplicate, SOURCE));
         var unknown = ratings(3); ((ObjectNode) unknown.get(0)).put("id", "prestige");
         assertThrows(IllegalArgumentException.class, () -> ResumeScoringRubric.evaluate(unknown, SOURCE));
-        var fractional = ratings(3); ((ObjectNode) fractional.get(0)).put("level", 2.5);
+        var fractional = ratings(3); ((ArrayNode) fractional.get(0).get("checks")).set(0, mapper.getNodeFactory().numberNode(0.5));
         assertThrows(IllegalArgumentException.class, () -> ResumeScoringRubric.evaluate(fractional, SOURCE));
-        var over = ratings(3); ((ObjectNode) over.get(0)).put("level", 5);
+        var over = ratings(3); ((ObjectNode) over.get(0)).putArray("checks").add(true);
         assertThrows(IllegalArgumentException.class, () -> ResumeScoringRubric.evaluate(over, SOURCE));
+    }
+
+    @Test void modelSuppliedLevelsCannotOverrideTheChecklist() {
+        var input = ratings(1);
+        input.forEach(node -> ((ObjectNode) node).put("level", 4).put("overallScore", 100));
+        assertEquals(25, ResumeScoringRubric.evaluate(input, SOURCE).overallScore());
+        assertTrue(ResumeScoringRubric.CRITERIA.stream().allMatch(c -> c.conditions().size() == 4 && c.englishConditions().size() == 4));
+        assertTrue(ResumeScoringRubric.prompt().contains("不得整体印象打等级"));
     }
 
     @Test void rejectsFabricatedQuotesAndNormalizesOnlyWhitespace() {
