@@ -1,12 +1,13 @@
 "use client";
 
-import { ChevronDown, FileText, GraduationCap, Layers, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, FileSearch, FileText, GraduationCap, Layers, Mail, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, Fragment, useEffect, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
+import { AppDialog } from "@/components/ui/app-dialog";
 
 type Round = {
   id: string;
@@ -72,6 +73,7 @@ export default function OpportunitiesPage() {
   const [busy, setBusy] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ title: string; body: string } | null>(null);
 
   function fail(reason: unknown, fallbackEn: string, fallbackZh: string) {
     if (reason instanceof ApiError && reason.status === 401) { router.replace("/login"); return; }
@@ -301,23 +303,31 @@ export default function OpportunitiesPage() {
                         </button>
                       </td>
                     </tr>
-                    {(item.jdContent || item.inviteContent) && (
-                      <tr className="border-b border-stone-100 bg-stone-50/40 align-top">
-                        <td colSpan={4} className="px-4 pb-3 text-xs leading-5 text-stone-600">
-                          {item.jdContent && (
-                            <div>
-                              <span className="mr-1 font-semibold text-sky-700">JD</span>
-                              <span className="line-clamp-2 whitespace-pre-wrap">{item.jdContent}</span>
-                            </div>
-                          )}
+                    {item.jdContent && (
+                      <tr className="border-b border-stone-100">
+                        <td colSpan={8} className="p-0">
+                          <button type="button"
+                            onClick={() => setPreview({ title: t("Job description", "JD"), body: item.jdContent ?? "" })}
+                            className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs text-stone-600 transition hover:bg-sky-50">
+                            <FileSearch className="size-3.5 shrink-0 text-sky-600" />
+                            <span className="shrink-0 font-semibold uppercase tracking-wide text-sky-700">JD</span>
+                            <span className="min-w-0 flex-1 truncate">{item.jdContent}</span>
+                            <span className="shrink-0 text-stone-400">{t("View", "查看")}</span>
+                          </button>
                         </td>
-                        <td colSpan={4} className="px-4 pb-3 text-xs leading-5 text-stone-600">
-                          {item.inviteContent && (
-                            <div>
-                              <span className="mr-1 font-semibold text-rose-600">{t("Invite", "约面邮件")}</span>
-                              <span className="line-clamp-2 whitespace-pre-wrap">{item.inviteContent}</span>
-                            </div>
-                          )}
+                      </tr>
+                    )}
+                    {item.inviteContent && (
+                      <tr className="border-b border-stone-100">
+                        <td colSpan={8} className="p-0">
+                          <button type="button"
+                            onClick={() => setPreview({ title: t("Invite email", "约面邮件"), body: item.inviteContent ?? "" })}
+                            className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs text-stone-600 transition hover:bg-rose-50">
+                            <Mail className="size-3.5 shrink-0 text-rose-500" />
+                            <span className="shrink-0 font-semibold uppercase tracking-wide text-rose-600">{t("Invite", "约面邮件")}</span>
+                            <span className="min-w-0 flex-1 truncate">{item.inviteContent}</span>
+                            <span className="shrink-0 text-stone-400">{t("View", "查看")}</span>
+                          </button>
                         </td>
                       </tr>
                     )}
@@ -365,6 +375,11 @@ export default function OpportunitiesPage() {
           </table>
         </div>
       </div>
+      {preview && (
+        <AppDialog title={preview.title} wide onClose={() => setPreview(null)}>
+          <pre className="max-h-[60dvh] overflow-auto whitespace-pre-wrap rounded-2xl bg-stone-50 p-4 text-sm leading-6 text-stone-700">{preview.body}</pre>
+        </AppDialog>
+      )}
     </main>
   );
 }
