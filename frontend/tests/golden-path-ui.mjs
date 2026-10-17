@@ -31,6 +31,14 @@ async function waitForApiState(page,path,accept) {
   throw new Error(`Status did not reach expected state: ${path} (${latest?.status})`);
 }
 
+async function openWorkRecords(page) {
+  const records = page.locator("[data-execution-trace] > div > details");
+  await records.first().waitFor();
+  for (const record of await records.all()) {
+    if (await record.getAttribute("open") == null) await record.locator(":scope > summary").click();
+  }
+}
+
 try {
   await page.goto(`${origin}/login`);
   await page.locator('input[name="email"]').fill(`golden-owner-${suffix}@ardor.invalid`);
@@ -40,26 +48,31 @@ try {
 
   // The latest synthetic conversation contains both a deleted proposal and a
   // distinct pending one. Only the pending one may still offer creation.
+  await page.locator("[data-execution-trace]").first().waitFor();
+  assert.equal(await page.locator("[data-execution-trace] > div > details").first().getAttribute("open"), null, "Process records default to collapsed");
+  await openWorkRecords(page);
   await page.getByText(/Plan removed|计划已移除/).waitFor();
-  await page.getByRole("button", { name: /Create plan|生成计划/ }).waitFor();
-  assert.equal(await page.getByRole("button", { name: /Create plan|生成计划/ }).count(), 1);
+  await page.getByRole("button", { name: /Confirm creation|确认创建/ }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /Confirm creation|确认创建/ }).count(), 1);
   await page.reload();
+  await openWorkRecords(page);
   await page.getByText(/Plan removed|计划已移除/).waitFor();
-  assert.equal(await page.getByRole("button", { name: /Create plan|生成计划/ }).count(), 1);
+  assert.equal(await page.getByRole("button", { name: /Confirm creation|确认创建/ }).count(), 1);
 
   const plansBeforeConfirmation = await page.evaluate(async () => {
     const response = await fetch("/api/learning-plans");
     if (!response.ok) throw new Error(`Learning plans returned ${response.status}`);
     return response.json();
   });
-  await page.getByRole("button", { name: /Create plan|生成计划/ }).click();
-  await page.getByText(/Learning plan created|学习计划已创建/).waitFor();
+  await page.getByRole("button", { name: /Confirm creation|确认创建/ }).click();
+  await page.locator("[data-execution-trace]").getByText(/^(Learning plan created|学习计划已创建) ·/).waitFor();
   const createdPlanPath = await page.getByRole("link", { name: /Open lesson|打开学习/ }).getAttribute("href");
   assert.match(createdPlanPath, /^\/app\/learning\?id=[0-9a-f-]{36}$/i);
   await page.reload();
+  await openWorkRecords(page);
   await page.getByText(/Plan removed|计划已移除/).waitFor();
-  await page.getByText(/Learning plan created|学习计划已创建/).waitFor();
-  assert.equal(await page.getByRole("button", { name: /Create plan|生成计划/ }).count(), 0);
+  await page.locator("[data-execution-trace]").getByText(/^(Learning plan created|学习计划已创建) ·/).waitFor();
+  assert.equal(await page.getByRole("button", { name: /Confirm creation|确认创建/ }).count(), 0);
   const plansAfterConfirmation = await page.evaluate(async () => {
     const response = await fetch("/api/learning-plans");
     if (!response.ok) throw new Error(`Learning plans returned ${response.status}`);

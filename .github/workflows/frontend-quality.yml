@@ -41,6 +41,8 @@ jobs:
         run: node tests/workspace-ui.mjs
       - name: Resume scoring UI regression (mock APIs)
         run: node tests/resume-scoring-ui.mjs
+      - name: Learning operation UI regression (mock APIs)
+        run: node tests/learning-operation-ui.mjs
 
   desktop-window:
     runs-on: windows-latest
