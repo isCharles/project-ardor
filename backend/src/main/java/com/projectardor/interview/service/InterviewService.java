@@ -98,6 +98,17 @@ public class InterviewService {
             String targetCompany,
             String targetRole,
             int questionCount) {
+        return create(userId, resumeAnalysisId, modality, targetCompany, targetRole, questionCount, null);
+    }
+
+    public InterviewSession create(
+            UUID userId,
+            UUID resumeAnalysisId,
+            InterviewModality modality,
+            String targetCompany,
+            String targetRole,
+            int questionCount,
+            UUID jobOpportunityId) {
         if (questionCount < 3 || questionCount > 10) {
             throw new IllegalArgumentException("面试题数量必须在 3 到 10 之间");
         }
@@ -145,7 +156,7 @@ public class InterviewService {
 
         return transactions.execute(status -> {
             InterviewSession session = sessionRepository.save(InterviewSession.create(
-                    userId, resumeAnalysisId, modality, normalizedCompany, normalizedRole));
+                    userId, resumeAnalysisId, modality, normalizedCompany, normalizedRole, jobOpportunityId));
             List<InterviewQuestion> questions = new ArrayList<>();
             for (int index = 0; index < drafts.size(); index++) {
                 QuestionDraft draft = drafts.get(index);

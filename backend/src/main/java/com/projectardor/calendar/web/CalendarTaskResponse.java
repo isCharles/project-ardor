@@ -20,6 +20,8 @@ public record CalendarTaskResponse(
         String actionPath,
         /** Set when this row is one occurrence of a repeating arrangement. */
         UUID seriesId,
+        /** Set when this task belongs to a real interview process. */
+        UUID jobOpportunityId,
         Instant dueAt,
         Instant completedAt,
         Instant createdAt,
@@ -29,7 +31,7 @@ public record CalendarTaskResponse(
         return new CalendarTaskResponse(
                 task.getId(), task.getTitle(), task.getDescription(), task.getStatus(),
                 task.getPriority(), task.getSource(), task.getTaskKind(), task.getActionPath(),
-                task.getSeriesId(), task.getDueAt(), task.getCompletedAt(),
+                task.getSeriesId(), task.getJobOpportunityId(), task.getDueAt(), task.getCompletedAt(),
                 task.getCreatedAt(), task.getUpdatedAt());
     }
 }

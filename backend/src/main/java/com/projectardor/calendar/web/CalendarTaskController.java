@@ -49,7 +49,7 @@ public class CalendarTaskController {
             @Valid @RequestBody CalendarTaskCreateRequest request) {
         return CalendarTaskResponse.from(service.create(
                 principal.userId(), request.title(), request.description(), request.dueAt(),
-                request.priority(), CalendarTaskSource.MANUAL));
+                request.priority(), CalendarTaskSource.MANUAL, request.jobOpportunityId()));
     }
 
     @PutMapping("/{taskId}")

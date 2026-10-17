@@ -44,7 +44,7 @@ public class InterviewController {
             @Valid @RequestBody CreateInterviewRequest request) {
         return InterviewSessionResponse.from(interviewService.create(
                 principal.userId(), request.resumeAnalysisId(), request.resolvedModality(), request.targetCompany(),
-                request.targetRole(), request.resolvedQuestionCount()));
+                request.targetRole(), request.resolvedQuestionCount(), request.jobOpportunityId()));
     }
 
     @GetMapping

@@ -14,7 +14,9 @@ public record CreateInterviewRequest(
         InterviewModality modality,
         @Size(max = 160) String targetCompany,
         @NotBlank @Size(max = 160) String targetRole,
-        @Min(3) @Max(10) Integer questionCount) {
+        @Min(3) @Max(10) Integer questionCount,
+        /** Optional real interview process this mock session prepares for. */
+        UUID jobOpportunityId) {
 
     public int resolvedQuestionCount() {
         return questionCount == null ? 5 : questionCount;

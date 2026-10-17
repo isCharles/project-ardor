@@ -86,7 +86,12 @@ export default function OpportunitiesPage() {
   useEffect(() => {
     let active = true;
     api<Opportunity[]>("/api/opportunities")
-      .then((result) => { if (active) setItems(result); })
+      .then((result) => {
+        if (!active) return;
+        setItems(result);
+        const requested = new URLSearchParams(window.location.search).get("selected");
+        if (requested && result.some((item) => item.id === requested)) setExpanded(requested);
+      })
       .catch((reason) => {
         if (!active) return;
         if (reason instanceof ApiError && reason.status === 401) router.replace("/login");

@@ -18,6 +18,7 @@ public class InterviewSession {
     @Id private UUID id;
     @Column(name = "user_id", nullable = false) private UUID userId;
     @Column(name = "resume_analysis_id") private UUID resumeAnalysisId;
+    @Column(name = "job_opportunity_id") private UUID jobOpportunityId;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private InterviewModality modality;
     @Column(name = "target_company", length = 160) private String targetCompany;
     @Column(name = "target_role", nullable = false, length = 160) private String targetRole;
@@ -34,10 +35,12 @@ public class InterviewSession {
             UUID resumeAnalysisId,
             InterviewModality modality,
             String targetCompany,
-            String targetRole) {
+            String targetRole,
+            UUID jobOpportunityId) {
         this.id = UUID.randomUUID();
         this.userId = userId;
         this.resumeAnalysisId = resumeAnalysisId;
+        this.jobOpportunityId = jobOpportunityId;
         this.modality = modality;
         this.targetCompany = targetCompany;
         this.targetRole = targetRole;
@@ -47,7 +50,7 @@ public class InterviewSession {
 
     public static InterviewSession create(
             UUID userId, UUID resumeAnalysisId, String targetCompany, String targetRole) {
-        return create(userId, resumeAnalysisId, InterviewModality.TEXT, targetCompany, targetRole);
+        return create(userId, resumeAnalysisId, InterviewModality.TEXT, targetCompany, targetRole, null);
     }
 
     public static InterviewSession create(
@@ -56,8 +59,18 @@ public class InterviewSession {
             InterviewModality modality,
             String targetCompany,
             String targetRole) {
+        return create(userId, resumeAnalysisId, modality, targetCompany, targetRole, null);
+    }
+
+    public static InterviewSession create(
+            UUID userId,
+            UUID resumeAnalysisId,
+            InterviewModality modality,
+            String targetCompany,
+            String targetRole,
+            UUID jobOpportunityId) {
         if (modality == null) throw new IllegalArgumentException("面试方式不能为空");
-        return new InterviewSession(userId, resumeAnalysisId, modality, targetCompany, targetRole);
+        return new InterviewSession(userId, resumeAnalysisId, modality, targetCompany, targetRole, jobOpportunityId);
     }
 
     public void complete() {
@@ -80,6 +93,7 @@ public class InterviewSession {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public UUID getResumeAnalysisId() { return resumeAnalysisId; }
+    public UUID getJobOpportunityId() { return jobOpportunityId; }
     public InterviewModality getModality() { return modality; }
     public String getTargetCompany() { return targetCompany; }
     public String getTargetRole() { return targetRole; }

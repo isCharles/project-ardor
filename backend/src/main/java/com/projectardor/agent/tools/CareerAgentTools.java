@@ -416,19 +416,21 @@ public class CareerAgentTools {
                     .toList();
         }
 
-        @Tool(name = "create_calendar_task", value = "为当前用户创建任意明确的日程或待办，不限于求职事项。用户说出自然语言安排，或粘贴含日期时间的通知时使用；日期确有歧义时必须先追问，不得猜测")
+        @Tool(name = "create_calendar_task", value = "为当前用户创建任意明确的日程或待办，不限于求职事项。用户说出自然语言安排，或粘贴含日期时间的通知时使用；日期确有歧义时必须先追问，不得猜测。若这条日程属于某场真实面试（面试时间或准备任务），传入该面试流程 UUID")
         public CalendarTaskResponse createCalendarTask(
                 @P("日历格中的极短标题，优先使用公司或对象加事项，通常 2 到 8 个中文字符，例如‘字节面试’‘完善简历’；不得照抄冗长岗位名称") String title,
                 @P(value = "完整说明。岗位全称、业务线、会议方式、准备材料和来源摘要都放在这里，不要塞进短标题；没有时传空字符串", required = false) String description,
                 @P(value = "到期或发生时间，必须是带时区的 ISO-8601；无截止时间的普通任务可传空字符串", required = false) String dueAt,
-                @P(value = "优先级：LOW、MEDIUM 或 HIGH", required = false) String priority) {
+                @P(value = "优先级：LOW、MEDIUM 或 HIGH", required = false) String priority,
+                @P(value = "关联的真实面试流程 UUID；不关联传空字符串", required = false) String jobOpportunityId) {
             return CalendarTaskResponse.from(calendarTaskService.create(
                     userId,
                     title,
                     description,
                     nullableInstant(dueAt),
                     parsePriority(priority),
-                    CalendarTaskSource.AGENT));
+                    CalendarTaskSource.AGENT,
+                    nullableUuid(jobOpportunityId, "面试流程 ID")));
         }
 
         @Tool(name = "delete_calendar_task", value = "永久删除当前用户指定的一条日历待办。必须先调用 list_calendar_tasks 获取真实 UUID；只有用户明确要求删除或取消该待办时使用，目标不唯一时必须先追问")
@@ -553,18 +555,21 @@ public class CareerAgentTools {
             return interviewService.list(userId).stream().map(InterviewSessionResponse::from).toList();
         }
 
-        @Tool(name = "create_interview", value = "为当前用户创建文本模拟面试并生成题目；目标岗位不明确时必须先向用户澄清")
+        @Tool(name = "create_interview", value = "为当前用户创建文本模拟面试并生成题目；目标岗位不明确时必须先向用户澄清。用户在为某场真实面试做针对性练习时，传入该面试流程 UUID")
         public InterviewSessionResponse createInterview(
                 @P("目标岗位") String targetRole,
                 @P(value = "目标公司；没有时传空字符串", required = false) String targetCompany,
                 @P(value = "要复用的简历分析 UUID；不使用简历时传空字符串", required = false) String resumeAnalysisId,
-                @P(value = "题目数量，3 到 10", required = false) Integer questionCount) {
+                @P(value = "题目数量，3 到 10", required = false) Integer questionCount,
+                @P(value = "关联的真实面试流程 UUID；不关联传空字符串", required = false) String jobOpportunityId) {
             return InterviewSessionResponse.from(interviewService.create(
                     userId,
                     nullableUuid(resumeAnalysisId, "简历分析 ID"),
+                    com.projectardor.interview.domain.InterviewModality.TEXT,
                     blankToNull(targetCompany),
                     targetRole,
-                    questionCount == null ? 5 : questionCount));
+                    questionCount == null ? 5 : questionCount,
+                    nullableUuid(jobOpportunityId, "面试流程 ID")));
         }
 
         @Tool(name = "get_next_question", value = "读取当前用户某场面试的下一道未回答题目")
@@ -754,10 +759,10 @@ public class CareerAgentTools {
                 @P("预计时长（分钟）；未知传 0") int durationMinutes,
                 @P("本轮备注；没有传空字符串") String note) {
             return opportunityService.create(userId, new OpportunityCreateRequest(
-                    company, emptyToNull(targetRole), emptyToNull(platform),
-                    emptyToNull(jdContent), emptyToNull(inviteContent), emptyToNull(stage),
+                    company, blankToNull(targetRole), blankToNull(platform),
+                    blankToNull(jdContent), blankToNull(inviteContent), blankToNull(stage),
                     nullableInstant(scheduledAt), durationMinutes > 0 ? durationMinutes : null,
-                    emptyToNull(note)));
+                    blankToNull(note)));
         }
 
         @Tool(name = "update_job_opportunity", value = "修改当前用户面试流程的公司、岗位、平台、JD 或推进状态。状态只能按流程推进：INVITED→SCHEDULED→INTERVIEWED→AWAITING_RESULT→OFFER/REJECTED/WITHDRAWN/NO_RESPONSE。面完说等通知用 AWAITING_RESULT，说挂了用 REJECTED，拿到 offer 用 OFFER，自己放弃用 WITHDRAWN")
@@ -769,8 +774,8 @@ public class CareerAgentTools {
                 @P("完整 JD；不修改传空字符串") String jdContent,
                 @P("新状态；不修改传空字符串") String status) {
             return opportunityService.update(userId, uuid(opportunityId, "面试流程 ID"),
-                    new OpportunityUpdateRequest(emptyToNull(company), emptyToNull(targetRole),
-                            emptyToNull(platform), emptyToNull(jdContent), emptyToNull(status)));
+                    new OpportunityUpdateRequest(blankToNull(company), blankToNull(targetRole),
+                            blankToNull(platform), blankToNull(jdContent), blankToNull(status)));
         }
 
         @Tool(name = "add_job_opportunity_round", value = "给当前用户一条面试流程增加一轮，或补录这一轮的时间、时长和结果。用户提到第几轮、面试时间或某轮已结束时使用；轮次号不确定传 0，会自动取下一轮")
@@ -784,12 +789,8 @@ public class CareerAgentTools {
                 @P("备注；没有传空字符串") String note) {
             return opportunityService.addRound(userId, uuid(opportunityId, "面试流程 ID"),
                     new OpportunityRoundRequest(roundNumber > 0 ? roundNumber : null,
-                            emptyToNull(stage), nullableInstant(scheduledAt), nullableInstant(occurredAt),
-                            durationMinutes > 0 ? durationMinutes : null, emptyToNull(note)));
-        }
-
-        private static String emptyToNull(String value) {
-            return value == null || value.isBlank() ? null : value;
+                            blankToNull(stage), nullableInstant(scheduledAt), nullableInstant(occurredAt),
+                            durationMinutes > 0 ? durationMinutes : null, blankToNull(note)));
         }
 
         private ResumeToolView toView(Resume resume, ResumeAnalysis analysis) {
