@@ -16,7 +16,7 @@ import { agentCreationHref } from "@/lib/agent-features";
 import { AppDialog } from "@/components/ui/app-dialog";
 
 type Lesson = { summary?: string; keyPoints?: string[]; explanation?: string; example?: string; pitfalls?: string[] };
-type Exercise = { question: string; type?: "SHORT_ANSWER" | "MULTIPLE_CHOICE" | "SCENARIO"; options?: string[] };
+type Exercise = { question: string; type?: "SHORT_ANSWER" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SCENARIO"; options?: string[] };
 type LearningAttempt = { requestId?: string; items: Array<Exercise & { answer: string }>; score: number; submittedAt: string; feedback?: string; questionFeedback?: Array<{ question: string; feedback: string }> };
 type Evaluation = { feedback?: string; strengths?: string[]; gaps?: string[]; nextFocus?: string; questionFeedback?: Array<{ question: string; feedback: string }>; attempts?: LearningAttempt[] };
 type LearningPlan = {
@@ -174,12 +174,10 @@ export default function LearningPage() {
     } finally { setDeleting(false); }
   }
   const assessing = jobPending(assessment.job);
-  const attemptHistory = selected?.lastEvaluation?.attempts ?? [];
-  // The newest attempt is rendered in the summary card above; the history list
-  // must only show the earlier ones or the same review appears twice.
-  const previousAttempts = attemptHistory.slice(0, -1);
+  // Reviews live in the attempt history only; the newest attempt is expanded.
+  const previousAttempts = selected?.lastEvaluation?.attempts ?? [];
   useReadVisibleResult("LEARNING_CREATE",selected?.id,!!selected,"",selected?.requestId);
-  useReadVisibleResult("LEARNING_EVALUATE",selected?.id,!!attemptHistory.at(-1)?.requestId,selected?.attemptCount,attemptHistory.at(-1)?.requestId);
+  useReadVisibleResult("LEARNING_EVALUATE",selected?.id,!!previousAttempts.at(-1)?.requestId,selected?.attemptCount,previousAttempts.at(-1)?.requestId);
   const activeCount = plans.filter((plan) => plan.status !== "COMPLETED").length;
   const orderedPlans = [...plans].sort((left, right) => {
     if ((left.status === "COMPLETED") !== (right.status === "COMPLETED")) return left.status === "COMPLETED" ? 1 : -1;
@@ -353,23 +351,16 @@ export default function LearningPage() {
                 <section id="learning-practice" className="ardor-panel scroll-mt-6 rounded-[2.5rem] p-7 md:p-10" aria-labelledby="practice-title">
                   <AiJobStatus job={assessment.job} retry={assessment.retry} pollFailed={assessment.pollFailed} />
                   <div className="flex items-end justify-between gap-4"><h2 id="practice-title" className="text-2xl font-semibold">{t("Practice", "检验理解")}</h2>{selected.lastScore !== null && <strong className="text-3xl tracking-tight">{selected.lastScore}<span className="text-base text-stone-400"> / 100</span></strong>}</div>
-                  {selected.lastEvaluation && <div className={`mt-6 rounded-2xl p-5 ${selected.status === "COMPLETED" ? "bg-emerald-50/75" : "bg-amber-50/75"}`}>
-                    {selected.status === "COMPLETED" && <CheckCircle2 className="mb-2 size-5 text-emerald-600" />}
-                    {selected.lastEvaluation.feedback && <MarkdownContent className="font-medium">{selected.lastEvaluation.feedback}</MarkdownContent>}
-                    {selected.lastEvaluation.nextFocus && <MarkdownContent className="mt-2 text-sm text-stone-600">{`${t("Next focus", "下一步")}: ${selected.lastEvaluation.nextFocus}`}</MarkdownContent>}
-                    {selected.lastEvaluation.gaps && <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-700">{selected.lastEvaluation.gaps.map((gap, index) => <li key={index}><MarkdownContent>{gap}</MarkdownContent></li>)}</ul>}
-                    {selected.lastEvaluation.questionFeedback && <div className="mt-4 space-y-3 border-t border-stone-200/70 pt-4">{selected.lastEvaluation.questionFeedback.map((item, index) => <div key={index} className="text-sm"><p className="font-medium">{item.question}</p><MarkdownContent className="mt-1 leading-6 text-stone-600">{item.feedback}</MarkdownContent></div>)}</div>}
-                  </div>}
-                  {previousAttempts.length > 0 && <div className="mt-5 space-y-2">{[...previousAttempts].reverse().map((attempt, index) => <details key={`${attempt.submittedAt}-${index}`} className="rounded-2xl border border-stone-200/75 bg-white/60 p-4">
+                  {previousAttempts.length > 0 && <div className="mt-5 space-y-2">{[...previousAttempts].reverse().map((attempt, index) => <details key={`${attempt.submittedAt}-${index}`} open={index === 0} className="rounded-2xl border border-stone-200/75 bg-white/60 p-4">
                     <summary className="cursor-pointer text-sm font-medium">{t(`Attempt ${previousAttempts.length - index} · ${attempt.score} points`, `第 ${previousAttempts.length - index} 次回答 · ${attempt.score} 分`)}</summary>
                     <div className="mt-4 space-y-4">{attempt.feedback && <MarkdownContent className="text-sm leading-6 text-stone-700">{attempt.feedback}</MarkdownContent>}
                       {attempt.items.map((item, itemIndex) => <div key={itemIndex} className="text-sm"><p className="font-medium">{itemIndex + 1}. {item.question}</p><p className="mt-1 whitespace-pre-wrap leading-6 text-stone-600">{t("Your answer", "你的回答")}：{item.answer}</p>{attempt.questionFeedback?.filter((feedback) => feedback.question === item.question).map((feedback, feedbackIndex) => <MarkdownContent key={feedbackIndex} className="mt-2 rounded-xl bg-violet-50/70 px-3 py-2 leading-6 text-violet-900">{feedback.feedback}</MarkdownContent>)}</div>)}
                     </div></details>)}</div>}
-                  {selected.status !== "COMPLETED" && attemptHistory.length > 0 && <p className="mt-7 text-sm font-medium text-violet-700">{t("Next practice", "下一轮练习")}</p>}
+                  {selected.status !== "COMPLETED" && previousAttempts.length > 0 && <p className="mt-7 text-sm font-medium text-violet-700">{t("Next practice", "下一轮练习")}</p>}
                   {selected.status === "COMPLETED" ? <div className="mt-7 flex items-center gap-3 rounded-2xl bg-emerald-50/75 p-5 text-sm text-emerald-800"><CheckCircle2 className="size-5" />{t("Topic complete. The calendar task is complete too.", "本次学习已完成，日历任务也已同步完成。")}</div> : <form onSubmit={submit} className="mt-7 space-y-6">
                     {selected.exercises.map((exercise, index) => <fieldset key={`${exercise.question}-${index}`} disabled={busy || assessing} className="block disabled:opacity-75">
                       <legend className="text-sm font-medium">{index + 1}. {exercise.question}</legend>
-                      {exercise.type === "MULTIPLE_CHOICE" && exercise.options && exercise.options.length > 0 ? <div className="mt-3 grid gap-2">{exercise.options.map((option) => <label key={option} className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${answers[index] === option ? "border-violet-400 bg-violet-50/80" : "border-stone-200 bg-white/60 hover:bg-white"}`}><input type="radio" name={`exercise-${index}`} value={option} checked={answers[index] === option} onChange={() => changeAnswer(index, option)} required />{option}</label>)}</div> : <textarea required rows={exercise.type === "SCENARIO" ? 5 : 2} value={answers[index] ?? ""} onChange={(event) => changeAnswer(index, event.target.value)} className="field mt-3 resize-y" placeholder={exercise.type === "SCENARIO" ? t("Explain your approach and steps", "说明你的思路和步骤") : t("Answer in your own words", "用自己的话回答")} />}
+                      {exercise.type === "MULTIPLE_CHOICE" || exercise.type === "TRUE_FALSE" ? exercise.options && exercise.options.length > 0 ? <div className="mt-3 grid gap-2">{exercise.options.map((option) => <label key={option} className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${answers[index] === option ? "border-violet-400 bg-violet-50/80" : "border-stone-200 bg-white/60 hover:bg-white"}`}><input type="radio" name={`exercise-${index}`} value={option} checked={answers[index] === option} onChange={() => changeAnswer(index, option)} required />{option}</label>)}</div> : <textarea required rows={2} value={answers[index] ?? ""} onChange={(event) => changeAnswer(index, event.target.value)} className="field mt-3 resize-y" placeholder={t("Answer in your own words", "用自己的话回答")} /> : <textarea required rows={exercise.type === "SCENARIO" ? 5 : 2} value={answers[index] ?? ""} onChange={(event) => changeAnswer(index, event.target.value)} className="field mt-3 resize-y" placeholder={exercise.type === "SCENARIO" ? t("Explain your approach and steps", "说明你的思路和步骤") : t("Answer in your own words", "用自己的话回答")} />}
                     </fieldset>)}
                     <p className="text-xs text-stone-400">{t("Draft saved in this browser session", "草稿已保留在当前浏览器会话")}</p>
                     <button disabled={busy || assessing || selected.status === "SCHEDULED" || answers.some((answer) => !answer.trim())} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Submitting…", "正在提交…") : assessing ? t("Submitted for assessment", "已提交后台评估") : selected.status === "SCHEDULED" ? t("Start learning to practice", "开始学习后可练习") : t("Submit answers", "提交练习")}</button>
