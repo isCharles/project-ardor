@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, FileSearch, FileText, GraduationCap, Layers, Mail, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowUpDown, ChevronDown, FileSearch, FileText, GraduationCap, Layers, Mail, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, Fragment, useEffect, useState } from "react";
@@ -75,6 +75,7 @@ export default function OpportunitiesPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ title: string; body: string } | null>(null);
   const [editing, setEditing] = useState<Opportunity | null>(null);
+  const [sortAscending, setSortAscending] = useState(false);
 
   function fail(reason: unknown, fallbackEn: string, fallbackZh: string) {
     if (reason instanceof ApiError && reason.status === 401) { router.replace("/login"); return; }
@@ -211,6 +212,24 @@ export default function OpportunitiesPage() {
       { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
+  function interviewTime(item: Opportunity) {
+    const round = latestRound(item);
+    const value = round?.occurredAt ?? round?.scheduledAt ?? null;
+    return value ? new Date(value).getTime() : Number.NaN;
+  }
+
+  // Sorted by the interview date shown in the row; undated records stay last.
+  const sortedItems = [...items].sort((left, right) => {
+    const a = interviewTime(left);
+    const b = interviewTime(right);
+    const aMissing = Number.isNaN(a);
+    const bMissing = Number.isNaN(b);
+    if (aMissing && bMissing) return 0;
+    if (aMissing) return 1;
+    if (bMissing) return -1;
+    return sortAscending ? a - b : b - a;
+  });
+
   return (
     <main className="ardor-workbench min-h-screen px-5 py-8 md:px-10">
       <div className="mx-auto max-w-6xl">
@@ -221,10 +240,17 @@ export default function OpportunitiesPage() {
               {t("Every real interview, one row each — result, date, round, company, platform.", "每条真实面试一行：结果、时间、轮次、公司、平台。")}
             </p>
           </div>
-          <button type="button" onClick={() => setFormOpen((open) => !open)}
-            className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white hover:bg-stone-800">
-            <Plus className="size-4" />{t("New record", "新建记录")}
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setSortAscending((value) => !value)}
+              className="inline-flex items-center gap-2 rounded-full border border-stone-300 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-100">
+              <ArrowUpDown className="size-4" />
+              {sortAscending ? t("Date: oldest first", "日期：正序") : t("Date: newest first", "日期：倒序")}
+            </button>
+            <button type="button" onClick={() => setFormOpen((open) => !open)}
+              className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white hover:bg-stone-800">
+              <Plus className="size-4" />{t("New record", "新建记录")}
+            </button>
+          </div>
         </header>
 
         {error && <div role="alert" className="mb-5 rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
@@ -285,7 +311,7 @@ export default function OpportunitiesPage() {
                   {t("No interviews yet. Paste an HR invite to the agent, or add one here.", "还没有面试记录。可以把 HR 邀请粘贴给 Agent，或在这里手动添加。")}
                 </td></tr>
               )}
-              {items.map((item) => {
+              {sortedItems.map((item) => {
                 const round = latestRound(item);
                 const open = expanded === item.id;
                 return (
