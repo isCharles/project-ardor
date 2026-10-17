@@ -10,7 +10,7 @@ import { MarkdownContent } from "@/components/ardor/markdown-content";
 import { clearLearningDraft, readLearningDraft, saveLearningDraft } from "@/lib/learning-drafts";
 import { type AiJob, jobPending, useAiJob } from "@/lib/ai-jobs";
 import { AiJobStatus } from "@/components/ardor/ai-job-status";
-import { useReadVisibleResult } from "@/lib/background-tasks";
+import { useAcknowledgeResourceTasks } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 import { agentCreationHref } from "@/lib/agent-features";
 import { AppDialog } from "@/components/ui/app-dialog";
@@ -176,8 +176,7 @@ export default function LearningPage() {
   const assessing = jobPending(assessment.job);
   // Reviews live in the attempt history only; the newest attempt is expanded.
   const previousAttempts = selected?.lastEvaluation?.attempts ?? [];
-  useReadVisibleResult("LEARNING_CREATE",selected?.id,!!selected,"",selected?.requestId);
-  useReadVisibleResult("LEARNING_EVALUATE",selected?.id,!!previousAttempts.at(-1)?.requestId,selected?.attemptCount,previousAttempts.at(-1)?.requestId);
+  useAcknowledgeResourceTasks(["LEARNING_CREATE", "LEARNING_EVALUATE"], selected?.id, !!selected);
   const activeCount = plans.filter((plan) => plan.status !== "COMPLETED").length;
   const orderedPlans = [...plans].sort((left, right) => {
     if ((left.status === "COMPLETED") !== (right.status === "COMPLETED")) return left.status === "COMPLETED" ? 1 : -1;

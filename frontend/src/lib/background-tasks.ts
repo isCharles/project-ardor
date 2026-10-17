@@ -34,7 +34,7 @@ export function useReadVisibleResult(kind: string,resourceId: string | null | un
           : await api<BackgroundTask[]>(`/api/background-tasks?${query}`);
         const task=tasks[0];
         if (!active || document.hidden) return;
-        if (task?.status==="COMPLETED" && task.resourceId===resourceId && task.unread) await readBackgroundTask(task);
+        if (task && (task.status==="COMPLETED" || task.status==="FAILED") && task.resourceId===resourceId && task.unread) await readBackgroundTask(task);
         else retry=task?.status==="QUEUED" || task?.status==="RUNNING";
       } catch(reason) { retry=!(reason instanceof ApiError && reason.status===404); }
       finally {
@@ -46,4 +46,38 @@ export function useReadVisibleResult(kind: string,resourceId: string | null | un
     wake(); document.addEventListener("visibilitychange",wake);
     return () => { active=false; if(timer) clearTimeout(timer); document.removeEventListener("visibilitychange",wake); };
   },[kind,resourceId,ready,version,taskId]);
+}
+
+/**
+ * Acknowledges every finished task of this resource across the given kinds.
+ * One page can produce several tasks (creation plus each evaluation attempt), and
+ * the module badge counts all of them, so reading a single result leaves the badge lit.
+ */
+export function useAcknowledgeResourceTasks(kinds: string[], resourceId: string | null | undefined, ready: boolean) {
+  const kindsKey = kinds.join(",");
+  useEffect(() => {
+    if (!resourceId || !ready) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const check = async () => {
+      if (!active || document.hidden) return;
+      let pending = false;
+      for (const kind of kindsKey.split(",")) {
+        try {
+          const tasks: BackgroundTask[] = await api<BackgroundTask[]>(`/api/background-tasks?kind=${encodeURIComponent(kind)}&resourceId=${encodeURIComponent(resourceId)}&limit=20`);
+          if (!active || document.hidden) return;
+          for (const task of tasks) {
+            if (task.resourceId !== resourceId) continue;
+            if ((task.status === "COMPLETED" || task.status === "FAILED") && task.unread) await readBackgroundTask(task);
+            else if (task.status === "QUEUED" || task.status === "RUNNING") pending = true;
+          }
+        } catch { /* Badges are informational; never block the page. */ }
+      }
+      if (active && pending && !document.hidden) timer = setTimeout(() => void check(), 3000);
+    };
+    const wake = () => { if (timer) clearTimeout(timer); void check(); };
+    void check();
+    document.addEventListener("visibilitychange", wake);
+    return () => { active = false; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", wake); };
+  }, [kindsKey, resourceId, ready]);
 }
