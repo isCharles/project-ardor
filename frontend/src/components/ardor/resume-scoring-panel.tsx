@@ -46,7 +46,7 @@ export function ResumeScoringPanel({ report, history, busy, pending, onAnalyze, 
         const checks = Array.isArray(item.checks) ? item.checks : [];
         const points = criterion ? criterion.weight * Number(item.level) / 4 : null;
         return <div key={String(item.id)} className="rounded-xl bg-violet-50/60 p-4">
-          <p className="font-medium text-stone-800">{criterion ? (locale === "en" ? criterion.englishAnchor ?? criterion.anchor : criterion.anchor) : String(item.id)} · {points == null ? `${String(item.level)}/4` : `${points}/${criterion!.weight}`}</p>
+          <p className="font-medium text-stone-800">{criterion ? (locale === "en" ? criterion.englishAnchor ?? String(item.id) : criterion.anchor) : String(item.id)} · {points == null ? `${String(item.level)}/4` : `${points}/${criterion!.weight}`}</p>
           {conditions?.length === 4 && checks.length === 4 && <ul className="mt-3 space-y-2">{conditions.map((condition, index) => <li key={index} className="flex gap-2"><span className={checks[index] ? "text-emerald-600" : "text-stone-400"}>{checks[index] ? "✓" : "−"}</span><span><span className="sr-only">{checks[index] ? t("Awarded: ", "已得分：") : t("Not awarded: ", "未得分：")}</span>{condition}<span className="ml-2 text-xs text-stone-400">{checks[index] ? `+${criterion!.weight / 4}` : t("Not awarded", "未得分")}</span></span></li>)}</ul>}
           <blockquote className="mt-3 break-words border-l-2 border-violet-200 pl-3">{String(item.evidence || t("No evidence found", "未找到证据"))}</blockquote><p className="mt-2">{String(item.rationale)}</p>
         </div>;

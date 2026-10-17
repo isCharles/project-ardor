@@ -134,8 +134,7 @@ public class ResumeService {
 
     public ResumeAnalysis analyze(UUID userId, UUID resumeId, Map<String, Object> context) {
         Resume resume = get(userId, resumeId);
-        // Old queued jobs have no context; freeze the current default explicitly on upgrade.
-        if (context.isEmpty()) context = ResumeScoringContext.freeze("", "");
+        // Old queued jobs must be resubmitted; never silently replace their frozen rules.
         ResumeScoringContext.requireSupported(context);
         String key = ResumeScoringContext.key(resume.getParsedText(), context, objectMapper);
         var existing = analysisRepository.findByResumeIdAndUserIdAndEvaluationKey(resumeId, userId, key);

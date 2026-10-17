@@ -67,9 +67,10 @@ public class ResumeAnalysis {
         return new ResumeAnalysis(userId, resumeId, analysis, modelName);
     }
 
-    public static ResumeAnalysis scored(UUID userId, UUID resumeId, Map<String, Object> analysis, String modelName, String evaluationKey) {
+    public static ResumeAnalysis scored(UUID userId, UUID resumeId, Map<String, Object> analysis, String modelName, String evaluationKey, String promptVersion) {
+        if (promptVersion == null || promptVersion.isBlank() || promptVersion.length() > 64) throw new IllegalArgumentException("评分提示词版本无效");
         ResumeAnalysis result = new ResumeAnalysis(userId, resumeId, analysis, modelName);
-        result.promptVersion = "resume-analysis-v3";
+        result.promptVersion = promptVersion;
         result.evaluationKey = evaluationKey;
         return result;
     }

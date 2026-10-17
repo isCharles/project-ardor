@@ -8,6 +8,7 @@ import tools.jackson.databind.ObjectMapper;
 class ResumeScoringContextTests {
     private final ObjectMapper mapper = new ObjectMapper();
     @Test void oldQueuedRulesCannotBeSilentlyScoredWithNewRules() {
+        assertThrows(IllegalStateException.class, () -> ResumeScoringContext.requireSupported(java.util.Map.of()));
         var current = ResumeScoringContext.freeze("Java", "Requires Redis");
         assertDoesNotThrow(() -> ResumeScoringContext.requireSupported(current));
         var previous = new LinkedHashMap<>(current);

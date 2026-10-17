@@ -19,6 +19,7 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.ARDOR_UI_BROWSER_CHANNEL ? { channel: process.env.ARDOR_UI_BROWSER_CHANNEL } : {}) });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const legacy = { id: "legacy", resumeId: "fixture", promptVersion: "resume-analysis-v2", createdAt: "2026-10-15T12:00:00Z", analysis: { overallScore: 82, summary: "Saved legacy report" } };
+  const v1 = { ...legacy, id: "v1", promptVersion: "resume-analysis-v3", analysis: { ...legacy.analysis, rubricVersion: "ardor-resume-rubric-v1", summary: "Saved v1 report", rubricCriteria: [{ id: "outcomes", weight: 10, anchor: "旧版中文指标" }], criterionRatings: [{ id: "outcomes", level: 3, evidence: "Fixture", rationale: "Saved v1 rationale" }] } };
   const modern = { id: "modern", resumeId: "fixture", promptVersion: "resume-analysis-v4", createdAt: "2026-10-16T12:00:00Z", analysis: {
     overallScore: 75, categoryScores: { content: 75, impact: 75, clarity: 75, roleFit: 75 }, summary: "Versioned assessment",
     rubricVersion: "ardor-resume-rubric-v2", scoringContext: { targetRole: "Java backend", mode: "USER_JD", jobDescription: "Use Redis", marketSnapshotVersion: "user-jd-v1:fixture", researchDate: "2026-10-16", sources: [] },
@@ -41,7 +42,7 @@ try {
       pending = true; return route.fulfill({ status: 202, json: { status: "QUEUED", analysisId: null } });
     }
     else if (path === "/api/resumes/fixture/analysis") body = complete ? modern : legacy;
-    else if (path === "/api/resumes/fixture/analysis/history") body = complete ? [modern, legacy] : [legacy];
+    else if (path === "/api/resumes/fixture/analysis/history") body = complete ? [modern, v1, legacy] : [legacy];
     await route.fulfill({ json: body });
   });
   const page = await context.newPage();
@@ -71,7 +72,13 @@ try {
   await page.getByRole("combobox", { name: "Saved reports", exact: true }).selectOption("legacy");
   await page.getByText("Saved legacy report", { exact: true }).waitFor();
   await page.getByRole("combobox", { name: "Saved reports", exact: true }).selectOption("modern");
+  await page.getByRole("combobox", { name: "Saved reports", exact: true }).selectOption("v1");
   await page.getByText("Scoring anchors and evidence", { exact: true }).click();
+  await page.getByText("outcomes · 7.5/10", { exact: true }).waitFor();
+  assert.equal(await page.getByText("旧版中文指标", { exact: false }).count(), 0);
+  await page.getByRole("combobox", { name: "Saved reports", exact: true }).selectOption("modern");
+  const anchorSummary = page.getByText("Scoring anchors and evidence", { exact: true });
+  if (await anchorSummary.locator("..").getAttribute("open") == null) await anchorSummary.click();
   await page.screenshot({ path: ".next/resume-scoring.png", fullPage: true });
   await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });
   for (const name of ["必须修改", "优先优化", "有余力再润色"]) await page.getByRole("region", { name, exact: true }).waitFor();

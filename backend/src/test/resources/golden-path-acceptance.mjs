@@ -985,7 +985,7 @@ async function main() {
   assert.equal(resumeTask.resultPath,`/app/resumes?selected=${resume.id}`);
   await stranger.request(`/api/background-tasks/RESUME_ANALYSIS/${resumeJob.jobId}`,{expected:404});
   const firstScore = await asyncOwner.request(`/api/resumes/${resume.id}/analysis`);
-  assert.equal(firstScore.promptVersion,"resume-analysis-v3");
+  assert.equal(firstScore.promptVersion,"resume-analysis-v4");
   assert.equal(firstScore.analysis.rubricVersion,"ardor-resume-rubric-v2");
   assert.deepEqual(firstScore.analysis.criterionRatings[0].checks,[false,false,false,false]);
   assert.equal(firstScore.analysis.rubricCriteria[0].conditions.length,4);
