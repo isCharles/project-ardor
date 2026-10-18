@@ -347,7 +347,13 @@ export default function LearningPage() {
               <div className="pointer-events-none absolute -bottom-64 right-20 size-[34rem] rounded-full bg-[radial-gradient(circle,rgba(111,146,255,0.32),transparent_68%)] blur-3xl" />
               <div className="relative grid gap-8 md:grid-cols-[minmax(0,1fr)_13rem] md:items-center">
                 <div>
-                  <p className="text-xs font-medium tracking-wide text-violet-700">{t(statusLabel[selected.status].en, statusLabel[selected.status].zh)}</p>
+                  <p className="text-xs font-medium tracking-wide text-violet-700">
+                    {t(statusLabel[selected.status].en, statusLabel[selected.status].zh)}
+                    {" · "}
+                    {selected.status === "COMPLETED"
+                      ? t(`Completed ${planDate(selected.completedAt ?? selected.scheduledAt, locale)}`, `完成于 ${planDate(selected.completedAt ?? selected.scheduledAt, locale)}`)
+                      : t(`Next review ${planDate(selected.nextReviewAt ?? selected.scheduledAt, locale)}`, `下次复习 ${planDate(selected.nextReviewAt ?? selected.scheduledAt, locale)}`)}
+                  </p>
                   <h2 className="mt-2 max-w-3xl break-words text-2xl font-semibold tracking-[-0.04em] md:text-3xl">{selected.concept}</h2>
                   <div className="mt-5 flex flex-wrap items-center gap-3">
                     {selected.status === "SCHEDULED" && <button type="button" onClick={() => void begin()} disabled={busy} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-stone-800 disabled:opacity-50">{busy ? t("Starting…", "正在开始…") : t("Start learning", "开始学习")}<ArrowRight className="size-4" /></button>}
