@@ -1,87 +1,46 @@
-﻿# Full build + Docker deploy. Preflight:
-#   - if 8080/3000 are owned by Docker app containers, stop those containers and continue
-#   - if they are owned by an IDE backend or a dev server, stop and ask the user (never kill it)
-# Usage: double-click start.cmd, or run this script from a terminal.
-#        Add -PreflightOnly to only run the port/Docker checks.
+﻿# PreflightOnly resolves configured ports without stopping services.
 param([switch]$PreflightOnly)
-
 $ErrorActionPreference = "Stop"
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $root = Split-Path -Parent $PSScriptRoot
-
-function Get-PortOwner {
+. (Join-Path $PSScriptRoot 'LocalLauncher.Common.ps1')
+function Get-PortOwners {
     param([int]$Port)
-    $connection = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if (-not $connection) { return $null }
-    $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
-    return [pscustomobject]@{
-        Port = $Port
-        ProcessId = $connection.OwningProcess
-        ProcessName = if ($process) { $process.ProcessName } else { "unknown" }
+    $connections = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
+    foreach ($connection in $connections) {
+        $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+        [pscustomobject]@{ Port = $Port; ProcessId = $connection.OwningProcess; ProcessName = if ($process) { $process.ProcessName } else { 'unknown' } }
     }
 }
-
-function Test-DockerOwned {
-    param($Owner)
-    if (-not $Owner) { return $false }
-    return $Owner.ProcessName -match '(?i)^(com\.docker|docker|vpnkit)'
+$config = Get-ArdorComposeConfiguration -ProjectRoot $root
+$ports = @(@($config.services.backend.ports) + @($config.services.frontend.ports) |
+    ForEach-Object { if ($_.published) { [int]$_.published } } | Select-Object -Unique)
+if ($ports.Count -lt 1) { throw "Compose 未定义应用宿主机端口，无法完成部署检查。" }
+$conflicts = @($ports | ForEach-Object { Get-PortOwners -Port $_ })
+$otherOwned = @($conflicts | Where-Object { $_.ProcessName -notmatch '(?i)^(com\.docker|docker|vpnkit)' })
+foreach ($item in $conflicts) {
+    Write-Host ("端口 {0} 被 {1} (PID {2}) 占用" -f $item.Port, $item.ProcessName, $item.ProcessId)
 }
-
-function Wait-PortsFree {
-    param([int[]]$Ports, [int]$TimeoutSeconds = 30)
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        $busy = @($Ports | Where-Object { Get-PortOwner -Port $_ })
-        if ($busy.Count -eq 0) { return $true }
-        Start-Sleep -Milliseconds 500
-    }
-    return $false
-}
-
-Write-Host ""
-Write-Host "=== 部署前检查端口 ===" -ForegroundColor Cyan
-$conflicts = @()
-foreach ($port in @(8080, 3000)) {
-    $owner = Get-PortOwner -Port $port
-    if ($owner) { $conflicts += $owner }
-}
-
-if ($conflicts.Count -gt 0) {
-    $dockerOwned = @($conflicts | Where-Object { Test-DockerOwned $_ })
-    $otherOwned = @($conflicts | Where-Object { -not (Test-DockerOwned $_) })
-    if ($otherOwned.Count -gt 0) {
-        foreach ($item in $conflicts) {
-            Write-Host ("端口 {0} 被 {1} (PID {2}) 占用" -f $item.Port, $item.ProcessName, $item.ProcessId) -ForegroundColor Yellow
-        }
-        throw @"
-部署需要先停止这些进程：
-  - 8080：IDEA 里 Run/Debug 的后端
-  - 3000：VS Code / 终端里跑的 Next.js dev
-
-Docker 容器占用会被脚本自动停止，但 IDE 或终端启动的进程不会被强制结束。
-请先停止它们，再重新运行。
-"@
-    }
-
-    Write-Host "端口被 Docker 容器占用，正在停止 backend/frontend 容器..." -ForegroundColor Yellow
-    Push-Location $root
-    try { cmd /c "docker compose stop backend frontend >nul 2>&1" | Out-Null } finally { Pop-Location }
-    if (-not (Wait-PortsFree -Ports @(8080, 3000) -TimeoutSeconds 30)) {
-        throw "已停止 Docker 应用容器，但 8080/3000 仍被占用，请稍后重试"
-    }
-    Write-Host "Docker 应用容器已停止，端口已释放" -ForegroundColor Green
-} else {
-    Write-Host "端口 8080 和 3000 都空闲，可以部署" -ForegroundColor Green
-}
-
+if ($otherOwned.Count -gt 0) { throw "配置端口被本机进程占用，请手动停止 IDE/开发服务器；不会强制结束进程。" }
 if ($PreflightOnly) {
-    Write-Host "仅检查模式：不执行构建部署。" -ForegroundColor DarkGray
+    if ($conflicts.Count) { Write-Host '正式部署时需停止 Docker 应用容器；本次只检查，不停止。' }
+    Write-Host '检查完成：未启动 Docker、未停止容器、未执行构建部署。'
     exit 0
 }
-
-Write-Host ""
-Write-Host "=== 开始构建并部署（编译 jar + 重建 Docker 镜像，约 1–3 分钟） ===" -ForegroundColor Cyan
-& (Join-Path $root "start.ps1")
-if ($LASTEXITCODE -ne 0) { throw "部署失败，请查看上方输出" }
-Write-Host ""
-Write-Host "部署完成：http://localhost:3000" -ForegroundColor Green
+Assert-ArdorDockerEngine -ProjectRoot $root
+if ($conflicts.Count) {
+    & docker compose --project-directory $root -f (Join-Path $root 'docker-compose.yml') stop backend frontend
+    if ($LASTEXITCODE -ne 0) { throw '停止 Docker 应用容器失败。' }
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        $busy = @($ports | ForEach-Object { Get-PortOwners -Port $_ })
+        if ($busy.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    if ($busy.Count) { throw 'Docker 应用容器停止后，配置的端口仍被占用。' }
+}
+& (Join-Path $root 'start.ps1')
+if ($LASTEXITCODE -ne 0) { throw '部署失败，请查看上方输出。' }
+Write-Host '部署完成。请使用 Compose 配置的前端端口访问。' -ForegroundColor Green

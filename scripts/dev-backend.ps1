@@ -1,43 +1,22 @@
-﻿# Runs the backend on the host (hot reload + debugger) against the Dockerized
-# PostgreSQL and Redis. Secrets are read from the repository .env and never printed.
+﻿# Native backend uses isolated development data and an external private file store.
 $ErrorActionPreference = "Stop"
-
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $root = Split-Path -Parent $PSScriptRoot
-$envFile = Join-Path $root ".env"
-if (-not (Test-Path -LiteralPath $envFile)) {
-    throw "缺少 .env；先按 docs/SETUP.md 复制 .env.example 并填写密码与加密密钥"
+. (Join-Path $PSScriptRoot 'LocalLauncher.Common.ps1')
+$config = Get-ArdorComposeConfiguration -ProjectRoot $root -Development
+$native = $config.'x-ardor-native-environment'
+if (-not $native -or -not $native.DATABASE_URL -or -not $native.ARDOR_ENCRYPTION_KEY) { throw "开发环境缺少数据库或加密密钥。" }
+foreach ($property in $native.PSObject.Properties) {
+    [Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value, 'Process')
 }
-
-$allowed = @(
-    "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT",
-    "BACKEND_PORT", "ARDOR_ENCRYPTION_KEY", "ARDOR_ADMIN_EMAILS",
-    "ARDOR_HTTP_PROXY_HOST", "ARDOR_HTTP_PROXY_PORT", "ARDOR_ALLOW_PRIVATE_API_BASE_URLS"
-)
-Get-Content -LiteralPath $envFile -Encoding UTF8 | ForEach-Object {
-    if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$') {
-        $name = $Matches[1]
-        $value = $Matches[2].Trim('"').Trim("'")
-        if ($allowed -contains $name) { Set-Item -Path "Env:$name" -Value $value }
-    }
-}
-
-$dbPort = if ($env:POSTGRES_PORT) { $env:POSTGRES_PORT } else { "5433" }
-$dbName = if ($env:POSTGRES_DB) { $env:POSTGRES_DB } else { "ardor" }
-$env:DATABASE_URL = "jdbc:postgresql://localhost:$dbPort/$dbName"
-$env:DATABASE_USER = if ($env:POSTGRES_USER) { $env:POSTGRES_USER } else { "ardor" }
-$env:DATABASE_PASSWORD = $env:POSTGRES_PASSWORD
-$env:REDIS_HOST = "localhost"
-$env:REDIS_PORT = "6379"
-
-if (-not $env:ARDOR_ENCRYPTION_KEY) {
-    throw ".env 缺少 ARDOR_ENCRYPTION_KEY，后端无法启动"
-}
-
-Push-Location (Join-Path $root "backend")
+if (-not $env:LOCALAPPDATA) { throw "LOCALAPPDATA 不可用，无法确定开发文件目录。" }
+$env:ARDOR_RESUME_STORAGE = Join-Path $env:LOCALAPPDATA 'ProjectArdor\development\resumes'
+Push-Location (Join-Path $root 'backend')
 try {
-    Write-Host "启动后端 http://localhost:8080 （调试端口 5005，VS Code 可 Attach）"
-    mvn spring-boot:run "-Dspring-boot.run.jvmArguments=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
+    Write-Host "启动开发后端 http://localhost:$($env:BACKEND_PORT) （调试端口仅监听 localhost:5005）"
+    & mvn spring-boot:run '-Dspring-boot.run.jvmArguments=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=localhost:5005'
+    if ($LASTEXITCODE -ne 0) { throw "Maven 启动后端失败（退出码 $LASTEXITCODE）。" }
 }
-finally {
-    Pop-Location
-}
+finally { Pop-Location }
