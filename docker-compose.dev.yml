@@ -1,0 +1,47 @@
+# Standalone infrastructure: never combine with docker-compose.yml.
+name: project-ardor-dev
+x-ardor-native-environment:
+  DATABASE_URL: jdbc:postgresql://127.0.0.1:${ARDOR_DEV_POSTGRES_PORT:-55433}/${ARDOR_DEV_POSTGRES_DB:-ardor_dev}
+  DATABASE_USER: ${POSTGRES_USER:-ardor}
+  DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: ${REDIS_PORT:-56379}
+  BACKEND_PORT: ${BACKEND_PORT:-8080}
+  ARDOR_ENCRYPTION_KEY: ${ARDOR_ENCRYPTION_KEY:?ARDOR_ENCRYPTION_KEY must be set}
+  ARDOR_ADMIN_EMAILS: ${ARDOR_ADMIN_EMAILS:-}
+  ARDOR_HTTP_PROXY_HOST: ${ARDOR_HTTP_PROXY_HOST:-}
+  ARDOR_HTTP_PROXY_PORT: ${ARDOR_HTTP_PROXY_PORT:-0}
+  ARDOR_ALLOW_PRIVATE_API_BASE_URLS: ${ARDOR_ALLOW_PRIVATE_API_BASE_URLS:-false}
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${ARDOR_DEV_POSTGRES_DB:-ardor_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-ardor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    ports:
+      - "127.0.0.1:${ARDOR_DEV_POSTGRES_PORT:-55433}:5432"
+    volumes:
+      - dev-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-56379}:6379"
+    volumes:
+      - dev-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+volumes:
+  dev-postgres-data:
+  dev-redis-data:

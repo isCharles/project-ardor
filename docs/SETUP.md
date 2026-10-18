@@ -42,6 +42,24 @@ try { $rng.GetBytes($keyBytes) } finally { $rng.Dispose() }
 
 ## 分别运行与验证
 
+### 隔离的本机开发模式
+
+双击 `dev-up.cmd`，再运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-backend.ps1`；前端仍在 `frontend` 运行 `npm run dev`。IDE 可附加到 **localhost:5005**，不要把调试端口暴露到局域网。
+
+`docker-compose.dev.yml` 是独立配置，**不要与 `docker-compose.yml` 叠加**。脚本固定使用 `project-ardor-dev` 项目和独立数据卷，不停止部署版，也不将部署数据库接到另一份文件存储：
+
+- PostgreSQL 默认 `127.0.0.1:55433`、数据库 `ardor_dev`；可用 `ARDOR_DEV_POSTGRES_PORT`、`ARDOR_DEV_POSTGRES_DB` 配置。
+- Redis 默认 `127.0.0.1:56379`；可用 `REDIS_PORT` 配置，原生后端使用相同的解析值。
+- 简历文件保存在 `%LOCALAPPDATA%\ProjectArdor\development\resumes`，不在 Git 工作树或部署数据卷内。
+- 密码、加密密钥及模型网络配置由 Compose 解析根目录 `.env`；环境变量覆盖遵循 Compose 的优先级。解析后的秘密不输出到日志。
+- `BACKEND_PORT` 可调整开发后端监听端口；前端开发的 `ARDOR_BACKEND_URL` 应指向该端口。直接从 IDE 启动 Java、绕过脚本不会自动获得这些环境变量，请使用脚本启动并附加调试，或在 IDE 显式配置同样的隔离数据库、Redis 与文件目录。
+
+隔离环境首次使用没有部署版账号和资料，需要自行创建开发账号；不会自动复制或迁移真实数据。多个 worktree 只隔离源码，不自动隔离端口或本机开发环境，不要并行把两个原生后端接到同一套开发数据。
+
+双击 `start.cmd` 则构建、部署原有 Docker 应用；检查实际 Compose 配置的宿主机端口，只自动停止 Docker 应用容器，不强杀本机开发进程。`scripts/start-deploy.ps1 -PreflightOnly` 只读取配置和监听端口，不启动 Docker、不停止服务、不构建。
+
+脚本回归测试：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/Test-LocalLaunchers.ps1 -ValidateCompose`。测试使用临时假配置和命令替身；不会操作真实容器、启动 Maven 或读取根目录 `.env`。临时测试日志路径会在结束时显示。
+
 只启动数据库和会话存储：
 
 ```powershell

@@ -1,0 +1,26 @@
+name: Local launcher checks
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - '*.cmd'
+      - 'docker-compose*.yml'
+      - '.github/workflows/local-launchers.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '*.cmd'
+      - 'docker-compose*.yml'
+      - '.github/workflows/local-launchers.yml'
+permissions:
+  contents: read
+jobs:
+  local-launchers:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test Windows PowerShell launchers with synthetic configuration
+        shell: powershell
+        run: ./scripts/tests/Test-LocalLaunchers.ps1 -ValidateCompose
