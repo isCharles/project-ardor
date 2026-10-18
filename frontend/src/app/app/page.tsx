@@ -441,7 +441,8 @@ export default function AgentHomePage() {
       const merged = new Map(current.filter((item) => item.sourceMessageId && messageIds.has(item.sourceMessageId)).map((item) => [confirmationKey(item), item]));
       for (const item of restored) {
         const existing = merged.get(confirmationKey(item));
-        merged.set(confirmationKey(item), existing && existing.sourceMessageId === item.sourceMessageId ? { ...item, ...existing } : item);
+        const settled = ["DONE", "DISMISSED", "EXPIRED", "REMOVED"].includes(item.state);
+        merged.set(confirmationKey(item), existing && existing.sourceMessageId === item.sourceMessageId && !settled ? { ...item, ...existing } : item);
       }
       return [...merged.values()];
     });

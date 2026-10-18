@@ -710,6 +710,14 @@ try {
   await page.reload();
   await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
   assert.equal(await deletionDock.count(), 0, "Old legacy proposals without a recoverable decision must expire, not prompt again");
+  displayedMessages[0] = { ...displayedMessages[0], id: "remote-decision-proposal", proposalResolutions: {}, createdAt: new Date().toISOString() };
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload();
+  await deletionDock.waitFor();
+  displayedMessages[0].proposalResolutions = { "memory_item:/api/agent/memory/items/dock-fixture": "DISMISSED" };
+  await page.getByRole("button", { name: conversation.title, exact: true }).click();
+  await deletionDock.waitFor({ state: "hidden" });
+  assert.equal(await deletionDock.count(), 0, "A durable remote decision must take precedence over in-memory pending state");
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {
