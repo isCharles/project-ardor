@@ -334,8 +334,8 @@ export default function OpportunitiesPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <select value={item.status} disabled={busy === item.id} onChange={(event) => void setStatus(item, event.target.value)}
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLE[item.status] ?? "bg-stone-100 text-stone-600"}`}>
+                        <select value={item.status} title={statusLabel(item.status, en)} aria-label={t("Result", "结果")} disabled={busy === item.id} onChange={(event) => void setStatus(item, event.target.value)}
+                          className={`w-full min-w-0 max-w-full truncate rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLE[item.status] ?? "bg-stone-100 text-stone-600"}`}>
                           {STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status, en)}</option>)}
                         </select>
                       </td>

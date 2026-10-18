@@ -24,7 +24,7 @@ try {
   const longConcept = `Long learning topic ${"UnbrokenTechnicalConcept".repeat(80)}`;
   const cardFront = `PRIVATE_CARD_BODY_${"do-not-render-this-question".repeat(80)}`;
   recaps.push({ ...recaps[0], id: "linked", title: longTitle, jobOpportunityId: "process-one", questions: [{ id: "question-one" }] });
-  const opportunities = [{ id: "process-one", company: "Fixture company", targetRole: "Backend intern", platform: "Fixture", status: "SCHEDULED", currentRound: 1,
+  const opportunities = [{ id: "process-one", company: "Fixture company", targetRole: "Backend intern", platform: "Fixture", status: "AWAITING_RESULT", currentRound: 1,
     rounds: [{ id: "round-one", roundNumber: 1, stage: "TECHNICAL", scheduledAt: "2026-10-20T01:00:00Z", occurredAt: null, durationMinutes: 60, note: null }] }];
   let slowJob = false, jobPolls = 0;
   await context.route("**/api/**", async route => {
@@ -66,7 +66,7 @@ try {
   await page.goto(`${origin}/app/opportunities?selected=process-one`);
   const cardsLink = page.getByRole("link", { name: "Flashcards 2", exact: true });
   await cardsLink.waitFor();
-  assert.equal(await page.getByText(cardFront, { exact: true }).count(), 0, "Card body must not render in the interview summary");
+  assert.ok(!(await page.locator("main").innerText()).includes("PRIVATE_CARD_BODY_"), "Card bodies must not render, including concatenated summaries");
   for (const width of [1440, 900, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const geometry = await page.locator("table").evaluate(table => {
@@ -74,11 +74,16 @@ try {
       const titles = [...table.querySelectorAll("a span[title]")];
       return { tableWidth: rect.width, containerWidth: table.parentElement.clientWidth,
         documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth,
+        controlsFit: [...table.querySelectorAll("select")].every(select => {
+          const cell = select.closest("td").getBoundingClientRect(), control = select.getBoundingClientRect();
+          return control.left >= cell.left && control.right <= cell.right;
+        }),
         titles: titles.map(span => ({ ellipsis: getComputedStyle(span).textOverflow, clipped: span.scrollWidth > span.clientWidth,
           fits: span.getBoundingClientRect().right <= rect.right + 1 })) };
     });
     assert.ok(geometry.tableWidth <= Math.max(860, geometry.containerWidth) + 2, `Long association expanded table at ${width}px`);
     assert.ok(geometry.documentWidth <= geometry.viewportWidth + 1, `Long content expanded viewport at ${width}px`);
+    assert.ok(geometry.controlsFit, `Result control overlaps another cell at ${width}px`);
     assert.ok(geometry.titles.length >= 2 && geometry.titles.every(title => title.ellipsis === "ellipsis" && title.clipped && title.fits), `Association titles did not truncate at ${width}px`);
     assert.equal(await cardsLink.getAttribute("href"), "/app/cards");
   }
