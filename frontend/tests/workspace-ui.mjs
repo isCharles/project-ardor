@@ -55,6 +55,7 @@ try {
     const path = url.pathname;
     let body = {};
     if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin };
+    else if (path === "/api/agent/permissions") body = { globalLevel: 0, modules: [] };
     else if (path === "/api/profile/sidebar") {
       body = sidebarViews.get(userId) ?? { userId, hrefs: sidebarDefaults, revision: 0, configured: false };
       if (route.request().method() === "PUT") {
@@ -124,6 +125,13 @@ try {
       await new Promise(resolve => setTimeout(resolve, 200));
       if (deletionFails) return route.fulfill({ status: 503, json: { message: "Synthetic dock deletion failure" } });
       return route.fulfill({ status: 204 });
+    }
+    else if (path.endsWith("/proposal-resolution") && route.request().method() === "PUT") {
+      const messageId = path.split("/").at(-2);
+      const message = displayedMessages.find(item => item.id === messageId);
+      const decision = route.request().postDataJSON();
+      if (message) message.proposalResolutions = { ...message.proposalResolutions, [decision.key]: decision.resolution };
+      return route.fulfill({ status: 200 });
     }
     else if (path.endsWith("/approvals")) body = permissions;
     else if (/\/approvals\/[^/]+$/.test(path) && route.request().method() === "POST") {
@@ -285,18 +293,18 @@ try {
   const custom = page.getByRole("dialog", { name: "Customize sidebar" });
   assert.equal(await custom.getByLabel("Chat", { exact: true }).isDisabled(), true);
   await custom.getByLabel("Resumes", { exact: true }).uncheck();
-  await custom.getByLabel("Interview notes", { exact: true }).check();
+  await custom.getByLabel("Knowledge", { exact: true }).check();
   await custom.getByRole("button", { name: "Save", exact: true }).click();
   await custom.waitFor({ state: "hidden" });
   const nav = page.getByRole("navigation", { name: "Workspaces", exact: true });
   assert.equal(await nav.getByRole("link", { name: "Resumes", exact: true }).count(), 0);
-  assert.equal(await nav.getByRole("link", { name: "Interview notes", exact: true }).count(), 1);
+  assert.equal(await nav.getByRole("link", { name: "Knowledge", exact: true }).count(), 1);
   const freshDevice = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await freshDevice.route("**/api/**", handleApi);
   await freshDevice.addInitScript(() => localStorage.setItem("ardor:workspace-rail:v1:workspace-owner", JSON.stringify(["/app", "/app/knowledge"])));
   const freshPage = await freshDevice.newPage();
   await freshPage.goto(`${origin}/app`);
-  await freshPage.getByRole("navigation", { name: "Workspaces", exact: true }).getByRole("link", { name: "Interview notes", exact: true }).waitFor();
+  await freshPage.getByRole("navigation", { name: "Workspaces", exact: true }).getByRole("link", { name: "Knowledge", exact: true }).waitFor();
   assert.equal(await freshPage.getByRole("navigation", { name: "Workspaces", exact: true }).getByRole("link", { name: "Resumes", exact: true }).count(), 0,
     "A fresh browser uses the account layout rather than defaults or an older local layout");
   assert.deepEqual(await freshPage.evaluate(() => JSON.parse(localStorage.getItem("ardor:workspace-rail:v1:workspace-owner"))), ["/app", "/app/knowledge"], "The old local layout remains recoverable");
@@ -318,7 +326,7 @@ try {
   await custom.waitFor({ state: "hidden" });
   await page.screenshot({ path: ".next/workspace-chat.png" });
   await page.reload();
-  await nav.getByRole("link", { name: "Interview notes", exact: true }).waitFor();
+  await nav.getByRole("link", { name: "Knowledge", exact: true }).waitFor();
   await page.getByRole("button", { name: "More workspaces" }).click();
   await page.locator("#ardor-more-workspaces").getByRole("link", { name: "Resumes", exact: true }).waitFor();
 
@@ -346,11 +354,11 @@ try {
   await custom.getByRole("button", { name: "Reset defaults" }).click();
   await custom.press("Escape"); // cancel must not save defaults
   await page.reload();
-  await nav.getByRole("link", { name: "Interview notes", exact: true }).waitFor();
+  await nav.getByRole("link", { name: "Knowledge", exact: true }).waitFor();
   userId = "workspace-other";
   await page.reload();
   await nav.getByRole("link", { name: "Resumes", exact: true }).waitFor();
-  assert.equal(await nav.getByRole("link", { name: "Interview notes", exact: true }).count(), 0);
+  assert.equal(await nav.getByRole("link", { name: "Knowledge", exact: true }).count(), 0);
   await page.evaluate(() => localStorage.setItem("ardor:workspace-rail:v1:workspace-other", "bad json"));
   await page.reload();
   await nav.getByRole("link", { name: "Resumes", exact: true }).waitFor();
@@ -450,6 +458,10 @@ try {
   await suggestedOperations.getByRole("button", { name: "Reject", exact: true }).click();
   await suggestedOperations.waitFor({ state: "hidden" });
   assert.deepEqual(permissionDecisions.map(value => value.allow), [false]);
+  permissions = [{ id: "permission-date", tool: "update_learning_plan", arguments: "{}", status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
+  await page.waitForTimeout(1300);
+  assert.equal(await suggestedOperations.count(), 0, "A stale poll response must not revive a decided approval");
+  permissions = [];
   assert.equal(await draftBox.isEnabled(), true);
   await draftBox.fill("Next message draft survives completion");
   await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
@@ -571,7 +583,8 @@ try {
   await page.reload();
   await draftBox.fill("Stop during retry backoff");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByText("Waiting for model", { exact: true }).click();
+  const retryTrace = page.getByText("Waiting for model", { exact: true }).locator("xpath=ancestor::details[1]");
+  if (await retryTrace.getAttribute("open") === null) await retryTrace.locator(":scope > summary").click();
   await page.getByText(/Reconnecting · retry 1\/5/).waitFor();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.getByText("Stopped. Any operation already started may still finish; check its result.", { exact: true }).waitFor();
@@ -587,11 +600,13 @@ try {
   assert.equal(await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).count(), 0);
   learningPlans = [{ id: "delete-fixture", concept: "Synthetic JVM lesson", status: "COMPLETED", sourceType: "MANUAL", scheduledAt: new Date().toISOString(), lesson: { summary: "Fixture" }, exercises: [], lastScore: null, attemptCount: 0 }];
   await page.goto(`${origin}/app/learning`);
-  await page.getByRole("button", { name: "Delete learning plan", exact: true }).click();
+  await page.getByLabel("More actions", { exact: true }).click();
+  await page.getByRole("button", { name: "Delete plan", exact: true }).click();
   assert.equal(learningDeleteCalls, 0);
   await page.getByRole("dialog", { name: "Delete learning plan?" }).getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal(learningDeleteCalls, 0);
-  await page.getByRole("button", { name: "Delete learning plan", exact: true }).click();
+  await page.getByLabel("More actions", { exact: true }).click();
+  await page.getByRole("button", { name: "Delete plan", exact: true }).click();
   learningDeleteFails = true;
   await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
   await page.getByRole("dialog").getByRole("alert").waitFor();
@@ -661,13 +676,18 @@ try {
     });
     assert.ok(bounds.top >= 0 && bounds.bottom <= bounds.inputTop && bounds.inputBottom <= bounds.height, "Confirmation must be visible directly above the composer, without covering it");
   }
+  const savedDecision = page.waitForResponse(response => response.url().endsWith("/proposal-resolution") && response.request().method() === "PUT");
   await deletionDock.getByRole("button", { name: "Keep", exact: true }).click();
+  await savedDecision;
   await deletionDock.waitFor({ state: "detached" });
   assert.equal(deletionCalls, 0);
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Deletion confirmation"]'));
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
   await page.reload();
   await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
   assert.equal(await deletionDock.count(), 0, "Kept proposals must not revive on reload");
   displayedMessages[0].id = "new-deletion-proposal";
+  displayedMessages[0].proposalResolutions = {};
   await page.reload();
   await deletionDock.waitFor();
   deletionFails = true;
@@ -685,6 +705,22 @@ try {
   await page.reload();
   await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
   assert.equal(await deletionDock.count(), 0, "Completed deletion must not revive on reload");
+  displayedMessages[0] = { ...displayedMessages[0], id: "legacy-old-proposal", proposalResolutions: {}, createdAt: "2026-01-01T00:00:00Z" };
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.reload();
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
+  assert.equal(await deletionDock.count(), 0, "Old legacy proposals without a recoverable decision must expire, not prompt again");
+  displayedMessages[0] = { ...displayedMessages[0], id: "remote-decision-proposal", proposalResolutions: {}, createdAt: new Date().toISOString() };
+  activeRun = { id: "remote-decision-run", conversationId: conversation.id, message: "Synthetic ongoing task", status: "RUNNING", label: "Waiting", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const restoredProgress = page.waitForResponse(response => response.url().endsWith("/runs/remote-decision-run/progress"));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload();
+  await deletionDock.waitFor();
+  await restoredProgress;
+  displayedMessages[0].proposalResolutions = { "memory_item:/api/agent/memory/items/dock-fixture": "DISMISSED" };
+  activeRun = { ...activeRun, status: "COMPLETED" };
+  await deletionDock.waitFor({ state: "hidden" });
+  assert.equal(await deletionDock.count(), 0, "A durable remote decision must take precedence over in-memory pending state");
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {

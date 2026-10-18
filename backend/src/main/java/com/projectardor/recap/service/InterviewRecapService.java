@@ -21,7 +21,6 @@ import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.domain.*;
 import com.projectardor.recap.repository.*;
 import com.projectardor.recap.web.InterviewRecapResponse;
-import com.projectardor.recap.web.InterviewRecapMetadataRequest;
 
 import tools.jackson.databind.JsonNode;
 
@@ -30,9 +29,8 @@ public class InterviewRecapService {
     private static final String PROMPT = """
             你是严谨的中文技术面试复盘编辑。根据用户提供的原始转录、回忆或笔记，按真实发生顺序整理。
             只输出 JSON 对象，不要 Markdown：
-            {"title":"简短面经标题","company":"材料可确认的公司或空字符串","targetRole":"材料可确认的岗位或空字符串","occurredAt":"材料可确认的带时区 ISO-8601 时间或空字符串","overview":"高密度整体概况","strengths":["有原文依据的优势"],"weaknesses":["有原文依据的薄弱点"],"questions":[{"questionText":"面试官问题本意","candidateAnswer":"候选人实际回答摘要；材料没有则为空","followUps":["按顺序记录追问和补充"],"assessment":"保守复盘，区分有效部分、遗漏和无法验证处","performance":"STRONG|MIXED|WEAK|UNKNOWN","weaknessReason":"只有表现存在问题且有依据时填写，否则为空","betterAnswer":"改进建议，明确不是当时回答；材料不足可为空","tags":["知识点"]}]}。
+            {"title":"简短面经标题","overview":"高密度整体概况","strengths":["有原文依据的优势"],"weaknesses":["有原文依据的薄弱点"],"questions":[{"questionText":"面试官问题本意","candidateAnswer":"候选人实际回答摘要；材料没有则为空","followUps":["按顺序记录追问和补充"],"assessment":"保守复盘，区分有效部分、遗漏和无法验证处","performance":"STRONG|MIXED|WEAK|UNKNOWN","weaknessReason":"只有表现存在问题且有依据时填写，否则为空","betterAnswer":"改进建议，明确不是当时回答；材料不足可为空","tags":["知识点"]}]}。
             不得虚构问题、回答、代码、指标或面试官评价；不改变数字与单位；无法确认时写材料未说明或使用 UNKNOWN。
-            必须通读标题、开场、邀约信息和正文，主动寻找面试日期、公司与岗位。不得从技术栈或问题内容猜测这些字段，确实没有才输出空字符串。
             不能把表达完整等同于技术正确。主问题及连续追问必须在同一组。questions 至少 1 项，最多 30 项。
             """;
 
@@ -60,11 +58,21 @@ public class InterviewRecapService {
     }
 
     public InterviewRecapResponse organize(UUID userId, String rawContent, InterviewRecapSource sourceType) {
+        return organize(userId, rawContent, sourceType, null);
+    }
+
+    public InterviewRecapResponse organize(UUID userId, String rawContent, InterviewRecapSource sourceType,
+            UUID jobOpportunityId) {
         String content = required(rawContent, "面试内容不能为空", 50000);
         if (content.length() < 30) throw new IllegalArgumentException("面试内容太短，请至少提供一段问题或回忆");
         String inputHash = sha256((sourceType == null ? InterviewRecapSource.NOTES : sourceType).name() + "\n" + content);
         var existing = recapRepository.findByUserIdAndInputHash(userId, inputHash);
-        if (existing.isPresent()) return detail(userId, existing.get().getId());
+        if (existing.isPresent()) {
+            // The same material may be re-sent from a process page. Attach it when the
+            // stored recap has no process yet instead of leaving a stale/absent link.
+            if (existing.get().linkOpportunity(jobOpportunityId)) recapRepository.save(existing.get());
+            return detail(userId, existing.get().getId());
+        }
 
         LlmGateway.LlmResult result = llmGateway.completeJson(userId, PROMPT,
                 "输入类型：" + (sourceType == null ? InterviewRecapSource.NOTES : sourceType) + "\n原始材料：\n" + content);
@@ -74,11 +82,11 @@ public class InterviewRecapService {
 
         return transactions.execute(status -> {
             InterviewRecap recap = recapRepository.save(InterviewRecap.create(userId,
-                    text(root, "title", "面试复盘", 240), nullable(root, "company", 160),
-                    nullable(root, "targetRole", 160), parseInstant(nullable(root, "occurredAt", 80)),
+                    text(root, "title", "面试复盘", 240),
                     sourceType == null ? InterviewRecapSource.NOTES : sourceType, content, inputHash,
                     text(root, "overview", "已按原始材料整理逐题复盘。", 12000),
-                    stringList(root.path("strengths"), 20, 1000), stringList(root.path("weaknesses"), 20, 1000), result.model()));
+                    stringList(root.path("strengths"), 20, 1000), stringList(root.path("weaknesses"), 20, 1000), result.model(),
+                    jobOpportunityId));
             List<InterviewRecapQuestion> questions = new ArrayList<>();
             for (int i = 0; i < drafts.size(); i++) {
                 QuestionDraft draft = drafts.get(i);
@@ -100,7 +108,7 @@ public class InterviewRecapService {
         Map<UUID, List<InterviewRecapQuestion>> questionsByRecap = questionRepository
                 .findAllByUserIdOrderByRecapIdAscSequenceNumberAsc(userId).stream()
                 .collect(Collectors.groupingBy(InterviewRecapQuestion::getRecapId));
-        return recapRepository.findAllByUserIdOrderByInterviewTimeDesc(userId).stream()
+        return recapRepository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
                 .map(recap -> InterviewRecapResponse.from(
                         recap, questionsByRecap.getOrDefault(recap.getId(), List.of())))
                 .toList();
@@ -112,22 +120,6 @@ public class InterviewRecapService {
                 .orElseThrow(() -> new ResourceNotFoundException("面经不存在"));
         return InterviewRecapResponse.from(recap,
                 questionRepository.findAllByUserIdAndRecapIdOrderBySequenceNumber(userId, recapId));
-    }
-
-    @Transactional
-    public InterviewRecapResponse updateMetadata(UUID userId, UUID recapId, InterviewRecapMetadataRequest request) {
-        InterviewRecap recap = recapRepository.findByIdAndUserId(recapId, userId)
-                .orElseThrow(() -> new ResourceNotFoundException("面经不存在"));
-        recap.updateMetadata(cleanMetadata(request.company()), cleanMetadata(request.targetRole()), request.occurredAt());
-        return InterviewRecapResponse.from(recapRepository.save(recap),
-                questionRepository.findAllByUserIdAndRecapIdOrderBySequenceNumber(userId, recapId));
-    }
-
-    static String cleanMetadata(String value) {
-        if (value == null || value.isBlank()) return null;
-        String cleaned = value.strip();
-        if (cleaned.length() > 160) throw new IllegalArgumentException("公司和岗位不能超过 160 字符");
-        return cleaned;
     }
 
     @Transactional

@@ -19,8 +19,6 @@ type Question = {
 type Recap = {
   id: string;
   title: string;
-  company: string | null;
-  occurredAt: string | null;
   createdAt: string;
   questions: Question[];
 };
@@ -99,7 +97,7 @@ export default function EvidencePage() {
   const tracks = useMemo(() => recaps.flatMap((recap) => recap.questions
     .filter((question) => question.performance === "WEAK" || question.performance === "MIXED")
     .map((question) => ({ recap, question })))
-    .sort((left, right) => Date.parse(right.recap.occurredAt ?? right.recap.createdAt) - Date.parse(left.recap.occurredAt ?? left.recap.createdAt)), [recaps]);
+    .sort((left, right) => Date.parse(right.recap.createdAt) - Date.parse(left.recap.createdAt)), [recaps]);
   const linkedCards = useMemo(() => new Map(cards.filter((card) => card.recapQuestionId)
     .map((card) => [card.recapQuestionId, card])), [cards]);
 
@@ -129,7 +127,7 @@ export default function EvidencePage() {
               return <article key={question.id} className="relative overflow-hidden rounded-[2.2rem] border border-white/85 bg-white/75 p-6 shadow-[0_18px_60px_rgba(80,55,115,0.07)] backdrop-blur-xl md:p-9">
                 <div className="pointer-events-none absolute -right-20 -top-28 size-72 rounded-full bg-[radial-gradient(circle,rgba(255,167,125,0.26),rgba(172,148,255,0.15)_48%,transparent_73%)] blur-2xl" />
                 <div className="relative">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500"><span className={`rounded-full px-2.5 py-1 ${question.performance === "WEAK" ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-700"}`}>{question.performance === "WEAK" ? t("Needs work", "薄弱") : t("Practice more", "需巩固")}</span><span>{recap.company ?? recap.title}</span></div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500"><span className={`rounded-full px-2.5 py-1 ${question.performance === "WEAK" ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-700"}`}>{question.performance === "WEAK" ? t("Needs work", "薄弱") : t("Practice more", "需巩固")}</span><span>{recap.title}</span></div>
                   <h2 className="mt-4 max-w-4xl text-xl font-semibold leading-snug tracking-tight md:text-2xl">{question.questionText}</h2>
                   <Link href={`/app/replay?question=${question.id}`} className="mt-4 inline-flex items-center gap-2 rounded-full bg-stone-950 px-4 py-2 text-xs font-medium text-white transition hover:bg-stone-800"><RotateCcw className="size-3.5" />{t("Try again", "重新回答")}<ArrowRight className="size-3.5" /></Link>
                   <div className="mt-6 grid gap-3 md:grid-cols-3">

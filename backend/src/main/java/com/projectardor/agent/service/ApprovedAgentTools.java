@@ -16,17 +16,30 @@ final class ApprovedAgentTools {
     private static final Set<String> PROPOSALS = Set.of("create_learning_plan", "delete_learning_plan",
             "delete_knowledge_document", "delete_memory", "clear_all_memories", "delete_calendar_task",
             "delete_recurring_task", "delete_resume", "delete_interview", "delete_memory_card",
-            "delete_all_memory_cards", "delete_interview_recap");
+            "delete_all_memory_cards", "delete_interview_recap", "delete_job_opportunity",
+            "delete_job_opportunity_round");
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals) {
-        return wrap(bound, userId, requestId, approvals, null);
+        return wrap(bound, userId, requestId, approvals, null, new AgentToolTimings(), waiting -> {}, null);
+    }
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, String userRequest) {
+        return wrap(bound, userId, requestId, approvals, null, new AgentToolTimings(), waiting -> {}, userRequest);
     }
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease) {
-        return wrap(bound, userId, requestId, approvals, lease, new AgentToolTimings());
+        return wrap(bound, userId, requestId, approvals, lease, new AgentToolTimings(), waiting -> {}, null);
     }
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings) {
-        return wrap(bound, userId, requestId, approvals, lease, timings, waiting -> {});
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting -> {}, null);
     }
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, java.util.function.Consumer<Boolean> waiting) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, null, null);
+    }
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, String userRequest, AgentPermissionGrants permissions) {
+        return wrap(bound, userId, requestId, approvals, null, new AgentToolTimings(), waiting -> {}, userRequest, permissions);
+    }
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, java.util.function.Consumer<Boolean> waiting, String userRequest) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, null);
+    }
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, java.util.function.Consumer<Boolean> waiting, String userRequest, AgentPermissionGrants permissions) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         for (var method : bound.getClass().getMethods()) {
             if (!method.isAnnotationPresent(Tool.class)) continue;
@@ -41,10 +54,15 @@ final class ApprovedAgentTools {
                         && (read ? approvals.canRead(userId, requestId) : approvals.canPropose(userId, requestId));
                 long requested = timings.now();
                 if (allowed && !proposal && !read) {
-                    waiting.accept(true);
-                    try { allowed = approvals.await(userId, requestId, specification.name(), request.arguments())
-                            && approvals.canPropose(userId, requestId); }
-                    finally { waiting.accept(false); }
+                    if (permissions != null && permissions.autoApproves(userId, specification.name())) {
+                        // A permission level skips the dialog, never the audit trail.
+                        permissions.recordAutoApproval(userId, requestId, specification.name(), request.arguments());
+                    } else {
+                        waiting.accept(true);
+                        try { allowed = approvals.await(userId, requestId, specification.name(), request.arguments())
+                                && approvals.canPropose(userId, requestId); }
+                        finally { waiting.accept(false); }
+                    }
                 }
                 long approved = timings.now();
                 if (!allowed) {

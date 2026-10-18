@@ -11,7 +11,8 @@ public final class ToolIntentPolicy {
             "list_learning_plans", "get_learning_plan", "list_memories", "get_application_rhythm", "list_calendar_tasks",
             "list_recurring_tasks", "list_resumes", "get_resume_analysis_status", "get_resume_analysis", "list_interviews",
             "get_next_question", "get_ai_job", "get_interview_evaluation", "list_interview_recap_jobs", "list_interview_recaps",
-            "get_interview_recap", "list_due_memory_cards", "list_memory_cards");
+            "get_interview_recap", "list_due_memory_cards", "list_memory_cards", "list_job_opportunities",
+            "get_job_opportunity");
     public static boolean isRead(String tool) { return READS.contains(tool); }
     /** A narrowed/revoked instruction cannot inherit an unrestricted old capability.
      * Target-specific exemptions require a fresh positive request, not model interpretation. */
@@ -31,7 +32,10 @@ public final class ToolIntentPolicy {
             case "update_learning_plan", "begin_learning_plan" -> "学习|讲解|练习|learn|lesson|study|practice";
             case "create_memory_card", "update_memory_card", "review_memory_card", "suspend_memory_card" -> "记忆卡|卡片|复习|flashcard|card|review";
             case "create_interview", "submit_interview_answer", "finish_interview", "cancel_interview" -> "面试|interview";
-            case "organize_interview_recap", "update_interview_recap_metadata" -> "面经|面试|复盘|interview|recap";
+            case "organize_interview_recap" -> "面经|面试|复盘|interview|recap";
+            case "create_job_opportunity", "update_job_opportunity", "add_job_opportunity_round",
+                    "update_job_opportunity_round" ->
+                    "面试|邀约|邀请|流程|进度|岗位|interview|opportunit|offer";
             case "research_knowledge_from_web" -> "知识库|收录|资料|knowledge|material";
             case "analyze_resume" -> "简历|resume|résumé";
             case "record_application_count", "set_application_rhythm" -> "投递|投了|已投|申请|application|applied";
@@ -44,7 +48,7 @@ public final class ToolIntentPolicy {
         String action = switch (tool) {
             case "add_memory" -> "记住|记一下|记录|保存|remember|record|save";
             case "update_calendar_task", "update_recurring_task", "update_learning_plan" -> "修改|修正|调整|改成|改到|改为|更新|update|change|edit|correct|reschedule";
-            case "update_memory", "update_memory_card", "update_interview_recap_metadata" -> "修改|修正|调整|改成|更新|update|change|edit|correct";
+            case "update_memory", "update_memory_card" -> "修改|修正|调整|改成|更新|update|change|edit|correct";
             case "create_calendar_task", "create_recurring_task" -> "创建|新增|添加|安排|提醒|create|add|schedule|remind";
             case "begin_learning_plan" -> "开始|学习|讲解|做|start|begin|learn|study|practice";
             case "create_memory_card" -> "创建|新增|添加|生成|整理|制作|create|add|generate|make|prepare";
@@ -55,6 +59,12 @@ public final class ToolIntentPolicy {
             case "finish_interview" -> "结束|完成|finish|complete";
             case "cancel_interview" -> "取消|cancel";
             case "organize_interview_recap" -> "整理|生成|复盘|organize|generate|recap";
+            case "create_job_opportunity" ->
+                    "创建|新增|添加|记录|记一下|记下|录入|保存|收到|拿到|接到|create|add|record|log|save";
+            case "update_job_opportunity", "update_job_opportunity_round" ->
+                    "修改|更新|改成|改到|变更|标记|设为|设置为|推进|update|change|mark|set|move";
+            case "add_job_opportunity_round" ->
+                    "添加|新增|加|安排|创建|补录|add|create|schedule";
             case "research_knowledge_from_web" -> "收录|添加|保存|整理|收集|save|add|collect|research";
             case "analyze_resume" -> "分析|评估|analy[sz]e|evaluate|review";
             case "record_application_count" -> "记录|record|log";
@@ -106,12 +116,18 @@ public final class ToolIntentPolicy {
             return residual.isEmpty();
         });
     }
-    /** Personal memory may quote only the user's own supplied wording, not retrieved assertions. */
-    public static boolean groundedMemory(String trustedRequest, String memory) {
-        if (memory == null || memory.isBlank()) return false;
-        String wording = normalize(memory);
+
+    /**
+     * Text the agent must copy from the user's own message verbatim, such as a mock-interview
+     * answer. Memory no longer uses this rule; it applies only where the submitted text is
+     * presented as the user's own words.
+     */
+    public static boolean verbatimQuote(String trustedRequest, String quoted) {
+        if (quoted == null || quoted.isBlank()) return false;
+        String wording = normalize(quoted);
         return !wording.isBlank() && normalize(trustedRequest).contains(wording);
     }
+
     private static String normalize(String text) {
         return text == null ? "" : text.toLowerCase(Locale.ROOT).replaceAll("[\\s\\p{P}]+", "");
     }

@@ -46,6 +46,11 @@ import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.learning.web.LearningPlanCreateRequest;
 import com.projectardor.learning.web.LearningPlanResponse;
 import com.projectardor.agent.AgentContextReference;
+import com.projectardor.opportunity.service.OpportunityService;
+import com.projectardor.opportunity.web.OpportunityCreateRequest;
+import com.projectardor.opportunity.web.OpportunityResponse;
+import com.projectardor.opportunity.web.OpportunityRoundRequest;
+import com.projectardor.opportunity.web.OpportunityUpdateRequest;
 import com.projectardor.profile.domain.UserProfile;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.resume.domain.Resume;
@@ -83,6 +88,7 @@ public class CareerAgentTools {
     private final KnowledgeService knowledgeService;
     private final LearningPlanService learningPlanService;
     private final ApplicationRhythmService applicationRhythmService;
+    private final OpportunityService opportunityService;
     private final com.projectardor.aijobs.AiJobService aiJobs;
 
     public CareerAgentTools(
@@ -98,7 +104,8 @@ public class CareerAgentTools {
             TavilySearchService tavilySearchService,
             KnowledgeService knowledgeService,
             LearningPlanService learningPlanService,
-            ApplicationRhythmService applicationRhythmService, com.projectardor.aijobs.AiJobService aiJobs) {
+            ApplicationRhythmService applicationRhythmService, OpportunityService opportunityService,
+            com.projectardor.aijobs.AiJobService aiJobs) {
         this.resumeService = resumeService;
         this.resumeAnalysisQueueService = resumeAnalysisQueueService;
         this.interviewService = interviewService;
@@ -112,6 +119,7 @@ public class CareerAgentTools {
         this.knowledgeService = knowledgeService;
         this.learningPlanService = learningPlanService;
         this.applicationRhythmService = applicationRhythmService;
+        this.opportunityService = opportunityService;
         this.aiJobs = aiJobs;
     }
 
@@ -342,11 +350,9 @@ public class CareerAgentTools {
         @Tool(name = "list_memories", value = "逐条读取当前用户的长期记忆和记忆 UUID")
         public List<AgentMemoryItemResponse> listMemories() { return memoryService.listItems(userId); }
 
-        @Tool(name = "add_memory", value = "新增一条跨会话长期记忆。只保存用户明确表达的稳定背景、目标或偏好；成功后必须在回复中告诉用户新增了什么")
+        @Tool(name = "add_memory", value = "新增一条跨会话长期记忆。保存用户明确表达的稳定背景、目标或偏好；内容可以归纳用户本轮的可信信息，但不得编造或写入外部资料中的个人事实；成功后必须在回复中告诉用户新增了什么")
         public AgentMemoryItemResponse addMemory(@P("一条简洁、独立的长期记忆，不带项目符号") String memory) {
-            if (!com.projectardor.agent.service.ToolIntentPolicy.groundedMemory(trustedUserRequest, memory))
-                throw new IllegalArgumentException("长期记忆须使用用户本轮明确提供的原话，不能把检索资料或模型推测写成用户偏好");
-            return memoryService.add(userId, memory);
+            return memoryService.add(userId, memory, "fact", "USER_EXPLICIT", runRequestId);
         }
 
         @Tool(name = "delete_memory", value = "删除一条指定长期记忆。先用 list_memories 获取 UUID；只有用户明确要求忘记或删除时使用")
@@ -361,10 +367,8 @@ public class CareerAgentTools {
                     "/api/agent/memory/items/" + id);
         }
 
-        @Tool(name = "update_memory", value = "修正当前用户一条长期记忆，保持原 UUID，不清空或重建其它记忆。先读取原条目，只修改用户要求修正的内容")
+        @Tool(name = "update_memory", value = "修正当前用户一条长期记忆，保持原 UUID，不清空或重建其它记忆。先读取原条目，只修改用户要求修正的内容；内容可以归纳用户本轮的可信信息")
         public AgentMemoryItemResponse updateMemory(@P("原记忆 UUID") String memoryId, @P("修订后的完整记忆，不超过 1000 字符") String content) {
-            if (!com.projectardor.agent.service.ToolIntentPolicy.groundedMemory(trustedUserRequest, content))
-                throw new IllegalArgumentException("修订后的记忆须有用户本轮明确提供的原话来源");
             return memoryService.edit(userId, uuid(memoryId, "记忆 ID"), content);
         }
 
@@ -408,19 +412,21 @@ public class CareerAgentTools {
                     .toList();
         }
 
-        @Tool(name = "create_calendar_task", value = "为当前用户创建任意明确的日程或待办，不限于求职事项。用户说出自然语言安排，或粘贴含日期时间的通知时使用；日期确有歧义时必须先追问，不得猜测")
+        @Tool(name = "create_calendar_task", value = "为当前用户创建任意明确的日程或待办，不限于求职事项。用户说出自然语言安排，或粘贴含日期时间的通知时使用；日期确有歧义时必须先追问，不得猜测。若这条日程属于某场真实面试（面试时间或准备任务），传入该面试流程 UUID")
         public CalendarTaskResponse createCalendarTask(
                 @P("日历格中的极短标题，优先使用公司或对象加事项，通常 2 到 8 个中文字符，例如‘字节面试’‘完善简历’；不得照抄冗长岗位名称") String title,
                 @P(value = "完整说明。岗位全称、业务线、会议方式、准备材料和来源摘要都放在这里，不要塞进短标题；没有时传空字符串", required = false) String description,
                 @P(value = "到期或发生时间，必须是带时区的 ISO-8601；无截止时间的普通任务可传空字符串", required = false) String dueAt,
-                @P(value = "优先级：LOW、MEDIUM 或 HIGH", required = false) String priority) {
+                @P(value = "优先级：LOW、MEDIUM 或 HIGH", required = false) String priority,
+                @P(value = "关联的真实面试流程 UUID；不关联传空字符串", required = false) String jobOpportunityId) {
             return CalendarTaskResponse.from(calendarTaskService.create(
                     userId,
                     title,
                     description,
                     nullableInstant(dueAt),
                     parsePriority(priority),
-                    CalendarTaskSource.AGENT));
+                    CalendarTaskSource.AGENT,
+                    nullableUuid(jobOpportunityId, "面试流程 ID")));
         }
 
         @Tool(name = "delete_calendar_task", value = "永久删除当前用户指定的一条日历待办。必须先调用 list_calendar_tasks 获取真实 UUID；只有用户明确要求删除或取消该待办时使用，目标不唯一时必须先追问")
@@ -545,18 +551,21 @@ public class CareerAgentTools {
             return interviewService.list(userId).stream().map(InterviewSessionResponse::from).toList();
         }
 
-        @Tool(name = "create_interview", value = "为当前用户创建文本模拟面试并生成题目；目标岗位不明确时必须先向用户澄清")
+        @Tool(name = "create_interview", value = "为当前用户创建文本模拟面试并生成题目；目标岗位不明确时必须先向用户澄清。用户在为某场真实面试做针对性练习时，传入该面试流程 UUID")
         public InterviewSessionResponse createInterview(
                 @P("目标岗位") String targetRole,
                 @P(value = "目标公司；没有时传空字符串", required = false) String targetCompany,
                 @P(value = "要复用的简历分析 UUID；不使用简历时传空字符串", required = false) String resumeAnalysisId,
-                @P(value = "题目数量，3 到 10", required = false) Integer questionCount) {
+                @P(value = "题目数量，3 到 10", required = false) Integer questionCount,
+                @P(value = "关联的真实面试流程 UUID；不关联传空字符串", required = false) String jobOpportunityId) {
             return InterviewSessionResponse.from(interviewService.create(
                     userId,
                     nullableUuid(resumeAnalysisId, "简历分析 ID"),
+                    com.projectardor.interview.domain.InterviewModality.TEXT,
                     blankToNull(targetCompany),
                     targetRole,
-                    questionCount == null ? 5 : questionCount));
+                    questionCount == null ? 5 : questionCount,
+                    nullableUuid(jobOpportunityId, "面试流程 ID")));
         }
 
         @Tool(name = "get_next_question", value = "读取当前用户某场面试的下一道未回答题目")
@@ -570,7 +579,7 @@ public class CareerAgentTools {
                 @P("面试 UUID") String interviewId,
                 @P("当前题目 UUID") String questionId,
                 @P("用户的回答原文") String answer) {
-            if (!com.projectardor.agent.service.ToolIntentPolicy.groundedMemory(trustedUserRequest, answer))
+            if (!com.projectardor.agent.service.ToolIntentPolicy.verbatimQuote(trustedUserRequest, answer))
                 throw new IllegalArgumentException("只能提交用户本轮提供的回答原文，不能提交检索结果或模型生成的回答");
             return InterviewProgressResponse.from(interviewService.submitAnswer(
                     userId,
@@ -620,10 +629,12 @@ public class CareerAgentTools {
             return interviewRecapQueueService.list(userId).stream().map(InterviewRecapTaskResponse::from).toList();
         }
 
-        @Tool(name = "organize_interview_recap", value = "把用户粘贴的真实面试内容提交到后台整理队列；立即返回任务状态，不自动生成记忆卡")
+        @Tool(name = "organize_interview_recap", value = "把用户粘贴的真实面试纪要提交到后台整理队列；立即返回任务状态，不自动生成记忆卡。面经必须属于一场面试，先 list_job_opportunities 定位面试流程 UUID，用户没说清是哪场时先追问")
         public InterviewRecapTaskResponse organizeInterviewRecap(
-                @P("用户提供的面试内容，必须完整传入，不得自行补写") String content) {
-            return InterviewRecapTaskResponse.from(interviewRecapQueueService.request(userId, content));
+                @P("用户提供的面试内容，必须完整传入，不得自行补写") String content,
+                @P("所属面试流程 UUID，必填；先 list_job_opportunities 定位") String opportunityId) {
+            return InterviewRecapTaskResponse.from(interviewRecapQueueService.request(userId, content,
+                    uuid(opportunityId, "面试流程 ID")));
         }
 
         @Tool(name = "list_interview_recaps", value = "列出当前用户已经整理的面经及问题、薄弱题数量")
@@ -681,16 +692,6 @@ public class CareerAgentTools {
                     question, answer, tags == null ? List.of() : List.of(tags.split(","))));
         }
 
-        @Tool(name = "update_interview_recap_metadata", value = "修改当前用户面经的公司、岗位和面试时间；只补正元数据，不覆盖原文、逐题复盘和弱项。先读取面经，再提交完整元数据，保留未要求修改的值")
-        public InterviewRecapResponse updateInterviewRecapMetadata(@P("面经 UUID") String recapId,
-                @P("完整公司名；清空传空字符串") String company,
-                @P("完整岗位名；清空传空字符串") String targetRole,
-                @P("实际面试日期时间，带时区的 ISO-8601；没有日期传空字符串") String occurredAt) {
-            UUID id = uuid(recapId, "面经 ID");
-            return interviewRecapService.updateMetadata(userId, id, new com.projectardor.recap.web.InterviewRecapMetadataRequest(
-                    company, targetRole, nullableInstant(occurredAt)));
-        }
-
         @Tool(name = "delete_memory_card", value = "永久删除当前用户指定的一张记忆卡。只有用户明确要求删除时使用")
         public Map<String, Object> deleteMemoryCard(@P("记忆卡 UUID") String cardId) {
             UUID id = uuid(cardId, "记忆卡 ID");
@@ -720,6 +721,124 @@ public class CareerAgentTools {
             InterviewRecapResponse recap = interviewRecapService.detail(userId, id);
             return propose("interview_recap", id, recap.title(),
                     "已经单独建立的记忆卡不会被删除", "/api/interview-recaps/" + id);
+        }
+
+        @Tool(name = "list_job_opportunities", value = "列出当前用户的真实面试流程（不是模拟面试），含公司、岗位、状态、当前轮次和每一轮时间。用户问面试进度、有哪些面试在等通知时先用此工具")
+        public List<OpportunityResponse> listJobOpportunities() {
+            return opportunityService.list(userId);
+        }
+
+        @Tool(name = "get_job_opportunity", value = "读取当前用户一条真实面试流程的完整信息，包括 JD、原始邀约文本和所有轮次")
+        public OpportunityResponse getJobOpportunity(@P("面试流程 UUID") String opportunityId) {
+            return opportunityService.detail(userId, uuid(opportunityId, "面试流程 ID"));
+        }
+
+        @Tool(name = "create_job_opportunity", value = "为当前用户创建一条真实面试流程记录。用户发来 HR 面试邀请、通知或 JD，或明确说收到面试时使用；公司名不明确时必须先追问，不要猜测。targetRole 填招聘标题或岗位原文。写入前会等待用户确认")
+        public OpportunityResponse createJobOpportunity(
+                @P("公司名，必填；不明确时先追问") String company,
+                @P("招聘标题或岗位原文，例如“后端开发实习生—国际商业化产品与技术”；未知传空字符串") String targetRole,
+                @P("面试平台或工具，例如 Feishu、Workatsea、acmcoder；未知传空字符串") String platform,
+                @P("岗位 JD 原文；未知传空字符串") String jdContent,
+                @P("用户粘贴的面试邀请或 HR 通知原文；未知传空字符串") String inviteContent,
+                @P("本轮环节 HR/TECHNICAL/MANAGER/CROSS/FINAL/OTHER；未知传空字符串") String stage,
+                @P("已确认的面试时间，带时区的 ISO-8601；没有明确时间传空字符串") String scheduledAt,
+                @P("预计时长（分钟）；未知传 0") int durationMinutes,
+                @P("本轮备注；没有传空字符串") String note) {
+            return opportunityService.create(userId, new OpportunityCreateRequest(
+                    company, blankToNull(targetRole), blankToNull(platform),
+                    blankToNull(jdContent), blankToNull(inviteContent), blankToNull(stage),
+                    nullableInstant(scheduledAt), durationMinutes > 0 ? durationMinutes : null,
+                    blankToNull(note)));
+        }
+
+        @Tool(name = "update_job_opportunity", value = "修改当前用户面试流程的公司、岗位、平台、JD、约面邮件或状态。只有四个状态：SCHEDULED（已约面）、AWAITING_RESULT（面完等通知）、NEXT_ROUND（本轮通过、等下一轮）、REJECTED（被拒绝）。面完说等通知用 AWAITING_RESULT，说进下一轮用 NEXT_ROUND，约好下一轮时间用 SCHEDULED，说挂了或没戏了用 REJECTED。状态随时可以改回任意一个，用户说记错了就直接改")
+        public OpportunityResponse updateJobOpportunity(
+                @P("面试流程 UUID") String opportunityId,
+                @P("完整公司名；不修改传空字符串") String company,
+                @P("完整招聘标题或岗位名；不修改传空字符串") String targetRole,
+                @P("完整面试平台；不修改传空字符串") String platform,
+                @P("完整 JD；不修改传空字符串") String jdContent,
+                @P("完整的约面邮件/HR 通知原文；不修改传空字符串") String inviteContent,
+                @P("新状态；不修改传空字符串") String status) {
+            return opportunityService.update(userId, uuid(opportunityId, "面试流程 ID"),
+                    new OpportunityUpdateRequest(blankToNull(company), blankToNull(targetRole),
+                            blankToNull(platform), blankToNull(jdContent), blankToNull(inviteContent),
+                            blankToNull(status)));
+        }
+
+        @Tool(name = "add_job_opportunity_round", value = "给当前用户一条面试流程增加一轮，或补录这一轮的时间、时长和结果。用户提到第几轮、面试时间或某轮已结束时使用；不确定轮次号时省略该参数，会自动取下一轮")
+        public OpportunityResponse addJobOpportunityRound(
+                @P("面试流程 UUID") String opportunityId,
+                @P(value = "轮次编号，从 1 开始；不确定时省略或传 0，会自动取下一轮", required = false) Integer roundNumber,
+                @P("环节 HR/TECHNICAL/MANAGER/CROSS/FINAL/OTHER；未知传 OTHER") String stage,
+                @P("面试时间 ISO-8601；没有传空字符串") String scheduledAt,
+                @P("实际发生时间 ISO-8601；还没发生传空字符串") String occurredAt,
+                @P("时长（分钟）；未知传 0") int durationMinutes,
+                @P("备注；没有传空字符串") String note) {
+            Integer requestedRound = roundNumber == null || roundNumber < 1 ? null : roundNumber;
+            return opportunityService.addRound(userId, uuid(opportunityId, "面试流程 ID"),
+                    new OpportunityRoundRequest(requestedRound,
+                            blankToNull(stage), nullableInstant(scheduledAt), nullableInstant(occurredAt),
+                            durationMinutes > 0 ? durationMinutes : null, blankToNull(note)));
+        }
+
+        @Tool(name = "update_job_opportunity_round", value = "修改当前用户面试流程中某一轮的时间、时长、环节或备注；只改用户提到的字段，其余保留。先用 get_job_opportunity 读取真实轮次 UUID")
+        public OpportunityResponse updateJobOpportunityRound(
+                @P("面试流程 UUID") String opportunityId,
+                @P("轮次 UUID") String roundId,
+                @P("环节 HR/TECHNICAL/MANAGER/CROSS/FINAL/OTHER；不修改传空字符串") String stage,
+                @P("面试时间 ISO-8601；不修改传空字符串") String scheduledAt,
+                @P("实际发生时间 ISO-8601；不修改传空字符串") String occurredAt,
+                @P("时长（分钟）；不修改传 -1") int durationMinutes,
+                @P("备注；不修改传 null") String note) {
+            UUID opportunity = uuid(opportunityId, "面试流程 ID");
+            UUID round = uuid(roundId, "轮次 ID");
+            OpportunityResponse.Round existing = opportunityService.detail(userId, opportunity).rounds().stream()
+                    .filter(entry -> entry.id().equals(round))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("这一轮不存在"));
+            Instant nextScheduled = nullableInstant(scheduledAt);
+            Instant nextOccurred = nullableInstant(occurredAt);
+            // Keep the boxed type on both branches: mixing Integer and int here makes
+            // Java unbox the stored null and throws for a round without a duration.
+            Integer nextDuration = durationMinutes < 0 ? existing.durationMinutes() : Integer.valueOf(durationMinutes);
+            return opportunityService.updateRound(userId, opportunity, round,
+                    new OpportunityRoundRequest(null,
+                            blankToNull(stage) == null ? existing.stage() : stage,
+                            nextScheduled == null ? existing.scheduledAt() : nextScheduled,
+                            nextOccurred == null ? existing.occurredAt() : nextOccurred,
+                            nextDuration,
+                            note == null ? existing.note() : note));
+        }
+
+        @Tool(name = "delete_job_opportunity", value = "提议永久删除当前用户的一条真实面试流程及其全部轮次。只有用户明确要求删除时使用；先列出流程定位真实 UUID。只生成待确认按钮，用户点击后才删除")
+        public Map<String, Object> deleteJobOpportunity(@P("面试流程 UUID") String opportunityId) {
+            UUID id = uuid(opportunityId, "面试流程 ID");
+            OpportunityResponse item = opportunityService.detail(userId, id);
+            return propose("job_opportunity", id, processLabel(item),
+                    "流程和轮次会被删除；已经整理的面经会保留但解除关联", "/api/opportunities/" + id);
+        }
+
+        @Tool(name = "delete_job_opportunity_round", value = "提议删除当前用户面试流程中的某一轮。只有用户明确要求删除某一轮时使用；先读取流程定位轮次 UUID。只生成待确认按钮，用户点击后才删除")
+        public Map<String, Object> deleteJobOpportunityRound(
+                @P("面试流程 UUID") String opportunityId,
+                @P("轮次 UUID") String roundId) {
+            UUID opportunity = uuid(opportunityId, "面试流程 ID");
+            UUID round = uuid(roundId, "轮次 ID");
+            OpportunityResponse item = opportunityService.detail(userId, opportunity);
+            OpportunityResponse.Round target = item.rounds().stream()
+                    .filter(entry -> entry.id().equals(round))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("这一轮不存在"));
+            return propose("job_opportunity_round", round,
+                    processLabel(item) + " · 第 " + target.roundNumber() + " 轮",
+                    "只删除这一轮，流程和其它轮次保留",
+                    "/api/opportunities/" + opportunity + "/rounds/" + round);
+        }
+
+        private static String processLabel(OpportunityResponse item) {
+            String role = item.targetRole() == null || item.targetRole().isBlank() ? "" : " · " + item.targetRole();
+            return item.company() + role;
         }
 
         private ResumeToolView toView(Resume resume, ResumeAnalysis analysis) {

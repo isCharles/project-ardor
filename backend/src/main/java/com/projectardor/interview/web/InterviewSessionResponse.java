@@ -10,6 +10,7 @@ import com.projectardor.interview.domain.InterviewStatus;
 public record InterviewSessionResponse(
         UUID id,
         UUID resumeAnalysisId,
+        UUID jobOpportunityId,
         InterviewModality modality,
         String targetCompany,
         String targetRole,
@@ -20,7 +21,8 @@ public record InterviewSessionResponse(
 
     public static InterviewSessionResponse from(InterviewSession session) {
         return new InterviewSessionResponse(
-                session.getId(), session.getResumeAnalysisId(), session.getModality(),
+                session.getId(), session.getResumeAnalysisId(), session.getJobOpportunityId(),
+                session.getModality(),
                 session.getTargetCompany(), session.getTargetRole(), session.getStatus(),
                 session.getStartedAt(), session.getFinishedAt(), session.getCreatedAt());
     }

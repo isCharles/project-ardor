@@ -43,6 +43,8 @@ jobs:
         run: node tests/resume-scoring-ui.mjs
       - name: Learning operation UI regression (mock APIs)
         run: node tests/learning-operation-ui.mjs
+      - name: Pipeline recap navigation regression (mock APIs)
+        run: node tests/pipeline-ui.mjs
 
   desktop-window:
     runs-on: windows-latest

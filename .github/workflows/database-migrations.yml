@@ -7,6 +7,7 @@ on:
       - ".github/tests/conversation-title-*.sql"
       - ".github/tests/background-tasks-*.sql"
       - ".github/tests/background-read-*.sql"
+      - ".github/tests/recap-metadata-*.sql"
       - ".github/workflows/database-migrations.yml"
   workflow_dispatch:
 
@@ -42,6 +43,12 @@ jobs:
           test "${#migrations[@]}" -gt 0
           for migration in "${migrations[@]}"; do
             echo "Applying $(basename "$migration")"
+            if [[ "$(basename "$migration")" == "V43__strip_recap_metadata.sql" ]]; then
+              docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 < .github/tests/recap-metadata-before.sql
+              for pass in 1 2; do
+                docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 < backend/src/main/resources/db/migration/beforeEachMigrate__preserve_legacy_recap_metadata.sql
+              done
+            fi
             if [[ "$(basename "$migration")" == "V34__add_background_task_notifications.sql" ]]; then
               docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 \
                 < .github/tests/background-tasks-before.sql
@@ -52,6 +59,9 @@ jobs:
             fi
             docker exec -i ardor-migration-check \
               psql -U postgres -d ardor -v ON_ERROR_STOP=1 < "$migration"
+            if [[ "$(basename "$migration")" == "V43__strip_recap_metadata.sql" ]]; then
+              docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 < .github/tests/recap-metadata-after.sql
+            fi
             if [[ "$(basename "$migration")" == "V32__add_conversation_title_origin.sql" ]]; then
               docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 \
                 < .github/tests/conversation-title-after.sql

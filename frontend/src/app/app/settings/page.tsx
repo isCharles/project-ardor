@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ardor/overlay";
 import { DesktopSettings } from "@/components/ardor/desktop-settings";
 import { PasswordSettings } from "@/components/ardor/password-settings";
+import { AgentPermissionsPanel } from "@/components/ardor/agent-permissions-panel";
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 import { usageFeatureLabels } from "@/lib/usage-features";
@@ -16,6 +17,7 @@ import { LocaleSwitch } from "@/components/ardor/locale-switch";
 
 const settingsCategories = [
   { id: "general", en: "General & sidebar", zh: "通用与侧栏" },
+  { id: "agent", en: "Agent permissions", zh: "Agent 权限" },
   { id: "profile", en: "Profile", zh: "个人资料" },
   { id: "security", en: "Account security", zh: "账户安全" },
   { id: "services", en: "Models & services", zh: "模型与服务" },
@@ -368,6 +370,7 @@ export default function SettingsPage() {
             <div className="flex flex-wrap items-center justify-between gap-4 py-4"><div><p className="text-sm font-medium">{t("Sidebar modules", "侧栏模块")}</p><p className="mt-1 text-xs text-stone-500">{t("Keep your essentials visible, tuck the rest into More.", "常用模块常驻，其余收进更多。")}</p></div><Button variant="outline" onClick={() => window.dispatchEvent(new Event("ardor:customize-sidebar"))}>{t("Customize sidebar", "自定义侧栏")}</Button></div>
           </div>
         </section>
+        <div className={category === "agent" ? "space-y-6" : "hidden"}><AgentPermissionsPanel /></div>
         <div className={category === "desktop" ? "space-y-6" : "hidden"}><DesktopSettings /><p className="text-sm text-stone-500">{t("Server connection and updates are available in the Ardor desktop app.", "服务器连接与应用更新在 Ardor 桌面版中可用。")}</p></div>
         <div className={category === "usage" ? "space-y-6" : "hidden"}>
         {usage && <section className="ardor-panel rounded-[2rem] p-6 md:col-span-2 md:p-8">

@@ -55,7 +55,7 @@ const lesson = {
     pitfalls: ["不要把 AOF 重写当作立即持久化"],
   },
   exercises: [
-    { question: "哪项描述 AOF？", type: "MULTIPLE_CHOICE", options: ["记录写命令", "只保存快照", "不支持重写"], rubric: ["记录写命令"] },
+    { question: "哪项描述 AOF？", type: "MULTIPLE_CHOICE", options: ["记录写命令", "只保存快照", "不支持重写"], correctOption: 0, rubric: ["记录写命令"] },
     { question: "如何选择 RDB 与 AOF？", type: "SCENARIO", rubric: ["说明恢复目标和性能取舍"] },
   ],
 };
@@ -115,7 +115,7 @@ function completionFor(payload) {
       questionFeedback: [{ question: "如何选择 RDB 与 AOF？", feedback: "结合恢复目标说明即可。" }],
       nextFocus: improved ? "保持练习" : "恢复时间与数据丢失窗口",
       nextExercises: improved ? [] : [
-        { question: "选择恢复策略时首先明确什么？", type: "MULTIPLE_CHOICE", options: ["允许的数据丢失窗口", "固定使用快照", "无需考虑性能"], rubric: ["允许的数据丢失窗口"] },
+        { question: "选择恢复策略时首先明确什么？", type: "MULTIPLE_CHOICE", options: ["允许的数据丢失窗口", "固定使用快照", "无需考虑性能"], correctOption: 0, rubric: ["允许的数据丢失窗口"] },
         { question: "如何结合恢复时间与数据丢失窗口设计持久化策略？", type: "SCENARIO", rubric: ["分析恢复时间和数据丢失窗口"] },
       ],
     };

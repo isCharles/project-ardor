@@ -42,6 +42,10 @@ public class ConversationMessage {
     @Column(name = "tool_calls", columnDefinition = "jsonb")
     private String runTrace;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "proposal_resolutions", nullable = false, columnDefinition = "jsonb")
+    private java.util.Map<String, String> proposalResolutions = new java.util.HashMap<>();
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -94,5 +98,6 @@ public class ConversationMessage {
     public String getContent() { return content; }
     public List<AgentContextReference> getContextReferences() { return List.copyOf(contextReferences); }
     public String getRunTrace() { return runTrace; }
+    public java.util.Map<String, String> getProposalResolutions() { return java.util.Map.copyOf(proposalResolutions); }
     public Instant getCreatedAt() { return createdAt; }
 }

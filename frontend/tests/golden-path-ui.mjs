@@ -108,9 +108,15 @@ try {
   await page.goto(`${origin}/app/calendar`);
   await page.goto(`${origin}${createdPlanPath}`);
   await page.getByLabel(/Latest score 65|最近得分 65 分/).waitFor();
+  await page.waitForFunction(async (id) => {
+    const response = await fetch(`/api/background-tasks?kind=LEARNING_EVALUATE&resourceId=${id}&limit=20`);
+    const tasks = await response.json();
+    return tasks.length > 0 && tasks.every(task => !task.unread);
+  }, createdPlanPath.split("id=")[1]);
   assert.equal(await page.locator("#learning-practice textarea").inputValue(), "",
     "A new practice round must not inherit an unsent answer from the old round");
-  await page.locator("#learning-practice details").first().locator("summary").click();
+  const latestAttempt = page.locator("#learning-practice details").first();
+  if (await latestAttempt.getAttribute("open") === null) await latestAttempt.locator("summary").click();
   await page.getByText("第一次回答：RDB 是快照。").last().waitFor();
 
   await page.getByRole("radio", { name: "允许的数据丢失窗口" }).check();
@@ -185,6 +191,8 @@ try {
   assert.equal(failedJobs.length, 1);
   assert.equal(failedJobs[0].status, "FAILED");
   await recoveryPage.getByRole("button", { name: /^(Retry|重试)$/ }).click();
+  await recoveryPage.getByRole("link", { name: /Java 后端一面复盘/ }).waitFor({ timeout: 40_000 });
+  await recoveryPage.getByRole("link", { name: /Java 后端一面复盘/ }).click();
   await recoveryPage.getByRole("heading", { level: 2, name: "Java 后端一面复盘" }).waitFor({ timeout: 40_000 });
   const recoveredJobs = await recoveryPage.evaluate(async () => {
     const response = await fetch("/api/interview-recaps/jobs");
@@ -207,35 +215,35 @@ try {
   await metadataPage.locator('input[name="password"]').fill(`Ardor-Acceptance-${suffix}!`);
   await metadataPage.locator('button[type="submit"]').click();
   await metadataPage.waitForURL(`${origin}/app`, { timeout: 15_000 });
-  await metadataPage.goto(`${origin}/app/recaps`);
-  const interviewDate = metadataPage.locator('input[name="occurredOn"]');
-  await interviewDate.fill("2026-09-02");
+  await metadataPage.goto(`${origin}/app/opportunities`);
+  await metadataPage.getByRole("button", { name: /^(Edit record|编辑记录)$/ }).click();
+  const editInterview = metadataPage.getByRole("dialog", { name: /^(Edit interview|编辑面试)$/ });
+  await editInterview.locator('input[name="targetRole"]').fill("Updated backend role");
+  await editInterview.locator('textarea[name="jdContent"]').fill("Temporary JD");
   await Promise.all([
-    metadataPage.waitForResponse((response) => response.url().includes("/metadata") && response.status() === 200),
-    metadataPage.getByRole("button", { name: /^(Save|保存)$/ }).click(),
+    metadataPage.waitForResponse((response) => response.url().includes("/api/opportunities/") && response.request().method() === "PATCH" && response.status() === 200),
+    editInterview.getByRole("button", { name: /^(Save|保存)$/ }).click(),
   ]);
+  await editInterview.waitFor({ state: "hidden" });
+  await metadataPage.getByRole("button", { name: /^(Edit record|编辑记录)$/ }).click();
+  await editInterview.locator('textarea[name="jdContent"]').fill("");
+  await editInterview.getByRole("button", { name: /^(Save|保存)$/ }).click();
+  await editInterview.waitFor({ state: "hidden" });
   await metadataPage.reload();
-  await interviewDate.waitFor();
-  assert.equal(await interviewDate.inputValue(), "2026-09-02",
-    "A date entered in Shanghai must not shift to the prior UTC date on reload");
-  await metadataPage.locator('input[name="company"]').fill("Ardor Labs");
-  await metadataPage.locator('input[name="targetRole"]').fill("Java 后端工程师");
-  await Promise.all([
-    metadataPage.waitForResponse((response) => response.url().includes("/metadata") && response.status() === 200),
-    metadataPage.getByRole("button", { name: /^(Save|保存)$/ }).click(),
-  ]);
-  await metadataPage.reload();
-  await metadataPage.getByText("Ardor Labs").first().waitFor();
   const completedMetadata = await metadataPage.evaluate(async () => {
-    const response = await fetch("/api/interview-recaps");
-    if (!response.ok) throw new Error(`Interview notes returned ${response.status}`);
-    return response.json();
+    const [processes, recaps] = await Promise.all([
+      fetch("/api/opportunities").then(response => response.json()),
+      fetch("/api/interview-recaps").then(response => response.json()),
+    ]);
+    return { processes, recaps };
   });
-  assert.equal(completedMetadata.length, 1);
-  assert.equal(completedMetadata[0].company, "Ardor Labs");
-  assert.equal(completedMetadata[0].targetRole, "Java 后端工程师");
-  assert.equal(await metadataPage.evaluate((occurredAt) => new Date(occurredAt).getDate(),
-    completedMetadata[0].occurredAt), 2);
+  assert.equal(completedMetadata.processes[0].targetRole, "Updated backend role");
+  assert.equal(completedMetadata.processes[0].jdContent ?? "", "");
+  assert.equal(completedMetadata.recaps[0].jobOpportunityId, completedMetadata.processes[0].id);
+  assert.equal("company" in completedMetadata.recaps[0], false);
+  await metadataPage.goto(`${origin}/app/recaps`);
+  await metadataPage.getByRole("link", { name: new RegExp(completedMetadata.recaps[0].title) }).click();
+  await metadataPage.getByRole("heading", { name: completedMetadata.recaps[0].title, exact: true }).waitFor();
 
   const replayPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   activePage = replayPage;

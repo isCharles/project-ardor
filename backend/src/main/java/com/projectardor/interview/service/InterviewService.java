@@ -55,6 +55,7 @@ public class InterviewService {
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactions;
     private final LeetCodeHot100 hot100;
+    private final com.projectardor.opportunity.service.OpportunityService opportunities;
 
     public InterviewService(
             InterviewSessionRepository sessionRepository,
@@ -67,7 +68,8 @@ public class InterviewService {
             LlmJsonParser jsonParser,
             ObjectMapper objectMapper,
             org.springframework.transaction.PlatformTransactionManager transactionManager,
-            LeetCodeHot100 hot100) {
+            LeetCodeHot100 hot100,
+            com.projectardor.opportunity.service.OpportunityService opportunities) {
         this.sessionRepository = sessionRepository;
         this.questionRepository = questionRepository;
         this.answerRepository = answerRepository;
@@ -79,6 +81,7 @@ public class InterviewService {
         this.objectMapper = objectMapper;
         this.transactions = new TransactionTemplate(transactionManager);
         this.hot100 = hot100;
+        this.opportunities = opportunities;
     }
 
     public InterviewSession create(
@@ -98,11 +101,23 @@ public class InterviewService {
             String targetCompany,
             String targetRole,
             int questionCount) {
+        return create(userId, resumeAnalysisId, modality, targetCompany, targetRole, questionCount, null);
+    }
+
+    public InterviewSession create(
+            UUID userId,
+            UUID resumeAnalysisId,
+            InterviewModality modality,
+            String targetCompany,
+            String targetRole,
+            int questionCount,
+            UUID jobOpportunityId) {
         if (questionCount < 3 || questionCount > 10) {
             throw new IllegalArgumentException("面试题数量必须在 3 到 10 之间");
         }
         String normalizedRole = normalizeRequired(targetRole, "目标岗位不能为空");
         String normalizedCompany = normalizeNullable(targetCompany);
+        if (jobOpportunityId != null) opportunities.detail(userId, jobOpportunityId);
         UserProfile profile = profileService.get(userId);
         ResumeAnalysis resumeAnalysis = resumeAnalysisId == null
                 ? null
@@ -145,7 +160,7 @@ public class InterviewService {
 
         return transactions.execute(status -> {
             InterviewSession session = sessionRepository.save(InterviewSession.create(
-                    userId, resumeAnalysisId, modality, normalizedCompany, normalizedRole));
+                    userId, resumeAnalysisId, modality, normalizedCompany, normalizedRole, jobOpportunityId));
             List<InterviewQuestion> questions = new ArrayList<>();
             for (int index = 0; index < drafts.size(); index++) {
                 QuestionDraft draft = drafts.get(index);

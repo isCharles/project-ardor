@@ -2,7 +2,7 @@
 
 import {
   Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, ChevronDown, FileSearch, FileText,
-  MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, Target, Trash2, Upload, X,
+  MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, ShieldCheck, Target, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -31,9 +31,10 @@ import { useLocale } from "@/lib/locale";
 import { useTypewriter } from "@/lib/use-typewriter";
 
 type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING" | "SERVICE"; id: string; label: string };
-type AgentMessage = { id: string; requestId?: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; createdAt: string };
+type AgentMessage = { id: string; requestId?: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; proposalResolutions?: Record<string, string>; createdAt: string };
 type Conversation = { id: string; title: string; pinned: boolean; titleManuallySet?: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
+type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null };
 type RetryFailure = { label: string; detail: string };
 type AgentStreamEvent = ToolMeasurement & { type: "status" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string };
 type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number };
@@ -155,6 +156,9 @@ export default function AgentHomePage() {
     return () => window.clearTimeout(timer);
   }, [feedback]);
   const [reasoningDepth, setReasoningDepth] = useState<ReasoningDepth>("AUTO");
+  // Global quick level: what Ardor may do without asking. Module overrides live in settings.
+  const [permissionLevel, setPermissionLevel] = useState(0);
+  const [permissionOpen, setPermissionOpen] = useState(false);
   const [nativeReasoning, setNativeReasoning] = useState(false);
   const reasoningAccount = useRef<string | null>(null);
   const proposalSources = useRef(new Map<string, string>());
@@ -162,8 +166,12 @@ export default function AgentHomePage() {
     `ardor:conversation-draft:${reasoningAccount.current ?? "unavailable"}:${conversationId ?? "new"}`, []);
   const deletionResolutionKey = useCallback((item: AgentConfirmation, conversationId: string | null) =>
     `ardor:deletion-result:${reasoningAccount.current}:${conversationId}:${proposalSources.current.get(item.sourceMessageId ?? "") ?? item.sourceMessageId ?? "live"}:${confirmationKey(item)}`, []);
-  function rememberDeletion(item: AgentConfirmation, resolution: "DONE" | "DISMISSED") {
+  function rememberDeletion(item: AgentConfirmation, resolution: "DONE" | "DISMISSED" | "ACCEPTED") {
     try { window.localStorage.setItem(deletionResolutionKey(item, state?.conversationId ?? null), resolution); } catch { /* Snapshot-bound APIs remain safe when local storage is unavailable. */ }
+    const source = proposalSources.current.get(item.sourceMessageId ?? "") ?? item.sourceMessageId;
+    if (source) void api<void>(`/api/agent/messages/${encodeURIComponent(source)}/proposal-resolution`, {
+      method: "PUT", body: JSON.stringify({ key: confirmationKey(item), resolution }),
+    }).catch(() => undefined); // A decision made before the message commits is retried on stream completion/load.
   }
   const readSavedDraft = useCallback((conversationId?: string | null) =>
     window.sessionStorage.getItem(draftStorageKey(conversationId)) ?? "", [draftStorageKey]);
@@ -200,7 +208,11 @@ export default function AgentHomePage() {
   const [chatSearch, setChatSearch] = useState("");
   const typedHint = useTypewriter(locale === "en" ? typewriterExamples : typewriterExamplesZh, messages.length === 0);
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const [memoryDraft, setMemoryDraft] = useState("");
+  const [memoryItems, setMemoryItems] = useState<AgentMemoryItem[] | null>(null);
+  const [showStaleMemory, setShowStaleMemory] = useState(false);
+  const [memoryEdits, setMemoryEdits] = useState<Record<string, string>>({});
+  const [newMemory, setNewMemory] = useState("");
+  const [memorySaving, setMemorySaving] = useState<string | null>(null);
   const [selectedContexts, setSelectedContexts] = useState<SelectedContext[]>([]);
   const [features, setFeatures] = useState<AgentFeature[]>([]);
   const featuresRef = useRef<AgentFeature[]>([]);
@@ -273,8 +285,23 @@ export default function AgentHomePage() {
     }).catch(() => undefined);
     void api<{ nativeControl: boolean }>("/api/agent/reasoning")
       .then((result) => { if (active) setNativeReasoning(result.nativeControl); }).catch(() => undefined);
+    void api<{ globalLevel: number }>("/api/agent/permissions")
+      .then((result) => { if (active) setPermissionLevel(result.globalLevel ?? 0); }).catch(() => undefined);
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!memoryOpen) return;
+    let active = true;
+    void api<AgentMemoryItem[]>("/api/agent/memory/items")
+      .then((items) => {
+        if (!active) return;
+        setMemoryItems(items);
+        setMemoryEdits(Object.fromEntries(items.map((item) => [item.id, item.content])));
+      })
+      .catch(() => { if (active) setMemoryItems([]); });
+    return () => { active = false; };
+  }, [memoryOpen]);
 
   useEffect(() => {
     if (busy || !titleWatch) return;
@@ -300,6 +327,30 @@ export default function AgentHomePage() {
         try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:reasoning-depth:${reasoningAccount.current}`, value); }
         catch { /* The current selection remains usable when browser storage is unavailable. */ }
       }} />;
+  }
+
+  async function choosePermission(level: number) {
+    const previous = permissionLevel;
+    setPermissionLevel(level);
+    setPermissionOpen(false);
+    try { await api<void>("/api/agent/permissions/*", { method: "PUT", body: JSON.stringify({ level }) }); }
+    catch { setPermissionLevel(previous); }
+  }
+
+  function permissionPicker() {
+    const labels = [t("View only", "仅查看"), t("View & add", "查 + 增"), t("View, add & edit", "查 + 增 + 改"), t("Full access", "完全权限")];
+    return <div className="relative">
+      <button type="button" aria-haspopup="menu" aria-expanded={permissionOpen} onClick={() => setPermissionOpen((value) => !value)} title={t("What Ardor may do without asking", "Ardor 可以不经询问直接执行的范围")} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600 transition hover:bg-stone-50">
+        <ShieldCheck className="size-3.5" aria-hidden="true" />{labels[permissionLevel] ?? labels[0]}<ChevronDown className="size-3.5" aria-hidden="true" />
+      </button>
+      {permissionOpen && <>
+        <button type="button" aria-label={t("Close permission menu", "关闭权限菜单")} className="fixed inset-0 z-10 cursor-default bg-transparent" onClick={() => setPermissionOpen(false)} />
+        <div role="menu" className="absolute bottom-full left-0 z-20 mb-2 w-56 rounded-2xl border border-stone-200 bg-white p-1 shadow-xl">
+          {labels.map((label, level) => <button key={level} role="menuitemradio" aria-checked={permissionLevel === level} type="button" onClick={() => void choosePermission(level)} className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition ${permissionLevel === level ? "bg-violet-50 font-medium text-violet-700" : "hover:bg-stone-50"}`}><span>{label}</span>{permissionLevel === level && <Check className="size-3.5" />}</button>)}
+          <p className="px-3 pb-1 pt-2 text-[11px] leading-4 text-stone-400">{t("Anything above this level still asks first; deleting always asks.", "超出该等级的操作仍会先询问；删除始终需要确认。")}</p>
+        </div>
+      </>}
+    </div>;
   }
 
   const selectChatFromRail = useEffectEvent((event: Event) => {
@@ -369,16 +420,29 @@ export default function AgentHomePage() {
     const restored = proposals.map((item) => {
       let resolution: string | null = null;
       try { resolution = window.localStorage.getItem(deletionResolutionKey(item, result.conversationId)); } catch { /* No automatic permission. */ }
+      const source = result.messages.find(message => message.id === item.sourceMessageId);
+      resolution = source?.proposalResolutions?.[confirmationKey(item)] ?? resolution;
+      if (resolution === "DONE" || resolution === "DISMISSED" || resolution === "ACCEPTED") {
+        void api<void>(`/api/agent/messages/${encodeURIComponent(item.sourceMessageId!)}/proposal-resolution`, {
+          method: "PUT", body: JSON.stringify({ key: confirmationKey(item), resolution }),
+        }).catch(() => undefined);
+      }
       const unsafeLegacyBulk = ["all_memories", "all_memory_cards"].includes(item.kind) && !Array.isArray(item.targetIds);
+      // Historical proposals are records, not fresh requests. Never reopen an old
+      // prompt whose legacy decision cannot be recovered (including another device).
+      const stale = !source || !Number.isFinite(Date.parse(source.createdAt)) || Date.now() - Date.parse(source.createdAt) > 30 * 60 * 1000
+        || source.id !== result.messages.at(-1)?.id;
       return { ...item, state: item.kind === "learning_plan" && window.sessionStorage.getItem(dismissedProposalKey(item)) === "1"
-        ? "DISMISSED" as const : unsafeLegacyBulk || proposalExpired(item) ? "EXPIRED" as const : resolution === "DONE" ? "DONE" as const : resolution === "DISMISSED" ? "DISMISSED" as const : "PENDING" as const };
+        ? "DISMISSED" as const : resolution === "DONE" ? "DONE" as const : resolution === "DISMISSED" ? "DISMISSED" as const : resolution === "ACCEPTED" && item.kind === "learning_plan" ? "GENERATING" as const : unsafeLegacyBulk || proposalExpired(item) || stale || resolution === "EXPIRED" ? "EXPIRED" as const : "PENDING" as const };
     });
     // Queued calls have no open browser stream: recover their proposals without executing them.
     setConfirmations((current) => {
-      const merged = new Map(current.filter((item) => item.kind !== "learning_plan").map((item) => [confirmationKey(item), item]));
+      const messageIds = new Set(result.messages.map(message => message.id));
+      const merged = new Map(current.filter((item) => item.sourceMessageId && messageIds.has(item.sourceMessageId)).map((item) => [confirmationKey(item), item]));
       for (const item of restored) {
         const existing = merged.get(confirmationKey(item));
-        merged.set(confirmationKey(item), existing && existing.sourceMessageId === item.sourceMessageId ? { ...item, ...existing } : item);
+        const settled = ["DONE", "DISMISSED", "EXPIRED", "REMOVED"].includes(item.state);
+        merged.set(confirmationKey(item), existing && existing.sourceMessageId === item.sourceMessageId && !settled ? { ...item, ...existing } : item);
       }
       return [...merged.values()];
     });
@@ -398,7 +462,6 @@ export default function AgentHomePage() {
     }
     setConversations(result.conversations);
     setArchivedConversations(result.archivedConversations);
-    setMemoryDraft(result.memory.content);
     setDraft(readSavedDraft(result.conversationId));
     const serviceId = window.sessionStorage.getItem(`${draftStorageKey(result.conversationId)}:service:${reasoningAccount.current}`);
     const feature = featuresRef.current.find((item) => item.id === serviceId);
@@ -602,6 +665,7 @@ export default function AgentHomePage() {
     setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DELETING", error: undefined } : item));
     try {
       let job = await api<AiJob>("/api/learning-plans/jobs", { method: "POST", body: JSON.stringify(pending.learningPlan) });
+      if (job.status !== "FAILED") rememberDeletion(pending, job.status === "COMPLETED" ? "DONE" : "ACCEPTED");
       if (job.status === "FAILED" && pending.state === "FAILED") job = await api<AiJob>(`/api/ai-jobs/${job.id}/retry`, { method: "POST" });
       setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? {
         ...item, state: job.status === "COMPLETED" ? "DONE" : job.status === "FAILED" ? "FAILED" : "GENERATING",
@@ -767,8 +831,12 @@ export default function AgentHomePage() {
               setConfirmations((current) => current.map((item) => {
                 if (item.sourceMessageId !== requestId) return item;
                 const saved = { ...item, sourceMessageId: event.messageId! };
-                if (item.state === "DONE" || item.state === "DISMISSED") {
-                  try { window.localStorage.setItem(deletionResolutionKey(saved, event.conversationId), item.state); } catch { /* Snapshot APIs remain bounded. */ }
+                if (item.state === "DONE" || item.state === "DISMISSED" || item.state === "GENERATING") {
+                  const resolution = item.state === "GENERATING" ? "ACCEPTED" : item.state;
+                  try { window.localStorage.setItem(deletionResolutionKey(saved, event.conversationId), resolution); } catch { /* Snapshot APIs remain bounded. */ }
+                  void api<void>(`/api/agent/messages/${encodeURIComponent(event.messageId!)}/proposal-resolution`, {
+                    method: "PUT", body: JSON.stringify({ key: confirmationKey(saved), resolution }),
+                  }).catch(() => undefined);
                 }
                 return saved;
               }));
@@ -786,7 +854,7 @@ export default function AgentHomePage() {
             } else if (event.type === "confirm" && event.confirmation) {
               const proposal = { ...event.confirmation, sourceMessageId: requestId };
               setConfirmations((current) => current.some((item) => confirmationKey(item) === confirmationKey(proposal))
-                ? current.map((item) => confirmationKey(item) === confirmationKey(proposal) ? { ...proposal, state: "PENDING" } : item)
+                ? current.map((item) => confirmationKey(item) === confirmationKey(proposal) ? item.sourceMessageId === requestId ? item : { ...proposal, state: "PENDING" } : item)
                 : [...current, { ...proposal, state: "PENDING" }]);
             } else if (event.type === "error") streamFailure = event;
           }, sendControl.signal);
@@ -993,24 +1061,52 @@ export default function AgentHomePage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "无法恢复会话"); }
   }
 
-  async function saveMemory() {
-    setBusy(true); setError("");
-    try {
-      const memory = await api<AgentMemory>("/api/agent/memory", { method: "PUT", body: JSON.stringify({ content: memoryDraft }) });
-      setState((current) => current ? { ...current, memory } : current);
-      setMemoryOpen(false);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法保存总体记忆"); }
-    finally { setBusy(false); }
+  async function refreshMemoryItems() {
+    const items = await api<AgentMemoryItem[]>("/api/agent/memory/items");
+    setMemoryItems(items);
+    setMemoryEdits(Object.fromEntries(items.map((item) => [item.id, item.content])));
+  }
+
+  async function restoreMemoryItem(content: string) {
+    setMemorySaving("restore"); setError("");
+    try { await api("/api/agent/memory/items", { method: "POST", body: JSON.stringify({ content }) }); await refreshMemoryItems(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法恢复这条记忆"); }
+    finally { setMemorySaving(null); }
+  }
+
+  async function saveMemoryItem(id: string) {
+    const content = (memoryEdits[id] ?? "").trim();
+    if (!content) return;
+    setMemorySaving(id); setError("");
+    try { await api(`/api/agent/memory/items/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ content }) }); await refreshMemoryItems(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法保存这条记忆"); }
+    finally { setMemorySaving(null); }
+  }
+
+  async function deleteMemoryItem(id: string) {
+    setMemorySaving(id); setError("");
+    try { await api(`/api/agent/memory/items/${encodeURIComponent(id)}`, { method: "DELETE" }); await refreshMemoryItems(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法删除这条记忆"); }
+    finally { setMemorySaving(null); }
+  }
+
+  async function addMemoryItem() {
+    const content = newMemory.trim();
+    if (!content) return;
+    setMemorySaving("new"); setError("");
+    try { await api("/api/agent/memory/items", { method: "POST", body: JSON.stringify({ content }) }); setNewMemory(""); await refreshMemoryItems(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法新增记忆"); }
+    finally { setMemorySaving(null); }
   }
 
   async function clearMemory() {
-    if (!memoryDraft || !window.confirm("清空所有跨会话总体记忆？")) return;
+    if (!window.confirm("清空所有长期记忆？")) return;
     setBusy(true);
     try {
       await api<void>("/api/agent/memory", { method: "DELETE" });
-      setMemoryDraft("");
-      setState((current) => current ? { ...current, memory: { content: "", updatedAt: null } } : current);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法清空总体记忆"); }
+      setMemoryItems([]);
+      setMemoryEdits({});
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法清空记忆"); }
     finally { setBusy(false); }
   }
 
@@ -1059,6 +1155,7 @@ export default function AgentHomePage() {
   const phase = runningRun ? streamProgress?.phase : streamPhase;
   const liveTitle = !(busy || runningRun) ? t("Execution stopped", "执行已停止") : phase === "THINKING" ? t("Thinking", "思考中") : phase === "TOOL" ? t("Using tools", "正在调用工具") : phase === "OUTPUT" ? t("Writing reply", "正在生成回复") : t("Waiting for model", "等待模型回应");
   const liveTrace = showLiveTrace ? <ExecutionTrace title={liveTitle}
+    active={(busy || !!runningRun) && phase !== "OUTPUT"}
     elapsed={formatElapsed(runElapsed)} thinking={runThinking} steps={runSteps}
     action={(runningRun || approvalRunId) && <button type="button" disabled={cancelPending} onClick={() => void cancelExecution()} className="shrink-0 py-1 text-xs text-stone-500 hover:text-rose-700 disabled:opacity-50">{cancelPending ? t("Stopping…", "正在停止…") : t("Stop", "停止")}</button>}>
     {runningRun && <p>{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
@@ -1153,7 +1250,7 @@ export default function AgentHomePage() {
                     {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
                     <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-                    <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}</div><div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
+                    <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{permissionPicker()}{reasoningPicker()}</div><div className="flex items-center gap-3">{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}<Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
                   </form>
                 </div>
               </div>
@@ -1190,7 +1287,7 @@ export default function AgentHomePage() {
               onFailed={tool => { if (confirmedOperations.current.delete(tool)) setFeedback(t("Confirmation failed. Nothing has been confirmed.", "确认未成功提交，本次尚未确认。")); }} />}
             {deletionDock}
             <LearningPermissions items={confirmations.filter(item => item.kind === "learning_plan" && ["PENDING", "FAILED", "DELETING"].includes(item.state))}
-              onReject={pending => { window.sessionStorage.setItem(dismissedProposalKey(pending), "1"); setConfirmations(current => current.map(item => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item)); setFeedback(t("Creation declined. No learning plan was created.", "已拒绝创建，未新建学习计划。")); }}
+              onReject={pending => { rememberDeletion(pending, "DISMISSED"); window.sessionStorage.setItem(dismissedProposalKey(pending), "1"); setConfirmations(current => current.map(item => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item)); setFeedback(t("Creation declined. No learning plan was created.", "已拒绝创建，未新建学习计划。")); }}
               onConfirm={pending => void confirmLearning(pending)} />
             </div>
             {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
@@ -1198,7 +1295,7 @@ export default function AgentHomePage() {
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
               <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{reasoningPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
+              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{permissionPicker()}{reasoningPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
             </form>
           </div>}
         </section>
@@ -1215,16 +1312,37 @@ export default function AgentHomePage() {
 
       {memoryOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setMemoryOpen(false); }}>
-          <section className="w-full max-w-xl rounded-3xl border border-stone-200 bg-[#fffefa] p-5 shadow-2xl md:p-6">
+          <section className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-stone-200 bg-[#fffefa] p-5 shadow-2xl md:p-6">
             <div className="flex items-start justify-between gap-4">
-              <div><div className="flex items-center gap-2 text-lg font-semibold"><Brain className="size-5 text-violet-500" />总体记忆</div><p className="mt-1 text-sm leading-6 text-stone-500">每行一条，跨所有对话共享。Ardor 新增或删除时会在对话里告诉你。</p></div>
+              <div><div className="flex items-center gap-2 text-lg font-semibold"><Brain className="size-5 text-violet-500" />长期记忆</div><p className="mt-1 text-sm leading-6 text-stone-500">跨所有对话共享。可以归纳你的信息，不必逐字复述；每条都能单独修改或删除。</p></div>
               <button aria-label="关闭" onClick={() => setMemoryOpen(false)} className="rounded-xl p-2 text-stone-400 hover:bg-stone-100"><X className="size-5" /></button>
             </div>
-            <textarea value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} maxLength={4000} rows={12} placeholder={"例如：\n- 目标岗位：Java 后端工程师\n- 偏好简洁、直接的反馈\n- 近期目标：两个月内完成换工作"} className="mt-5 w-full resize-none rounded-2xl border border-stone-200 bg-white p-4 text-sm leading-6 outline-none transition focus:border-violet-300 focus:ring-4 focus:ring-violet-100" />
-            <div className="mt-2 flex items-center justify-between text-xs text-stone-400"><span>不应保存 API Key、密码等敏感信息</span><span>{memoryDraft.length}/4000</span></div>
-            <div className="mt-5 flex items-center justify-between gap-3">
-              <button onClick={clearMemory} disabled={busy || !memoryDraft} className="rounded-xl px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-40">清空记忆</button>
-              <div className="flex gap-2"><button onClick={() => setMemoryOpen(false)} className="rounded-xl px-4 py-2 text-sm hover:bg-stone-100">取消</button><button onClick={saveMemory} disabled={busy} className="rounded-xl bg-stone-950 px-5 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50">保存</button></div>
+            {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+            {!memoryItems ? <p className="mt-6 text-sm text-stone-400">加载中…</p> : <div className="mt-4 space-y-3">
+              {memoryItems.filter((item) => item.valid || showStaleMemory).length === 0 && <p className="rounded-2xl border border-dashed border-stone-200 px-4 py-6 text-center text-sm text-stone-400">还没有长期记忆。</p>}
+              {memoryItems.filter((item) => item.valid || showStaleMemory).map((item) => item.valid ? <div key={item.id} className="rounded-2xl border border-stone-200 bg-white p-3">
+                <div className="flex items-center gap-2 text-[11px] text-stone-400"><span className="rounded-full bg-stone-100 px-2 py-0.5">{item.sourceKind === "INFERRED" ? "推断" : "你说过"}</span><span>{item.kind === "preference" ? "偏好" : item.kind === "goal" ? "目标" : item.kind === "profile" ? "背景" : item.kind === "constraint" ? "约束" : "事实"}</span>{item.confidence < 1 && <span>可信度 {Math.round(item.confidence * 100)}%</span>}</div>
+                <textarea value={memoryEdits[item.id] ?? item.content} onChange={(event) => setMemoryEdits((current) => ({ ...current, [item.id]: event.target.value }))} rows={2} maxLength={1000} className="mt-2 w-full resize-y rounded-xl border border-stone-200 bg-white p-2 text-sm leading-6 outline-none focus:border-violet-300" />
+                <div className="mt-2 flex items-center justify-between">
+                  <button type="button" disabled={memorySaving !== null} onClick={() => void deleteMemoryItem(item.id)} className="text-xs text-rose-600 hover:underline disabled:opacity-40">删除</button>
+                  <button type="button" disabled={memorySaving !== null || (memoryEdits[item.id] ?? "").trim() === item.content} onClick={() => void saveMemoryItem(item.id)} className="rounded-full bg-stone-950 px-4 py-1.5 text-xs font-medium text-white disabled:opacity-40">{memorySaving === item.id ? "保存中…" : "保存"}</button>
+                </div>
+              </div> : <div key={item.id} className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-3 text-stone-400">
+                <div className="flex flex-wrap items-center gap-2 text-[11px]"><span className="rounded-full bg-stone-200 px-2 py-0.5 text-stone-600">已过时</span><span>{item.sourceKind === "INFERRED" ? "推断" : "你说过"}</span>{item.validUntil && <span>失效于 {new Date(item.validUntil).toLocaleDateString()}</span>}</div>
+                <p className="mt-2 text-sm leading-6 line-through">{item.content}</p>
+                <div className="mt-2 flex justify-end"><button type="button" disabled={memorySaving !== null} onClick={() => void restoreMemoryItem(item.content)} className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs text-stone-600 disabled:opacity-40">恢复为当前记忆</button></div>
+              </div>)}
+            </div>}
+            <div className="mt-4 flex gap-2">
+              <input value={newMemory} onChange={(event) => setNewMemory(event.target.value)} maxLength={1000} placeholder="新增一条记忆，例如：偏好简洁直接的反馈" className="field flex-1" />
+              <button type="button" disabled={memorySaving !== null || !newMemory.trim()} onClick={() => void addMemoryItem()} className="rounded-xl bg-stone-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">添加</button>
+            </div>
+            <div className="mt-4 flex items-center justify-between border-t border-stone-200/70 pt-4 text-xs text-stone-400">
+              <div className="flex flex-col gap-1">
+                <span>不应保存 API Key、密码等敏感信息</span>
+                {memoryItems && memoryItems.some((item) => !item.valid) && <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={showStaleMemory} onChange={(event) => setShowStaleMemory(event.target.checked)} className="size-3.5" />显示已过时的记忆（{memoryItems.filter((item) => !item.valid).length}）</label>}
+              </div>
+              <div className="flex items-center gap-3"><button type="button" onClick={() => void clearMemory()} disabled={busy} className="text-rose-600 hover:underline disabled:opacity-40">清空全部</button><button type="button" onClick={() => setMemoryOpen(false)} className="rounded-full bg-stone-950 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800">完成</button></div>
             </div>
           </section>
         </div>

@@ -86,13 +86,21 @@ public class AgentConversationStore {
     public List<ConversationMessage> appendExchange(
             UUID userId, Conversation conversation, String userText, String assistantText, String runTrace,
             List<AgentContextReference> contextReferences) {
+        // The title is derived from the first exchange and then left alone; asking the
+        // model again on every turn rewrites the sidebar name mid-conversation.
+        boolean firstExchange = messageRepository.countByUserIdAndConversationId(
+                userId, conversation.getId()) == 0;
         List<ConversationMessage> saved = messageRepository.saveAll(List.of(
                 ConversationMessage.user(userId, conversation.getId(), userText, contextReferences),
                 ConversationMessage.assistant(userId, conversation.getId(), assistantText, runTrace)));
         conversation.titleFromFirstMessage(userText);
         conversation.touch();
         conversationRepository.save(conversation);
-        events.publishEvent(new ConversationTitleRequested(userId, conversation.getId(), saved.get(1).getId()));
+        if (firstExchange) {
+            events.publishEvent(new ConversationTitleRequested(userId, conversation.getId(), saved.get(1).getId()));
+        }
+        // The consolidator decides on its own whether this exchange contains new stable facts.
+        events.publishEvent(new MemoryConsolidationRequested(userId, conversation.getId()));
         return saved;
     }
 

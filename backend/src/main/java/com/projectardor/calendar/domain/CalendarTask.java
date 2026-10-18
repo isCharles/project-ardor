@@ -19,6 +19,7 @@ public class CalendarTask {
     @Id private UUID id;
     @Column(name = "user_id", nullable = false) private UUID userId;
     @Column(name = "source_interview_id") private UUID sourceInterviewId;
+    @Column(name = "job_opportunity_id") private UUID jobOpportunityId;
     @Column(name = "memory_card_id") private UUID memoryCardId;
     @Column(name = "learning_plan_id") private UUID learningPlanId;
     @Column(name = "replay_question_id") private UUID replayQuestionId;
@@ -47,7 +48,8 @@ public class CalendarTask {
             String description,
             Instant dueAt,
             CalendarTaskPriority priority,
-            CalendarTaskSource source) {
+            CalendarTaskSource source,
+            UUID jobOpportunityId) {
         this.id = UUID.randomUUID();
         this.userId = userId;
         this.title = title;
@@ -55,6 +57,7 @@ public class CalendarTask {
         this.dueAt = dueAt;
         this.priority = priority;
         this.source = source;
+        this.jobOpportunityId = jobOpportunityId;
         this.taskKind = CalendarTaskKind.GENERAL;
         this.status = CalendarTaskStatus.TODO;
     }
@@ -66,13 +69,24 @@ public class CalendarTask {
             Instant dueAt,
             CalendarTaskPriority priority,
             CalendarTaskSource source) {
-        return new CalendarTask(userId, title, description, dueAt, priority, source);
+        return create(userId, title, description, dueAt, priority, source, null);
+    }
+
+    public static CalendarTask create(
+            UUID userId,
+            String title,
+            String description,
+            Instant dueAt,
+            CalendarTaskPriority priority,
+            CalendarTaskSource source,
+            UUID jobOpportunityId) {
+        return new CalendarTask(userId, title, description, dueAt, priority, source, jobOpportunityId);
     }
 
     public static CalendarTask createMemoryReview(
             UUID userId, LocalDate reviewDate, int cardCount, Instant dueAt) {
         CalendarTask task = new CalendarTask(userId, "记忆卡复习", cardCount + " 张待复习", dueAt,
-                CalendarTaskPriority.HIGH, CalendarTaskSource.AGENT);
+                CalendarTaskPriority.HIGH, CalendarTaskSource.AGENT, null);
         task.taskKind = CalendarTaskKind.MEMORY_REVIEW;
         task.reviewDate = reviewDate;
         task.actionPath = "/app/cards";
@@ -83,7 +97,7 @@ public class CalendarTask {
             UUID userId, UUID learningPlanId, String concept, String reason,
             Instant dueAt, CalendarTaskSource source) {
         CalendarTask task = new CalendarTask(userId, concept, reason, dueAt,
-                CalendarTaskPriority.HIGH, source);
+                CalendarTaskPriority.HIGH, source, null);
         task.learningPlanId = learningPlanId;
         task.taskKind = CalendarTaskKind.LEARNING;
         task.actionPath = "/app/learning?id=" + learningPlanId;
@@ -93,7 +107,7 @@ public class CalendarTask {
     public static CalendarTask createInterviewRetest(
             UUID userId, UUID questionId, UUID replayAttemptId, String challenge, Instant dueAt) {
         CalendarTask task = new CalendarTask(userId, "面试复测", challenge, dueAt,
-                CalendarTaskPriority.HIGH, CalendarTaskSource.MANUAL);
+                CalendarTaskPriority.HIGH, CalendarTaskSource.MANUAL, null);
         task.taskKind = CalendarTaskKind.INTERVIEW_RETEST;
         task.replayQuestionId = questionId;
         task.replayAttemptId = replayAttemptId;
@@ -105,7 +119,7 @@ public class CalendarTask {
     public static CalendarTask createOccurrence(TaskSeries series, LocalDate occurrenceDate) {
         CalendarTask task = new CalendarTask(
                 series.getUserId(), series.getTitle(), series.getDescription(),
-                series.dueAtOn(occurrenceDate), series.getPriority(), series.getSource());
+                series.dueAtOn(occurrenceDate), series.getPriority(), series.getSource(), null);
         task.seriesId = series.getId();
         task.occurrenceDate = occurrenceDate;
         return task;
@@ -178,6 +192,7 @@ public class CalendarTask {
 
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
+    public UUID getJobOpportunityId() { return jobOpportunityId; }
     public UUID getMemoryCardId() { return memoryCardId; }
     public UUID getLearningPlanId() { return learningPlanId; }
     public UUID getReplayQuestionId() { return replayQuestionId; }

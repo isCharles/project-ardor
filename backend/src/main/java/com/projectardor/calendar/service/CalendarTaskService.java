@@ -42,13 +42,26 @@ public class CalendarTaskService {
             Instant dueAt,
             CalendarTaskPriority priority,
             CalendarTaskSource source) {
+        return create(userId, title, description, dueAt, priority, source, null);
+    }
+
+    @Transactional
+    public CalendarTask create(
+            UUID userId,
+            String title,
+            String description,
+            Instant dueAt,
+            CalendarTaskPriority priority,
+            CalendarTaskSource source,
+            UUID jobOpportunityId) {
         return repository.save(CalendarTask.create(
                 userId,
                 requiredTitle(title),
                 nullableText(description, 4000),
                 dueAt,
                 priority == null ? CalendarTaskPriority.MEDIUM : priority,
-                source == null ? CalendarTaskSource.MANUAL : source));
+                source == null ? CalendarTaskSource.MANUAL : source,
+                jobOpportunityId));
     }
 
     @Transactional
