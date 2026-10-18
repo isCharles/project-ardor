@@ -20,8 +20,14 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const recaps = ["alpha", "beta"].map(id => ({ id, title: `Fixture ${id}`, overview: `Unique ${id} overview`,
     strengths: [], weaknesses: [], questions: [], createdAt: "2026-10-01T01:00:00Z", jobOpportunityId: null }));
+  let slowJob = false, jobPolls = 0;
   await context.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/interview-recaps/jobs" && slowJob) {
+      jobPolls++;
+      if (jobPolls === 3) recaps.push({ ...recaps[0], id: "slow", title: "Slow completed notes" });
+      return route.fulfill({ json: [{ jobId: "slow-job", status: jobPolls < 3 ? "RUNNING" : "COMPLETED", recapId: jobPolls < 3 ? null : "slow" }] });
+    }
     const body = path === "/api/auth/me" ? { id: "pipeline-fixture", email: "pipeline@ardor.invalid", admin: false }
       : path === "/api/auth/csrf" ? { token: "fixture", headerName: "X-CSRF-TOKEN" }
       : path === "/api/profile/sidebar" ? { userId: "pipeline-fixture", hrefs: ["/app"], revision: 0, configured: true }
@@ -44,6 +50,10 @@ try {
   await page.goForward();
   await page.getByRole("heading", { name: "Fixture beta", exact: true }).waitFor();
   await page.screenshot({ path: ".next/pipeline-recap.png", fullPage: true });
+  slowJob = true;
+  await page.goto(`${origin}/app/recaps`);
+  await page.getByRole("link", { name: /Slow completed notes/ }).waitFor({ timeout: 20000 });
+  assert.ok(jobPolls >= 3, "Polling must continue when the active job count stays unchanged");
   assert.deepEqual(errors, []);
   console.log("Pipeline recap UI: client query selection and browser back/forward passed.");
 } finally { await browser?.close(); server.kill(); }

@@ -191,6 +191,8 @@ try {
   assert.equal(failedJobs.length, 1);
   assert.equal(failedJobs[0].status, "FAILED");
   await recoveryPage.getByRole("button", { name: /^(Retry|重试)$/ }).click();
+  await recoveryPage.getByRole("link", { name: /Java 后端一面复盘/ }).waitFor({ timeout: 40_000 });
+  await recoveryPage.getByRole("link", { name: /Java 后端一面复盘/ }).click();
   await recoveryPage.getByRole("heading", { level: 2, name: "Java 后端一面复盘" }).waitFor({ timeout: 40_000 });
   const recoveredJobs = await recoveryPage.evaluate(async () => {
     const response = await fetch("/api/interview-recaps/jobs");

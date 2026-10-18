@@ -56,9 +56,11 @@ function RecapsContent() {
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     try {
-      const [items, tasks, projects] = await Promise.all([
+      // Read completion first, then its committed result; parallel reads can
+      // otherwise observe COMPLETED alongside a list fetched just before commit.
+      const tasks = await api<RecapTask[]>("/api/interview-recaps/jobs");
+      const [items, projects] = await Promise.all([
         api<Recap[]>("/api/interview-recaps"),
-        api<RecapTask[]>("/api/interview-recaps/jobs"),
         api<OpportunityRef[]>("/api/opportunities"),
       ]);
       setRecaps(items); setJobs(tasks); setOpportunities(projects);
@@ -78,8 +80,8 @@ function RecapsContent() {
   const failedJobs = jobs.filter((job) => job.status === "FAILED");
   useEffect(() => {
     if (activeJobs.length === 0) return;
-    const timer = window.setTimeout(() => void load(), 4000);
-    return () => window.clearTimeout(timer);
+    const timer = window.setInterval(() => void load(), 4000);
+    return () => window.clearInterval(timer);
   }, [activeJobs.length, load]);
   async function organize(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError(""); try { const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content"), jobOpportunityId: data.get("jobOpportunityId") }) }); setShowForm(false); if (task.status === "COMPLETED" && task.recapId) router.push(`/app/recaps?selected=${task.recapId}`); else { markBackgroundPending("recaps"); router.push("/app?notice=recap-queued"); } } catch (reason) { setError(localizedError(reason, locale, "Could not submit interview notes", "提交失败")); } finally { setBusy(false); } }
   async function remove(recap: Recap) { if (!window.confirm(t(`Delete “${recap.title}”?`, `删除“${recap.title}”？`))) return; try { await api<void>(`/api/interview-recaps/${recap.id}`, { method: "DELETE" }); await load(); } catch (reason) { setError(localizedError(reason, locale, "Could not delete interview notes", "删除失败")); } }
