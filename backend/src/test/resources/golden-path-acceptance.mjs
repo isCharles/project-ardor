@@ -373,6 +373,15 @@ async function main() {
   const restoredTrace = JSON.parse(restored.messages.at(-1).runTrace);
   assert.equal(restoredTrace.proposals[0].learningPlan.requestId, proposal.learningPlan.requestId,
     "Proposal must survive a conversation reload");
+  const proposalMessageId = restored.messages.at(-1).id;
+  const resolutionPath = `/api/agent/messages/${proposalMessageId}/proposal-resolution`;
+  const decision = { key: proposal.learningPlan.requestId, resolution: "DISMISSED" };
+  await stranger.request(resolutionPath, { method: "PUT", expected: 404, body: decision });
+  await owner.request(resolutionPath, { method: "PUT", body: decision });
+  await owner.request(resolutionPath, { method: "PUT", body: { ...decision, resolution: "DONE" } });
+  const resolvedHistory = await owner.request(`/api/agent?conversationId=${conversation.id}`);
+  assert.equal(resolvedHistory.messages.at(-1).proposalResolutions[decision.key], "DISMISSED",
+    "A final presentation decision is durable and cannot be revived or overwritten by stale requests");
   assert.equal((await owner.request("/api/learning-plans")).length, before.length,
     "Agent tool must not create learning plans or calendar tasks before confirmation");
   const statusPath = `/api/learning-plans/request-status?requestIds=${proposal.learningPlan.requestId}`;
@@ -440,7 +449,7 @@ async function main() {
   const recovered = await waitForJobStatus(recoveryOwner, failedJob.jobId, "COMPLETED");
   assert.ok(recovered.recapId);
   const duplicateSubmission = await recoveryOwner.request("/api/interview-recaps", {
-    method: "POST", expected: 202, body: { content: recoveryInput },
+    method: "POST", expected: 202, body: { content: recoveryInput }, retryRateLimit: true,
   });
   assert.equal(duplicateSubmission.recapId, recovered.recapId,
     "Submitting the same material after recovery must reuse the completed recap");

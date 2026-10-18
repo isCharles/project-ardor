@@ -70,6 +70,13 @@ agent_tool_audit(id, user_id, run_id, tool, module, capability, arguments_digest
 - `GET /api/agent/permissions` → 全部模块及当前等级
 - `PUT /api/agent/permissions/{module}` `{level: 0..3}`
 - `GET /api/agent/runs/{id}/approvals` → 待确认操作，附带 `module`、`capability`、`suggestedLevel`，供弹窗提供「以后都允许」。
+- `PUT /api/agent/messages/{id}/proposal-resolution` `{key, resolution}`：记录本人消息中真实提案的展示决定（`DONE` / `DISMISSED` / `ACCEPTED` / `EXPIRED`）。决定写入消息的 `proposal_resolutions`，重新登录或换设备仍有效；同一提案首个决定不可被迟到请求覆盖。此接口不授权、更不执行任何业务操作。
+
+### 历史交互恢复
+
+- 以服务端保存的决定为准，设备缓存仅作为断网重试的补充。已拒绝、已完成、已接收的建议不恢复成待确认。
+- 旧版本没有保存决定时，只恢复最后一条消息中、30 分钟内的未决建议；更早的建议保留在工作记录中并标为过期，不再自动弹窗。用户仍可重新提出操作。
+- 切换会话时不携带其他会话的待确认项；运行级确认过滤已处理和过期请求，防止旧轮询响应重新显示它们。
 
 ## 安全边界
 

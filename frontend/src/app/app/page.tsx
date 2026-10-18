@@ -31,7 +31,7 @@ import { useLocale } from "@/lib/locale";
 import { useTypewriter } from "@/lib/use-typewriter";
 
 type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING" | "SERVICE"; id: string; label: string };
-type AgentMessage = { id: string; requestId?: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; createdAt: string };
+type AgentMessage = { id: string; requestId?: string; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; proposalResolutions?: Record<string, string>; createdAt: string };
 type Conversation = { id: string; title: string; pinned: boolean; titleManuallySet?: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
 type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null };
@@ -166,8 +166,12 @@ export default function AgentHomePage() {
     `ardor:conversation-draft:${reasoningAccount.current ?? "unavailable"}:${conversationId ?? "new"}`, []);
   const deletionResolutionKey = useCallback((item: AgentConfirmation, conversationId: string | null) =>
     `ardor:deletion-result:${reasoningAccount.current}:${conversationId}:${proposalSources.current.get(item.sourceMessageId ?? "") ?? item.sourceMessageId ?? "live"}:${confirmationKey(item)}`, []);
-  function rememberDeletion(item: AgentConfirmation, resolution: "DONE" | "DISMISSED") {
+  function rememberDeletion(item: AgentConfirmation, resolution: "DONE" | "DISMISSED" | "ACCEPTED") {
     try { window.localStorage.setItem(deletionResolutionKey(item, state?.conversationId ?? null), resolution); } catch { /* Snapshot-bound APIs remain safe when local storage is unavailable. */ }
+    const source = proposalSources.current.get(item.sourceMessageId ?? "") ?? item.sourceMessageId;
+    if (source) void api<void>(`/api/agent/messages/${encodeURIComponent(source)}/proposal-resolution`, {
+      method: "PUT", body: JSON.stringify({ key: confirmationKey(item), resolution }),
+    }).catch(() => undefined); // A decision made before the message commits is retried on stream completion/load.
   }
   const readSavedDraft = useCallback((conversationId?: string | null) =>
     window.sessionStorage.getItem(draftStorageKey(conversationId)) ?? "", [draftStorageKey]);
@@ -416,13 +420,25 @@ export default function AgentHomePage() {
     const restored = proposals.map((item) => {
       let resolution: string | null = null;
       try { resolution = window.localStorage.getItem(deletionResolutionKey(item, result.conversationId)); } catch { /* No automatic permission. */ }
+      const source = result.messages.find(message => message.id === item.sourceMessageId);
+      resolution = source?.proposalResolutions?.[confirmationKey(item)] ?? resolution;
+      if (resolution === "DONE" || resolution === "DISMISSED" || resolution === "ACCEPTED") {
+        void api<void>(`/api/agent/messages/${encodeURIComponent(item.sourceMessageId!)}/proposal-resolution`, {
+          method: "PUT", body: JSON.stringify({ key: confirmationKey(item), resolution }),
+        }).catch(() => undefined);
+      }
       const unsafeLegacyBulk = ["all_memories", "all_memory_cards"].includes(item.kind) && !Array.isArray(item.targetIds);
+      // Historical proposals are records, not fresh requests. Never reopen an old
+      // prompt whose legacy decision cannot be recovered (including another device).
+      const stale = !source || !Number.isFinite(Date.parse(source.createdAt)) || Date.now() - Date.parse(source.createdAt) > 30 * 60 * 1000
+        || source.id !== result.messages.at(-1)?.id;
       return { ...item, state: item.kind === "learning_plan" && window.sessionStorage.getItem(dismissedProposalKey(item)) === "1"
-        ? "DISMISSED" as const : unsafeLegacyBulk || proposalExpired(item) ? "EXPIRED" as const : resolution === "DONE" ? "DONE" as const : resolution === "DISMISSED" ? "DISMISSED" as const : "PENDING" as const };
+        ? "DISMISSED" as const : resolution === "DONE" ? "DONE" as const : resolution === "DISMISSED" ? "DISMISSED" as const : resolution === "ACCEPTED" && item.kind === "learning_plan" ? "GENERATING" as const : unsafeLegacyBulk || proposalExpired(item) || stale || resolution === "EXPIRED" ? "EXPIRED" as const : "PENDING" as const };
     });
     // Queued calls have no open browser stream: recover their proposals without executing them.
     setConfirmations((current) => {
-      const merged = new Map(current.filter((item) => item.kind !== "learning_plan").map((item) => [confirmationKey(item), item]));
+      const messageIds = new Set(result.messages.map(message => message.id));
+      const merged = new Map(current.filter((item) => item.sourceMessageId && messageIds.has(item.sourceMessageId)).map((item) => [confirmationKey(item), item]));
       for (const item of restored) {
         const existing = merged.get(confirmationKey(item));
         merged.set(confirmationKey(item), existing && existing.sourceMessageId === item.sourceMessageId ? { ...item, ...existing } : item);
@@ -648,6 +664,7 @@ export default function AgentHomePage() {
     setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? { ...item, state: "DELETING", error: undefined } : item));
     try {
       let job = await api<AiJob>("/api/learning-plans/jobs", { method: "POST", body: JSON.stringify(pending.learningPlan) });
+      if (job.status !== "FAILED") rememberDeletion(pending, job.status === "COMPLETED" ? "DONE" : "ACCEPTED");
       if (job.status === "FAILED" && pending.state === "FAILED") job = await api<AiJob>(`/api/ai-jobs/${job.id}/retry`, { method: "POST" });
       setConfirmations((current) => current.map((item) => confirmationKey(item) === key ? {
         ...item, state: job.status === "COMPLETED" ? "DONE" : job.status === "FAILED" ? "FAILED" : "GENERATING",
@@ -813,8 +830,12 @@ export default function AgentHomePage() {
               setConfirmations((current) => current.map((item) => {
                 if (item.sourceMessageId !== requestId) return item;
                 const saved = { ...item, sourceMessageId: event.messageId! };
-                if (item.state === "DONE" || item.state === "DISMISSED") {
-                  try { window.localStorage.setItem(deletionResolutionKey(saved, event.conversationId), item.state); } catch { /* Snapshot APIs remain bounded. */ }
+                if (item.state === "DONE" || item.state === "DISMISSED" || item.state === "GENERATING") {
+                  const resolution = item.state === "GENERATING" ? "ACCEPTED" : item.state;
+                  try { window.localStorage.setItem(deletionResolutionKey(saved, event.conversationId), resolution); } catch { /* Snapshot APIs remain bounded. */ }
+                  void api<void>(`/api/agent/messages/${encodeURIComponent(event.messageId!)}/proposal-resolution`, {
+                    method: "PUT", body: JSON.stringify({ key: confirmationKey(saved), resolution }),
+                  }).catch(() => undefined);
                 }
                 return saved;
               }));
@@ -832,7 +853,7 @@ export default function AgentHomePage() {
             } else if (event.type === "confirm" && event.confirmation) {
               const proposal = { ...event.confirmation, sourceMessageId: requestId };
               setConfirmations((current) => current.some((item) => confirmationKey(item) === confirmationKey(proposal))
-                ? current.map((item) => confirmationKey(item) === confirmationKey(proposal) ? { ...proposal, state: "PENDING" } : item)
+                ? current.map((item) => confirmationKey(item) === confirmationKey(proposal) ? item.sourceMessageId === requestId ? item : { ...proposal, state: "PENDING" } : item)
                 : [...current, { ...proposal, state: "PENDING" }]);
             } else if (event.type === "error") streamFailure = event;
           }, sendControl.signal);
@@ -1265,7 +1286,7 @@ export default function AgentHomePage() {
               onFailed={tool => { if (confirmedOperations.current.delete(tool)) setFeedback(t("Confirmation failed. Nothing has been confirmed.", "确认未成功提交，本次尚未确认。")); }} />}
             {deletionDock}
             <LearningPermissions items={confirmations.filter(item => item.kind === "learning_plan" && ["PENDING", "FAILED", "DELETING"].includes(item.state))}
-              onReject={pending => { window.sessionStorage.setItem(dismissedProposalKey(pending), "1"); setConfirmations(current => current.map(item => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item)); setFeedback(t("Creation declined. No learning plan was created.", "已拒绝创建，未新建学习计划。")); }}
+              onReject={pending => { rememberDeletion(pending, "DISMISSED"); window.sessionStorage.setItem(dismissedProposalKey(pending), "1"); setConfirmations(current => current.map(item => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item)); setFeedback(t("Creation declined. No learning plan was created.", "已拒绝创建，未新建学习计划。")); }}
               onConfirm={pending => void confirmLearning(pending)} />
             </div>
             {visibleError && <div className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}

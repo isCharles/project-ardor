@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
@@ -61,12 +61,13 @@ export function OperationPermissions({ runId, onConfirming, onConfirmed, onFaile
   const [items, setItems] = useState<Approval[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
+  const resolved = useRef(new Set<string>());
   useEffect(() => {
     let active = true, timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
         const value = await api<Approval[]>(`/api/agent/runs/${encodeURIComponent(runId)}/approvals`);
-        if (active) setItems(value.filter(item => item.status === "PENDING"));
+        if (active) setItems(value.filter(item => item.status === "PENDING" && !resolved.current.has(item.id) && Date.parse(item.expiresAt) > Date.now()));
       } catch { /* The run may not yet be persisted; no approval is inferred from a failed read. */ }
       if (active) timer = setTimeout(() => void poll(), 1000);
     };
@@ -83,6 +84,7 @@ export function OperationPermissions({ runId, onConfirming, onConfirmed, onFaile
           .catch(() => undefined);
       }
       await api<void>(`/api/agent/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify({ allow }) });
+      resolved.current.add(item.id);
       setItems(current => current.filter(value => value.id !== item.id));
       if (allow) onConfirmed(item.tool);
     } catch (reason) { if (allow) onFailed(item.tool); setError(reason instanceof Error ? reason.message : t("Could not submit your decision.", "无法提交你的决定。")); }

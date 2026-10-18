@@ -126,6 +126,13 @@ try {
       if (deletionFails) return route.fulfill({ status: 503, json: { message: "Synthetic dock deletion failure" } });
       return route.fulfill({ status: 204 });
     }
+    else if (path.endsWith("/proposal-resolution") && route.request().method() === "PUT") {
+      const messageId = path.split("/").at(-2);
+      const message = displayedMessages.find(item => item.id === messageId);
+      const decision = route.request().postDataJSON();
+      if (message) message.proposalResolutions = { ...message.proposalResolutions, [decision.key]: decision.resolution };
+      return route.fulfill({ status: 200 });
+    }
     else if (path.endsWith("/approvals")) body = permissions;
     else if (/\/approvals\/[^/]+$/.test(path) && route.request().method() === "POST") {
       if (permissionDecisionFails) return route.fulfill({ status: 503, json: { message: "Synthetic confirmation failure" } });
@@ -572,7 +579,8 @@ try {
   await page.reload();
   await draftBox.fill("Stop during retry backoff");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await page.getByText("Waiting for model", { exact: true }).click();
+  const retryTrace = page.getByText("Waiting for model", { exact: true }).locator("xpath=ancestor::details[1]");
+  if (await retryTrace.getAttribute("open") === null) await retryTrace.locator(":scope > summary").click();
   await page.getByText(/Reconnecting · retry 1\/5/).waitFor();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.getByText("Stopped. Any operation already started may still finish; check its result.", { exact: true }).waitFor();
@@ -662,13 +670,18 @@ try {
     });
     assert.ok(bounds.top >= 0 && bounds.bottom <= bounds.inputTop && bounds.inputBottom <= bounds.height, "Confirmation must be visible directly above the composer, without covering it");
   }
+  const savedDecision = page.waitForResponse(response => response.url().endsWith("/proposal-resolution") && response.request().method() === "PUT");
   await deletionDock.getByRole("button", { name: "Keep", exact: true }).click();
+  await savedDecision;
   await deletionDock.waitFor({ state: "detached" });
   assert.equal(deletionCalls, 0);
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Deletion confirmation"]'));
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
   await page.reload();
   await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
   assert.equal(await deletionDock.count(), 0, "Kept proposals must not revive on reload");
   displayedMessages[0].id = "new-deletion-proposal";
+  displayedMessages[0].proposalResolutions = {};
   await page.reload();
   await deletionDock.waitFor();
   deletionFails = true;
@@ -686,6 +699,11 @@ try {
   await page.reload();
   await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
   assert.equal(await deletionDock.count(), 0, "Completed deletion must not revive on reload");
+  displayedMessages[0] = { ...displayedMessages[0], id: "legacy-old-proposal", proposalResolutions: {}, createdAt: "2026-01-01T00:00:00Z" };
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.reload();
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
+  assert.equal(await deletionDock.count(), 0, "Old legacy proposals without a recoverable decision must expire, not prompt again");
   assert.deepEqual(errors, []);
   console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
 } finally {
