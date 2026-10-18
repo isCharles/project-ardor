@@ -135,9 +135,9 @@ public class MemoryConsolidationService {
         existing.forEach(item -> existingIds.add(item.id()));
         for (Candidate candidate : candidates(node, userTexts, existingIds)) {
             if ("ADD".equals(candidate.op())) {
-                memoryService.add(userId, candidate.content(), candidate.kind(), "INFERRED", null);
+                memoryService.add(userId, candidate.content(), candidate.kind(), "INFERRED", null, (float) candidate.confidence());
             } else if ("UPDATE".equals(candidate.op()) && candidate.id() != null) {
-                memoryService.replace(userId, candidate.id(), candidate.content(), candidate.kind(), "INFERRED");
+                memoryService.replace(userId, candidate.id(), candidate.content(), candidate.kind(), "INFERRED", (float) candidate.confidence());
             }
         }
     }

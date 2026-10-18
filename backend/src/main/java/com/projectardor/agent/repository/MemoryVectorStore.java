@@ -19,12 +19,12 @@ public class MemoryVectorStore {
         this.jdbc = jdbc;
     }
 
-    public void saveEmbedding(UUID userId, UUID itemId, String vectorLiteral, int dimension, String model) {
+    public void saveEmbedding(UUID userId, UUID itemId, String expectedContent, String vectorLiteral, int dimension, String model) {
         jdbc.update("""
                 UPDATE user_agent_memory_items
                 SET embedding = ?::vector, embedding_dim = ?, embedding_model = ?, embedded_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND user_id = ?
-                """, vectorLiteral, dimension, model, itemId, userId);
+                WHERE id = ? AND user_id = ? AND content = ? AND valid_until IS NULL
+                """, vectorLiteral, dimension, model, itemId, userId, expectedContent);
     }
 
     /** Cosine matches for one query, restricted to the user's current model and dimension. */
@@ -44,10 +44,12 @@ public class MemoryVectorStore {
     public List<UUID> usersWithStaleEmbeddings(int limit) {
         return jdbc.queryForList("""
                 SELECT DISTINCT m.user_id FROM user_agent_memory_items m
-                JOIN auxiliary_api_configs c
+                LEFT JOIN auxiliary_api_configs c
                   ON c.user_id = m.user_id AND c.service_type = 'EMBEDDING'
+                LEFT JOIN system_api_configs s ON s.service_type = 'EMBEDDING'
                 WHERE m.valid_until IS NULL
-                  AND (m.embedding IS NULL OR m.embedding_model IS DISTINCT FROM c.model)
+                  AND COALESCE(c.model, s.model) IS NOT NULL
+                  AND (m.embedding IS NULL OR m.embedding_model IS DISTINCT FROM COALESCE(c.model, s.model))
                 LIMIT ?
                 """, UUID.class, limit);
     }

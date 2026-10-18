@@ -38,10 +38,18 @@ public class AgentMemoryItem {
     }
 
     public static AgentMemoryItem create(UUID userId, String content, String kind, String sourceKind, UUID sourceRunId) {
+        return create(userId, content, kind, sourceKind, sourceRunId, "INFERRED".equals(sourceKind) ? 0.7f : 1.0f);
+    }
+
+    public static AgentMemoryItem create(UUID userId, String content, String kind, String sourceKind, UUID sourceRunId, float confidence) {
         AgentMemoryItem item = new AgentMemoryItem(userId, content);
         item.kind = validKind(kind);
         item.sourceKind = validSource(sourceKind);
         item.sourceRunId = sourceRunId;
+        if (!Float.isFinite(confidence) || confidence < 0 || confidence > 1) {
+            throw new IllegalArgumentException("记忆可信度须在 0 到 1 之间");
+        }
+        item.confidence = confidence;
         return item;
     }
 

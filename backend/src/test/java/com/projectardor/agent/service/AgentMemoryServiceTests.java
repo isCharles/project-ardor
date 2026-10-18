@@ -28,6 +28,7 @@ class AgentMemoryServiceTests {
         var result = service.edit(owner, item.getId(), "  Java and AI backend  ");
         assertThat(result.id()).isEqualTo(item.getId());
         assertThat(result.content()).isEqualTo("Java and AI backend");
+        verify(itemRepository).invalidateEmbedding(owner, item.getId());
         verify(itemRepository, never()).deleteAllByUserId(owner);
         assertThatThrownBy(() -> service.edit(UUID.randomUUID(), item.getId(), "other owner"))
                 .isInstanceOf(com.projectardor.common.web.ResourceNotFoundException.class);
@@ -47,6 +48,26 @@ class AgentMemoryServiceTests {
     private final AgentMemoryRepository repository = mock(AgentMemoryRepository.class);
     private final AgentMemoryItemRepository itemRepository = mock(AgentMemoryItemRepository.class);
     private final AgentMemoryService service = new AgentMemoryService(repository, itemRepository);
+
+    @Test void inferredConfidenceSurvivesPersistence() {
+        UUID owner = UUID.randomUUID();
+        when(itemRepository.save(any())).thenAnswer(call -> call.getArgument(0));
+        var saved = service.add(owner, "Synthetic fact", "fact", "INFERRED", null, 0.4f);
+        assertThat(saved.confidence()).isEqualTo(0.4f);
+        assertThat(saved.sourceKind()).isEqualTo("INFERRED");
+        assertThat(AgentMemoryItem.create(owner, "Explicit fact").getConfidence()).isEqualTo(1.0f);
+        assertThatThrownBy(() -> AgentMemoryItem.create(owner, "Invalid fact", "fact", "INFERRED", null, Float.NaN))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void unchangedMemoryDoesNotInvalidateItsEmbedding() {
+        UUID owner = UUID.randomUUID();
+        var item = AgentMemoryItem.create(owner, "Unchanged");
+        when(itemRepository.findByIdAndUserId(item.getId(), owner)).thenReturn(java.util.Optional.of(item));
+        when(itemRepository.saveAndFlush(item)).thenReturn(item);
+        service.edit(owner, item.getId(), "Unchanged");
+        verify(itemRepository, never()).invalidateEmbedding(any(), any());
+    }
 
     @Test void snapshotDeletesOnlyTheListedOwnedItems() {
         UUID owner = UUID.randomUUID();

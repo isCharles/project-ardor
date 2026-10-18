@@ -12,7 +12,7 @@
 | 4 破坏性 | 删除类操作只生成提案，绝不直接执行 | `ApprovedAgentTools.PROPOSALS` + 提案卡 |
 | 5 审计 | 自动放行的写操作留痕 | `agent_tool_audit` |
 
-权限级别只影响第 3 层。第 2、4 层不因级别放宽：用户原话校验照旧，删除仍然只出提案卡片。
+权限级别控制前台工具是否逐次确认，删除仍然只出提案卡片。`ToolIntentPolicy` 是可用的意图判别辅助，不应宣称它在每个工具入口都强制执行；实际授权边界是运行状态、明确授予的模块能力或本次界面确认，以及业务归属校验。
 
 ## 能力分类
 
@@ -43,12 +43,12 @@
 
 `profile`、`web`、`knowledge`、`learning`、`memory`、`applications`、`calendar`、`resumes`、`interviews`、`recaps`、`cards`、`opportunities`、`system`。
 
-默认全部为 0，与引入权限前的行为一致：所有写操作逐次确认。
+前台工具默认全部为 0：写操作逐次确认。后台长期记忆整理属于独立产品能力，可以自动新增和修正记忆，不逐条弹窗；此处的工具等级不代表关闭自动记忆。记忆来源、置信度、历史及用户编辑/删除入口见 `MEMORY_DESIGN.md`。
 
 ## 数据模型
 
 ```sql
-agent_permission_grants(user_id, module, level, updated_at)   -- 每个用户每个模块一行
+agent_permission_grants(user_id, module, level, updated_at)   -- 模块覆盖；* 为全局默认
 agent_tool_audit(id, user_id, run_id, tool, module, capability, arguments_digest, created_at)
 ```
 
@@ -59,7 +59,7 @@ agent_tool_audit(id, user_id, run_id, tool, module, capability, arguments_digest
 ```
 工具调用
   → ToolCatalog 查 module/capability（未登记 = 需要确认）
-  → ToolIntentPolicy 意图校验（不因等级放宽）
+  → 检查运行状态与资源归属（工具输入仍是不可信模型输出）
   → capability = DELETE：构造提案，等待用户点击，不执行
   → grants.level(module) >= capability 最低等级：直接执行，写审计
   → 否则：进入运行级单次确认（现有弹窗），确认后执行
@@ -74,7 +74,7 @@ agent_tool_audit(id, user_id, run_id, tool, module, capability, arguments_digest
 ## 安全边界
 
 - 删除、批量清空永远需要提案确认。
-- 工具意图校验（如长期记忆必须引用用户原话）不受等级影响。
+- 长期记忆允许归纳，不要求逐字复述；模拟面试回答仍须引用用户原话，不能代答。
 - 自动放行仍受运行租约、超时和用户隔离约束。
 - 审计只增不改，用户可在后续阶段导出。
 

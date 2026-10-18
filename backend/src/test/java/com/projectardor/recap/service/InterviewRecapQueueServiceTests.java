@@ -23,6 +23,27 @@ class InterviewRecapQueueServiceTests {
 
     private static final String CONTENT = "这是一段足够长的面试回忆内容，用于验证并发请求会先锁定同一份输入再创建任务。";
 
+    @Test void cachedRecapAttachesToOwnedProcessAndRejectsAnotherProcess() {
+        var recaps = mock(InterviewRecapRepository.class);
+        var jobs = mock(InterviewRecapJobRepository.class);
+        var opportunities = mock(JobOpportunityRepository.class);
+        var service = new InterviewRecapQueueService(recaps, jobs, opportunities);
+        UUID owner = UUID.randomUUID(), process = UUID.randomUUID(), another = UUID.randomUUID();
+        var recap = com.projectardor.recap.domain.InterviewRecap.create(owner, "Fixture",
+                com.projectardor.recap.domain.InterviewRecapSource.NOTES, CONTENT, "hash", "Overview",
+                java.util.List.of(), java.util.List.of(), "fixture", null);
+        when(opportunities.findByIdAndUserId(eq(process), eq(owner)))
+                .thenReturn(Optional.of(JobOpportunity.create(owner, "Example", null, null, null)));
+        when(opportunities.findByIdAndUserId(eq(another), eq(owner)))
+                .thenReturn(Optional.of(JobOpportunity.create(owner, "Another", null, null, null)));
+        when(recaps.findByUserIdAndInputHash(eq(owner), any())).thenReturn(Optional.of(recap));
+        service.request(owner, CONTENT, process);
+        assertThat(recap.getJobOpportunityId()).isEqualTo(process);
+        verify(recaps).saveAndFlush(recap);
+        assertThatThrownBy(() -> service.request(owner, CONTENT, another))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("另一场面试");
+    }
+
     @Test
     void requestLocksTheUserAndContentFingerprintBeforeCreatingAJob() {
         InterviewRecapRepository recaps = mock(InterviewRecapRepository.class);

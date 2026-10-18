@@ -50,7 +50,7 @@ public class MemoryEmbeddingService {
                 pending.stream().map(MemoryVectorStore.Pending::content).toList());
         for (int index = 0; index < pending.size(); index++) {
             EmbeddingVector vector = vectors.get(index);
-            vectorStore.saveEmbedding(userId, pending.get(index).id(), toLiteral(vector.values()),
+            vectorStore.saveEmbedding(userId, pending.get(index).id(), pending.get(index).content(), toLiteral(vector.values()),
                     vector.values().length, vector.model());
         }
     }

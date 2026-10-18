@@ -40,6 +40,21 @@ class OpportunityServiceTests {
         when(rounds.save(any())).thenAnswer(call -> call.getArgument(0));
     }
 
+    @Test void optionalFieldsCanBeClearedWithoutChangingOmittedFields() {
+        UUID owner = UUID.randomUUID();
+        var item = JobOpportunity.create(owner, "Example", "Backend", "Meet", "Old JD", "Old invite");
+        when(opportunities.findByIdAndUserId(item.getId(), owner)).thenReturn(Optional.of(item));
+        service.update(owner, item.getId(), new OpportunityUpdateRequest(null, "", "", "", "", null));
+        assertThat(item.getCompany()).isEqualTo("Example");
+        assertThat(item.getTargetRole()).isEmpty();
+        assertThat(item.getPlatform()).isEmpty();
+        assertThat(item.getJdContent()).isEmpty();
+        assertThat(item.getInviteContent()).isEmpty();
+        assertThatThrownBy(() -> service.update(owner, item.getId(),
+                new OpportunityUpdateRequest("", null, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     void listOnlyAsksForTheCurrentUsersProcesses() {
         UUID userId = UUID.randomUUID();

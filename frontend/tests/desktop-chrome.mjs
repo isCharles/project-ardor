@@ -32,6 +32,7 @@ try {
     const body = path === "/api/auth/me" ? { id: "chrome-fixture", email: "chrome@ardor.invalid", admin: false }
       : path === "/api/agent" ? { conversationId: null, llmConfigured: true, displayName: "Fixture", conversations: [], archivedConversations: [], messages: [], memory: { content: "" } }
       : path === "/api/agent/reasoning" ? { nativeControl: true }
+      : path === "/api/agent/permissions" ? { globalLevel: 0, modules: [] }
       : path === "/api/profile" ? { displayName: "Fixture", headline: "", targetRoles: [], timezone: "Asia/Shanghai" }
       : path === "/api/settings/llm" ? { configured: true, provider: "OPENAI_COMPATIBLE", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false }
       : path === "/api/settings/web-search" ? { configured: true, provider: "TAVILY", configurationSource: "ADMIN", personalOverride: false }

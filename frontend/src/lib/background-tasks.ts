@@ -53,7 +53,7 @@ export function useReadVisibleResult(kind: string,resourceId: string | null | un
  * One page can produce several tasks (creation plus each evaluation attempt), and
  * the module badge counts all of them, so reading a single result leaves the badge lit.
  */
-export function useAcknowledgeResourceTasks(kinds: string[], resourceId: string | null | undefined, ready: boolean) {
+export function useAcknowledgeResourceTasks(kinds: string[], resourceId: string | null | undefined, ready: boolean, version: string | number = "") {
   const kindsKey = kinds.join(",");
   useEffect(() => {
     if (!resourceId || !ready) return;
@@ -79,5 +79,5 @@ export function useAcknowledgeResourceTasks(kinds: string[], resourceId: string 
     void check();
     document.addEventListener("visibilitychange", wake);
     return () => { active = false; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", wake); };
-  }, [kindsKey, resourceId, ready]);
+  }, [kindsKey, resourceId, ready, version]);
 }

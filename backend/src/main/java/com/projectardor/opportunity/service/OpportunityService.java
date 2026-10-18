@@ -78,11 +78,11 @@ public class OpportunityService {
     public OpportunityResponse update(UUID userId, UUID opportunityId, OpportunityUpdateRequest request) {
         JobOpportunity opportunity = require(userId, opportunityId);
         opportunity.updateDetails(
-                blankToNull(request.company()),
-                blankToNull(request.targetRole()),
-                blankToNull(request.platform()),
-                blankToNull(request.jdContent()),
-                blankToNull(request.inviteContent()));
+                request.company(),
+                request.targetRole(),
+                request.platform(),
+                request.jdContent(),
+                request.inviteContent());
         OpportunityStatus target = parseStatus(request.status());
         if (target != null) opportunity.transitionTo(target);
         opportunities.save(opportunity);

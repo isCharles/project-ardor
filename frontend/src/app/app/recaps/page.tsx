@@ -2,8 +2,8 @@
 
 import { ArrowLeft, ArrowRight, Plus, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { agentCreationHref } from "@/lib/agent-features";
 import { markBackgroundPending } from "@/lib/background-notifications";
@@ -41,11 +41,15 @@ function formatFiledDate(recap: Recap, locale: "en" | "zh-CN") {
 }
 
 export default function RecapsPage() {
+  return <Suspense><RecapsContent /></Suspense>;
+}
+
+function RecapsContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { locale, t } = useLocale();
   const [recaps, setRecaps] = useState<Recap[]>([]);
   const [jobs, setJobs] = useState<RecapTask[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [opportunities, setOpportunities] = useState<OpportunityRef[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -58,18 +62,17 @@ export default function RecapsPage() {
         api<OpportunityRef[]>("/api/opportunities"),
       ]);
       setRecaps(items); setJobs(tasks); setOpportunities(projects);
-      const params = new URLSearchParams(window.location.search);
-      const requested = params.get("selected");
-      const source = params.get("source");
-      const sourceRecap = source ? items.find((item) => item.id === source || item.questions.some((question) => question.id === source)) : null;
-      setSelectedId((id) => id && items.some((x) => x.id === id) ? id : requested && items.some((x) => x.id === requested) ? requested : sourceRecap ? sourceRecap.id : null);
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
       else setError(localizedError(reason, locale, "Could not load interview notes", "无法加载面经"));
     }
   }, [router, locale]);
   useEffect(() => { const first = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(first); }, [load]);
-  const selected = recaps.find((item) => item.id === selectedId) ?? null;
+  const requested = searchParams.get("selected");
+  const source = searchParams.get("source");
+  const selected = recaps.find((item) => item.id === requested)
+    ?? (source ? recaps.find((item) => item.id === source || item.questions.some((question) => question.id === source)) : null)
+    ?? null;
   useReadVisibleResult("RECAP_ORGANIZE",selected?.id,!!selected);
   const activeJobs = jobs.filter((job) => job.status === "QUEUED" || job.status === "RUNNING");
   const failedJobs = jobs.filter((job) => job.status === "FAILED");

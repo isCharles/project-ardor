@@ -25,6 +25,16 @@ function syntheticResumePdf() {
 
 class Client {
   cookies = new Map();
+  fixtureOpportunityId = null;
+
+  async fixtureOpportunity() {
+    if (!this.fixtureOpportunityId) {
+      const item = await this.request("/api/opportunities", { method: "POST", expected: 201,
+        body: { company: "Ardor Labs", targetRole: "Java 后端工程师" } });
+      this.fixtureOpportunityId = item.id;
+    }
+    return this.fixtureOpportunityId;
+  }
 
   captureCookies(response) {
     for (const line of response.headers.getSetCookie()) {
@@ -35,6 +45,11 @@ class Client {
   }
 
   async request(path, { method = "GET", body, expected = 200, retryRateLimit = false } = {}) {
+    // Valid legacy fixtures now explicitly belong to an owned real interview.
+    // Invalid-request tests (expected400) do not use this fixture convenience.
+    if (path === "/api/interview-recaps" && method === "POST" && expected === 202 && !body?.jobOpportunityId) {
+      body = { ...body, jobOpportunityId: await this.fixtureOpportunity() };
+    }
     const headers = { Accept: "application/json" };
     if (this.cookies.size) {
       headers.Cookie = [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
@@ -192,7 +207,15 @@ async function main() {
   });
   const recapId = submitted.recapId ?? await waitForRecap(owner, submitted.jobId);
   const recap = await owner.request(`/api/interview-recaps/${recapId}`);
-  assert.equal(recap.company, "Ardor Labs");
+  assert.equal(recap.jobOpportunityId, owner.fixtureOpportunityId);
+  assert.equal("company" in recap, false, "Metadata belongs only to the interview process");
+  const recapProcess = await owner.request(`/api/opportunities/${recap.jobOpportunityId}`);
+  assert.equal(recapProcess.company, "Ardor Labs");
+  await stranger.request(`/api/opportunities/${recap.jobOpportunityId}`, { expected: 404 });
+  await stranger.request("/api/interview-recaps", { method: "POST", expected: 404,
+    body: { content: "Synthetic interview content long enough to pass input validation.", jobOpportunityId: recap.jobOpportunityId } });
+  await owner.request("/api/interview-recaps", { method: "POST", expected: 400,
+    body: { content: "Synthetic interview content without a selected interview process." } });
   const weak = recap.questions.find((question) => question.performance === "WEAK");
   assert.ok(weak?.id, "Expected a weak recap question");
   await stranger.request(`/api/interview-recaps/${recapId}`, { expected: 404 });
@@ -536,9 +559,10 @@ async function main() {
   const metadataRecapId = metadataSubmission.recapId
     ?? await waitForRecap(metadataOwner, metadataSubmission.jobId);
   const incompleteRecap = await metadataOwner.request(`/api/interview-recaps/${metadataRecapId}`);
-  assert.equal(incompleteRecap.company, null);
-  assert.equal(incompleteRecap.targetRole, null);
-  assert.equal(incompleteRecap.occurredAt, null);
+  assert.equal(incompleteRecap.jobOpportunityId, metadataOwner.fixtureOpportunityId);
+  assert.equal("company" in incompleteRecap, false);
+  assert.equal("targetRole" in incompleteRecap, false);
+  assert.equal("occurredAt" in incompleteRecap, false);
 
   // Keep a clean weak question for the browser to complete the entire replay
   // and calendar retest flow through user-visible controls.

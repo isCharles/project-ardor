@@ -55,6 +55,7 @@ try {
     const path = url.pathname;
     let body = {};
     if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin };
+    else if (path === "/api/agent/permissions") body = { globalLevel: 0, modules: [] };
     else if (path === "/api/profile/sidebar") {
       body = sidebarViews.get(userId) ?? { userId, hrefs: sidebarDefaults, revision: 0, configured: false };
       if (route.request().method() === "PUT") {
@@ -285,18 +286,18 @@ try {
   const custom = page.getByRole("dialog", { name: "Customize sidebar" });
   assert.equal(await custom.getByLabel("Chat", { exact: true }).isDisabled(), true);
   await custom.getByLabel("Resumes", { exact: true }).uncheck();
-  await custom.getByLabel("Interview notes", { exact: true }).check();
+  await custom.getByLabel("Knowledge", { exact: true }).check();
   await custom.getByRole("button", { name: "Save", exact: true }).click();
   await custom.waitFor({ state: "hidden" });
   const nav = page.getByRole("navigation", { name: "Workspaces", exact: true });
   assert.equal(await nav.getByRole("link", { name: "Resumes", exact: true }).count(), 0);
-  assert.equal(await nav.getByRole("link", { name: "Interview notes", exact: true }).count(), 1);
+  assert.equal(await nav.getByRole("link", { name: "Knowledge", exact: true }).count(), 1);
   const freshDevice = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await freshDevice.route("**/api/**", handleApi);
   await freshDevice.addInitScript(() => localStorage.setItem("ardor:workspace-rail:v1:workspace-owner", JSON.stringify(["/app", "/app/knowledge"])));
   const freshPage = await freshDevice.newPage();
   await freshPage.goto(`${origin}/app`);
-  await freshPage.getByRole("navigation", { name: "Workspaces", exact: true }).getByRole("link", { name: "Interview notes", exact: true }).waitFor();
+  await freshPage.getByRole("navigation", { name: "Workspaces", exact: true }).getByRole("link", { name: "Knowledge", exact: true }).waitFor();
   assert.equal(await freshPage.getByRole("navigation", { name: "Workspaces", exact: true }).getByRole("link", { name: "Resumes", exact: true }).count(), 0,
     "A fresh browser uses the account layout rather than defaults or an older local layout");
   assert.deepEqual(await freshPage.evaluate(() => JSON.parse(localStorage.getItem("ardor:workspace-rail:v1:workspace-owner"))), ["/app", "/app/knowledge"], "The old local layout remains recoverable");
@@ -318,7 +319,7 @@ try {
   await custom.waitFor({ state: "hidden" });
   await page.screenshot({ path: ".next/workspace-chat.png" });
   await page.reload();
-  await nav.getByRole("link", { name: "Interview notes", exact: true }).waitFor();
+  await nav.getByRole("link", { name: "Knowledge", exact: true }).waitFor();
   await page.getByRole("button", { name: "More workspaces" }).click();
   await page.locator("#ardor-more-workspaces").getByRole("link", { name: "Resumes", exact: true }).waitFor();
 
@@ -346,11 +347,11 @@ try {
   await custom.getByRole("button", { name: "Reset defaults" }).click();
   await custom.press("Escape"); // cancel must not save defaults
   await page.reload();
-  await nav.getByRole("link", { name: "Interview notes", exact: true }).waitFor();
+  await nav.getByRole("link", { name: "Knowledge", exact: true }).waitFor();
   userId = "workspace-other";
   await page.reload();
   await nav.getByRole("link", { name: "Resumes", exact: true }).waitFor();
-  assert.equal(await nav.getByRole("link", { name: "Interview notes", exact: true }).count(), 0);
+  assert.equal(await nav.getByRole("link", { name: "Knowledge", exact: true }).count(), 0);
   await page.evaluate(() => localStorage.setItem("ardor:workspace-rail:v1:workspace-other", "bad json"));
   await page.reload();
   await nav.getByRole("link", { name: "Resumes", exact: true }).waitFor();

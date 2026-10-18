@@ -178,7 +178,8 @@ export default function LearningPage() {
   const assessing = jobPending(assessment.job);
   // Reviews live in the attempt history only; the newest attempt is expanded.
   const previousAttempts = selected?.lastEvaluation?.attempts ?? [];
-  useAcknowledgeResourceTasks(["LEARNING_CREATE", "LEARNING_EVALUATE"], selected?.id, !!selected);
+  useAcknowledgeResourceTasks(["LEARNING_CREATE", "LEARNING_EVALUATE"], selected?.id, !!selected,
+    `${selected?.attemptCount ?? 0}:${assessment.job?.id ?? ""}:${assessment.job?.status ?? ""}`);
   const activeCount = plans.filter((plan) => plan.status !== "COMPLETED").length;
   const orderedPlans = [...plans].sort((left, right) => {
     if ((left.status === "COMPLETED") !== (right.status === "COMPLETED")) return left.status === "COMPLETED" ? 1 : -1;

@@ -94,6 +94,11 @@ public class AgentMemoryService {
 
     @Transactional
     public AgentMemoryItemResponse add(UUID userId, String rawContent, String kind, String sourceKind, UUID sourceRunId) {
+        return add(userId, rawContent, kind, sourceKind, sourceRunId, "INFERRED".equals(sourceKind) ? 0.7f : 1.0f);
+    }
+
+    @Transactional
+    public AgentMemoryItemResponse add(UUID userId, String rawContent, String kind, String sourceKind, UUID sourceRunId, float confidence) {
         itemRepository.lockOwner(userId);
         String content = itemContent(rawContent);
         if (itemRepository.existsByUserIdAndContentIgnoreCase(userId, content)) {
@@ -101,21 +106,26 @@ public class AgentMemoryService {
                     .filter(item -> item.isValid() && item.getContent().equalsIgnoreCase(content)).findFirst()
                     .map(AgentMemoryItemResponse::from)
                     .orElseGet(() -> AgentMemoryItemResponse.from(
-                            itemRepository.save(AgentMemoryItem.create(userId, content, kind, sourceKind, sourceRunId))));
+                            itemRepository.save(AgentMemoryItem.create(userId, content, kind, sourceKind, sourceRunId, confidence))));
         }
         return AgentMemoryItemResponse.from(
-                itemRepository.save(AgentMemoryItem.create(userId, content, kind, sourceKind, sourceRunId)));
+                itemRepository.save(AgentMemoryItem.create(userId, content, kind, sourceKind, sourceRunId, confidence)));
     }
 
     @Transactional
     public AgentMemoryItemResponse replace(UUID userId, UUID memoryId, String rawContent, String kind, String sourceKind) {
+        return replace(userId, memoryId, rawContent, kind, sourceKind, "INFERRED".equals(sourceKind) ? 0.7f : 1.0f);
+    }
+
+    @Transactional
+    public AgentMemoryItemResponse replace(UUID userId, UUID memoryId, String rawContent, String kind, String sourceKind, float confidence) {
         itemRepository.lockOwner(userId);
         AgentMemoryItem existing = itemRepository.findByIdAndUserId(memoryId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("记忆不存在"));
         String content = itemContent(rawContent);
         if (existing.getContent().equalsIgnoreCase(content)) return AgentMemoryItemResponse.from(existing);
         AgentMemoryItem replacement = itemRepository.save(AgentMemoryItem.create(userId, content,
-                kind == null ? existing.getKind() : kind, sourceKind, null));
+                kind == null ? existing.getKind() : kind, sourceKind, null, confidence));
         // The old fact stays as history with a closed validity interval.
         existing.invalidate(Instant.now(), replacement.getId());
         itemRepository.saveAndFlush(existing);
@@ -157,8 +167,11 @@ public class AgentMemoryService {
         if (!item.getContent().equalsIgnoreCase(content) && itemRepository.existsByUserIdAndContentIgnoreCase(userId, content)) {
             throw new IllegalArgumentException("已有相同记忆，请修改原条目，不会自动合并或删除");
         }
+        boolean changed = !item.getContent().equals(content);
         item.revise(content);
-        return AgentMemoryItemResponse.from(itemRepository.saveAndFlush(item));
+        var saved = itemRepository.saveAndFlush(item);
+        if (changed) itemRepository.invalidateEmbedding(userId, memoryId);
+        return AgentMemoryItemResponse.from(saved);
     }
 
     @Transactional

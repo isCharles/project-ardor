@@ -47,9 +47,19 @@ public class InterviewRecapQueueService {
         String inputHash = inputHash(content);
         jobRepository.lockRequestSlot(userId, inputHash);
         var completed = recapRepository.findByUserIdAndInputHash(userId, inputHash);
-        if (completed.isPresent()) return TaskResult.completed(completed.get().getId(), completed.get().getCreatedAt());
+        if (completed.isPresent()) {
+            var recap = completed.get();
+            if (recap.getJobOpportunityId() != null && !jobOpportunityId.equals(recap.getJobOpportunityId())) {
+                throw new IllegalArgumentException("这份面经已属于另一场面试，请打开原面试查看");
+            }
+            if (recap.linkOpportunity(jobOpportunityId)) recapRepository.saveAndFlush(recap);
+            return TaskResult.completed(recap.getId(), recap.getCreatedAt());
+        }
         Optional<InterviewRecapJob> active = jobRepository
                 .findFirstByUserIdAndInputHashAndStatusInOrderByCreatedAtDesc(userId, inputHash, ACTIVE);
+        if (active.isPresent() && !jobOpportunityId.equals(active.get().getJobOpportunityId())) {
+            throw new IllegalArgumentException("相同面经内容正在另一场面试下整理，请等待原任务完成");
+        }
         return active.map(TaskResult::from)
                 .orElseGet(() -> TaskResult.from(jobRepository.saveAndFlush(
                         InterviewRecapJob.create(userId, inputHash, content, jobOpportunityId))));

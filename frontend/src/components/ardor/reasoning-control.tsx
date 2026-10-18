@@ -20,7 +20,7 @@ export function ReasoningControl({ value, onChange, disabled, nativeControl }: {
       <div className="relative h-9 rounded-full bg-stone-200/80"><div className="absolute inset-y-0 left-0 rounded-full bg-emerald-700/80 transition-[width] duration-300 motion-reduce:transition-none" style={{ width: value === "AUTO" ? "50%" : `${index * 50}%` }} />
         <input type="range" min={0} max={2} step={1} value={value === "AUTO" ? 1 : index} aria-label={t("Thinking depth level", "思考深度档位")} aria-valuetext={value === "AUTO" ? t("Auto", "自动") : names[index]} onChange={(event) => onChange(levels[Number(event.target.value)])} className="ardor-depth-range absolute inset-0 w-full cursor-pointer" />
       </div>
-      <div className="mt-2 flex justify-between">{names.map((name, level) => <button type="button" key={name} onClick={() => onChange(levels[level])} className={`rounded-lg px-2 py-1 text-xs ${value === levels[level] ? "font-semibold text-emerald-800" : "text-stone-400 hover:text-stone-700"}`}>{name}</button>)}</div>
+      <div className="mt-2 flex justify-between">{names.map((name, level) => <button type="button" key={name} onClick={() => { onChange(levels[level]); setOpen(false); }} className={`rounded-lg px-2 py-1 text-xs ${value === levels[level] ? "font-semibold text-emerald-800" : "text-stone-400 hover:text-stone-700"}`}>{name}</button>)}</div>
       {!nativeControl && <p className="mt-3 text-[11px] leading-4 text-stone-400">{t("This model adapts through prompting; native depth control is unavailable.", "此模型通过提示自适应，不支持原生深度控制。")}</p>}
     </div>}
   </div>;
