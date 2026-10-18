@@ -88,7 +88,7 @@ jobs:
             wait "$probe_pid" || true
             probe_pid=""
           }
-          java -jar backend/target/ardor-backend-0.6.1.jar --server.port=8081 --spring.flyway.target=35 --spring.jpa.hibernate.ddl-auto=none --app.agent.queue.enabled=false --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-upgrade.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.6.2.jar --server.port=8081 --spring.flyway.target=35 --spring.jpa.hibernate.ddl-auto=none --app.agent.queue.enabled=false --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-upgrade.log" 2>&1 &
           probe_pid=$!
           wait_probe
           docker exec -i ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 <<'SQL'
@@ -99,7 +99,7 @@ jobs:
           docker exec -i ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 < .github/tests/recap-metadata-before.sql
           stop_probe
           docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ardor_fresh_probe'
-          java -jar backend/target/ardor-backend-0.6.1.jar --server.port=8081 --spring.datasource.url=jdbc:postgresql://127.0.0.1:5432/ardor_fresh_probe --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-fresh.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.6.2.jar --server.port=8081 --spring.datasource.url=jdbc:postgresql://127.0.0.1:5432/ardor_fresh_probe --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-fresh.log" 2>&1 &
           probe_pid=$!
           wait_probe
           test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor_fresh_probe -Atc "SELECT COUNT(*) FROM flyway_schema_history WHERE version='39' AND success")" = "1"
@@ -109,7 +109,7 @@ jobs:
       - name: Run end-to-end Golden Path
         shell: bash
         run: |
-          java -jar backend/target/ardor-backend-0.6.1.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s > "$RUNNER_TEMP/backend.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.6.2.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s > "$RUNNER_TEMP/backend.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/backend.pid"
           for attempt in {1..90}; do
             if curl --silent --fail http://127.0.0.1:8080/actuator/health \
@@ -139,7 +139,7 @@ jobs:
             echo "Backend did not exit safely"
             exit 1
           fi
-          java -jar backend/target/ardor-backend-0.6.1.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s >> "$RUNNER_TEMP/backend.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.6.2.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s >> "$RUNNER_TEMP/backend.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/backend.pid"
           for attempt in {1..90}; do
             if curl --silent --fail http://127.0.0.1:8080/actuator/health | grep -q '"status":"UP"'; then exit 0; fi
