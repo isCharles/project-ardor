@@ -711,11 +711,14 @@ try {
   await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
   assert.equal(await deletionDock.count(), 0, "Old legacy proposals without a recoverable decision must expire, not prompt again");
   displayedMessages[0] = { ...displayedMessages[0], id: "remote-decision-proposal", proposalResolutions: {}, createdAt: new Date().toISOString() };
+  activeRun = { id: "remote-decision-run", conversationId: conversation.id, message: "Synthetic ongoing task", status: "RUNNING", label: "Waiting", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const restoredProgress = page.waitForResponse(response => response.url().endsWith("/runs/remote-decision-run/progress"));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.reload();
   await deletionDock.waitFor();
+  await restoredProgress;
   displayedMessages[0].proposalResolutions = { "memory_item:/api/agent/memory/items/dock-fixture": "DISMISSED" };
-  await page.getByRole("button", { name: conversation.title, exact: true }).click();
+  activeRun = { ...activeRun, status: "COMPLETED" };
   await deletionDock.waitFor({ state: "hidden" });
   assert.equal(await deletionDock.count(), 0, "A durable remote decision must take precedence over in-memory pending state");
   assert.deepEqual(errors, []);
