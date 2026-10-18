@@ -9,6 +9,18 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 @Configuration
 @EnableAsync
 public class ConversationTitleConfig {
+    @Bean("memoryConsolidationExecutor")
+    public ThreadPoolTaskExecutor memoryConsolidationExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(64);
+        executor.setThreadNamePrefix("memory-consolidation-");
+        // Separate memory work from optional titles. Apply backpressure rather
+        // than silently dropping accepted work when the bounded queue is full.
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        return executor;
+    }
     @Bean("conversationTitleExecutor")
     public ThreadPoolTaskExecutor conversationTitleExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

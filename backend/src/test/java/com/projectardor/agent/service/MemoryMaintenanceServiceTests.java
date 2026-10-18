@@ -29,16 +29,14 @@ class MemoryMaintenanceServiceTests {
     }
 
     @Test
-    void mergesAFullyContainedShorterFactIntoTheLongerOne() {
+    void containmentAloneCannotSupersedeANewerOrDifferentFact() {
         AgentMemoryItem longer = AgentMemoryItem.create(UUID.randomUUID(), "用户是杨志，北京邮电大学电子信息专业硕士研究生二年级（三年制）。");
         AgentMemoryItem shorter = AgentMemoryItem.create(UUID.randomUUID(), "北京邮电大学电子信息专业硕士研究生二年级");
         AgentMemoryItem unrelated = AgentMemoryItem.create(UUID.randomUUID(), "用户喜欢简洁直接的反馈");
 
         var pairs = MemoryMaintenanceService.mergeCandidates(List.of(longer, shorter, unrelated));
 
-        assertThat(pairs).hasSize(1);
-        assertThat(pairs.get(0).keepId()).isEqualTo(longer.getId());
-        assertThat(pairs.get(0).dropId()).isEqualTo(shorter.getId());
+        assertThat(pairs).isEmpty();
     }
 
     @Test
@@ -57,5 +55,30 @@ class MemoryMaintenanceServiceTests {
         assertThat(pairs).allSatisfy(pair -> assertThat(pair.dropId()).isNotEqualTo(keep.getId()));
         assertThat(pairs.stream().map(MemoryMaintenanceService.MergePair::dropId).distinct().count())
                 .isEqualTo(pairs.size());
+    }
+
+    @Test void exactDuplicatesKeepTheNewestFactAndDoNotMixProvenance() {
+        UUID owner = UUID.randomUUID();
+        var older = AgentMemoryItem.create(owner, "Same explicit preference");
+        var newer = AgentMemoryItem.create(owner, "Same explicit preference");
+        var inferred = AgentMemoryItem.create(owner, "Same explicit preference", "fact", "INFERRED", null);
+        org.springframework.test.util.ReflectionTestUtils.setField(older, "validFrom", Instant.parse("2025-01-01T00:00:00Z"));
+        org.springframework.test.util.ReflectionTestUtils.setField(newer, "validFrom", Instant.parse("2026-01-01T00:00:00Z"));
+        var pairs = MemoryMaintenanceService.mergeCandidates(List.of(older, newer, inferred));
+        assertThat(pairs).containsExactly(new MemoryMaintenanceService.MergePair(newer.getId(), older.getId()));
+        assertThat(MemoryMaintenanceService.mergeCandidates(List.of(
+                AgentMemoryItem.create(owner, "Budget is 1.2 yuan"), AgentMemoryItem.create(owner, "Budget is 12 yuan")))).isEmpty();
+    }
+
+    @Test void maintenanceVisitsTheNextPageInsteadOfStarvingUsersAfterFifty() {
+        var store = org.mockito.Mockito.mock(com.projectardor.agent.repository.MemoryVectorStore.class);
+        var memories = org.mockito.Mockito.mock(AgentMemoryService.class);
+        var first = java.util.stream.IntStream.rangeClosed(1, 50).mapToObj(i -> new UUID(0, i)).toList();
+        UUID last = new UUID(0, 51);
+        org.mockito.Mockito.when(store.usersWithMemoriesAfter(null, 50)).thenReturn(first);
+        org.mockito.Mockito.when(store.usersWithMemoriesAfter(first.getLast(), 50)).thenReturn(List.of(last));
+        new MemoryMaintenanceService(store, memories).maintain();
+        org.mockito.Mockito.verify(store).expireLowConfidence(last, 0.5, 60);
+        org.mockito.Mockito.verify(memories).validItems(last);
     }
 }

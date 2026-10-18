@@ -312,7 +312,7 @@ public class LearningPlanService {
         return value;
     }
 
-    private List<Map<String, Object>> exercises(JsonNode nodes) {
+    List<Map<String, Object>> exercises(JsonNode nodes) {
         List<Map<String, Object>> values = new ArrayList<>();
         if (nodes.isArray()) for (JsonNode node : nodes) {
             String question = node.path("question").asText().strip();
@@ -328,11 +328,15 @@ public class LearningPlanService {
             if (type.equals("MULTIPLE_CHOICE")) {
                 List<String> options = strings(node.path("options"), 0);
                 if (options.size() < 3 || options.size() > 5) continue;
+                if (!node.path("options").isArray() || node.path("options").size() != options.size()
+                        || new java.util.HashSet<>(options).size() != options.size()) continue;
+                boolean textual = true;
+                for (JsonNode option : node.path("options")) if (!option.isTextual()) textual = false;
+                if (!textual) continue;
                 exercise.put("options", options);
                 JsonNode correct = node.path("correctOption");
-                if (correct.isInt() && correct.asInt() >= 0 && correct.asInt() < options.size()) {
-                    exercise.put("correctOption", correct.asInt());
-                }
+                if (!correct.isInt() || correct.asInt() < 0 || correct.asInt() >= options.size()) continue;
+                exercise.put("correctOption", correct.asInt());
             }
             if (type.equals("TRUE_FALSE")) {
                 JsonNode answer = node.path("correctAnswer");

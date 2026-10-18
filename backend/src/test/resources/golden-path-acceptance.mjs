@@ -216,6 +216,10 @@ async function main() {
     body: { content: "Synthetic interview content long enough to pass input validation.", jobOpportunityId: recap.jobOpportunityId } });
   await owner.request("/api/interview-recaps", { method: "POST", expected: 400,
     body: { content: "Synthetic interview content without a selected interview process." } });
+  for (const inaccessible of [recap.jobOpportunityId, randomUUID()]) {
+    await stranger.request("/api/interviews", { method: "POST", expected: 404,
+      body: { targetRole: "Engineer", questionCount: 3, jobOpportunityId: inaccessible } });
+  }
   const weak = recap.questions.find((question) => question.performance === "WEAK");
   assert.ok(weak?.id, "Expected a weak recap question");
   await stranger.request(`/api/interview-recaps/${recapId}`, { expected: 404 });

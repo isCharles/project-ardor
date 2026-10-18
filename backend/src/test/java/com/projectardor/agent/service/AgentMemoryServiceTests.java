@@ -19,6 +19,18 @@ import com.projectardor.agent.repository.AgentMemoryItemRepository;
 
 class AgentMemoryServiceTests {
 
+    @Test void aSupersededSourceCannotCreateAnotherReplacement() {
+        UUID owner = UUID.randomUUID();
+        var old = AgentMemoryItem.create(owner, "Old preference");
+        UUID successor = UUID.randomUUID();
+        old.invalidate(java.time.Instant.now(), successor);
+        when(itemRepository.findByIdAndUserId(old.getId(), owner)).thenReturn(java.util.Optional.of(old));
+        assertThatThrownBy(() -> service.replace(owner, old.getId(), "Another successor", "fact", "INFERRED"))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(itemRepository, never()).save(any(AgentMemoryItem.class));
+        assertThat(old.getSupersededBy()).isEqualTo(successor);
+    }
+
     @Test
     void editingOneMemoryPreservesItsIdAndDoesNotRecreateOtherItems() {
         UUID owner = UUID.randomUUID();

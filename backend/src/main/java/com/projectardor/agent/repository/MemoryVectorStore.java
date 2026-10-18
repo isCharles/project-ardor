@@ -55,11 +55,16 @@ public class MemoryVectorStore {
     }
 
     public List<UUID> usersWithMemories(int limit) {
+        return usersWithMemoriesAfter(null, limit);
+    }
+
+    public List<UUID> usersWithMemoriesAfter(UUID after, int limit) {
         return jdbc.queryForList("""
                 SELECT DISTINCT user_id FROM user_agent_memory_items
-                WHERE valid_until IS NULL
+                WHERE valid_until IS NULL AND (?::uuid IS NULL OR user_id > ?::uuid)
+                ORDER BY user_id
                 LIMIT ?
-                """, UUID.class, limit);
+                """, UUID.class, after, after, limit);
     }
 
     /** Rows missing a vector, or embedded by a model that is no longer configured. */

@@ -65,6 +65,9 @@ public class OpportunityRound {
 
     public void update(RoundStage stage, Instant scheduledAt, Instant occurredAt, Integer durationMinutes,
             String note) {
+        if (durationMinutes != null && (durationMinutes < 1 || durationMinutes > 480)) {
+            throw new IllegalArgumentException("面试时长须在 1 到 480 分钟之间");
+        }
         if (stage != null) this.stage = stage;
         this.scheduledAt = scheduledAt;
         this.occurredAt = occurredAt;

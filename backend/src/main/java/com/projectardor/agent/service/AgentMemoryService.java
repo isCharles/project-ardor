@@ -122,6 +122,7 @@ public class AgentMemoryService {
         itemRepository.lockOwner(userId);
         AgentMemoryItem existing = itemRepository.findByIdAndUserId(memoryId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("记忆不存在"));
+        if (!existing.isValid()) throw new IllegalArgumentException("记忆已被替换，请读取当前记忆后再更新");
         String content = itemContent(rawContent);
         if (existing.getContent().equalsIgnoreCase(content)) return AgentMemoryItemResponse.from(existing);
         AgentMemoryItem replacement = itemRepository.save(AgentMemoryItem.create(userId, content,

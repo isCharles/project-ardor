@@ -68,12 +68,15 @@ public class MemoryEmbeddingService {
                     if (!matches.isEmpty()) {
                         Map<UUID, Double> similarities = new LinkedHashMap<>();
                         matches.forEach(match -> similarities.put(match.id(), match.similarity()));
+                        var pending = vectorStore.pendingForUser(userId, vector.model(), items.size()).stream()
+                                .map(MemoryVectorStore.Pending::id).collect(java.util.stream.Collectors.toSet());
                         Instant now = Instant.now();
                         return render(items.stream()
-                                .filter(item -> similarities.containsKey(item.getId()))
-                                .sorted(Comparator.comparingDouble((AgentMemoryItem item) ->
-                                        score(similarities.get(item.getId()), item.getImportance(),
-                                                ageDays(item, now))).reversed())
+                                .filter(item -> similarities.containsKey(item.getId()) || pending.contains(item.getId()))
+                                .sorted(Comparator.comparing((AgentMemoryItem item) -> !pending.contains(item.getId()))
+                                        .thenComparing(Comparator.comparingDouble((AgentMemoryItem item) ->
+                                            score(similarities.getOrDefault(item.getId(), 0.5), item.getImportance(),
+                                                ageDays(item, now))).reversed()))
                                 .toList());
                     }
                 }

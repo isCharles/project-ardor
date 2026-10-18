@@ -11,6 +11,25 @@ import com.projectardor.agent.domain.AgentMemoryItem;
 
 class MemoryEmbeddingServiceTests {
 
+    @Test void pendingFactsRemainVisibleAlongsideIndexedMatches() {
+        UUID owner = UUID.randomUUID();
+        var old = AgentMemoryItem.create(owner, "Indexed old preference");
+        var fresh = AgentMemoryItem.create(owner, "Just corrected preference");
+        var memories = org.mockito.Mockito.mock(AgentMemoryService.class);
+        var vectors = org.mockito.Mockito.mock(com.projectardor.agent.repository.MemoryVectorStore.class);
+        var embeddings = org.mockito.Mockito.mock(com.projectardor.knowledge.service.KnowledgeEmbeddingService.class);
+        org.mockito.Mockito.when(memories.validItems(owner)).thenReturn(List.of(old, fresh));
+        org.mockito.Mockito.when(embeddings.isConfigured(owner)).thenReturn(true);
+        org.mockito.Mockito.when(embeddings.embedQuery(owner, "question")).thenReturn(
+                new com.projectardor.knowledge.service.KnowledgeEmbeddingService.EmbeddingVector(new float[]{1, 0}, "fixture"));
+        org.mockito.Mockito.when(vectors.similar(owner, "[1.0,0.0]", 2, "fixture", 24)).thenReturn(
+                List.of(new com.projectardor.agent.repository.MemoryVectorStore.Match(old.getId(), 0.99)));
+        org.mockito.Mockito.when(vectors.pendingForUser(owner, "fixture", 2)).thenReturn(
+                List.of(new com.projectardor.agent.repository.MemoryVectorStore.Pending(fresh.getId(), fresh.getContent())));
+        String context = new MemoryEmbeddingService(memories, vectors, embeddings).context(owner, "question");
+        assertThat(context).startsWith("- Just corrected preference").contains("Indexed old preference");
+    }
+
     private static AgentMemoryItem item(String content) {
         return AgentMemoryItem.create(UUID.randomUUID(), content);
     }

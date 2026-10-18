@@ -29,16 +29,24 @@ import com.projectardor.resume.service.ResumeService;
 import tools.jackson.databind.ObjectMapper;
 
 class InterviewCodingQuestionTests {
+    @Test void foreignOpportunityIsRejectedBeforeCallingTheModel() {
+        UUID owner = UUID.randomUUID(), foreign = UUID.randomUUID();
+        when(opportunities.detail(owner, foreign)).thenThrow(new com.projectardor.common.web.ResourceNotFoundException("Not found"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.create(owner, null, InterviewModality.TEXT,
+                "Fixture", "Engineer", 3, foreign)).isInstanceOf(com.projectardor.common.web.ResourceNotFoundException.class);
+        org.mockito.Mockito.verifyNoInteractions(llm, sessions, questions, profiles);
+    }
     private final InterviewSessionRepository sessions = mock(InterviewSessionRepository.class);
     private final InterviewQuestionRepository questions = mock(InterviewQuestionRepository.class);
     private final ProfileService profiles = mock(ProfileService.class);
     private final LlmGateway llm = mock(LlmGateway.class);
     private final LeetCodeHot100 hot100 = mock(LeetCodeHot100.class);
     private final ObjectMapper mapper = new ObjectMapper();
+    private final com.projectardor.opportunity.service.OpportunityService opportunities = mock(com.projectardor.opportunity.service.OpportunityService.class);
     private final InterviewService service = new InterviewService(sessions, questions,
             mock(InterviewAnswerRepository.class), mock(InterviewEvaluationRepository.class), profiles,
             mock(ResumeService.class), llm, new LlmJsonParser(mapper), mapper,
-            mock(PlatformTransactionManager.class), hot100);
+            mock(PlatformTransactionManager.class), hot100, opportunities);
 
     private static final LeetCodeHot100.Problem LRU = LeetCodeHot100.find("lru-cache").orElseThrow();
 

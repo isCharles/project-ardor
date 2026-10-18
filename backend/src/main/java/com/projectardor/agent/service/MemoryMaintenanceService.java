@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -20,7 +19,7 @@ import com.projectardor.agent.repository.MemoryVectorStore;
 
 /**
  * Daily memory hygiene: close low-confidence inferred facts that aged out, and fold a
- * shorter duplicate into the longer fact that contains it. Nothing is deleted.
+ * exact duplicate facts with matching provenance. Nothing is deleted.
  */
 @Component
 public class MemoryMaintenanceService {
@@ -42,18 +41,24 @@ public class MemoryMaintenanceService {
     public void maintain() {
         int expired = 0;
         int merged = 0;
-        for (UUID userId : vectorStore.usersWithMemories(50)) {
-            try {
-                expired += vectorStore.expireLowConfidence(userId, EXPIRE_CONFIDENCE, EXPIRE_AFTER_DAYS);
-                for (MergePair pair : mergeCandidates(memoryService.validItems(userId))) {
-                    memoryService.supersede(userId, pair.dropId(), pair.keepId());
-                    merged++;
+        UUID cursor = null;
+        List<UUID> owners;
+        do {
+            owners = vectorStore.usersWithMemoriesAfter(cursor, 50);
+            for (UUID userId : owners) {
+                try {
+                    expired += vectorStore.expireLowConfidence(userId, EXPIRE_CONFIDENCE, EXPIRE_AFTER_DAYS);
+                    for (MergePair pair : mergeCandidates(memoryService.validItems(userId))) {
+                        memoryService.supersede(userId, pair.dropId(), pair.keepId());
+                        merged++;
+                    }
+                } catch (RuntimeException exception) {
+                    log.warn("Memory maintenance deferred: userId={}, cause={}",
+                            userId, exception.getClass().getSimpleName());
                 }
-            } catch (RuntimeException exception) {
-                log.warn("Memory maintenance deferred: userId={}, cause={}",
-                        userId, exception.getClass().getSimpleName());
             }
-        }
+            if (!owners.isEmpty()) cursor = owners.get(owners.size() - 1);
+        } while (owners.size() == 50);
         if (expired > 0 || merged > 0) {
             log.info("Memory maintenance: expired={}, merged={}", expired, merged);
         }
@@ -70,10 +75,10 @@ public class MemoryMaintenanceService {
         return since != null && Duration.between(since, now).toDays() >= EXPIRE_AFTER_DAYS;
     }
 
-    /** A shorter fact fully contained in a longer one is a duplicate; keep the longer. */
+    /** Only exact facts with matching provenance are duplicates; containment is not entailment. */
     static List<MergePair> mergeCandidates(List<AgentMemoryItem> items) {
         List<AgentMemoryItem> sorted = new ArrayList<>(items.stream().filter(AgentMemoryItem::isValid).toList());
-        sorted.sort(Comparator.comparingInt((AgentMemoryItem item) -> normalized(item.getContent()).length()).reversed());
+        sorted.sort(Comparator.comparing((AgentMemoryItem item) -> item.getValidFrom() == null ? Instant.EPOCH : item.getValidFrom()).reversed());
         List<MergePair> pairs = new ArrayList<>();
         Set<UUID> dropped = new HashSet<>();
         for (int keepIndex = 0; keepIndex < sorted.size(); keepIndex++) {
@@ -85,7 +90,8 @@ public class MemoryMaintenanceService {
                 if (dropped.contains(drop.getId())) continue;
                 String dropText = normalized(drop.getContent());
                 if (dropText.length() < MIN_MERGE_LENGTH) continue;
-                if (keepText.contains(dropText)) {
+                if (keepText.equals(dropText) && keep.getUserId().equals(drop.getUserId()) && keep.getKind().equals(drop.getKind())
+                        && keep.getSourceKind().equals(drop.getSourceKind())) {
                     pairs.add(new MergePair(keep.getId(), drop.getId()));
                     dropped.add(drop.getId());
                 }
@@ -95,7 +101,7 @@ public class MemoryMaintenanceService {
     }
 
     private static String normalized(String content) {
-        return content == null ? "" : content.toLowerCase(Locale.ROOT).replaceAll("[\\s\\p{P}]+", "");
+        return content == null ? "" : content.strip();
     }
 
     record MergePair(UUID keepId, UUID dropId) {}

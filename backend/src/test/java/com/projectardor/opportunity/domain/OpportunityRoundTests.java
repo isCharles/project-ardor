@@ -9,6 +9,17 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class OpportunityRoundTests {
+    @Test void updatingDurationUsesTheSameBoundsBeforeMutatingFields() {
+        var round = OpportunityRound.create(USER, OPPORTUNITY, 1, RoundStage.HR, null, null, 30, "Original");
+        for (int invalid : new int[]{-1, 0, 481}) {
+            assertThatThrownBy(() -> round.update(RoundStage.MANAGER, null, null, invalid, "Changed"))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThat(round.getStage()).isEqualTo(RoundStage.HR);
+            assertThat(round.getDurationMinutes()).isEqualTo(30);
+        }
+        round.update(null, null, null, 480, "Valid");
+        assertThat(round.getDurationMinutes()).isEqualTo(480);
+    }
 
     private static final UUID USER = UUID.randomUUID();
     private static final UUID OPPORTUNITY = UUID.randomUUID();

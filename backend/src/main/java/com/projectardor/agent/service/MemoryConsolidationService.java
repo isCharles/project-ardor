@@ -65,7 +65,8 @@ public class MemoryConsolidationService {
         this.parser = parser;
     }
 
-    @Async("conversationTitleExecutor")
+    @Async("memoryConsolidationExecutor")
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void consolidate(MemoryConsolidationRequested event) {
         try {
