@@ -90,7 +90,10 @@ async function connect() {
     await window.loadURL(`${serverUrl}${backend.status === 401 ? "/login" : "/app"}`);
     return { connected: true };
   } catch {
-    await showOffline();
+    // Reloading the offline page on every failed retry would wipe the status
+    // the renderer is about to show, so only do it when we are not already
+    // displaying the offline page.
+    if (!offline) await showOffline();
     return { connected: false };
   }
 }
