@@ -1,0 +1,7 @@
+# Local development overlay: publish Redis to the host so the native backend
+# (mvn spring-boot:run) and a Redis GUI can reach it. PostgreSQL is already
+# published by docker-compose.yml on 127.0.0.1:5433.
+services:
+  redis:
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"

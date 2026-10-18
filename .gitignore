@@ -32,3 +32,5 @@ Thumbs.db
 
 # Local web research cache
 .firecrawl/
+
+scripts/dev-up.log
