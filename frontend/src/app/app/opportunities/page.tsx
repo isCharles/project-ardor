@@ -34,7 +34,7 @@ type Opportunity = {
 };
 
 type RecapRef = { id: string; title: string; jobOpportunityId: string | null; questions: { id: string }[] };
-type MemoryCardRef = { id: string; recapQuestionId: string | null; front: string; status: string };
+type MemoryCardRef = { id: string; recapQuestionId: string | null; status: string };
 type LearningPlanRef = { id: string; concept: string; sourceType: string; sourceId: string | null; status: string };
 
 const STATUSES = ["SCHEDULED", "AWAITING_RESULT", "NEXT_ROUND", "REJECTED"];
@@ -292,7 +292,10 @@ export default function OpportunitiesPage() {
         )}
 
         <div className="overflow-x-auto rounded-3xl border border-stone-200 bg-white">
-          <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-sm">
+            <colgroup>
+              {[28, 12, 16, 6, 12, 10, 6, 10].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}
+            </colgroup>
             <thead className="text-xs uppercase tracking-wide text-stone-400">
               <tr className="border-b border-stone-200">
                 <th className="px-4 py-3 font-medium">{t("Role", "岗位")}</th>
@@ -319,7 +322,7 @@ export default function OpportunitiesPage() {
                     <tr className={`border-b border-stone-100 align-top ${busy === item.id ? "opacity-60" : ""}`}>
                       <td className="px-4 py-3">
                         <button type="button" onClick={() => setExpanded(open ? null : item.id)}
-                          className="flex items-start gap-2 text-left font-medium hover:text-violet-700">
+                          className="flex w-full min-w-0 items-start gap-2 text-left font-medium hover:text-violet-700">
                           <ChevronDown className={`mt-0.5 size-4 shrink-0 text-stone-400 transition ${open ? "rotate-180" : ""}`} />
                           <span className="line-clamp-2">{item.targetRole || t("Untitled role", "未填写岗位")}</span>
                         </button>
@@ -331,16 +334,16 @@ export default function OpportunitiesPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <select value={item.status} disabled={busy === item.id} onChange={(event) => void setStatus(item, event.target.value)}
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLE[item.status] ?? "bg-stone-100 text-stone-600"}`}>
+                        <select value={item.status} title={statusLabel(item.status, en)} aria-label={t("Result", "结果")} disabled={busy === item.id} onChange={(event) => void setStatus(item, event.target.value)}
+                          className={`w-full min-w-0 max-w-full truncate rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLE[item.status] ?? "bg-stone-100 text-stone-600"}`}>
                           {STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status, en)}</option>)}
                         </select>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-stone-600">
+                      <td className="truncate px-4 py-3 text-stone-600" title={formatDate(round?.occurredAt ?? round?.scheduledAt ?? null)}>
                         {formatDate(round?.occurredAt ?? round?.scheduledAt ?? null)}
                       </td>
                       <td className="px-4 py-3 text-stone-600">{item.currentRound || "—"}</td>
-                      <td className="px-4 py-3 text-stone-600">{item.company}</td>
+                      <td className="truncate px-4 py-3 text-stone-600" title={item.company}>{item.company}</td>
                       <td className="px-4 py-3">
                         {item.platform ? <span className="rounded-lg bg-stone-100 px-2 py-0.5 text-xs text-stone-600">{item.platform}</span> : "—"}
                       </td>
@@ -359,30 +362,29 @@ export default function OpportunitiesPage() {
                     {open && (
                       <tr key={`${item.id}-detail`} className="border-b border-stone-100 bg-stone-50/60">
                         <td colSpan={8} className="px-6 py-5">
-                          <div className="space-y-2">
+                          <div className="min-w-0 space-y-2">
                             {recapsFor(item).map((recap) => (
                               <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`}
-                                className="flex items-center gap-3 rounded-2xl bg-violet-50 px-4 py-2.5 text-sm text-violet-900 transition hover:bg-violet-100">
+                                className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-violet-50 px-4 py-2.5 text-sm text-violet-900 transition hover:bg-violet-100">
                                 <FileText className="size-4 shrink-0 text-violet-600" />
                                 <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-violet-600">{t("Notes", "面经")}</span>
-                                <span className="min-w-0 flex-1 truncate">{recap.title}</span>
+                                <span className="min-w-0 flex-1 truncate" title={recap.title}>{recap.title}</span>
                               </Link>
                             ))}
                             {cardsFor(item).length > 0 && (
                               <Link href="/app/cards"
-                                className="flex items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900 transition hover:bg-emerald-100">
+                                className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900 transition hover:bg-emerald-100">
                                 <Layers className="size-4 shrink-0 text-emerald-600" />
-                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-emerald-600">{t("Flashcards", "记忆卡")}</span>
-                                <span className="min-w-0 flex-1 truncate">{cardsFor(item).map((card) => card.front).join(" · ")}</span>
+                                <span className="min-w-0 flex-1 text-sm font-medium text-emerald-700">{t("Flashcards", "记忆卡")}</span>
                                 <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">{cardsFor(item).length}</span>
                               </Link>
                             )}
                             {plansFor(item).map((plan) => (
                               <Link key={plan.id} href={`/app/learning?id=${plan.id}`}
-                                className="flex items-center gap-3 rounded-2xl bg-amber-50 px-4 py-2.5 text-sm text-amber-900 transition hover:bg-amber-100">
+                                className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-amber-50 px-4 py-2.5 text-sm text-amber-900 transition hover:bg-amber-100">
                                 <GraduationCap className="size-4 shrink-0 text-amber-600" />
                                 <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-amber-600">{t("Learning", "学习")}</span>
-                                <span className="min-w-0 flex-1 truncate">{plan.concept}</span>
+                                <span className="min-w-0 flex-1 truncate" title={plan.concept}>{plan.concept}</span>
                                 <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{plan.status}</span>
                               </Link>
                             ))}
