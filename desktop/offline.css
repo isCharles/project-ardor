@@ -18,7 +18,6 @@ button { border: 0; cursor: pointer; font: inherit; }
 .field-row button { flex: none; padding: 0 20px; border-radius: 14px; color: white; background: #25212b; }
 #hint { margin: 9px 0 0; color: #98909d; font-size: 11px; }
 .actions { display: flex; align-items: center; gap: 16px; margin-top: 30px; }
-#retry { padding: 0; background: transparent; color: #6f59c4; font-weight: 650; font-size: 13px; }
 #status { color: #a04c51; font-size: 12px; }
 #status, #update-status { min-width: 0; overflow-wrap: anywhere; }
 .updates { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-top: 22px; padding-top: 20px; border-top: 1px solid #ece7ec; color: #918895; font-size: 11px; }

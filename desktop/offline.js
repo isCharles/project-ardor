@@ -2,15 +2,15 @@
 
 const form = document.getElementById("server-form");
 const input = document.getElementById("server-url");
-const retry = document.getElementById("retry");
 const status = document.getElementById("status");
 const version = document.getElementById("version");
 const updateStatus = document.getElementById("update-status");
-const checkUpdate = document.getElementById("check-update");
 const installUpdate = document.getElementById("install-update");
-let packaged = false;
+const RETRY_INTERVAL_MS = 5_000;
 let locale = "en";
-let statusKey = "";
+let statusKey = "waiting";
+let autoRetryTimer = null;
+let autoRetryRunning = false;
 
 const copy = {
   en: {
@@ -20,10 +20,9 @@ const copy = {
     label: "Server address",
     connect: "Connect",
     hint: "Local default: http://127.0.0.1:3000 · Public servers require HTTPS",
-    retry: "Try again",
-    check: "Check for updates",
     install: "Install and restart",
     footer: "The desktop app only connects you. Your resumes, models, and chats stay on the selected server.",
+    waiting: "Waiting for the server. Retrying automatically every few seconds…",
     connecting: "Connecting…",
     unavailable: "Still unable to connect. Make sure the server is running.",
     canceled: "Server switch canceled.",
@@ -31,7 +30,6 @@ const copy = {
     invalidServer: "Enter a valid server address.",
     httpsRequired: "Public servers must use HTTPS; HTTP is allowed only for this device.",
     rootOnly: "Enter only the server's root address, without an account, path, or parameters.",
-    updateFailed: "Could not check for updates. Try again later.",
   },
   "zh-CN": {
     title: "Project Ardor · 连接服务器",
@@ -40,10 +38,9 @@ const copy = {
     label: "服务器地址",
     connect: "连接",
     hint: "本机默认 http://127.0.0.1:3000 · 公网地址须使用 HTTPS",
-    retry: "重新连接",
-    check: "检查更新",
     install: "安装并重启",
     footer: "桌面程序只负责连接。你的简历、模型与对话仍在所选服务器上。",
+    waiting: "正在等待服务器启动，每隔几秒自动重试…",
     connecting: "正在连接…",
     unavailable: "还未连接成功，请确认服务器已启动。",
     canceled: "已取消切换。",
@@ -51,7 +48,6 @@ const copy = {
     invalidServer: "请输入有效的服务器地址。",
     httpsRequired: "公网地址必须使用 HTTPS；HTTP 仅支持本机。",
     rootOnly: "只填写服务器根地址，不要包含账号、路径或参数。",
-    updateFailed: "检查更新失败，请稍后重试。",
   },
 };
 
@@ -65,45 +61,64 @@ function renderLocale(next) {
   document.getElementById("server-label").textContent = words.label;
   document.getElementById("connect").textContent = words.connect;
   document.getElementById("hint").textContent = words.hint;
-  retry.textContent = words.retry;
-  checkUpdate.textContent = words.check;
   installUpdate.textContent = words.install;
   document.getElementById("footer").textContent = words.footer;
-  if (statusKey) status.textContent = words[statusKey];
+  status.textContent = words[statusKey] ?? "";
 }
 
 function renderUpdate(next) {
   updateStatus.textContent = next.message;
   installUpdate.hidden = next.state !== "ready";
-  checkUpdate.hidden = next.state === "ready";
-  checkUpdate.disabled = !packaged || next.state === "checking" || next.state === "downloading";
 }
 
+function showStatus(key) {
+  statusKey = key;
+  status.textContent = copy[locale][key] ?? "";
+}
 
-async function run(action) {
-  retry.disabled = true;
-  form.querySelector("button").disabled = true;
-  statusKey = "connecting";
-  status.textContent = copy[locale][statusKey];
+async function autoRetry() {
+  if (autoRetryRunning || document.hidden) return;
+  autoRetryRunning = true;
   try {
-    const result = await action();
-    if (result.errorCode && copy[locale][result.errorCode]) statusKey = result.errorCode;
-    else if (result.changed === false) statusKey = "canceled";
-    else if (!result.connected) statusKey = "unavailable";
-    status.textContent = copy[locale][statusKey] ?? "";
-  } catch { statusKey = "failed"; status.textContent = copy[locale].failed; }
-  finally { retry.disabled = false; form.querySelector("button").disabled = false; }
+    const result = await window.ardorDesktop.retry();
+    // A successful retry navigates the window to the app, so only failures
+    // need a visible status here.
+    if (!result?.connected) showStatus("waiting");
+  } catch {
+    showStatus("failed");
+  } finally {
+    autoRetryRunning = false;
+  }
+}
+
+function startAutoRetry() {
+  if (autoRetryTimer) return;
+  autoRetryTimer = setInterval(() => { void autoRetry(); }, RETRY_INTERVAL_MS);
+}
+
+async function submitServer() {
+  const connect = form.querySelector("button");
+  connect.disabled = true;
+  showStatus("connecting");
+  try {
+    const result = await window.ardorDesktop.setServerResult(input.value);
+    if (result.errorCode && copy[locale][result.errorCode]) showStatus(result.errorCode);
+    else if (result.changed === false) showStatus("canceled");
+    else if (!result.connected) showStatus("unavailable");
+  } catch {
+    showStatus("failed");
+  } finally {
+    connect.disabled = false;
+  }
 }
 
 window.ardorDesktop.getInfo().then((info) => {
   input.value = info.serverUrl;
   version.textContent = `v${info.version}`;
-  packaged = info.packaged;
   renderLocale(info.locale);
   renderUpdate(info.updateStatus);
-}).catch(() => { statusKey = "failed"; status.textContent = copy[locale].failed; });
+  startAutoRetry();
+}).catch(() => showStatus("failed"));
 window.ardorDesktop.onUpdateStatus(renderUpdate);
-form.addEventListener("submit", (event) => { event.preventDefault(); void run(() => window.ardorDesktop.setServerResult(input.value)); });
-retry.addEventListener("click", () => { void run(() => window.ardorDesktop.retry()); });
-checkUpdate.addEventListener("click", () => { void window.ardorDesktop.checkForUpdates().then(renderUpdate, () => { updateStatus.textContent = copy[locale].updateFailed; }); });
+form.addEventListener("submit", (event) => { event.preventDefault(); void submitServer(); });
 installUpdate.addEventListener("click", () => { void window.ardorDesktop.installUpdate(); });
