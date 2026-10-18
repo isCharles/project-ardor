@@ -458,6 +458,10 @@ try {
   await suggestedOperations.getByRole("button", { name: "Reject", exact: true }).click();
   await suggestedOperations.waitFor({ state: "hidden" });
   assert.deepEqual(permissionDecisions.map(value => value.allow), [false]);
+  permissions = [{ id: "permission-date", tool: "update_learning_plan", arguments: "{}", status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
+  await page.waitForTimeout(1300);
+  assert.equal(await suggestedOperations.count(), 0, "A stale poll response must not revive a decided approval");
+  permissions = [];
   assert.equal(await draftBox.isEnabled(), true);
   await draftBox.fill("Next message draft survives completion");
   await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
@@ -596,11 +600,13 @@ try {
   assert.equal(await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).count(), 0);
   learningPlans = [{ id: "delete-fixture", concept: "Synthetic JVM lesson", status: "COMPLETED", sourceType: "MANUAL", scheduledAt: new Date().toISOString(), lesson: { summary: "Fixture" }, exercises: [], lastScore: null, attemptCount: 0 }];
   await page.goto(`${origin}/app/learning`);
-  await page.getByRole("button", { name: "Delete learning plan", exact: true }).click();
+  await page.getByLabel("More actions", { exact: true }).click();
+  await page.getByRole("button", { name: "Delete plan", exact: true }).click();
   assert.equal(learningDeleteCalls, 0);
   await page.getByRole("dialog", { name: "Delete learning plan?" }).getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal(learningDeleteCalls, 0);
-  await page.getByRole("button", { name: "Delete learning plan", exact: true }).click();
+  await page.getByLabel("More actions", { exact: true }).click();
+  await page.getByRole("button", { name: "Delete plan", exact: true }).click();
   learningDeleteFails = true;
   await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
   await page.getByRole("dialog").getByRole("alert").waitFor();

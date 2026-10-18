@@ -18,6 +18,7 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.ARDOR_UI_BROWSER_CHANNEL ? { channel: process.env.ARDOR_UI_BROWSER_CHANNEL } : {}) });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   let requestId = "learning-request-one", submissions = 0, failSubmission = false, job = null;
+  const resolutions = {};
   const conversation = { id: "learning-chat", title: "Synthetic learning proposal", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   await context.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
@@ -28,9 +29,14 @@ try {
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
     else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [
       { id: "proposal-user", role: "USER", conversationId: conversation.id, content: "Prepare a JVM lesson", createdAt: conversation.createdAt },
-      { id: "proposal-answer", role: "ASSISTANT", conversationId: conversation.id, content: "Synthetic learning proposal answer", createdAt: conversation.createdAt,
+      { id: "proposal-answer", role: "ASSISTANT", conversationId: conversation.id, content: "Synthetic learning proposal answer", createdAt: conversation.createdAt, proposalResolutions: resolutions,
         runTrace: JSON.stringify({ status: "COMPLETED", elapsedMs: 100, steps: [], proposals: [{ kind: "learning_plan", label: "JVM memory", detail: "Review memory regions and practice explaining GC.", endpoint: "/api/learning-plans/jobs", learningPlan: { requestId, concept: "JVM memory", reason: "Synthetic practice gap", sourceType: "MANUAL", sourceId: null, scheduledAt: "2099-10-19T01:00:00Z" } }] }) },
     ] };
+    else if (path.endsWith("/proposal-resolution") && route.request().method() === "PUT") {
+      const decision = route.request().postDataJSON();
+      resolutions[decision.key] ??= decision.resolution;
+      return route.fulfill({ status: 200 });
+    }
     else if (path === "/api/agent/runs/latest") return route.fulfill({ status: 204 });
     else if (path === "/api/learning-plans/request-status") body = [{ requestId, status: job?.status === "COMPLETED" ? "CREATED" : "MISSING", planId: job?.status === "COMPLETED" ? "created-fixture" : null }];
     else if (path === "/api/learning-plans/jobs" && route.request().method() === "POST") {
@@ -51,11 +57,14 @@ try {
   const bounds = await dock.boundingBox(), composer = await page.getByRole("textbox", { name: "Message Ardor", exact: true }).boundingBox();
   assert.ok(bounds.y + bounds.height <= composer.y, "Suggestions sit above the composer");
   await page.screenshot({ path: ".next/learning-operation.png", fullPage: true });
+  const savedRejection = page.waitForResponse(response => response.url().endsWith("/proposal-resolution") && response.request().method() === "PUT");
   await dock.getByRole("button", { name: "Reject", exact: true }).click();
+  await savedRejection;
   await dock.waitFor({ state: "hidden" }); assert.equal(submissions, 0);
   const trace = page.locator("[data-execution-trace] > div > details");
   await trace.locator(":scope > summary").click();
   await trace.getByText("Creation declined · JVM memory", { exact: true }).waitFor();
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
   await page.reload(); await dock.waitFor({ state: "hidden" }); assert.equal(submissions, 0);
   requestId = "learning-request-two"; await page.reload();
   await dock.waitFor(); failSubmission = true;
