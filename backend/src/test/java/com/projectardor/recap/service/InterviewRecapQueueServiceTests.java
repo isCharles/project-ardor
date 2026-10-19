@@ -23,7 +23,7 @@ class InterviewRecapQueueServiceTests {
 
     private static final String CONTENT = "这是一段足够长的面试回忆内容，用于验证并发请求会先锁定同一份输入再创建任务。";
 
-    @Test void cachedRecapAttachesToOwnedProcessAndRejectsAnotherProcess() {
+    @Test void oldReportCanStartNewDraftWithoutChangingTheReport() {
         var recaps = mock(InterviewRecapRepository.class);
         var jobs = mock(InterviewRecapJobRepository.class);
         var opportunities = mock(JobOpportunityRepository.class);
@@ -31,17 +31,20 @@ class InterviewRecapQueueServiceTests {
         UUID owner = UUID.randomUUID(), process = UUID.randomUUID(), another = UUID.randomUUID();
         var recap = com.projectardor.recap.domain.InterviewRecap.create(owner, "Fixture",
                 com.projectardor.recap.domain.InterviewRecapSource.NOTES, CONTENT, "hash", "Overview",
-                java.util.List.of(), java.util.List.of(), "fixture", null);
+                java.util.List.of(), java.util.List.of(), "fixture", process);
         when(opportunities.findByIdAndUserId(eq(process), eq(owner)))
                 .thenReturn(Optional.of(JobOpportunity.create(owner, "Example", null, null, null)));
         when(opportunities.findByIdAndUserId(eq(another), eq(owner)))
                 .thenReturn(Optional.of(JobOpportunity.create(owner, "Another", null, null, null)));
-        when(recaps.findByUserIdAndInputHash(eq(owner), any())).thenReturn(Optional.of(recap));
-        service.request(owner, CONTENT, process);
+        when(recaps.findByIdAndUserId(recap.getId(),owner)).thenReturn(Optional.of(recap));
+        when(jobs.saveAndFlush(any())).thenAnswer(call -> call.getArgument(0));
+        var result=service.fromReport(owner,recap.getId());
+        assertThat(result.jobId()).isNotNull();
+        assertThat(result.recapId()).isNull();
         assertThat(recap.getJobOpportunityId()).isEqualTo(process);
-        verify(recaps).saveAndFlush(recap);
-        assertThatThrownBy(() -> service.request(owner, CONTENT, another))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("另一场面试");
+        org.mockito.Mockito.verify(recaps,org.mockito.Mockito.never()).saveAndFlush(any());
+        assertThatThrownBy(() -> service.fromReport(UUID.randomUUID(),recap.getId()))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
@@ -62,6 +65,21 @@ class InterviewRecapQueueServiceTests {
         service.request(userId, CONTENT, opportunityId);
 
         verify(jobs).lockRequestSlot(eq(userId), any());
+    }
+
+    @Test void unlinkedLegacyReportRequiresAnOwnedSelectionWithoutChangingItsOriginalLink() {
+        var recaps=mock(InterviewRecapRepository.class);var jobs=mock(InterviewRecapJobRepository.class);
+        var opportunities=mock(JobOpportunityRepository.class);var service=new InterviewRecapQueueService(recaps,jobs,opportunities);
+        UUID user=UUID.randomUUID(),selected=UUID.randomUUID();
+        var recap=com.projectardor.recap.domain.InterviewRecap.create(user,"Legacy",com.projectardor.recap.domain.InterviewRecapSource.NOTES,
+                CONTENT,"hash","Overview",java.util.List.of(),java.util.List.of(),"fixture",null);
+        when(recaps.findByIdAndUserId(recap.getId(),user)).thenReturn(Optional.of(recap));
+        when(opportunities.findByIdAndUserId(selected,user)).thenReturn(Optional.of(JobOpportunity.create(user,"Owned",null,null,null)));
+        when(jobs.saveAndFlush(any())).thenAnswer(call->call.getArgument(0));
+        assertThatThrownBy(()->service.fromReport(user,recap.getId())).isInstanceOf(IllegalArgumentException.class);
+        assertThat(service.fromReport(user,recap.getId(),selected).jobId()).isNotNull();
+        assertThat(recap.getJobOpportunityId()).isNull();
+        assertThatThrownBy(()->service.fromReport(user,recap.getId(),UUID.randomUUID())).isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

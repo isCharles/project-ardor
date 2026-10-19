@@ -45,6 +45,8 @@ jobs:
         run: node tests/learning-operation-ui.mjs
       - name: Pipeline recap navigation regression (mock APIs)
         run: node tests/pipeline-ui.mjs
+      - name: Confirmed interview minutes regression (mock APIs)
+        run: node tests/interview-minutes-ui.mjs
 
   desktop-window:
     runs-on: windows-latest

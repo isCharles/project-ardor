@@ -24,6 +24,22 @@ import tools.jackson.databind.ObjectMapper;
 
 class CompatibleLlmGatewayTests {
 
+    @Test void refusesTruncatedOpenAiOutputEvenWhenJsonLooksValid() {
+        UUID user=UUID.randomUUID();var fixture=gateway(user,LlmProvider.OPENAI_COMPATIBLE,"fixture");
+        fixture.server.expect(requestTo("https://llm.example/chat/completions")).andRespond(withSuccess(
+                "{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"content\":\"{}\"}}]}",MediaType.APPLICATION_JSON));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> fixture.gateway.completeJson(user,"system","user"))
+                .isInstanceOfSatisfying(LlmCallException.class,e -> assertThat(e.getCode()).isEqualTo("LLM_OUTPUT_TRUNCATED"));
+    }
+
+    @Test void refusesTruncatedAnthropicOutput() {
+        UUID user=UUID.randomUUID();var fixture=gateway(user,LlmProvider.ANTHROPIC_COMPATIBLE,"fixture");
+        fixture.server.expect(requestTo("https://llm.example/v1/messages")).andRespond(withSuccess(
+                "{\"stop_reason\":\"max_tokens\",\"content\":[{\"type\":\"text\",\"text\":\"{}\"}]}",MediaType.APPLICATION_JSON));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> fixture.gateway.completeJson(user,"system","user"))
+                .isInstanceOfSatisfying(LlmCallException.class,e -> assertThat(e.getCode()).isEqualTo("LLM_OUTPUT_TRUNCATED"));
+    }
+
     @Test
     void callsOpenAiCompatibleEndpoint() {
         UUID userId = UUID.randomUUID();

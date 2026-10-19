@@ -502,7 +502,7 @@ export default function AgentHomePage() {
           const contextType = params.get("contextType"); const contextId = params.get("contextId"); const contextLabel = params.get("contextLabel");
           if ((contextType === "RESUME" || contextType === "RECAP" || contextType === "KNOWLEDGE" || contextType === "LEARNING") && contextId && contextLabel) window.sessionStorage.setItem(`${draftStorageKey(null)}:references`, JSON.stringify([{ type: contextType, id: contextId, label: contextLabel }]));
         }
-        if (params.get("notice") === "recap-queued") setNotice("面经已提交后台整理，你可以继续使用 Ardor。完成后会出现在面经列表里。");
+        if (params.get("notice") === "recap-queued") setNotice("原始转录已保存。请到面试纪要中趁记忆新鲜校正初稿；你确认后才会生成详细复盘。");
         applyState(result);
       })
       .catch((reason) => {
