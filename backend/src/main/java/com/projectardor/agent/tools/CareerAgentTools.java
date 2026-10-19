@@ -178,6 +178,7 @@ public class CareerAgentTools {
     public final class BoundCareerTools implements com.projectardor.agent.service.ToolIntentScope {
         private final UUID userId;
         private final String trustedUserRequest;
+        private final String originalUserMessage;
         private final UUID logicalActionId;
         private final UUID runRequestId;
         private boolean interviewAnswerContext;
@@ -191,6 +192,7 @@ public class CareerAgentTools {
         private BoundCareerTools(UUID userId, String trustedUserRequest,
                 UUID logicalActionId, UUID runRequestId) {
             this.userId = userId;
+            this.originalUserMessage = trustedUserRequest == null ? "" : trustedUserRequest;
             this.trustedUserRequest = trustedUserRequest == null ? "" : trustedUserRequest.strip();
             this.logicalActionId = logicalActionId;
             this.runRequestId = runRequestId;
@@ -629,11 +631,12 @@ public class CareerAgentTools {
             return interviewRecapQueueService.list(userId).stream().map(InterviewRecapTaskResponse::from).toList();
         }
 
-        @Tool(name = "organize_interview_recap", value = "把用户粘贴的真实面试纪要提交到后台整理队列；立即返回任务状态，不自动生成记忆卡。面经必须属于一场面试，先 list_job_opportunities 定位面试流程 UUID，用户没说清是哪场时先追问")
+        @Tool(name = "organize_interview_recap", value = "保存用户完整原始转录并后台生成待编辑初步纪要，不直接生成复盘。收到后告知原文已保存，请用户趁记忆新鲜到 /app/recaps 校正、补充并点击确认，之后才生成详细复盘。不能替用户确认。面经必须属于一场面试，先 list_job_opportunities 定位 UUID，目标不清先追问")
         public InterviewRecapTaskResponse organizeInterviewRecap(
-                @P("用户提供的面试内容，必须完整传入，不得自行补写") String content,
+                @P(value="兼容字段，可留空；无需复述长转录，服务端保存本轮用户消息原文",required=false) String content,
                 @P("所属面试流程 UUID，必填；先 list_job_opportunities 定位") String opportunityId) {
-            return InterviewRecapTaskResponse.from(interviewRecapQueueService.request(userId, content,
+            if (originalUserMessage.strip().length()<30) throw new IllegalArgumentException("请把完整原始转录直接粘贴到本轮消息或面试纪要页，不能把模型改写文本当原文");
+            return InterviewRecapTaskResponse.from(interviewRecapQueueService.request(userId, originalUserMessage,
                     uuid(opportunityId, "面试流程 ID")));
         }
 

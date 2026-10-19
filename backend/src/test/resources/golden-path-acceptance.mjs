@@ -85,7 +85,21 @@ async function waitForRecap(client, jobId) {
   for (let attempt = 0; attempt < 80; attempt++) {
     const jobs = await client.request("/api/interview-recaps/jobs");
     const job = jobs.find((item) => item.jobId === jobId);
-    if (job?.status === "COMPLETED") return job.recapId;
+    if (job?.status === "COMPLETED") {
+      if (job.recapId) return job.recapId;
+      const draft = await client.request(`/api/interview-recaps/drafts/${jobId}`);
+      assert.ok(draft.minutes, "Initial job must produce editable minutes, not a report");
+      assert.equal(draft.reviews.length,0,"Review must not start without UI confirmation");
+      await client.request(`/api/interview-recaps/drafts/${jobId}/confirm`,{method:"POST",retryRateLimit:true,body:{revision:draft.revision,requestId:randomUUID()}});
+      for(let poll=0;poll<100;poll++) {
+        const current=await client.request(`/api/interview-recaps/drafts/${jobId}`);
+        const review=current.reviews[0];
+        if(review?.status === "COMPLETED") return review.recapId;
+        if(review?.status === "FAILED") throw new Error("Confirmed review failed");
+        await sleep(200);
+      }
+      throw new Error("Confirmed review timed out");
+    }
     if (job?.status === "FAILED") throw new Error(`Recap worker failed: ${job.errorCode}`);
     await sleep(500);
   }
@@ -451,6 +465,7 @@ async function main() {
   assert.equal(retried.jobId, failedJob.jobId, "Manual retry must reuse the original job");
   assert.equal(retried.status, "QUEUED");
   const recovered = await waitForJobStatus(recoveryOwner, failedJob.jobId, "COMPLETED");
+  recovered.recapId = await waitForRecap(recoveryOwner, failedJob.jobId);
   assert.ok(recovered.recapId);
   const duplicateSubmission = await recoveryOwner.request("/api/interview-recaps", {
     method: "POST", expected: 202, body: { content: recoveryInput }, retryRateLimit: true,

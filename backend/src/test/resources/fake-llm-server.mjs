@@ -85,17 +85,17 @@ function releaseLearningResponses() {
 
 function completionFor(payload) {
   const input = JSON.stringify(payload);
+  if (input.includes("面试初步纪要：只整理事实")) {
+    if (["recap-recovery-probe", "recap-ui-recovery-probe"].includes(payload.model)) {
+      const attempt = (transientAttempts.get(payload.model) ?? 0) + 1;
+      transientAttempts.set(payload.model, attempt);
+      if (attempt === 1) return { minutes: "" };
+    }
+    return { minutes: "## Redis 持久化问答\n\n面试官问题：RDB 和 AOF 的区别？\n候选人回答：RDB 是快照，AOF 恢复取舍没有说清楚。\n待确认：转录可能缺少后续追问。" };
+  }
   if (input.includes("你负责概括对话标题")) return { title: "Redis 学习规划" };
   if (payload.model === "recap-metadata-probe" && input.includes("面试复盘编辑")) {
     return { ...recap, company: "", targetRole: "", occurredAt: "" };
-  }
-  if (["recap-recovery-probe", "recap-ui-recovery-probe"].includes(payload.model)
-    && input.includes("面试复盘编辑")) {
-    const attempt = (transientAttempts.get(payload.model) ?? 0) + 1;
-    transientAttempts.set(payload.model, attempt);
-    // A structurally valid but unusable first answer exercises the queue's
-    // FAILED state and user-initiated retry, not the gateway's HTTP retries.
-    if (attempt === 1) return { ...recap, questions: [] };
   }
   if (input.includes("面试复盘编辑")) return recap;
   if (input.includes("面试复盘教练")) return replay;

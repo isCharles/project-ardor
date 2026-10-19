@@ -61,6 +61,7 @@ public class InterviewRecap {
     @PrePersist void onCreate() { Instant now = Instant.now(); createdAt = now; updatedAt = now; }
     @PreUpdate void onUpdate() { updatedAt = Instant.now(); }
     public UUID getId() { return id; }
+    public void markConfirmedMinutes() { this.promptVersion = "confirmed-minutes-review-v1"; }
     public UUID getUserId() { return userId; }
     public String getTitle() { return title; }
     public InterviewRecapSource getSourceType() { return sourceType; }
