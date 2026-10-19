@@ -313,7 +313,7 @@ try {
   }, replayWeak.id);
   assert.equal(recoveredReplay.attempts.length, 1, "Retrying the saved answer must create just one attempt");
   await replayPage.reload();
-  await replayPage.getByRole("region", { name: /Latest replay result|最新回放结果/ }).waitFor();
+  await replayPage.getByRole("region", { name: /Latest practice result|最新训练结果/ }).waitFor();
   await replayPage.getByText("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。").first().waitFor();
   await replayPage.getByRole("button", { name: /Schedule retest|安排复测/ }).click();
   await replayPage.getByText(/Scheduled for |已安排 /).waitFor();
