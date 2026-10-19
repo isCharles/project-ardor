@@ -20,6 +20,7 @@ try {
     else if(path==="/api/profile/sidebar")json={userId:"minutes-fixture",hrefs:["/app"],revision:0,configured:true};
     else if(path==="/api/background-tasks/summary")json={activeCount:0,unreadByModule:{}};
     else if(path==="/api/agent/permissions")json={globalLevel:0,modules:[]};
+    else if(path==="/api/interview-recaps")json=confirmations ? [{id:"report-fixture",title:"Confirmed fixture report",overview:"Confirmed source review",strengths:[],weaknesses:[],questions:[],createdAt:"2026-10-19T01:00:00Z",jobOpportunityId:"process-fixture"}] : [];
     else if(path==="/api/interview-recaps/drafts")json=[{id:draft.id,company:"Synthetic interview",status:"COMPLETED",revision:draft.revision}];
     else if(path==="/api/interview-recaps/drafts/draft-fixture"){
       if(request.method()==="PUT"){
@@ -76,6 +77,8 @@ try {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),true,"Editor must fit narrow screens");
   await editor.scrollIntoViewIfNeeded();
   await page.screenshot({path:".next/interview-minutes-mobile.png"});
+  await page.getByRole("link",{name:"Open detailed review",exact:true}).click();
+  await page.getByRole("heading",{name:"Confirmed fixture report",exact:true}).waitFor();
   assert.deepEqual(errors,[]);assert.ok(writes>=4);
   console.log("PASS: editable minutes, auto-save, explicit confirmation, immutable snapshot, refresh/offline recovery, conflict preservation, narrow layout");
 } catch(error){console.error(logs.slice(-1500));throw error;}

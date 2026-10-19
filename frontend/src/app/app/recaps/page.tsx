@@ -69,7 +69,7 @@ function RecapsContent() {
       else setError(localizedError(reason, locale, "Could not load interview notes", "无法加载面经"));
     }
   }, [router, locale]);
-  useEffect(() => { const first = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(first); }, [load]);
+  useEffect(() => { const first = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(first); }, [load, searchParams]);
   const requested = searchParams.get("selected");
   const source = searchParams.get("source");
   const selected = recaps.find((item) => item.id === requested)
