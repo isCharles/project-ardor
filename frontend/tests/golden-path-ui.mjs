@@ -191,8 +191,13 @@ try {
   assert.equal(failedJobs.length, 1);
   assert.equal(failedJobs[0].status, "FAILED");
   await recoveryPage.getByRole("button", { name: /^(Retry|重试)$/ }).click();
-  await recoveryPage.getByRole("link", { name: /Java 后端一面复盘/ }).waitFor({ timeout: 40_000 });
-  await recoveryPage.getByRole("link", { name: /Java 后端一面复盘/ }).click();
+  await recoveryPage.goto(`${origin}/app/recaps?draft=${failedJobs[0].jobId}`);
+  await recoveryPage.getByLabel(/Editable minutes · auto-saved|纪要编辑区 · 自动保存/).waitFor({timeout:40000});
+  const beforeConfirm = await recoveryPage.evaluate(async () => (await fetch("/api/interview-recaps")).json());
+  assert.equal(beforeConfirm.length,0,"Retrying draft generation must not bypass human confirmation");
+  await recoveryPage.getByRole("button",{name:/Confirm minutes & generate review|确认纪要并生成复盘/}).click();
+  await recoveryPage.getByRole("link",{name:/Open detailed review|打开详细复盘/,exact:true}).waitFor({timeout:40000});
+  await recoveryPage.getByRole("link",{name:/Open detailed review|打开详细复盘/,exact:true}).click();
   await recoveryPage.getByRole("heading", { level: 2, name: "Java 后端一面复盘" }).waitFor({ timeout: 40_000 });
   const recoveredJobs = await recoveryPage.evaluate(async () => {
     const response = await fetch("/api/interview-recaps/jobs");

@@ -629,7 +629,7 @@ public class CareerAgentTools {
             return interviewRecapQueueService.list(userId).stream().map(InterviewRecapTaskResponse::from).toList();
         }
 
-        @Tool(name = "organize_interview_recap", value = "把用户粘贴的真实面试纪要提交到后台整理队列；立即返回任务状态，不自动生成记忆卡。面经必须属于一场面试，先 list_job_opportunities 定位面试流程 UUID，用户没说清是哪场时先追问")
+        @Tool(name = "organize_interview_recap", value = "保存用户完整原始转录并后台生成待编辑初步纪要，不直接生成复盘。收到后告知原文已保存，请用户趁记忆新鲜到 /app/recaps 校正、补充并点击确认，之后才生成详细复盘。不能替用户确认。面经必须属于一场面试，先 list_job_opportunities 定位 UUID，目标不清先追问")
         public InterviewRecapTaskResponse organizeInterviewRecap(
                 @P("用户提供的面试内容，必须完整传入，不得自行补写") String content,
                 @P("所属面试流程 UUID，必填；先 list_job_opportunities 定位") String opportunityId) {

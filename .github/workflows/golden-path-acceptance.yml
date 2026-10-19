@@ -117,6 +117,7 @@ jobs:
               test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor -Atc "SELECT COUNT(*) FROM flyway_schema_history WHERE version='39' AND success")" = "1"
               test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor -Atc "SELECT COUNT(*) FROM messages WHERE id='10000000-0000-4000-8000-000000000003' AND content='Upgrade sentinel preserved'")" = "1"
               docker exec -i ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 < .github/tests/recap-metadata-after.sql
+              node backend/src/test/resources/interview-minutes-acceptance.mjs
               node backend/src/test/resources/golden-path-acceptance.mjs
               exit 0
             fi

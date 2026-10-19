@@ -16,10 +16,13 @@ public class BackgroundTaskService {
     private final InterviewRecapQueueService recaps;
     private final KnowledgeIndexTaskStore knowledge;
     private final KnowledgeIndexDispatcher indexDispatcher;
+    private final com.projectardor.recap.service.InterviewMinutesService minutes;
     public BackgroundTaskService(BackgroundTaskStore store, AiJobStore aiJobs, ResumeAnalysisQueueService resumes,
-            InterviewRecapQueueService recaps, KnowledgeIndexTaskStore knowledge,KnowledgeIndexDispatcher indexDispatcher) {
+            InterviewRecapQueueService recaps, KnowledgeIndexTaskStore knowledge,KnowledgeIndexDispatcher indexDispatcher,
+            com.projectardor.recap.service.InterviewMinutesService minutes) {
         this.store=store; this.aiJobs=aiJobs; this.resumes=resumes; this.recaps=recaps; this.knowledge=knowledge;
         this.indexDispatcher=indexDispatcher;
+        this.minutes=minutes;
     }
     public void retry(UUID userId, String kind, UUID id, String token) {
         var task = store.get(userId,kind,id);
@@ -28,6 +31,7 @@ public class BackgroundTaskService {
         switch (kind) {
             case "RESUME_ANALYSIS" -> resumes.request(userId,task.resourceId());
             case "RECAP_ORGANIZE" -> recaps.retryFailed(userId,id);
+            case "RECAP_REVIEW" -> minutes.retryReview(userId,id);
             case "KNOWLEDGE_INDEX" -> { knowledge.retry(userId,id); indexDispatcher.dispatchPending(userId); }
             default -> aiJobs.retry(userId,id);
         }

@@ -10,6 +10,7 @@ import { markBackgroundPending } from "@/lib/background-notifications";
 import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale, type Locale } from "@/lib/locale";
 import styles from "./recaps.module.css";
+import { MinutesWorkspace } from "./minutes-workspace";
 
 type Performance = "STRONG" | "MIXED" | "WEAK" | "UNKNOWN";
 type Question = { id: string; sequenceNumber: number; questionText: string; candidateAnswer: string | null; followUps: string[]; assessment: string; performance: Performance; weaknessReason: string | null; betterAnswer: string | null; tags: string[] };
@@ -76,6 +77,7 @@ function RecapsContent() {
     ?? (source ? recaps.find((item) => item.id === source || item.questions.some((question) => question.id === source)) : null)
     ?? null;
   useReadVisibleResult("RECAP_ORGANIZE",selected?.id,!!selected);
+  useReadVisibleResult("RECAP_REVIEW",selected?.id,!!selected);
   const activeJobs = jobs.filter((job) => job.status === "QUEUED" || job.status === "RUNNING");
   const failedJobs = jobs.filter((job) => job.status === "FAILED");
   useEffect(() => {
@@ -108,11 +110,11 @@ function RecapsContent() {
         <div className="flex items-center gap-3"><button onClick={() => setShowForm(true)} className="text-sm text-slate-500 hover:text-slate-900">{t("Paste directly", "直接粘贴")}</button><Link href={agentCreationHref("RECAPS", locale)} className={`${styles.buttonPrimary} inline-flex items-center gap-2 px-5 py-2.5 text-sm`}><Plus className="size-4" />{t("Add interview notes", "整理面经")}</Link></div>
       </div>
 
-      <header className="pb-8 pt-12 text-center md:pt-16">
+      {!searchParams.get("draft") && <header className="pb-8 pt-12 text-center md:pt-16">
         <p className={`${styles.label} text-slate-500`}>{t("Interview notes", "面试复盘")}</p>
         <h1 className={`${styles.display} mt-3`}>{t("See how you grow.", "看清每一次进步。")}</h1>
         <p className="mx-auto mt-4 max-w-md text-sm leading-6 text-slate-600/85">{t("Review each interview question by question, then turn weak spots into a practice plan.", "逐题复盘每场面试，再将薄弱点转为练习计划。")}</p>
-      </header>
+      </header>}
 
       {error && <div className={`${styles.panel} mb-5 px-5 py-4 text-sm text-[#a33a32]`} role="status" aria-live="polite">{error}</div>}
 
@@ -128,7 +130,8 @@ function RecapsContent() {
         </div>)}
       </div>}
 
-      {recaps.length === 0 ? (
+      <MinutesWorkspace />
+      {searchParams.get("draft") ? null : recaps.length === 0 ? (
         activeJobs.length === 0 && <Link href={agentCreationHref("RECAPS", locale)} className={`${styles.panel} mx-auto block w-full max-w-md border-dashed px-5 py-16 text-center text-sm text-slate-400 transition hover:text-slate-600`}>{t("Organize your first interview with Ardor", "让 Ardor 整理第一次面试")}</Link>
       ) : selected ? (
         <section className={`${styles.panel} mt-8 p-6 md:p-9`}>
@@ -153,7 +156,18 @@ function RecapsContent() {
 }
 
 function Report({ recap, onDelete }: { recap: Recap; onDelete: () => void }) {
-  return <CompleteReport recap={recap} onDelete={onDelete} />;
+  const { t }=useLocale();
+  const router=useRouter();
+  const [busy,setBusy]=useState(false),[error,setError]=useState("");
+  async function openMinutes() {
+    setBusy(true);setError("");
+    try {
+      const result=await api<{draftId:string}>(`/api/interview-recaps/drafts/from-report/${recap.id}`,{method:"POST"});
+      router.push(`/app/recaps?draft=${result.draftId}`);
+    } catch(e) {setError(e instanceof Error ? e.message : t("Could not open minutes","无法打开纪要"));}
+    finally {setBusy(false);}
+  }
+  return <><div className="mb-5 border-b border-stone-200 pb-4"><button disabled={busy} onClick={() => void openMinutes()} className="text-sm text-stone-600 underline disabled:opacity-40">{t("Correct source minutes · keep this report", "校正原始纪要 · 保留这份报告")}</button>{error && <p role="alert" className="mt-2 text-sm text-rose-700">{error}</p>}</div><CompleteReport recap={recap} onDelete={onDelete} /></>;
 }
 
 function CompleteReport({ recap, onDelete }: { recap: Recap; onDelete: () => void }) {

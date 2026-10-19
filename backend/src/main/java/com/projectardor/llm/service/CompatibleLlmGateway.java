@@ -83,6 +83,8 @@ public class CompatibleLlmGateway implements LlmGateway {
                 .retrieve()
                 .body(String.class));
         String content = root.path("choices").path(0).path("message").path("content").asText();
+        if ("length".equals(root.path("choices").path(0).path("finish_reason").asText()))
+            throw new LlmCallException("LLM_OUTPUT_TRUNCATED","模型输出达到长度上限，未保存不完整结果",false,null);
         return result(content, root.path("model").asText(config.model()));
     }
 
@@ -107,6 +109,8 @@ public class CompatibleLlmGateway implements LlmGateway {
                 .retrieve()
                 .body(String.class));
         String content = root.path("content").path(0).path("text").asText();
+        if ("max_tokens".equals(root.path("stop_reason").asText()))
+            throw new LlmCallException("LLM_OUTPUT_TRUNCATED","模型输出达到长度上限，未保存不完整结果",false,null);
         return result(content, root.path("model").asText(config.model()));
     }
 

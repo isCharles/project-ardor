@@ -24,8 +24,8 @@ import com.projectardor.recap.repository.InterviewRecapRepository;
 
 @Service
 public class InterviewRecapQueueService {
-    private static final Collection<InterviewRecapJobStatus> ACTIVE = List.of(
-            InterviewRecapJobStatus.QUEUED, InterviewRecapJobStatus.RUNNING);
+    private static final Collection<InterviewRecapJobStatus> REUSABLE = List.of(
+            InterviewRecapJobStatus.QUEUED, InterviewRecapJobStatus.RUNNING, InterviewRecapJobStatus.COMPLETED);
     private static final int MAX_ATTEMPTS = 5;
     private final InterviewRecapRepository recapRepository;
     private final InterviewRecapJobRepository jobRepository;
@@ -46,23 +46,21 @@ public class InterviewRecapQueueService {
         String content = requiredContent(rawContent);
         String inputHash = inputHash(content);
         jobRepository.lockRequestSlot(userId, inputHash);
-        var completed = recapRepository.findByUserIdAndInputHash(userId, inputHash);
-        if (completed.isPresent()) {
-            var recap = completed.get();
-            if (recap.getJobOpportunityId() != null && !jobOpportunityId.equals(recap.getJobOpportunityId())) {
-                throw new IllegalArgumentException("这份面经已属于另一场面试，请打开原面试查看");
-            }
-            if (recap.linkOpportunity(jobOpportunityId)) recapRepository.saveAndFlush(recap);
-            return TaskResult.completed(recap.getId(), recap.getCreatedAt());
-        }
         Optional<InterviewRecapJob> active = jobRepository
-                .findFirstByUserIdAndInputHashAndStatusInOrderByCreatedAtDesc(userId, inputHash, ACTIVE);
+                .findFirstByUserIdAndInputHashAndStatusInOrderByCreatedAtDesc(userId, inputHash, REUSABLE);
         if (active.isPresent() && !jobOpportunityId.equals(active.get().getJobOpportunityId())) {
             throw new IllegalArgumentException("相同面经内容正在另一场面试下整理，请等待原任务完成");
         }
         return active.map(TaskResult::from)
                 .orElseGet(() -> TaskResult.from(jobRepository.saveAndFlush(
                         InterviewRecapJob.create(userId, inputHash, content, jobOpportunityId))));
+    }
+
+    @Transactional
+    public TaskResult fromReport(UUID userId, UUID recapId) {
+        var recap=recapRepository.findByIdAndUserId(recapId,userId)
+                .orElseThrow(() -> new ResourceNotFoundException("面经不存在"));
+        return request(userId,recap.getRawContent(),recap.getJobOpportunityId());
     }
 
     @Transactional(readOnly = true)
@@ -129,14 +127,14 @@ public class InterviewRecapQueueService {
         if (value == null || value.isBlank()) throw new IllegalArgumentException("面试内容不能为空");
         String content = value.strip();
         if (content.length() < 30) throw new IllegalArgumentException("面试内容太短，请至少提供一段问题或回忆");
-        if (content.length() > 50_000) throw new IllegalArgumentException("面试内容不能超过 50000 个字符");
-        return content;
+        if (value.length() > 50_000) throw new IllegalArgumentException("面试内容不能超过 50000 个字符");
+        return value;
     }
 
     private static String inputHash(String content) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(("NOTES\n" + content).getBytes(StandardCharsets.UTF_8)));
+                    .digest(("MINUTES_V1\n" + content).getBytes(StandardCharsets.UTF_8)));
         } catch (Exception exception) { throw new IllegalStateException("无法生成内容指纹", exception); }
     }
 
