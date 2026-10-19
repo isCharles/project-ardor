@@ -190,7 +190,10 @@ try {
   });
   assert.equal(failedJobs.length, 1);
   assert.equal(failedJobs[0].status, "FAILED");
+  const retryAccepted=recoveryPage.waitForResponse(response => response.request().method()==="POST"
+    && new URL(response.url()).pathname===`/api/interview-recaps/jobs/${failedJobs[0].jobId}/retry`);
   await recoveryPage.getByRole("button", { name: /^(Retry|重试)$/ }).click();
+  assert.equal((await retryAccepted).status(),200,"Wait for the retry to be accepted before navigating away");
   await recoveryPage.goto(`${origin}/app/recaps?draft=${failedJobs[0].jobId}`);
   await recoveryPage.getByLabel(/Editable minutes · auto-saved|纪要编辑区 · 自动保存/).waitFor({timeout:40000});
   const beforeConfirm = await recoveryPage.evaluate(async () => (await fetch("/api/interview-recaps")).json());
