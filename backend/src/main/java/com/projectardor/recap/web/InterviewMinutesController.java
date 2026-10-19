@@ -22,11 +22,12 @@ public class InterviewMinutesController {
         this.minutes=minutes; this.queue=queue; this.quotas=quotas;
     }
     @PostMapping("/from-report/{recapId}")
-    public java.util.Map<String,UUID> fromReport(@AuthenticationPrincipal ArdorPrincipal p,@PathVariable UUID recapId) {
+    public java.util.Map<String,UUID> fromReport(@AuthenticationPrincipal ArdorPrincipal p,@PathVariable UUID recapId,
+            @RequestBody(required=false) SourceRequest request) {
         UUID source=minutes.sourceDraft(p.userId(),recapId);
         if (source == null) {
-            quotas.consume(p.userId(),UsageFeature.INTERVIEW_RECAP,null);
-            source=queue.fromReport(p.userId(),recapId).jobId();
+            quotas.consume(p.userId(),UsageFeature.INTERVIEW_RECAP,UUID.nameUUIDFromBytes(("legacy-minutes:"+recapId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            source=queue.fromReport(p.userId(),recapId,request==null ? null : request.jobOpportunityId()).jobId();
         }
         return java.util.Map.of("draftId",source);
     }
@@ -37,10 +38,6 @@ public class InterviewMinutesController {
     }
     @PostMapping("/{id}/confirm")
     public InterviewMinutesService.Draft confirm(@AuthenticationPrincipal ArdorPrincipal p,@PathVariable UUID id,@Valid @RequestBody Confirm r) {
-        // A client cannot reuse one request UUID to obtain free reviews of unrelated revisions.
-        UUID chargeId=UUID.nameUUIDFromBytes(("interview-minutes-review:"+id+":"+r.revision())
-                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        quotas.consume(p.userId(),UsageFeature.INTERVIEW_RECAP,chargeId);
         return minutes.confirm(p.userId(),id,r.revision());
     }
     @PostMapping("/{id}/reviews/{reviewId}/retry")
@@ -49,4 +46,5 @@ public class InterviewMinutesController {
     }
     public record Edit(@Min(1) long revision,@NotBlank @Size(min=30,max=50000) String minutes) {}
     public record Confirm(@Min(1) long revision,@NotNull UUID requestId) {}
+    public record SourceRequest(UUID jobOpportunityId) {}
 }

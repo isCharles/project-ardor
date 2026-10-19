@@ -143,7 +143,7 @@ function RecapsContent() {
         activeJobs.length === 0 && <Link href={agentCreationHref("RECAPS", locale)} className={`${styles.panel} mx-auto block w-full max-w-md border-dashed px-5 py-16 text-center text-sm text-slate-400 transition hover:text-slate-600`}>{t("Organize your first interview with Ardor", "让 Ardor 整理第一次面试")}</Link>
       ) : selected ? (
         <section className={`${styles.panel} mt-8 p-6 md:p-9`}>
-          <Report recap={selected} onDelete={() => remove(selected)} />
+          <Report recap={selected} opportunities={opportunities} onDelete={() => remove(selected)} />
         </section>
       ) : (
         <div className="mx-auto mt-6 max-w-2xl">
@@ -163,19 +163,20 @@ function RecapsContent() {
   </div>{showForm && <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 backdrop-blur-sm"><section className="ardor-panel max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] p-6 md:p-8"><div className="mb-6 flex items-center justify-between"><h2 className="text-2xl font-semibold">{t("Organize an interview", "整理一场面试")}</h2><button aria-label={t("Close", "关闭")} onClick={() => setShowForm(false)} className="rounded-full p-2 text-stone-400 hover:bg-white"><X className="size-5" /></button></div><form onSubmit={organize} className="space-y-4">{opportunities.length === 0 ? <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Create an interview in the pipeline first — notes belong to an interview.", "请先在面试流程里创建一场面试：面经必须属于某场面试。")}</p> : <label className="block text-sm font-medium">{t("Interview", "所属面试")}<select name="jobOpportunityId" required defaultValue={opportunities[0]?.id} className="field mt-2">{opportunities.map((item) => <option key={item.id} value={item.id}>{`${item.company}${item.targetRole ? ` · ${item.targetRole}` : ""}`}</option>)}</select></label>}<textarea name="content" required minLength={30} maxLength={50000} rows={16} className="field resize-y" placeholder={t("Paste a transcript, your recollection, or polished notes…", "粘贴转录、回忆或整理过的内容…")} /><button disabled={busy || opportunities.length === 0} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-50">{busy ? t("Organizing questions…", "正在逐题整理…") : t("Create interview notes", "生成面经")}</button></form></section></div>}</main>;
 }
 
-function Report({ recap, onDelete }: { recap: Recap; onDelete: () => void }) {
+function Report({ recap, onDelete, opportunities }: { recap: Recap; onDelete: () => void; opportunities: OpportunityRef[] }) {
   const { t }=useLocale();
   const router=useRouter();
   const [busy,setBusy]=useState(false),[error,setError]=useState("");
+  const [opportunity,setOpportunity]=useState("");
   async function openMinutes() {
     setBusy(true);setError("");
     try {
-      const result=await api<{draftId:string}>(`/api/interview-recaps/drafts/from-report/${recap.id}`,{method:"POST"});
+      const result=await api<{draftId:string}>(`/api/interview-recaps/drafts/from-report/${recap.id}`,{method:"POST",body:JSON.stringify({jobOpportunityId:opportunity || null})});
       router.push(`/app/recaps?draft=${result.draftId}`);
     } catch(e) {setError(e instanceof Error ? e.message : t("Could not open minutes","无法打开纪要"));}
     finally {setBusy(false);}
   }
-  return <><div className="mb-5 border-b border-stone-200 pb-4"><button disabled={busy} onClick={() => void openMinutes()} className="text-sm text-stone-600 underline disabled:opacity-40">{t("Correct source minutes · keep this report", "校正原始纪要 · 保留这份报告")}</button>{error && <p role="alert" className="mt-2 text-sm text-rose-700">{error}</p>}</div><CompleteReport recap={recap} onDelete={onDelete} /></>;
+  return <><div className="mb-5 space-y-3 border-b border-stone-200 pb-4">{!recap.jobOpportunityId && <label className="block text-sm text-stone-600">{t("Choose an interview for these legacy notes first", "这份旧记录未关联面试，请先选择归属")}<select className="field mt-2 max-w-full" value={opportunity} onChange={e=>setOpportunity(e.target.value)}><option value="">{t("Select interview…", "选择所属面试…")}</option>{opportunities.map(o=><option key={o.id} value={o.id}>{o.company}{o.targetRole ? ` · ${o.targetRole}` : ""}</option>)}</select></label>}<button disabled={busy || (!recap.jobOpportunityId && !opportunity)} onClick={() => void openMinutes()} className="text-sm text-stone-600 underline disabled:opacity-40">{t("Correct source minutes · keep this report", "校正原始纪要 · 保留这份报告")}</button>{error && <p role="alert" className="mt-2 text-sm text-rose-700">{error}</p>}</div><CompleteReport recap={recap} onDelete={onDelete} /></>;
 }
 
 function CompleteReport({ recap, onDelete }: { recap: Recap; onDelete: () => void }) {

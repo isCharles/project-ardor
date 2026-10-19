@@ -67,6 +67,21 @@ class InterviewRecapQueueServiceTests {
         verify(jobs).lockRequestSlot(eq(userId), any());
     }
 
+    @Test void unlinkedLegacyReportRequiresAnOwnedSelectionWithoutChangingItsOriginalLink() {
+        var recaps=mock(InterviewRecapRepository.class);var jobs=mock(InterviewRecapJobRepository.class);
+        var opportunities=mock(JobOpportunityRepository.class);var service=new InterviewRecapQueueService(recaps,jobs,opportunities);
+        UUID user=UUID.randomUUID(),selected=UUID.randomUUID();
+        var recap=com.projectardor.recap.domain.InterviewRecap.create(user,"Legacy",com.projectardor.recap.domain.InterviewRecapSource.NOTES,
+                CONTENT,"hash","Overview",java.util.List.of(),java.util.List.of(),"fixture",null);
+        when(recaps.findByIdAndUserId(recap.getId(),user)).thenReturn(Optional.of(recap));
+        when(opportunities.findByIdAndUserId(selected,user)).thenReturn(Optional.of(JobOpportunity.create(user,"Owned",null,null,null)));
+        when(jobs.saveAndFlush(any())).thenAnswer(call->call.getArgument(0));
+        assertThatThrownBy(()->service.fromReport(user,recap.getId())).isInstanceOf(IllegalArgumentException.class);
+        assertThat(service.fromReport(user,recap.getId(),selected).jobId()).isNotNull();
+        assertThat(recap.getJobOpportunityId()).isNull();
+        assertThatThrownBy(()->service.fromReport(user,recap.getId(),UUID.randomUUID())).isInstanceOf(ResourceNotFoundException.class);
+    }
+
     @Test
     void requestRequiresAnInterviewTheUserOwns() {
         InterviewRecapQueueService service = new InterviewRecapQueueService(

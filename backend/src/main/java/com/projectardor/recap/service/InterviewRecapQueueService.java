@@ -58,9 +58,16 @@ public class InterviewRecapQueueService {
 
     @Transactional
     public TaskResult fromReport(UUID userId, UUID recapId) {
+        return fromReport(userId,recapId,null);
+    }
+
+    @Transactional
+    public TaskResult fromReport(UUID userId, UUID recapId, UUID selectedOpportunity) {
         var recap=recapRepository.findByIdAndUserId(recapId,userId)
                 .orElseThrow(() -> new ResourceNotFoundException("面经不存在"));
-        return request(userId,recap.getRawContent(),recap.getJobOpportunityId());
+        if (recap.getJobOpportunityId()!=null && selectedOpportunity!=null && !recap.getJobOpportunityId().equals(selectedOpportunity))
+            throw new IllegalArgumentException("不能将已有面经改挂到另一场面试");
+        return request(userId,recap.getRawContent(),recap.getJobOpportunityId()==null ? selectedOpportunity : recap.getJobOpportunityId());
     }
 
     @Transactional(readOnly = true)

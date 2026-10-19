@@ -18,7 +18,7 @@ class InterviewMinutesControllerTests {
         UUID report=UUID.randomUUID(),draft=UUID.randomUUID();
         when(minutes.sourceDraft(user.userId(),report)).thenReturn(draft);
         var controller=new InterviewMinutesController(minutes,queue,quota);
-        assertThat(controller.fromReport(user,report)).containsEntry("draftId",draft);
+        assertThat(controller.fromReport(user,report,null)).containsEntry("draftId",draft);
         verifyNoInteractions(quota,queue);
     }
 

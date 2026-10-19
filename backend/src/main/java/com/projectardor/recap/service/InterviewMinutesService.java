@@ -23,10 +23,12 @@ public class InterviewMinutesService {
     private final LlmJsonParser parser;
     private final TransactionTemplate tx;
     private final String skill;
+    private final com.projectardor.usage.QuotaService quotas;
 
     public InterviewMinutesService(JdbcTemplate jdbc, LlmGateway llm, LlmJsonParser parser,
-            org.springframework.transaction.PlatformTransactionManager manager) throws java.io.IOException {
+            org.springframework.transaction.PlatformTransactionManager manager,com.projectardor.usage.QuotaService quotas) throws java.io.IOException {
         this.jdbc = jdbc; this.llm = llm; this.parser = parser; this.tx = new TransactionTemplate(manager);
+        this.quotas=quotas;
         this.skill = new ClassPathResource("skills/interview-minutes/SKILL.md").getContentAsString(StandardCharsets.UTF_8);
     }
 
@@ -55,7 +57,7 @@ public class InterviewMinutesService {
                     o.company FROM interview_recap_jobs j
                 JOIN job_opportunities o ON o.id=j.job_opportunity_id AND o.user_id=j.user_id
                 LEFT JOIN interview_minutes m ON m.id=j.id AND m.user_id=j.user_id
-                WHERE j.user_id=? AND (m.id IS NOT NULL OR j.recap_id IS NULL)
+                WHERE j.user_id=? AND (m.id IS NOT NULL OR (j.recap_id IS NULL AND j.status<>'COMPLETED'))
                 ORDER BY j.created_at DESC LIMIT 100
                 """, (r,n) -> new DraftSummary(r.getObject("id",UUID.class),r.getString("company"),
                     r.getString("status"),r.getLong("revision")), userId);
@@ -70,6 +72,7 @@ public class InterviewMinutesService {
                     r.getString("status"),r.getString("error_message"),List.of()), id,userId);
         if (rows.isEmpty()) throw new ResourceNotFoundException("纪要不存在");
         Draft d = rows.getFirst();
+        if (d.minutes()==null && "COMPLETED".equals(d.status())) throw new ResourceNotFoundException("旧任务没有可编辑纪要，请从已有报告重新整理");
         var reviews = jdbc.query("""
                 SELECT id,revision,status,recap_id,error_message,minutes FROM interview_minutes_reviews
                 WHERE draft_id=? AND user_id=? ORDER BY revision DESC
@@ -101,6 +104,13 @@ public class InterviewMinutesService {
             if (current.isEmpty()) throw new ResourceNotFoundException("纪要不存在或仍在整理");
             if ((Long)current.getFirst()[0] != revision) throw conflict();
             validate((String)current.getFirst()[1]);
+            boolean exists=Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM interview_minutes_reviews WHERE draft_id=? AND user_id=? AND revision=?)",
+                    Boolean.class,id,userId,revision));
+            boolean first= !Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM interview_minutes_reviews WHERE draft_id=? AND user_id=?)",
+                    Boolean.class,id,userId));
+            // Upload already paid for the first complete draft-and-review workflow.
+            if (!exists && !first) quotas.consume(userId,com.projectardor.usage.UsageFeature.INTERVIEW_RECAP,
+                    chargeId("revision:"+id+":"+revision));
             jdbc.update("""
                     INSERT INTO interview_minutes_reviews(id,draft_id,user_id,revision,minutes,status)
                     VALUES (?,?,?,?,?,'QUEUED') ON CONFLICT(draft_id,revision) DO NOTHING
@@ -110,12 +120,18 @@ public class InterviewMinutesService {
     }
 
     public Draft retryReview(UUID userId, UUID id, UUID reviewId) {
+        return tx.execute(s -> {
         get(userId,id);
+        var attempts=jdbc.query("SELECT attempts FROM interview_minutes_reviews WHERE id=? AND draft_id=? AND user_id=? AND status='FAILED' FOR UPDATE",
+                (r,n) -> r.getInt(1),reviewId,id,userId);
+        if (attempts.isEmpty()) throw new ResourceNotFoundException("可重试的复盘任务不存在");
+        quotas.consume(userId,com.projectardor.usage.UsageFeature.INTERVIEW_RECAP,chargeId("retry:"+reviewId+":"+attempts.getFirst()));
         if (jdbc.update("""
                 UPDATE interview_minutes_reviews SET status='QUEUED',error_message=NULL,started_at=NULL
                 WHERE id=? AND draft_id=? AND user_id=? AND status='FAILED'
                 """,reviewId,id,userId) != 1) throw conflict();
         return get(userId,id);
+        });
     }
 
     public void retryReview(UUID userId, UUID reviewId) {
@@ -167,6 +183,7 @@ public class InterviewMinutesService {
         if (text == null || text.strip().length() < 30 || text.length() > 50000)
             throw new IllegalArgumentException("纪要须为 30–50000 个字符，不会自动截断");
     }
+    private static UUID chargeId(String value) { return UUID.nameUUIDFromBytes(("interview-minutes:"+value).getBytes(StandardCharsets.UTF_8)); }
     static ResponseStatusException conflict() { return new ResponseStatusException(HttpStatus.CONFLICT,"纪要已更新，请重新读取；本地输入不会自动覆盖"); }
     public static List<String> chunks(String text, int size) {
         List<String> parts = new ArrayList<>();
