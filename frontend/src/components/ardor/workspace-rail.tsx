@@ -6,7 +6,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { destinations, destinationActive, defaultDestinationIds, normalizeDestinationIds, destinationsFromLegacy, legacyHrefsForDestinations } from "@/lib/navigation";
 
 import { api, ApiError } from "@/lib/api";
 import { type TaskSummary } from "@/lib/background-tasks";
@@ -15,49 +16,47 @@ import { AppDialog } from "@/components/ui/app-dialog";
 import { ChatRailLink } from "./chat-rail-link";
 import { Button } from "@/components/ui/button";
 
-const workspaces = [
-  { href: "/app", en: "Chat", zh: "对话", icon: Home },
-  { href: "/app/resumes", en: "Resumes", zh: "简历", icon: FileSearch },
-  { href: "/app/interviews", en: "Mock interviews", zh: "模拟面试", icon: MessageSquareText },
-  { href: "/app/opportunities", en: "Interview pipeline", zh: "面试流程", icon: Briefcase },
-  { href: "/app/cards", en: "Flashcards", zh: "记忆卡", icon: SquareStack },
-  { href: "/app/knowledge", en: "Knowledge", zh: "知识库", icon: BookOpenText },
-  { href: "/app/learning", en: "Learning", zh: "学习", icon: GraduationCap },
-  { href: "/app/calendar", en: "Calendar", zh: "日程", icon: CalendarDays },
-  { href: "/app/applications", en: "Applications", zh: "投递节奏", icon: Target },
-  { href: "/app/evidence", en: "Growth evidence", zh: "成长证据", icon: TrendingUp },
-  { href: "/app/tasks", en: "Background tasks", zh: "后台任务", icon: Clock3 },
-] as const;
-const defaultHrefs = ["/app", "/app/resumes", "/app/interviews", "/app/opportunities", "/app/cards", "/app/calendar", "/app/applications"];
+const icons = { home: Home, briefcase: Briefcase, target: Target, "file-search": FileSearch, book: BookOpenText, graduation: GraduationCap, message: MessageSquareText, stack: SquareStack, trend: TrendingUp, calendar: CalendarDays, clock: Clock3 };
+const workspaces = destinations.map(item => ({ ...item, icon: icons[item.icon as keyof typeof icons] }));
+const defaultIds = defaultDestinationIds;
 function preferenceKey(userId: string) { return `ardor:workspace-rail:v1:${userId}`; }
-function cacheKey(userId: string) { return `ardor:workspace-rail:v2:${userId}`; }
-type SidebarView = { userId: string; hrefs: string[]; revision: number; configured: boolean };
-function validView(value: SidebarView): SidebarView {
+function cacheKey(userId: string) { return `ardor:workspace-rail:v3:${userId}`; }
+type SidebarWire = { userId: string; hrefs: string[]; destinationIds?: string[]; revision: number; configured: boolean };
+type SidebarView = { userId: string; ids: string[]; revision: number; configured: boolean; supportsIds: boolean };
+function validView(value: SidebarWire): SidebarView {
   if (!Array.isArray(value?.hrefs) || typeof value.userId !== "string" || !Number.isSafeInteger(value.revision) || value.revision < 0 || typeof value.configured !== "boolean") throw new Error("Invalid sidebar preferences response");
-  return { ...value, hrefs: ["/app", ...workspaces.filter(item => item.href !== "/app" && value.hrefs.includes(item.href)).map(item => item.href)] };
+  const supportsIds = value.destinationIds !== undefined;
+  const ids = supportsIds ? normalizeDestinationIds(value.destinationIds) : value.configured ? destinationsFromLegacy(value.hrefs) : defaultIds;
+  return { userId: value.userId, ids, revision: value.revision, configured: value.configured, supportsIds };
 }
 function cacheView(owner: string, view: SidebarView) {
   try {
     const previous = JSON.parse(window.localStorage.getItem(cacheKey(owner)) ?? "null");
     if (previous && previous.revision > view.revision) return;
     window.localStorage.setItem(cacheKey(owner), JSON.stringify(view));
-  } catch { /* Account storage succeeded even when this optional device cache is unavailable. */ }
+  } catch { /* Optional device cache must not change the server's result. */ }
 }
 function legacyHrefs(userId: string): string[] | null {
-  try { const value: unknown = JSON.parse(window.localStorage.getItem(preferenceKey(userId)) ?? "null"); return Array.isArray(value) ? ["/app", ...workspaces.filter(item => item.href !== "/app" && value.includes(item.href)).map(item => item.href)] : null; }
-  catch { return null; }
+  try {
+    const value: unknown = JSON.parse(window.localStorage.getItem(preferenceKey(userId)) ?? "null");
+    return Array.isArray(value) ? legacyHrefsForDestinations(destinationsFromLegacy(value)) : null;
+  } catch { return null; }
 }
-function readHrefs(userId: string): string[] {
+function readIds(userId: string): string[] {
   try {
     const saved = JSON.parse(window.localStorage.getItem(cacheKey(userId)) ?? "null");
-    if (saved && saved.userId === userId) return validView(saved).hrefs;
-  } catch { /* Retain the original per-device customization for migration. */ }
-  return legacyHrefs(userId) ?? defaultHrefs;
+    if (saved?.userId === userId) return normalizeDestinationIds(saved.ids);
+    const previous = JSON.parse(window.localStorage.getItem(`ardor:workspace-rail:v2:${userId}`) ?? "null");
+    if (previous?.userId === userId) return destinationsFromLegacy(previous.hrefs);
+  } catch { /* Preserve local legacy choices without treating them as authorization. */ }
+  const legacy = legacyHrefs(userId);
+  return legacy ? destinationsFromLegacy(legacy) : defaultIds;
 }
-
 function moduleFor(href: string): string | null {
-  const moduleName = href.split("/").at(-1);
-  return moduleName && ["resumes","recaps","knowledge","learning","interviews","evidence","tasks"].includes(moduleName) ? moduleName : null;
+  return workspaces.find(item => item.href === href)?.modules[0] ?? null;
+}
+function groupLabel(domain: string | null, t: (en: string, zh: string) => string) {
+  return domain === "job-search" ? t("Job search", "求职") : domain === "learning" ? t("Learning", "学习") : t("Workspace", "工作台");
 }
 
 export function WorkspaceRail() {
@@ -66,16 +65,16 @@ export function WorkspaceRail() {
   const { t } = useLocale();
   const [account, setAccount] = useState<{ id: string; email: string; admin: boolean } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [preference, setPreference] = useState<{ userId: string; hrefs: string[]; revision?: number } | null>(null);
+  const [preference, setPreference] = useState<{ userId: string; ids: string[]; revision?: number; supportsIds?: boolean } | null>(null);
   const [customRevision, setCustomRevision] = useState(0);
   const [customSaving, setCustomSaving] = useState(false);
   const savingPreference = useRef(false);
   const [customizing, setCustomizing] = useState(false);
-  const [customDraft, setCustomDraft] = useState<string[]>(defaultHrefs);
+  const [customDraft, setCustomDraft] = useState<string[]>(defaultIds);
   const [customError, setCustomError] = useState("");
-  const pinnedHrefs = preference?.userId === account?.id ? preference?.hrefs ?? defaultHrefs : defaultHrefs;
-  const primaryWorkspaces = workspaces.filter((item) => pinnedHrefs.includes(item.href));
-  const secondaryWorkspaces = workspaces.filter((item) => !pinnedHrefs.includes(item.href));
+  const pinnedIds = preference?.userId === account?.id ? preference?.ids ?? defaultIds : defaultIds;
+  const primaryWorkspaces = workspaces.filter((item) => pinnedIds.includes(item.id));
+  const secondaryWorkspaces = workspaces.filter((item) => !pinnedIds.includes(item.id));
   const [moreOpen, setMoreOpen] = useState(false);
   const [morePinned, setMorePinned] = useState(false);
   const [moreTop, setMoreTop] = useState(0);
@@ -86,6 +85,7 @@ export function WorkspaceRail() {
   const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null);
   const [badges, setBadges] = useState<{ userId: string; ready: Record<string, boolean> } | null>(null);
   const backgroundReady = badges?.userId === account?.id ? badges?.ready ?? {} : {};
+  const hasReady = (href: string) => workspaces.find(item => item.href === href)?.modules.some(module => backgroundReady[module]) ?? false;
 
   useEffect(() => {
     if (account) return;
@@ -94,7 +94,7 @@ export function WorkspaceRail() {
     let attempts = 0;
     const loadAccount = () => {
       api<{ id: string; email: string; admin: boolean }>("/api/auth/me")
-        .then((value) => { if (!cancelled) { setAccount(value); setPreference({ userId: value.id, hrefs: readHrefs(value.id) }); } })
+        .then((value) => { if (!cancelled) { setAccount(value); setPreference({ userId: value.id, ids: readIds(value.id) }); } })
         .catch(() => {
           if (!cancelled && ++attempts < 3) retryTimer = setTimeout(loadAccount, attempts * 3000);
         });
@@ -112,18 +112,18 @@ export function WorkspaceRail() {
       if (savingPreference.current || document.hidden) return;
       const version = ++requestVersion;
       try {
-        let view = validView(await api<SidebarView>("/api/profile/sidebar"));
+        let view = validView(await api<SidebarWire>("/api/profile/sidebar"));
         if (cancelled || version !== requestVersion || view.userId !== owner) return;
         const legacy = legacyHrefs(owner);
         if (!view.configured && legacy) {
-          try { view = validView(await api<SidebarView>("/api/profile/sidebar", { method: "PUT", body: JSON.stringify({ hrefs: legacy, expectedRevision: 0, expectedUserId: owner }) })); }
+          try { view = validView(await api<SidebarWire>("/api/profile/sidebar", { method: "PUT", body: JSON.stringify({ hrefs: legacy, expectedRevision: 0, expectedUserId: owner }) })); }
           catch (reason) {
             if (!(reason instanceof ApiError) || reason.status !== 409) throw reason;
-            view = validView(await api<SidebarView>("/api/profile/sidebar"));
+            view = validView(await api<SidebarWire>("/api/profile/sidebar"));
           }
         }
         if (cancelled || version !== requestVersion || savingPreference.current || view.userId !== owner) return;
-        setPreference(current => current?.userId === owner && (current.revision ?? -1) > view.revision ? current : { userId: owner, hrefs: view.hrefs, revision: view.revision });
+        setPreference(current => current?.userId === owner && (current.revision ?? -1) > view.revision ? current : { userId: owner, ids: view.ids, revision: view.revision, supportsIds: view.supportsIds });
         cacheView(owner, view);
       } catch { /* Preserve the last known layout. Saving reports failures without pretending to sync. */ }
     }
@@ -137,25 +137,25 @@ export function WorkspaceRail() {
   }, [account?.id]);
 
   useEffect(() => {
-    const open = () => { if (account) { setCustomDraft(pinnedHrefs); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); setMoreOpen(false); setAccountOpen(false); } };
+    const open = () => { if (account) { setCustomDraft(pinnedIds); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); setMoreOpen(false); setAccountOpen(false); } };
     const sync = (event: StorageEvent) => { if (account && event.key === cacheKey(account.id)) window.dispatchEvent(new Event("ardor:sidebar-refresh")); };
     window.addEventListener("ardor:customize-sidebar", open);
     window.addEventListener("storage", sync);
     return () => { window.removeEventListener("ardor:customize-sidebar", open); window.removeEventListener("storage", sync); };
-  }, [account, pinnedHrefs, preference?.revision]);
+  }, [account, pinnedIds, preference?.revision]);
 
   async function saveSidebar() {
     if (!account || customSaving || preference?.revision === undefined) return;
     setCustomSaving(true); savingPreference.current = true; setCustomError("");
     try {
-      const view = validView(await api<SidebarView>("/api/profile/sidebar", { method: "PUT", body: JSON.stringify({ hrefs: customDraft, expectedRevision: customRevision, expectedUserId: account.id }) }));
+      const view = validView(await api<SidebarWire>("/api/profile/sidebar", { method: "PUT", body: JSON.stringify({ ...(preference?.supportsIds ? { destinationIds: customDraft } : { hrefs: legacyHrefsForDestinations(customDraft) }), expectedRevision: customRevision, expectedUserId: account.id }) }));
       if (view.userId !== account.id) throw new Error("Account changed");
-      setPreference({ userId: account.id, hrefs: view.hrefs, revision: view.revision });
+      setPreference({ userId: account.id, ids: view.ids, revision: view.revision, supportsIds: view.supportsIds });
       cacheView(account.id, view);
       setCustomizing(false);
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 409) {
-        try { const view = validView(await api<SidebarView>("/api/profile/sidebar")); if (view.userId === account.id) { setPreference({ userId: account.id, hrefs: view.hrefs, revision: view.revision }); setCustomRevision(view.revision); } } catch { /* Keep the draft on refresh failure. */ }
+        try { const view = validView(await api<SidebarWire>("/api/profile/sidebar")); if (view.userId === account.id) { setPreference({ userId: account.id, ids: view.ids, revision: view.revision, supportsIds: view.supportsIds }); setCustomRevision(view.revision); } } catch { /* Keep the draft on refresh failure. */ }
         setCustomError(t("Another device changed your sidebar. Your choices are kept here; review them, then save again to replace the account layout.", "其他设备已更新侧栏。你的选择仍保留在这里，请核对后再次保存，才会替换账户布局。"));
       } else setCustomError(t("Could not sync your sidebar. Your choices are kept; retry when the server is available.", "侧栏同步失败，你的选择已保留。请在服务恢复后重试。"));
     } finally { setCustomSaving(false); savingPreference.current = false; }
@@ -258,7 +258,7 @@ export function WorkspaceRail() {
     <aside className="relative z-30 flex h-full w-16 shrink-0 flex-col items-center border-r border-stone-200/70 bg-gradient-to-b from-white via-[#faf8ff] to-[#fff8f6] py-3 md:w-[4.25rem]" aria-label={t("Main navigation", "主导航")}>
       <nav className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto px-2" aria-label={t("Workspaces", "工作区")} onScroll={() => setTooltip(null)}>
         {primaryWorkspaces.map((item, index) => {
-          const active = item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
+          const active = destinationActive(item.id, pathname);
           const label = t(item.en, item.zh);
           const itemModule = moduleFor(item.href);
           if (item.href === "/app") return <ChatRailLink key={`${pathname}:${account?.id ?? "loading"}`} userId={account?.id ?? null} active={active}
@@ -278,11 +278,11 @@ export function WorkspaceRail() {
               className={`relative grid size-11 shrink-0 place-items-center rounded-2xl transition-colors focus-visible:outline-2 focus-visible:outline-violet-500 ${index === 0 ? "mb-3" : ""} ${active ? "bg-violet-100 text-violet-700" : "text-stone-500 hover:bg-white hover:text-stone-900 hover:shadow-sm"}`}
             >
               <item.icon className="size-5" aria-hidden="true" />
-              {itemModule && backgroundReady[itemModule] && <span className="absolute right-1 top-1 size-2 rounded-full bg-red-500 ring-2 ring-white" aria-hidden="true" />}
+              {hasReady(item.href) && <span className="absolute right-1 top-1 size-2 rounded-full bg-red-500 ring-2 ring-white" aria-hidden="true" />}
             </Link>
           );
         })}
-        <button ref={moreButton} type="button" aria-label={t("More workspaces", "更多工作区")} aria-expanded={moreOpen} aria-controls="ardor-more-workspaces" onMouseEnter={showMore} onMouseLeave={hideMoreSoon} onFocus={showMore} onClick={() => { showMore(); setMorePinned((value) => !value); }} className={`relative grid size-11 shrink-0 place-items-center rounded-2xl transition-colors focus-visible:outline-2 focus-visible:outline-violet-500 ${moreOpen || secondaryWorkspaces.some((item) => pathname.startsWith(item.href)) ? "bg-violet-100 text-violet-700" : "text-stone-500 hover:bg-white hover:text-stone-900 hover:shadow-sm"}`}><Ellipsis className="size-5" aria-hidden="true" />{secondaryWorkspaces.some((item) => { const moduleName = moduleFor(item.href); return moduleName && backgroundReady[moduleName]; }) && <span className="absolute right-1 top-1 size-2 rounded-full bg-red-500 ring-2 ring-white" aria-hidden="true" />}</button>
+        <button ref={moreButton} type="button" aria-label={t("More workspaces", "更多工作区")} aria-expanded={moreOpen} aria-controls="ardor-more-workspaces" onMouseEnter={showMore} onMouseLeave={hideMoreSoon} onFocus={showMore} onClick={() => { showMore(); setMorePinned((value) => !value); }} className={`relative grid size-11 shrink-0 place-items-center rounded-2xl transition-colors focus-visible:outline-2 focus-visible:outline-violet-500 ${moreOpen || secondaryWorkspaces.some((item) => destinationActive(item.id, pathname)) ? "bg-violet-100 text-violet-700" : "text-stone-500 hover:bg-white hover:text-stone-900 hover:shadow-sm"}`}><Ellipsis className="size-5" aria-hidden="true" />{secondaryWorkspaces.some(item => hasReady(item.href)) && <span className="absolute right-1 top-1 size-2 rounded-full bg-red-500 ring-2 ring-white" aria-hidden="true" />}</button>
       </nav>
 
       <div className="mt-2 flex w-full shrink-0 flex-col items-center border-t border-stone-200/70 px-2 pt-3">
@@ -304,18 +304,18 @@ export function WorkspaceRail() {
       {tooltip && !accountOpen && !moreOpen && <div role="tooltip" className="pointer-events-none fixed left-[4.75rem] z-50 whitespace-nowrap rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-800 shadow-lg" style={{ top: tooltip.top }}>{tooltip.label}</div>}
 
       {moreOpen && !accountOpen && <div ref={morePanel} id="ardor-more-workspaces" className="fixed left-[4.25rem] z-50 w-56 max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 shadow-[0_20px_60px_rgba(70,48,100,0.16)]" style={{ top: moreTop }} onMouseEnter={() => { if (moreCloseTimer.current) clearTimeout(moreCloseTimer.current); }} onMouseLeave={hideMoreSoon}>
-        {secondaryWorkspaces.map((item) => { const label = t(item.en, item.zh); const moduleName = moduleFor(item.href); return <Link key={item.href} href={item.href} onClick={() => { acknowledgeBackground(moduleName); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50 ${pathname.startsWith(item.href) ? "bg-violet-50 text-violet-700" : "text-stone-700"}`}><item.icon className="size-4 shrink-0" aria-hidden="true" /><span>{label}</span>{moduleName && backgroundReady[moduleName] && <span className="ml-auto size-2 rounded-full bg-red-500" aria-hidden="true" />}</Link>; })}
+        {secondaryWorkspaces.map((item, index) => { const label = t(item.en, item.zh); const moduleName = moduleFor(item.href); return <Fragment key={item.id}>{(index === 0 || secondaryWorkspaces[index - 1].domain !== item.domain) && <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-widest text-stone-400">{groupLabel(item.domain, t)}</p>}<Link href={item.href} onClick={() => { acknowledgeBackground(moduleName); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50 ${destinationActive(item.id, pathname) ? "bg-violet-50 text-violet-700" : "text-stone-700"}`}><item.icon className="size-4 shrink-0" aria-hidden="true" /><span>{label}</span>{hasReady(item.href) && <span className="ml-auto size-2 rounded-full bg-red-500" aria-hidden="true" />}</Link></Fragment>; })}
         <button type="button" onClick={() => { if (pathname === "/app") window.dispatchEvent(new Event("ardor:open-memory")); else { window.sessionStorage.setItem("ardor:open-memory", "1"); router.push("/app"); } closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-stone-700 hover:bg-violet-50"><Brain className="size-4 shrink-0" aria-hidden="true" />{t("Memory", "总体记忆")}</button>
-        <button type="button" disabled={!account} onClick={() => { closeMore(); setCustomDraft(pinnedHrefs); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); }} className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-stone-100 px-3 py-2.5 text-left text-sm text-violet-700 hover:bg-violet-50"><Settings2 className="size-4" />{t("Customize sidebar", "自定义侧栏")}</button>
+        <button type="button" disabled={!account} onClick={() => { closeMore(); setCustomDraft(pinnedIds); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); }} className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-stone-100 px-3 py-2.5 text-left text-sm text-violet-700 hover:bg-violet-50"><Settings2 className="size-4" />{t("Customize sidebar", "自定义侧栏")}</button>
       </div>}
 
       {customizing && <AppDialog title={t("Customize sidebar", "自定义侧栏")} onClose={() => setCustomizing(false)}>
         <p className="mb-4 text-sm text-stone-500">{t("Selected modules stay in the sidebar. Others go in More. Synced to your account across browser and desktop.", "选中项显示在侧栏，其余收进更多。按账户在浏览器与桌面端同步。")}</p>
         {preference?.revision === undefined && <p role="status" className="mb-3 text-xs text-stone-500">{t("Waiting to read account settings. Your choices will not be overwritten.", "正在读取账户设置，不会覆盖你的选择。")} <button type="button" className="text-violet-700 underline" onClick={() => window.dispatchEvent(new Event("ardor:sidebar-refresh"))}>{t("Retry sync", "重试同步")}</button></p>}
-        <div className="space-y-1">{workspaces.map((item) => <label key={item.href} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 hover:bg-violet-50"><item.icon className="size-4 text-stone-500" /><span className="flex-1 text-sm">{t(item.en, item.zh)}</span><input type="checkbox" checked={customDraft.includes(item.href)} disabled={item.href === "/app" || customSaving} onChange={(event) => setCustomDraft((current) => event.target.checked ? [...current, item.href] : current.filter((href) => href !== item.href))} className="size-4 accent-violet-600" /></label>)}</div>
+        <div className="space-y-1">{workspaces.map((item, index) => <Fragment key={item.id}>{(index === 0 || workspaces[index - 1].domain !== item.domain) && <p className="px-3 pb-1 pt-3 text-xs font-semibold text-stone-500">{groupLabel(item.domain, t)}</p>}<label className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 hover:bg-violet-50"><item.icon className="size-4 text-stone-500" /><span className="flex-1 text-sm">{t(item.en, item.zh)}</span><input type="checkbox" checked={customDraft.includes(item.id)} disabled={item.href === "/app" || customSaving} onChange={(event) => setCustomDraft((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} className="size-4 accent-violet-600" /></label></Fragment>)}</div>
         {customError && <p role="alert" className="mt-3 text-sm text-red-600">{customError}</p>}
-        {account && legacyHrefs(account.id) && <button type="button" disabled={customSaving} onClick={() => setCustomDraft(legacyHrefs(account.id) ?? defaultHrefs)} className="mt-3 text-xs text-violet-700 underline">{t("Load this device's previous layout", "载入此设备的旧布局")}</button>}
-        <div className="mt-5 flex justify-between gap-2"><Button variant="outline" disabled={customSaving} onClick={() => setCustomDraft(defaultHrefs)}>{t("Reset defaults", "恢复默认")}</Button><Button disabled={customSaving || preference?.revision === undefined} onClick={() => void saveSidebar()}>{customSaving ? t("Syncing…", "正在同步…") : t("Save", "保存")}</Button></div>
+        {account && legacyHrefs(account.id) && <button type="button" disabled={customSaving} onClick={() => setCustomDraft(destinationsFromLegacy(legacyHrefs(account.id)))} className="mt-3 text-xs text-violet-700 underline">{t("Load this device's previous layout", "载入此设备的旧布局")}</button>}
+        <div className="mt-5 flex justify-between gap-2"><Button variant="outline" disabled={customSaving} onClick={() => setCustomDraft(defaultIds)}>{t("Reset defaults", "恢复默认")}</Button><Button disabled={customSaving || preference?.revision === undefined} onClick={() => void saveSidebar()}>{customSaving ? t("Syncing…", "正在同步…") : t("Save", "保存")}</Button></div>
       </AppDialog>}
       {accountOpen && (
         <>

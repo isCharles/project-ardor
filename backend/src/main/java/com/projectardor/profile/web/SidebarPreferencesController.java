@@ -26,7 +26,13 @@ public class SidebarPreferencesController {
     @PutMapping
     public SidebarPreferencesService.View save(@AuthenticationPrincipal ArdorPrincipal principal, @Valid @RequestBody Update request) {
         if (!principal.userId().equals(request.expectedUserId())) throw new IllegalArgumentException("账户已切换，请重新加载侧栏设置");
-        return preferences.save(principal.userId(), request.hrefs(), request.expectedRevision());
+        if ((request.hrefs() == null) == (request.destinationIds() == null)) {
+            throw new IllegalArgumentException("请指定一组侧栏入口");
+        }
+        return request.destinationIds() == null
+                ? preferences.save(principal.userId(), request.hrefs(), request.expectedRevision())
+                : preferences.saveDestinations(principal.userId(), request.destinationIds(), request.expectedRevision());
     }
-    public record Update(@NotNull @Size(max = 11) List<String> hrefs, @NotNull @Min(0) Long expectedRevision, @NotNull java.util.UUID expectedUserId) {}
+    public record Update(@Size(max = 32) List<String> hrefs, @NotNull @Min(0) Long expectedRevision,
+            @NotNull java.util.UUID expectedUserId, @Size(max = 32) List<String> destinationIds) {}
 }

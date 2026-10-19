@@ -165,6 +165,7 @@ async function main() {
   const initialSidebar = await sidebarOwner.request("/api/profile/sidebar");
   assert.equal(initialSidebar.configured, false);
   assert.equal(initialSidebar.revision, 0);
+  assert.deepEqual(initialSidebar.destinationIds, ["chat", "job-search", "learning", "calendar"]);
   const otherDevice = new Client();
   await otherDevice.request("/api/auth/login", { method: "POST", body: { email: `golden-sidebar-${suffix}@ardor.invalid`, password } });
   const sharedSidebar = await sidebarOwner.request("/api/profile/sidebar", { method: "PUT",
@@ -185,6 +186,19 @@ async function main() {
   assert.equal(savedSidebar.revision, 2);
   await sidebarOwner.request("/api/profile", { method: "PUT", body: { displayName: "Sidebar sync", headline: "Updated profile", targetRoles: [], timezone: "Asia/Shanghai" } });
   assert.deepEqual(await otherDevice.request("/api/profile/sidebar"), savedSidebar, "Profile edits preserve sidebar preferences");
+  const domainSidebar = await sidebarOwner.request("/api/profile/sidebar", { method: "PUT",
+    body: { destinationIds: ["job-search", "learning.practice"], expectedRevision: 2, expectedUserId: sidebarUser.id } });
+  assert.deepEqual(domainSidebar.destinationIds, ["chat", "job-search", "learning.practice"]);
+  assert.deepEqual(domainSidebar.hrefs, ["/app", "/app/opportunities", "/app/interviews"]);
+  assert.deepEqual(await otherDevice.request("/api/profile/sidebar"), domainSidebar, "Stable IDs must persist in the real database across login sessions");
+  const legacyRoundTrip = await otherDevice.request("/api/profile/sidebar", { method: "PUT",
+    body: { hrefs: domainSidebar.hrefs, expectedRevision: 3, expectedUserId: sidebarUser.id } });
+  assert.deepEqual(legacyRoundTrip.destinationIds, domainSidebar.destinationIds, "Legacy client save must not flatten domain roots sharing a compatibility URL");
+  await sidebarOwner.request("/api/profile/sidebar", { method: "PUT", expected: 400,
+    body: { destinationIds: ["admin"], expectedRevision: 4, expectedUserId: sidebarUser.id } });
+  await stranger.request("/api/profile/sidebar", { method: "PUT", expected: 400,
+    body: { destinationIds: ["learning.progress"], expectedRevision: 4, expectedUserId: sidebarUser.id } });
+  assert.deepEqual(await sidebarOwner.request("/api/profile/sidebar"), legacyRoundTrip, "Invalid IDs and stale-account requests must not mutate saved preferences");
   await owner.request("/api/settings/llm", {
     method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
       model: "golden-path-model", apiKey: "disposable-fake-model-key" },

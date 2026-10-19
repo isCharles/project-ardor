@@ -5,8 +5,10 @@
 ## 接手前先做
 
 1. 查看 `git status --short --branch`、当前分支和最近提交；同一工作树可能有其他 Agent 或用户的未提交改动。保留它们，不覆盖、不顺手提交，也不要用 reset/clean/强推清理现场。发现文件冲突先协调。
+   并行开发使用独立 Git worktree；分支本身不隔离文件夹，不在他人正在使用的目录切换分支。分支按 `feat/...`、`fix/...`、`chore/...` 命名，不加个人名称前缀。
 2. 只读了解相关模块，再读需要的文档：`README.md`（产品）、`docs/ARCHITECTURE.md`（边界）、`docs/AI_GUIDE.md`（工程约束）、`docs/SETUP.md`（运行）。不要把旧文档当成当前代码的替代品；发现不一致，核实实现并说明。
 3. 做 PR 审阅时先读 `docs/REVIEW_GUIDE.md`；做桌面发布时再读 `docs/DESKTOP.md` 和 `docs/VERSIONING.md`。不要为无关任务加载整个仓库或运行整套服务。
+4. 涉及模块归属、命名、导航、来源或跨域关系时，读 `docs/ARCHITECTURE_EVOLUTION.md`（目标）和 `docs/DOMAIN_CONTRACTS.md`（当前合同与迁移边界）。导航 ID、URL、Agent Feature 和 ToolModule 不是同一种身份，不能互换或据此扩大授权。
 
 ## 按任务角色行动
 

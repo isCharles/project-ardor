@@ -1,7 +1,11 @@
+import { destinationHref } from "./navigation";
+
 export type AgentFeature = { key: string; id: string; label: string; englishLabel: string; description: string; englishDescription?: string };
 
 export function featureHref(key?: string) {
-  return ({ LEARNING: "/app/learning", CARDS: "/app/cards", RESUMES: "/app/resumes", INTERVIEWS: "/app/interviews", RECAPS: "/app/recaps", KNOWLEDGE: "/app/knowledge", CALENDAR: "/app/calendar", APPLICATIONS: "/app/applications", MEMORY: "/app" } as Record<string, string>)[key ?? ""] ?? "/app";
+  // Feature keys are existing public intent IDs, NOT navigation or permission IDs.
+  const id = ({ LEARNING: "learning", CARDS: "learning.flashcards", RESUMES: "job-search.resumes", INTERVIEWS: "learning.mock-interviews", RECAPS: "job-search.notes", KNOWLEDGE: "learning.materials", CALENDAR: "calendar", APPLICATIONS: "job-search.applications", MEMORY: "chat" } as Record<string, string>)[key ?? ""];
+  return destinationHref(id);
 }
 
 const creationPrompts = {
