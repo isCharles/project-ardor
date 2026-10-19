@@ -18,14 +18,18 @@ import com.projectardor.usage.UsageFeature;
 public class InterviewMinutesController {
     private final InterviewMinutesService minutes;
     private final com.projectardor.recap.service.InterviewRecapQueueService queue;
-    public InterviewMinutesController(InterviewMinutesService minutes,com.projectardor.recap.service.InterviewRecapQueueService queue) {
-        this.minutes=minutes; this.queue=queue;
+    private final com.projectardor.usage.QuotaService quotas;
+    public InterviewMinutesController(InterviewMinutesService minutes,com.projectardor.recap.service.InterviewRecapQueueService queue,
+            com.projectardor.usage.QuotaService quotas) {
+        this.minutes=minutes; this.queue=queue; this.quotas=quotas;
     }
     @PostMapping("/from-report/{recapId}")
-    @QuotaProtected(UsageFeature.INTERVIEW_RECAP)
     public java.util.Map<String,UUID> fromReport(@AuthenticationPrincipal ArdorPrincipal p,@PathVariable UUID recapId) {
         UUID source=minutes.sourceDraft(p.userId(),recapId);
-        if (source == null) source=queue.fromReport(p.userId(),recapId).jobId();
+        if (source == null) {
+            quotas.consume(p.userId(),UsageFeature.INTERVIEW_RECAP,null);
+            source=queue.fromReport(p.userId(),recapId).jobId();
+        }
         return java.util.Map.of("draftId",source);
     }
     @GetMapping public List<InterviewMinutesService.DraftSummary> list(@AuthenticationPrincipal ArdorPrincipal p) { return minutes.list(p.userId()); }

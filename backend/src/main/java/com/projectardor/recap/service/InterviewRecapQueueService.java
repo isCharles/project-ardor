@@ -118,7 +118,7 @@ public class InterviewRecapQueueService {
 
     @Transactional
     public int recoverStaleJobs() {
-        Instant staleBefore = Instant.now().minus(Duration.ofMinutes(10));
+        Instant staleBefore = Instant.now().minus(Duration.ofMinutes(30));
         int failed = jobRepository.failExhaustedStale(staleBefore, MAX_ATTEMPTS);
         return failed + jobRepository.recoverStale(staleBefore, MAX_ATTEMPTS);
     }
