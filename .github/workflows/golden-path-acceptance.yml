@@ -126,6 +126,9 @@ jobs:
           echo "Backend did not become healthy"
           exit 1
 
+      - name: Verify populated V49 interview record upgrade
+        run: bash backend/src/test/resources/interview-round-upgrade.sh
+
       - name: Restart backend to verify persisted task and read state
         shell: bash
         run: |

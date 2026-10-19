@@ -46,7 +46,8 @@ public class InterviewRecapWorker {
         var work = minutes.claim();
         if (work == null) return;
         try {
-            var recap = recapService.organizeConfirmed(work.userId(), work.minutes(), minutes.opportunity(work), work.id());
+            var context = minutes.context(work);
+            var recap = recapService.organizeConfirmed(work.userId(), work.minutes(), context.processId(), context.roundId(), work.id());
             minutes.finish(work, recap.id(), false);
         } catch (RuntimeException failure) {
             LOGGER.warn("Confirmed interview review {} failed: {}", work.id(),failure.getClass().getSimpleName());

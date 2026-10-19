@@ -10,12 +10,13 @@ import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale, type Locale } from "@/lib/locale";
 import styles from "./recaps.module.css";
 import { MinutesWorkspace } from "./minutes-workspace";
+import { InterviewContextFields, InterviewRecordContext, type InterviewReference } from "./interview-context-fields";
 
 type Performance = "STRONG" | "MIXED" | "WEAK" | "UNKNOWN";
 type Question = { id: string; sequenceNumber: number; questionText: string; candidateAnswer: string | null; followUps: string[]; assessment: string; performance: Performance; weaknessReason: string | null; betterAnswer: string | null; tags: string[] };
-type Recap = { id: string; title: string; overview: string; strengths: string[]; weaknesses: string[]; createdAt: string; jobOpportunityId: string | null; questions: Question[] };
+type Recap = { id: string; title: string; overview: string; strengths: string[]; weaknesses: string[]; createdAt: string; jobOpportunityId: string | null; interviewRoundId?: string | null; questions: Question[] };
 type RecapTask = { jobId: string | null; recapId: string | null; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"; attempts?: number; errorCode?: string | null; errorMessage?: string | null; createdAt?: string | null; finishedAt?: string | null };
-type OpportunityRef = { id: string; company: string; targetRole: string | null };
+type OpportunityRef = InterviewReference;
 const performanceStyle: Record<Performance, string> = { STRONG: "bg-emerald-100 text-emerald-700", MIXED: "bg-amber-100 text-amber-700", WEAK: "bg-rose-100 text-rose-700", UNKNOWN: "bg-stone-100 text-stone-500" };
 
 function localizedError(reason: unknown, locale: Locale, english: string, chinese: string) {
@@ -87,7 +88,7 @@ function RecapsContent() {
   async function organize(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError("");
     try {
-      const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content"), jobOpportunityId: data.get("jobOpportunityId") }) });
+      const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content"), jobOpportunityId: data.get("jobOpportunityId"), interviewRoundId: data.get("interviewRoundId") || null }) });
       setShowForm(false);
       if (task.jobId) router.push(`/app/recaps?draft=${task.jobId}`);
       else if (task.recapId) router.push(`/app/recaps?selected=${task.recapId}`);
@@ -143,6 +144,7 @@ function RecapsContent() {
         activeJobs.length === 0 && <Link href={agentCreationHref("RECAPS", locale)} className={`${styles.panel} mx-auto block w-full max-w-md border-dashed px-5 py-16 text-center text-sm text-slate-400 transition hover:text-slate-600`}>{t("Organize your first interview with Ardor", "让 Ardor 整理第一次面试")}</Link>
       ) : selected ? (
         <section className={`${styles.panel} mt-8 p-6 md:p-9`}>
+          <InterviewRecordContext processId={selected.jobOpportunityId} roundId={selected.interviewRoundId} opportunities={opportunities} />
           <Report recap={selected} opportunities={opportunities} onDelete={() => remove(selected)} />
         </section>
       ) : (
@@ -160,7 +162,7 @@ function RecapsContent() {
           </ul>
         </div>
       )}
-  </div>{showForm && <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 backdrop-blur-sm"><section className="ardor-panel max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] p-6 md:p-8"><div className="mb-6 flex items-center justify-between"><h2 className="text-2xl font-semibold">{t("Organize an interview", "整理一场面试")}</h2><button aria-label={t("Close", "关闭")} onClick={() => setShowForm(false)} className="rounded-full p-2 text-stone-400 hover:bg-white"><X className="size-5" /></button></div><form onSubmit={organize} className="space-y-4">{opportunities.length === 0 ? <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Create an interview in the pipeline first — notes belong to an interview.", "请先在面试流程里创建一场面试：面经必须属于某场面试。")}</p> : <label className="block text-sm font-medium">{t("Interview", "所属面试")}<select name="jobOpportunityId" required defaultValue={opportunities[0]?.id} className="field mt-2">{opportunities.map((item) => <option key={item.id} value={item.id}>{`${item.company}${item.targetRole ? ` · ${item.targetRole}` : ""}`}</option>)}</select></label>}<textarea name="content" required minLength={30} maxLength={50000} rows={16} className="field resize-y" placeholder={t("Paste a transcript, your recollection, or polished notes…", "粘贴转录、回忆或整理过的内容…")} /><button disabled={busy || opportunities.length === 0} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-50">{busy ? t("Organizing questions…", "正在逐题整理…") : t("Create interview notes", "生成面经")}</button></form></section></div>}</main>;
+  </div>{showForm && <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 backdrop-blur-sm"><section className="ardor-panel max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] p-6 md:p-8"><div className="mb-6 flex items-center justify-between"><h2 className="text-2xl font-semibold">{t("Organize an interview", "整理一场面试")}</h2><button aria-label={t("Close", "关闭")} onClick={() => setShowForm(false)} className="rounded-full p-2 text-stone-400 hover:bg-white"><X className="size-5" /></button></div><form onSubmit={organize} className="space-y-4">{opportunities.length === 0 ? <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Create an interview in the pipeline first — notes belong to an interview.", "请先在面试流程里创建一场面试：面经必须属于某场面试。")}</p> : <InterviewContextFields opportunities={opportunities} />}<textarea name="content" required minLength={30} maxLength={50000} rows={16} className="field resize-y" placeholder={t("Paste a transcript, your recollection, or polished notes…", "粘贴转录、回忆或整理过的内容…")} /><button disabled={busy || opportunities.length === 0} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-50">{busy ? t("Organizing questions…", "正在逐题整理…") : t("Create interview notes", "生成面经")}</button></form></section></div>}</main>;
 }
 
 function Report({ recap, onDelete, opportunities }: { recap: Recap; onDelete: () => void; opportunities: OpportunityRef[] }) {

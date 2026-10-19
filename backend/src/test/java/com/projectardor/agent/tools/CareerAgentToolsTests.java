@@ -318,10 +318,10 @@ class CareerAgentToolsTests {
         var queue=mock(InterviewRecapQueueService.class);
         UUID user=UUID.randomUUID(),opportunity=UUID.randomUUID();
         String raw="  请整理这份原始转录：[00:01] 设备测试；[09:41] 面试官介绍三种方案，候选人只选择了第二种。  ";
-        when(queue.request(user,raw,opportunity)).thenReturn(new InterviewRecapQueueService.TaskResult(UUID.randomUUID(),null,
+        when(queue.request(user,raw,opportunity,null)).thenReturn(new InterviewRecapQueueService.TaskResult(UUID.randomUUID(),null,
                 com.projectardor.recap.domain.InterviewRecapJobStatus.QUEUED,0,null,null,Instant.now(),null));
-        toolsFor(mock(OpportunityService.class),queue).bind(user,raw).organizeInterviewRecap("模型错误改写成候选人提出三种方案",opportunity.toString());
-        verify(queue).request(user,raw,opportunity);
+        toolsFor(mock(OpportunityService.class),queue).bind(user,raw).organizeInterviewRecap("模型错误改写成候选人提出三种方案",opportunity.toString(),null);
+        verify(queue).request(user,raw,opportunity,null);
     }
 
     private static CareerAgentTools toolsFor(OpportunityService opportunities,InterviewRecapQueueService queue) {

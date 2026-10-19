@@ -12,6 +12,7 @@ try {
   const raw="RAW ORIGINAL: interviewer explains three options, candidate picks one. ".repeat(30);
   let draft={id:"draft-fixture",rawContent:raw,minutes:"## Interview\nInterviewer explains three options. Candidate answer is uncertain; please correct the attribution.",revision:1,status:"COMPLETED",reviews:[]};
   let writes=0,confirmations=0,offline=false,conflict=false,saveDelay=0;
+  const submissions=[];
   await context.route("**/api/**",async route=>{
     const request=route.request(),path=new URL(request.url()).pathname;
     let json=[];
@@ -20,7 +21,11 @@ try {
     else if(path==="/api/profile/sidebar")json={userId:"minutes-fixture",hrefs:["/app"],revision:0,configured:true};
     else if(path==="/api/background-tasks/summary")json={activeCount:0,unreadByModule:{}};
     else if(path==="/api/agent/permissions")json={globalLevel:0,modules:[]};
-    else if(path==="/api/interview-recaps")json=confirmations ? [{id:"report-fixture",title:"Confirmed fixture report",overview:"Confirmed source review",strengths:[],weaknesses:[],questions:[],createdAt:"2026-10-19T01:00:00Z",jobOpportunityId:"process-fixture"}] : [];
+    else if(path==="/api/opportunities")json=[{id:"process-fixture",company:"Synthetic first interview",targetRole:null,rounds:[{id:"round-fixture",roundNumber:2,stage:"TECHNICAL"}]},{id:"other-process",company:"Synthetic other interview",targetRole:null,rounds:[]}];
+    else if(path==="/api/interview-recaps" && request.method()==="POST"){
+      submissions.push(request.postDataJSON()); return route.fulfill({status:202,json:{jobId:draft.id,status:"COMPLETED"}});
+    }
+    else if(path==="/api/interview-recaps")json=confirmations ? [{id:"report-fixture",title:"Confirmed fixture report",overview:"Confirmed source review",strengths:[],weaknesses:[],questions:[],createdAt:"2026-10-19T01:00:00Z",jobOpportunityId:"process-fixture",interviewRoundId:"round-fixture"}] : [];
     else if(path==="/api/interview-recaps/drafts")json=[{id:draft.id,company:"Synthetic interview",status:"COMPLETED",revision:draft.revision}];
     else if(path==="/api/interview-recaps/drafts/draft-fixture"){
       if(request.method()==="PUT"){
@@ -39,6 +44,20 @@ try {
     await route.fulfill({json});
   });
   const page=await context.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
+  await page.goto(`${origin}/app/recaps`);
+  await page.getByRole("button",{name:"Paste directly",exact:true}).click();
+  const interviewSelect=page.getByRole("combobox",{name:"Interview",exact:true});
+  const round=page.getByRole("combobox",{name:"Interview round",exact:true});
+  await round.selectOption("round-fixture");
+  await interviewSelect.selectOption("other-process");
+  assert.equal(await round.inputValue(),"","Changing the parent must clear a previously selected child round");
+  assert.equal(await round.locator('option[value="round-fixture"]').count(),0);
+  await interviewSelect.selectOption("process-fixture");
+  await round.selectOption("round-fixture");
+  await page.locator('textarea[name="content"]').fill(raw);
+  await page.getByRole("button",{name:"Create interview notes",exact:true}).click();
+  await page.waitForURL("**/app/recaps?draft=draft-fixture");
+  assert.deepEqual(submissions,[{content:raw,jobOpportunityId:"process-fixture",interviewRoundId:"round-fixture"}]);
   await page.goto(`${origin}/app/recaps?draft=draft-fixture`);
   const editor=page.getByLabel("Editable minutes · auto-saved");
   await editor.waitFor();assert.equal(confirmations,0);
@@ -79,6 +98,7 @@ try {
   await page.screenshot({path:".next/interview-minutes-mobile.png"});
   await page.getByRole("link",{name:"Open detailed review",exact:true}).click();
   await page.getByRole("heading",{name:"Confirmed fixture report",exact:true}).waitFor();
+  assert.match(await page.locator("[data-interview-record-context]").innerText(),/Round 2/);
   assert.deepEqual(errors,[]);assert.ok(writes>=4);
   console.log("PASS: editable minutes, auto-save, explicit confirmation, immutable snapshot, refresh/offline recovery, conflict preservation, narrow layout");
 } catch(error){console.error(logs.slice(-1500));throw error;}

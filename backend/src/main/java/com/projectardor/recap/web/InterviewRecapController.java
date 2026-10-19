@@ -18,7 +18,7 @@ public class InterviewRecapController {
     @QuotaProtected(UsageFeature.INTERVIEW_RECAP)
     public InterviewRecapTaskResponse create(@AuthenticationPrincipal ArdorPrincipal principal, @Valid @RequestBody InterviewRecapCreateRequest request) {
         return InterviewRecapTaskResponse.from(queueService.request(
-                principal.userId(), request.content(), request.jobOpportunityId()));
+                principal.userId(), request.content(), request.jobOpportunityId(), request.interviewRoundId()));
     }
     @GetMapping("/jobs") public List<InterviewRecapTaskResponse> jobs(@AuthenticationPrincipal ArdorPrincipal principal) { return queueService.list(principal.userId()).stream().map(InterviewRecapTaskResponse::from).toList(); }
 
