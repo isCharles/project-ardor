@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.llm.service.LlmCallException;
-import com.projectardor.opportunity.repository.JobOpportunityRepository;
+import com.projectardor.opportunity.service.InterviewContextAccess;
 import com.projectardor.recap.domain.InterviewRecapJob;
 import com.projectardor.recap.domain.InterviewRecapJobStatus;
 import com.projectardor.recap.repository.InterviewRecapJobRepository;
@@ -29,31 +29,34 @@ public class InterviewRecapQueueService {
     private static final int MAX_ATTEMPTS = 5;
     private final InterviewRecapRepository recapRepository;
     private final InterviewRecapJobRepository jobRepository;
-    private final JobOpportunityRepository opportunityRepository;
+    private final InterviewContextAccess interviewContexts;
 
     public InterviewRecapQueueService(InterviewRecapRepository recapRepository,
-            InterviewRecapJobRepository jobRepository, JobOpportunityRepository opportunityRepository) {
+            InterviewRecapJobRepository jobRepository, InterviewContextAccess interviewContexts) {
         this.recapRepository = recapRepository; this.jobRepository = jobRepository;
-        this.opportunityRepository = opportunityRepository;
+        this.interviewContexts = interviewContexts;
     }
 
     @Transactional
     public TaskResult request(UUID userId, String rawContent, UUID jobOpportunityId) {
-        if (jobOpportunityId == null) throw new IllegalArgumentException("请选择所属面试");
-        if (opportunityRepository.findByIdAndUserId(jobOpportunityId, userId).isEmpty()) {
-            throw new ResourceNotFoundException("面试流程不存在");
-        }
+        return request(userId, rawContent, jobOpportunityId, null);
+    }
+
+    @Transactional
+    public TaskResult request(UUID userId, String rawContent, UUID jobOpportunityId, UUID roundId) {
+        interviewContexts.require(userId, jobOpportunityId, roundId);
         String content = requiredContent(rawContent);
         String inputHash = inputHash(content);
         jobRepository.lockRequestSlot(userId, inputHash);
         Optional<InterviewRecapJob> active = jobRepository
                 .findFirstByUserIdAndInputHashAndStatusInOrderByCreatedAtDesc(userId, inputHash, REUSABLE);
-        if (active.isPresent() && !jobOpportunityId.equals(active.get().getJobOpportunityId())) {
-            throw new IllegalArgumentException("相同面经内容正在另一场面试下整理，请等待原任务完成");
+        if (active.isPresent() && (!jobOpportunityId.equals(active.get().getJobOpportunityId())
+                || !java.util.Objects.equals(roundId, active.get().getInterviewRoundId()))) {
+            throw new IllegalArgumentException("相同转录已关联其他面试或轮次，不会静默改挂");
         }
         return active.map(TaskResult::from)
                 .orElseGet(() -> TaskResult.from(jobRepository.saveAndFlush(
-                        InterviewRecapJob.create(userId, inputHash, content, jobOpportunityId))));
+                        InterviewRecapJob.create(userId, inputHash, content, jobOpportunityId, roundId))));
     }
 
     @Transactional
@@ -67,7 +70,7 @@ public class InterviewRecapQueueService {
                 .orElseThrow(() -> new ResourceNotFoundException("面经不存在"));
         if (recap.getJobOpportunityId()!=null && selectedOpportunity!=null && !recap.getJobOpportunityId().equals(selectedOpportunity))
             throw new IllegalArgumentException("不能将已有面经改挂到另一场面试");
-        return request(userId,recap.getRawContent(),recap.getJobOpportunityId()==null ? selectedOpportunity : recap.getJobOpportunityId());
+        return request(userId,recap.getRawContent(),recap.getJobOpportunityId()==null ? selectedOpportunity : recap.getJobOpportunityId(),recap.getInterviewRoundId());
     }
 
     @Transactional(readOnly = true)

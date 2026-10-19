@@ -29,6 +29,7 @@ public class InterviewRecap {
     @Column(name = "model_name", length = 120) private String modelName;
     @Column(name = "prompt_version", nullable = false, length = 64) private String promptVersion;
     @Column(name = "job_opportunity_id") private UUID jobOpportunityId;
+    @Column(name = "interview_round_id") private UUID interviewRoundId;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
@@ -72,5 +73,11 @@ public class InterviewRecap {
     public String getModelName() { return modelName; }
     public String getPromptVersion() { return promptVersion; }
     public UUID getJobOpportunityId() { return jobOpportunityId; }
+    public UUID getInterviewRoundId() { return interviewRoundId; }
+    public void linkRound(UUID roundId) {
+        if (roundId != null && jobOpportunityId == null) throw new IllegalStateException("轮次须属于面试流程");
+        if (interviewRoundId != null && !interviewRoundId.equals(roundId)) throw new IllegalStateException("不能改挂面试轮次");
+        interviewRoundId = roundId;
+    }
     public Instant getCreatedAt() { return createdAt; }
 }

@@ -20,6 +20,7 @@ public class InterviewRecapJob {
     @Column(name = "user_id", nullable = false) private UUID userId;
     @Column(name = "recap_id") private UUID recapId;
     @Column(name = "job_opportunity_id") private UUID jobOpportunityId;
+    @Column(name = "interview_round_id") private UUID interviewRoundId;
     @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "input_hash", nullable = false, length = 64) private String inputHash;
     @Column(name = "raw_content", nullable = false, columnDefinition = "text") private String rawContent;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private InterviewRecapJobStatus status;
@@ -47,6 +48,12 @@ public class InterviewRecapJob {
 
     public static InterviewRecapJob create(UUID userId, String inputHash, String rawContent, UUID jobOpportunityId) {
         return new InterviewRecapJob(userId, inputHash, rawContent, jobOpportunityId);
+    }
+
+    public static InterviewRecapJob create(UUID userId, String inputHash, String rawContent, UUID jobOpportunityId, UUID roundId) {
+        var job = create(userId, inputHash, rawContent, jobOpportunityId);
+        job.interviewRoundId = roundId;
+        return job;
     }
 
     public void complete(UUID recapId) {
@@ -91,6 +98,7 @@ public class InterviewRecapJob {
     public UUID getUserId() { return userId; }
     public UUID getRecapId() { return recapId; }
     public UUID getJobOpportunityId() { return jobOpportunityId; }
+    public UUID getInterviewRoundId() { return interviewRoundId; }
     public String getInputHash() { return inputHash; }
     public String getRawContent() { return rawContent; }
     public InterviewRecapJobStatus getStatus() { return status; }

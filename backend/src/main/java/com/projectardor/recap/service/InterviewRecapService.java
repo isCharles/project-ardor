@@ -63,16 +63,20 @@ public class InterviewRecapService {
 
     public InterviewRecapResponse organize(UUID userId, String rawContent, InterviewRecapSource sourceType,
             UUID jobOpportunityId) {
-        return organizeInternal(userId,rawContent,sourceType,jobOpportunityId,null);
+        return organizeInternal(userId,rawContent,sourceType,jobOpportunityId,null,null);
     }
 
     public InterviewRecapResponse organizeConfirmed(UUID userId, String minutes, UUID opportunityId, UUID reviewId) {
+        return organizeConfirmed(userId, minutes, opportunityId, null, reviewId);
+    }
+
+    public InterviewRecapResponse organizeConfirmed(UUID userId, String minutes, UUID opportunityId, UUID roundId, UUID reviewId) {
         InterviewMinutesService.validate(minutes);
-        return organizeInternal(userId,minutes,InterviewRecapSource.NOTES,opportunityId,Objects.requireNonNull(reviewId));
+        return organizeInternal(userId,minutes,InterviewRecapSource.NOTES,opportunityId,roundId,Objects.requireNonNull(reviewId));
     }
 
     private InterviewRecapResponse organizeInternal(UUID userId, String rawContent, InterviewRecapSource sourceType,
-            UUID jobOpportunityId, UUID reviewId) {
+            UUID jobOpportunityId, UUID roundId, UUID reviewId) {
         String content = required(rawContent, "面试内容不能为空", 50000);
         if (content.length() < 30) throw new IllegalArgumentException("面试内容太短，请至少提供一段问题或回忆");
         String inputHash = sha256((reviewId == null ? (sourceType == null ? InterviewRecapSource.NOTES : sourceType).name()
@@ -118,6 +122,7 @@ public class InterviewRecapService {
                     strengths.stream().distinct().limit(20).toList(), weaknesses.stream().distinct().limit(20).toList(), reportModel,
                     jobOpportunityId));
             if (reviewId != null) recap.markConfirmedMinutes();
+            recap.linkRound(roundId);
             List<InterviewRecapQuestion> questions = new ArrayList<>();
             for (int i = 0; i < reportDrafts.size(); i++) {
                 QuestionDraft draft = reportDrafts.get(i);

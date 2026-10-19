@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.opportunity.domain.JobOpportunity;
 import com.projectardor.opportunity.repository.JobOpportunityRepository;
+import com.projectardor.opportunity.repository.OpportunityRoundRepository;
+import com.projectardor.opportunity.service.InterviewContextAccess;
 import com.projectardor.recap.repository.InterviewRecapJobRepository;
 import com.projectardor.recap.repository.InterviewRecapRepository;
 
@@ -27,7 +29,7 @@ class InterviewRecapQueueServiceTests {
         var recaps = mock(InterviewRecapRepository.class);
         var jobs = mock(InterviewRecapJobRepository.class);
         var opportunities = mock(JobOpportunityRepository.class);
-        var service = new InterviewRecapQueueService(recaps, jobs, opportunities);
+        var service = new InterviewRecapQueueService(recaps, jobs, contexts(opportunities));
         UUID owner = UUID.randomUUID(), process = UUID.randomUUID(), another = UUID.randomUUID();
         var recap = com.projectardor.recap.domain.InterviewRecap.create(owner, "Fixture",
                 com.projectardor.recap.domain.InterviewRecapSource.NOTES, CONTENT, "hash", "Overview",
@@ -52,7 +54,7 @@ class InterviewRecapQueueServiceTests {
         InterviewRecapRepository recaps = mock(InterviewRecapRepository.class);
         InterviewRecapJobRepository jobs = mock(InterviewRecapJobRepository.class);
         JobOpportunityRepository opportunities = mock(JobOpportunityRepository.class);
-        InterviewRecapQueueService service = new InterviewRecapQueueService(recaps, jobs, opportunities);
+        InterviewRecapQueueService service = new InterviewRecapQueueService(recaps, jobs, contexts(opportunities));
         UUID userId = UUID.randomUUID();
         UUID opportunityId = UUID.randomUUID();
         when(opportunities.findByIdAndUserId(opportunityId, userId))
@@ -69,7 +71,7 @@ class InterviewRecapQueueServiceTests {
 
     @Test void unlinkedLegacyReportRequiresAnOwnedSelectionWithoutChangingItsOriginalLink() {
         var recaps=mock(InterviewRecapRepository.class);var jobs=mock(InterviewRecapJobRepository.class);
-        var opportunities=mock(JobOpportunityRepository.class);var service=new InterviewRecapQueueService(recaps,jobs,opportunities);
+        var opportunities=mock(JobOpportunityRepository.class);var service=new InterviewRecapQueueService(recaps,jobs,contexts(opportunities));
         UUID user=UUID.randomUUID(),selected=UUID.randomUUID();
         var recap=com.projectardor.recap.domain.InterviewRecap.create(user,"Legacy",com.projectardor.recap.domain.InterviewRecapSource.NOTES,
                 CONTENT,"hash","Overview",java.util.List.of(),java.util.List.of(),"fixture",null);
@@ -86,7 +88,7 @@ class InterviewRecapQueueServiceTests {
     void requestRequiresAnInterviewTheUserOwns() {
         InterviewRecapQueueService service = new InterviewRecapQueueService(
                 mock(InterviewRecapRepository.class), mock(InterviewRecapJobRepository.class),
-                mock(JobOpportunityRepository.class));
+                contexts(mock(JobOpportunityRepository.class)));
         UUID userId = UUID.randomUUID();
 
         assertThatThrownBy(() -> service.request(userId, CONTENT, null))
@@ -103,8 +105,12 @@ class InterviewRecapQueueServiceTests {
         when(jobs.failExhaustedStale(any(), eq(5))).thenReturn(1);
         when(jobs.recoverStale(any(), eq(5))).thenReturn(3);
         InterviewRecapQueueService service = new InterviewRecapQueueService(
-                mock(InterviewRecapRepository.class), jobs, mock(JobOpportunityRepository.class));
+                mock(InterviewRecapRepository.class), jobs, contexts(mock(JobOpportunityRepository.class)));
 
         assertThat(service.recoverStaleJobs()).isEqualTo(4);
+    }
+
+    private static InterviewContextAccess contexts(JobOpportunityRepository opportunities) {
+        return new InterviewContextAccess(opportunities, mock(OpportunityRoundRepository.class));
     }
 }
