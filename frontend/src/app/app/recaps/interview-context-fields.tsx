@@ -13,6 +13,10 @@ export function InterviewContextFields({ opportunities }: { opportunities: Inter
   const { t } = useLocale();
   const [processId, setProcessId] = useState(opportunities[0]?.id ?? "");
   const selected = opportunities.find(item => item.id === processId);
+  const stageLabels: Record<string, string> = {
+    HR: t("HR", "HR 面试"), TECHNICAL: t("Technical", "技术面试"), MANAGER: t("Manager", "主管面试"),
+    CROSS: t("Cross-functional", "交叉面试"), FINAL: t("Final", "终面"), OTHER: t("Other", "其他环节"),
+  };
   return <>
     <label className="block text-sm font-medium">{t("Interview", "所属面试")}
       <select name="jobOpportunityId" required value={processId} onChange={event => setProcessId(event.target.value)} className="field mt-2">
@@ -22,7 +26,7 @@ export function InterviewContextFields({ opportunities }: { opportunities: Inter
     <label className="block text-sm font-medium">{t("Interview round", "所属轮次")}
       <select key={processId} name="interviewRoundId" defaultValue="" className="field mt-2">
         <option value="">{t("Not specified · keep at interview level", "暂不指定 · 保留在面试层级")}</option>
-        {(selected?.rounds ?? []).map(round => <option key={round.id} value={round.id}>{t(`Round ${round.roundNumber}`, `第 ${round.roundNumber} 轮`)} · {round.stage}</option>)}
+        {(selected?.rounds ?? []).map(round => <option key={round.id} value={round.id}>{t(`Round ${round.roundNumber}`, `第 ${round.roundNumber} 轮`)} · {stageLabels[round.stage] ?? round.stage}</option>)}
       </select>
     </label>
   </>;
