@@ -304,7 +304,7 @@ try {
     "我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。",
     "The unsent answer must survive navigation after a provider error");
   await replayPage.getByRole("button", { name: /Retry assessment|重试评估/ }).click();
-  await replayPage.getByRole("region", { name: /Latest replay result|最新回放结果/ }).waitFor();
+  await replayPage.getByRole("region", { name: /Latest practice result|最新训练结果/ }).waitFor();
   await replayPage.getByText("我会比较 RDB 快照和 AOF 日志的恢复窗口与成本。").first().waitFor();
   const recoveredReplay = await replayPage.evaluate(async (questionId) => {
     const response = await fetch(`/api/interview-replays/questions/${questionId}`);
