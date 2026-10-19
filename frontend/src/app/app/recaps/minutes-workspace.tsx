@@ -49,6 +49,7 @@ function MinutesEditor({ id }: { id: string }) {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [hasConflict, setHasConflict] = useState(false);
+  const [saveTick, setSaveTick] = useState(0);
   const initialized = useRef(false), stopped = useRef(false), conflicted = useRef(false);
   const current = useRef(""), saved = useRef(""), revision = useRef(0);
   const saving = useRef<Promise<boolean> | null>(null);
@@ -92,7 +93,8 @@ function MinutesEditor({ id }: { id: string }) {
         if (stopped.current) return false;
         revision.current=result.revision; saved.current=sent; setDraft(result); setError("");
         try { if (cacheKey) sessionStorage.setItem(cacheKey,JSON.stringify({text:current.current,revision:result.revision})); } catch { /* Server save remains authoritative. */ }
-        setStatus(t("Saved", "已保存")); return true;
+        setStatus(current.current===sent ? t("Saved", "已保存") : t("More changes pending…", "后续修改待保存…"));
+        setSaveTick(tick=>tick+1); return true;
       } catch(e) {
         if (e instanceof ApiError && e.status === 409) { conflicted.current=true; setHasConflict(true); }
         setError(e instanceof ApiError && e.status === 409 ? t("Another edit changed this version. Your text is kept; copy it before reloading.", "另一处编辑更新了纪要。你的输入已保留，请先复制再刷新对照。") : t("Save failed. Your text is kept here; retry before leaving.", "保存失败，输入已保留在此页面，请重试后再离开。"));
@@ -107,7 +109,7 @@ function MinutesEditor({ id }: { id: string }) {
     try { sessionStorage.setItem(cacheKey,JSON.stringify({text,revision:revision.current})); } catch { /* Do not block edits. */ }
     const timer=window.setTimeout(() => void persist(),900);
     return () => window.clearTimeout(timer);
-  },[text,cacheKey,persist]);
+  },[text,cacheKey,persist,saveTick]);
   useEffect(() => {
     const warn=(event: BeforeUnloadEvent) => { if (current.current!==saved.current) event.preventDefault(); };
     window.addEventListener("beforeunload",warn); return () => window.removeEventListener("beforeunload",warn);
@@ -116,7 +118,11 @@ function MinutesEditor({ id }: { id: string }) {
   async function confirm() {
     setBusy(true);
     try {
-      if (!await persist() || current.current!==saved.current) return;
+      for(let attempt=0;attempt<3;attempt++) {
+        if (!await persist()) return;
+        if(current.current===saved.current) break;
+      }
+      if(current.current!==saved.current) return;
       const key=`${cacheKey}:confirm:${revision.current}`;
       let requestId=crypto.randomUUID();
       try { requestId=sessionStorage.getItem(key) ?? requestId; sessionStorage.setItem(key,requestId); } catch { /* Server also deduplicates the confirmed version. */ }

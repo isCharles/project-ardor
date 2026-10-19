@@ -8,8 +8,6 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import com.projectardor.auth.security.ArdorPrincipal;
 import com.projectardor.recap.service.InterviewMinutesService;
-import com.projectardor.usage.QuotaProtected;
-import com.projectardor.usage.QuotaRequestId;
 import com.projectardor.usage.UsageFeature;
 
 /** Confirmation is intentionally not exposed as an Agent tool. */
@@ -38,8 +36,11 @@ public class InterviewMinutesController {
         return minutes.save(p.userId(),id,r.revision(),r.minutes());
     }
     @PostMapping("/{id}/confirm")
-    @QuotaProtected(value=UsageFeature.INTERVIEW_RECAP,idempotentRequest=true)
     public InterviewMinutesService.Draft confirm(@AuthenticationPrincipal ArdorPrincipal p,@PathVariable UUID id,@Valid @RequestBody Confirm r) {
+        // A client cannot reuse one request UUID to obtain free reviews of unrelated revisions.
+        UUID chargeId=UUID.nameUUIDFromBytes(("interview-minutes-review:"+id+":"+r.revision())
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        quotas.consume(p.userId(),UsageFeature.INTERVIEW_RECAP,chargeId);
         return minutes.confirm(p.userId(),id,r.revision());
     }
     @PostMapping("/{id}/reviews/{reviewId}/retry")
@@ -47,5 +48,5 @@ public class InterviewMinutesController {
         return minutes.retryReview(p.userId(),id,reviewId);
     }
     public record Edit(@Min(1) long revision,@NotBlank @Size(min=30,max=50000) String minutes) {}
-    public record Confirm(@Min(1) long revision,@NotNull UUID requestId) implements QuotaRequestId {}
+    public record Confirm(@Min(1) long revision,@NotNull UUID requestId) {}
 }

@@ -11,7 +11,7 @@ try {
   const context=await browser.newContext({viewport:{width:1400,height:950}});
   const raw="RAW ORIGINAL: interviewer explains three options, candidate picks one. ".repeat(30);
   let draft={id:"draft-fixture",rawContent:raw,minutes:"## Interview\nInterviewer explains three options. Candidate answer is uncertain; please correct the attribution.",revision:1,status:"COMPLETED",reviews:[]};
-  let writes=0,confirmations=0,offline=false,conflict=false;
+  let writes=0,confirmations=0,offline=false,conflict=false,saveDelay=0;
   await context.route("**/api/**",async route=>{
     const request=route.request(),path=new URL(request.url()).pathname;
     let json=[];
@@ -27,6 +27,7 @@ try {
         if(offline)return route.abort("failed");
         if(conflict)return route.fulfill({status:409,json:{message:"Version conflict"}});
         const body=request.postDataJSON();assert.equal(body.revision,draft.revision);
+        if(saveDelay) await new Promise(resolve=>setTimeout(resolve,saveDelay));
         draft={...draft,minutes:body.minutes,revision:draft.revision+1};
       }
       json=draft;
@@ -40,10 +41,20 @@ try {
   await page.goto(`${origin}/app/recaps?draft=draft-fixture`);
   const editor=page.getByLabel("Editable minutes · auto-saved");
   await editor.waitFor();assert.equal(confirmations,0);
-  const corrected="## Corrected interview\nThe interviewer described workflow, plan-executor and coding agents. I selected plan-executor; I did not propose all three.";
+  let corrected="## Corrected interview\nThe interviewer described workflow, plan-executor and coding agents. I selected plan-executor; I did not propose all three.";
   await editor.fill(corrected);
   await page.waitForFunction(()=>document.body.textContent.includes("Saved"));
   assert.equal(draft.minutes,corrected);assert.equal(confirmations,0,"Auto-save must never confirm");
+  const beforeSlowSave=writes;
+  saveDelay=1800;
+  await editor.fill(corrected+"\nFirst change during slow save.");
+  for(let i=0;i<50 && writes===beforeSlowSave;i++) await new Promise(r=>setTimeout(r,100));
+  assert.ok(writes>beforeSlowSave);
+  corrected+="\nLatest change made while a save was in flight.";
+  await editor.fill(corrected);
+  for(let i=0;i<100 && draft.minutes!==corrected;i++) await new Promise(r=>setTimeout(r,100));
+  assert.equal(draft.minutes,corrected,"Edits during an in-flight save must be saved without another keystroke");
+  saveDelay=0;
   await page.getByRole("button",{name:"Confirm minutes & generate review",exact:true}).click();
   await page.getByRole("link",{name:"Open detailed review",exact:true}).waitFor();
   assert.equal(confirmations,1);assert.equal(draft.reviews[0].minutes,corrected);
