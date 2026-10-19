@@ -118,8 +118,7 @@ class LearningPlanIdempotencyTests {
         LlmGateway llm = mock(LlmGateway.class);
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), mock(InterviewRecapRepository.class),
-                mock(InterviewRecapQuestionRepository.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
+                mock(ProfileService.class), mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
                 mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class),
                 store, mock(LearningPlanGenerationGate.class),
                 mock(LearningPlanAgentSlots.class),
@@ -144,8 +143,7 @@ class LearningPlanIdempotencyTests {
         LlmGateway llm = mock(LlmGateway.class);
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), mock(InterviewRecapRepository.class),
-                mock(InterviewRecapQuestionRepository.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
+                mock(ProfileService.class), mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
                 mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class),
                 store, mock(LearningPlanGenerationGate.class), slots,
                 mock(org.springframework.transaction.PlatformTransactionManager.class));

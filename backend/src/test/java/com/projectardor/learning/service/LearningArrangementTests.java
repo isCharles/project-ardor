@@ -80,8 +80,7 @@ class LearningArrangementTests {
             PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
             when(transactions.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
             service = new LearningPlanService(repository, llm, new LlmJsonParser(mapper), mapper, calendar,
-                mock(com.projectardor.profile.service.ProfileService.class), mock(com.projectardor.recap.repository.InterviewRecapRepository.class),
-                mock(com.projectardor.recap.repository.InterviewRecapQuestionRepository.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
+                mock(com.projectardor.profile.service.ProfileService.class), mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
                 mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class), mock(LearningPlanCreationStore.class),
                 mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class), transactions);
         }

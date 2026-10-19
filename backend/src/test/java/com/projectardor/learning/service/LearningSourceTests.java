@@ -39,7 +39,7 @@ class LearningSourceTests {
         when(questions.findByIdAndUserId(foreignQuestionId, userId)).thenReturn(Optional.empty());
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), recaps, questions,
+                mock(ProfileService.class), new com.projectardor.recap.service.InterviewRecordSourceAccess(recaps, questions),
                 mock(ResumeRepository.class), mock(KnowledgeDocumentRepository.class),
                 mock(LearningPlanCreationStore.class),
                 mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class),
@@ -60,8 +60,7 @@ class LearningSourceTests {
         KnowledgeDocumentRepository knowledge = mock(KnowledgeDocumentRepository.class);
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), mock(InterviewRecapRepository.class),
-                mock(InterviewRecapQuestionRepository.class), resumes, knowledge,
+                mock(ProfileService.class), mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class), resumes, knowledge,
                 mock(LearningPlanCreationStore.class), mock(LearningPlanGenerationGate.class),
                 mock(LearningPlanAgentSlots.class),
                 mock(org.springframework.transaction.PlatformTransactionManager.class));

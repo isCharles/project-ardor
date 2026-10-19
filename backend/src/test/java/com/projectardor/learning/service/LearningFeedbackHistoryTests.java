@@ -51,8 +51,7 @@ class LearningFeedbackHistoryTests {
         when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         LearningPlanService service = new LearningPlanService(repository, llm,
                 new LlmJsonParser(mapper), mapper, mock(CalendarTaskService.class),
-                mock(ProfileService.class), mock(InterviewRecapRepository.class),
-                mock(InterviewRecapQuestionRepository.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
+                mock(ProfileService.class), mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
                 mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class),
                 mock(LearningPlanCreationStore.class),
                 mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class), transactionManager);
