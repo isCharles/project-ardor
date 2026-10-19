@@ -158,11 +158,6 @@ public class InterviewMinutesService {
         });
     }
 
-    public UUID opportunity(ReviewWork work) {
-        return jdbc.queryForObject("SELECT job_opportunity_id FROM interview_recap_jobs WHERE id=? AND user_id=?",
-                UUID.class,work.draftId(),work.userId());
-    }
-
     public com.projectardor.opportunity.service.InterviewContextAccess.Context context(ReviewWork work) {
         return jdbc.queryForObject("SELECT job_opportunity_id,interview_round_id FROM interview_recap_jobs WHERE id=? AND user_id=?",
                 (r,n) -> new com.projectardor.opportunity.service.InterviewContextAccess.Context(

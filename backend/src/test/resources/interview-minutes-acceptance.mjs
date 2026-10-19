@@ -70,4 +70,7 @@ assert.ok(JSON.stringify(tasks).includes("RECAP_REVIEW"),"Detailed review is vis
 await a.request(`/api/opportunities/${opp.id}/rounds/${round.id}`,{method:"DELETE"});
 assert.equal((await a.request(`/api/interview-recaps/${recapId}`)).interviewRoundId,null,"Deleting a round detaches but preserves the report");
 assert.equal((await a.request(url)).rawContent,raw,"Deleting a round preserves the transcript and minutes");
+await a.request(`/api/opportunities/${opp.id}`,{method:"DELETE",expected:204});
+assert.equal((await a.request(`/api/interview-recaps/${recapId}`)).jobOpportunityId,null,"Deleting a process preserves its detached report");
+assert.equal((await a.request(url)).rawContent,raw,"Deleting a process preserves source material");
 console.log("PASS: raw preservation, draft-first gate, owner isolation, optimistic editing, confirmation deduplication, immutable snapshots and background review");
