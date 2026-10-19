@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "defaults": [
+    "chat",
+    "job-search",
+    "learning",
+    "calendar"
+  ],
+  "destinations": [
+    {
+      "id": "chat",
+      "domain": null,
+      "href": "/app",
+      "legacyHref": "/app",
+      "en": "Chat",
+      "zh": "对话",
+      "icon": "home",
+      "aliases": [],
+      "modules": []
+    },
+    {
+      "id": "job-search",
+      "domain": "job-search",
+      "href": "/app/job-search",
+      "legacyHref": "/app/opportunities",
+      "en": "Job search",
+      "zh": "求职",
+      "icon": "briefcase",
+      "aliases": [],
+      "modules": [
+        "resumes",
+        "recaps"
+      ],
+      "legacySelectable": false,
+      "tab": true
+    },
+    {
+      "id": "job-search.interviews",
+      "domain": "job-search",
+      "href": "/app/job-search/interviews",
+      "legacyHref": "/app/opportunities",
+      "en": "Interviews",
+      "zh": "面试",
+      "icon": "briefcase",
+      "aliases": [
+        "/app/opportunities"
+      ],
+      "modules": [
+        "recaps"
+      ],
+      "tab": true
+    },
+    {
+      "id": "job-search.applications",
+      "domain": "job-search",
+      "href": "/app/job-search/applications",
+      "legacyHref": "/app/applications",
+      "en": "Applications",
+      "zh": "投递",
+      "icon": "target",
+      "aliases": [
+        "/app/applications"
+      ],
+      "modules": [],
+      "tab": true
+    },
+    {
+      "id": "job-search.resumes",
+      "domain": "job-search",
+      "href": "/app/job-search/resumes",
+      "legacyHref": "/app/resumes",
+      "en": "Resumes",
+      "zh": "简历",
+      "icon": "file-search",
+      "aliases": [
+        "/app/resumes"
+      ],
+      "modules": [
+        "resumes"
+      ],
+      "tab": true
+    },
+    {
+      "id": "job-search.notes",
+      "domain": "job-search",
+      "href": "/app/job-search/notes",
+      "legacyHref": "/app/recaps",
+      "en": "Interview notes",
+      "zh": "面试记录",
+      "icon": "book",
+      "aliases": [
+        "/app/recaps"
+      ],
+      "modules": [
+        "recaps"
+      ],
+      "section": "job-search.interviews"
+    },
+    {
+      "id": "learning",
+      "domain": "learning",
+      "href": "/app/learning",
+      "legacyHref": "/app/learning",
+      "en": "Learning",
+      "zh": "学习",
+      "icon": "graduation",
+      "aliases": [],
+      "modules": [
+        "learning",
+        "interviews",
+        "knowledge"
+      ],
+      "tab": true
+    },
+    {
+      "id": "learning.practice",
+      "domain": "learning",
+      "href": "/app/learning/practice",
+      "legacyHref": "/app/interviews",
+      "en": "Practice",
+      "zh": "训练",
+      "icon": "message",
+      "aliases": [],
+      "modules": [
+        "interviews"
+      ],
+      "legacySelectable": false,
+      "tab": true
+    },
+    {
+      "id": "learning.mock-interviews",
+      "domain": "learning",
+      "href": "/app/learning/practice/mock-interviews",
+      "legacyHref": "/app/interviews",
+      "en": "Mock interviews",
+      "zh": "模拟面试",
+      "icon": "message",
+      "aliases": [
+        "/app/interviews"
+      ],
+      "modules": [
+        "interviews"
+      ],
+      "section": "learning.practice"
+    },
+    {
+      "id": "learning.question-practice",
+      "domain": "learning",
+      "href": "/app/learning/practice/questions",
+      "legacyHref": "/app/interviews",
+      "en": "Question practice",
+      "zh": "单题训练",
+      "icon": "message",
+      "aliases": [
+        "/app/replay"
+      ],
+      "modules": [
+        "recaps"
+      ],
+      "legacySelectable": false,
+      "section": "learning.practice"
+    },
+    {
+      "id": "learning.flashcards",
+      "domain": "learning",
+      "href": "/app/learning/review",
+      "legacyHref": "/app/cards",
+      "en": "Flashcards",
+      "zh": "记忆卡",
+      "icon": "stack",
+      "aliases": [
+        "/app/cards"
+      ],
+      "modules": [],
+      "tab": true
+    },
+    {
+      "id": "learning.materials",
+      "domain": "learning",
+      "href": "/app/learning/materials",
+      "legacyHref": "/app/knowledge",
+      "en": "Knowledge",
+      "zh": "知识库",
+      "icon": "book",
+      "aliases": [
+        "/app/knowledge"
+      ],
+      "modules": [
+        "knowledge"
+      ],
+      "tab": true
+    },
+    {
+      "id": "learning.progress",
+      "domain": "learning",
+      "href": "/app/learning/progress",
+      "legacyHref": "/app/evidence",
+      "en": "Progress",
+      "zh": "补强进度",
+      "icon": "trend",
+      "aliases": [
+        "/app/evidence"
+      ],
+      "modules": [
+        "learning",
+        "recaps"
+      ],
+      "tab": true
+    },
+    {
+      "id": "calendar",
+      "domain": null,
+      "href": "/app/calendar",
+      "legacyHref": "/app/calendar",
+      "en": "Calendar",
+      "zh": "日程",
+      "icon": "calendar",
+      "aliases": [],
+      "modules": []
+    },
+    {
+      "id": "tasks",
+      "domain": null,
+      "href": "/app/tasks",
+      "legacyHref": "/app/tasks",
+      "en": "Background tasks",
+      "zh": "后台任务",
+      "icon": "clock",
+      "aliases": [],
+      "modules": [
+        "tasks"
+      ]
+    }
+  ]
+}

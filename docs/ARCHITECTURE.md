@@ -1,5 +1,7 @@
 # 架构说明
 
+本文说明现有实现与工程边界；整体演进方向见 [架构演进规划](ARCHITECTURE_EVOLUTION.md)，术语、兼容入口、状态所有权和阶段边界见 [领域合同](DOMAIN_CONTRACTS.md)。不能把规划中的未来模型当成已实现的事实。
+
 ## 关键技术决策
 
 ### 单体单仓库
@@ -35,7 +37,7 @@ CareerAgentService ─> LangChain4j AI Services + Chat Memory + Tools
 - `ResumeService`、`InterviewService`、`PlannerService` 承担校验、授权、事务与业务状态转换。
 - Agent Tool 只是薄适配器，不能复制或绕过 Service 逻辑。
 - 对话历史保存在 `conversations/messages`；用户可以拥有多个未归档会话，请求明确携带当前 `conversationId`，每次只把该会话的最近窗口装入 Chat Memory。
-- `user_agent_memories` 保存跨会话总体记忆。总体记忆以可见文本注入系统上下文，用户可编辑或清空；Agent 只能通过受控 Tool 覆盖更新，且提示词禁止保存凭据、一次性任务和未经确认的推测。
+- 当前长期记忆使用 `user_agent_memory_items` 条目，`AgentMemoryService` 汇总仍有效的内容；旧 `user_agent_memories` 是历史兼容结构，不是新的单一真相源。用户可查看、修改和删除，自动维护仍须满足来源、敏感信息和业务授权约束。
 - 当前会话上下文、用户总体记忆和简历/面试业务数据是三个独立边界，不能互相替代。
 
 ### 后台任务与通知
@@ -56,21 +58,11 @@ CareerAgentService ─> LangChain4j AI Services + Chat Memory + Tools
 
 数据库只保存简历元数据、校验和、存储键、解析文本和分析结果。开发环境可使用本地对象存储适配器；公开上线前应使用 S3 兼容对象存储、私有 Bucket、短时签名下载和恶意文件检查。文件内容不能直接使用用户提供的文件名作为磁盘路径。
 
-## 建议后端包结构
+## 当前模块与目标归属
 
-```text
-com.projectardor
-├─ auth
-├─ profile
-├─ resume
-├─ agent
-├─ interview
-├─ planner
-├─ config
-└─ system
-```
+现有生产包包含 `opportunity`、`applications`、`recap`、`interview`、`learning`、`resume`、`knowledge`、`calendar`、`agent`、`aijobs`、`background`、`llm`、`speech`、`usage`、`profile`、`auth`、`admin`、`integrations`、`websearch` 与基础配置。`interview` 目前仍实现模拟面试，真实面试由 `opportunity` 实现；`recap` 仍混有记录、卡片与重答。
 
-每个业务模块按实际需要放置 controller、service、repository、domain 和 dto；不要提前为尚未存在的用例建立空层级。
+目标归属为求职、学习、资料、助手、日程和平台的逻辑边界，并非一次性移动全部目录。普通业务服务不得继续扩大跨域 Repository 访问；现存耦合按阶段替换。导航收拢不代表这些内部边界已经完成，具体迁移合同见上方文档。
 
 ## API 约定
 

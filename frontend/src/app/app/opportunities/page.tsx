@@ -235,7 +235,7 @@ export default function OpportunitiesPage() {
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-wrap items-end justify-between gap-4 pb-8">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{t("Interview pipeline", "面试流程")}</h1>
+            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{t("Interviews", "面试")}</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               {t("Every real interview, one row each — result, date, round, company, platform.", "每条真实面试一行：结果、时间、轮次、公司、平台。")}
             </p>

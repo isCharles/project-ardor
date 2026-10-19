@@ -106,7 +106,7 @@ export default function EvidencePage() {
       <div className="mx-auto max-w-6xl">
         <Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70 hover:text-stone-900"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link>
         <header className="pb-9 pt-12 md:pt-16">
-          <p className="text-xs font-medium tracking-[0.16em] text-violet-600">{t("GROWTH EVIDENCE", "你的成长证据")}</p>
+          <p className="text-xs font-medium tracking-[0.16em] text-violet-600">{t("LEARNING · PROGRESS", "学习 · 补强进度")}</p>
           <h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em] md:text-6xl">{t("See how you grow.", "知道进步从哪来。")}</h1>
           <p className="mt-4 text-sm text-stone-500">{t("Real interviews reveal gaps. Your next steps show progress.", "真实面试留下问题；后续行动留下证据。")}</p>
         </header>

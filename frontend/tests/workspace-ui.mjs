@@ -357,11 +357,11 @@ try {
   await nav.getByRole("link", { name: "Knowledge", exact: true }).waitFor();
   userId = "workspace-other";
   await page.reload();
-  await nav.getByRole("link", { name: "Resumes", exact: true }).waitFor();
+  await nav.getByRole("link", { name: "Job search", exact: true }).waitFor();
   assert.equal(await nav.getByRole("link", { name: "Knowledge", exact: true }).count(), 0);
   await page.evaluate(() => localStorage.setItem("ardor:workspace-rail:v1:workspace-other", "bad json"));
   await page.reload();
-  await nav.getByRole("link", { name: "Resumes", exact: true }).waitFor();
+  await nav.getByRole("link", { name: "Job search", exact: true }).waitFor();
   assert.equal(sidebarViews.has("workspace-other"), false, "Default or corrupt local layouts must not initialize the account layout");
   userId = "legacy-sidebar-owner";
   const migrationDevice = await browser.newContext({ viewport: { width: 1440, height: 900 } });

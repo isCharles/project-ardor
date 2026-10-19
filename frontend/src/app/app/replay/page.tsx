@@ -100,7 +100,7 @@ export default function ReplayPage() {
     const timer = window.setTimeout(() => {
       const questionId = new URLSearchParams(window.location.search).get("question");
       const retestId = new URLSearchParams(window.location.search).get("retest");
-      if (!questionId) { setError({ reason: null, english: "No interview question was selected. Open a replay from Growth evidence.", chinese: "没有指定面经问题。请从成长证据页进入。" }); setLoading(false); return; }
+      if (!questionId) { setError({ reason: null, english: "No question selected. Open a question from Learning → Progress to practice it.", chinese: "还没有选择题目。请从学习 → 补强进度打开一道题开始训练。" }); setLoading(false); return; }
       setRequestedRetestId(retestId);
       let draft: Draft | null = null;
       try {
@@ -198,7 +198,7 @@ export default function ReplayPage() {
 
   return <main className="ardor-workbench min-h-screen px-5 pb-20 pt-6 text-[#1d1d1f] md:px-10">
     <div className="mx-auto max-w-5xl">
-      <Link href="/app/evidence" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70"><ArrowLeft className="size-4" />{t("Back to Growth evidence", "返回成长证据")}</Link>
+      <Link href="/app/learning/progress" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70"><ArrowLeft className="size-4" />{t("Back to Progress", "返回补强进度")}</Link>
       <header className="pb-9 pt-12 md:pt-16"><p className="text-xs font-medium tracking-[0.16em] text-violet-600">INTERVIEW REPLAY</p><h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em] md:text-6xl">{t("Answer it again.", "再回答一次。")}</h1></header>
       {errorText && !replay && <div role="alert" className="rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{errorText}</div>}
       {loading ? <div className="ardor-panel h-72 animate-pulse rounded-[2.5rem]" aria-label={t("Loading interview replay", "正在加载面试回放")} /> : replay && <>
