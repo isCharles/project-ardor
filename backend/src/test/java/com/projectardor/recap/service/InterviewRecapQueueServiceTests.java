@@ -113,4 +113,36 @@ class InterviewRecapQueueServiceTests {
     private static InterviewContextAccess contexts(JobOpportunityRepository opportunities) {
         return new InterviewContextAccess(opportunities, mock(OpportunityRoundRepository.class));
     }
+
+    @Test void sameRoundRetryReusesJobWithoutChangingSourceOrCreatingAnotherJob() {
+        var jobs = mock(InterviewRecapJobRepository.class);
+        var contexts = mock(InterviewContextAccess.class);
+        var service = new InterviewRecapQueueService(mock(InterviewRecapRepository.class), jobs, contexts);
+        UUID owner = UUID.randomUUID(), process = UUID.randomUUID(), round = UUID.randomUUID();
+        var existing = com.projectardor.recap.domain.InterviewRecapJob.create(owner, "fixture", CONTENT, process, round);
+        when(jobs.findFirstByUserIdAndInputHashAndStatusInOrderByCreatedAtDesc(eq(owner), any(), any()))
+                .thenReturn(Optional.of(existing));
+
+        assertThat(service.request(owner, CONTENT, process, round).jobId()).isEqualTo(existing.getId());
+        verify(contexts).require(owner, process, round);
+        verify(jobs, org.mockito.Mockito.never()).saveAndFlush(any());
+        assertThat(existing.getRawContent()).isEqualTo(CONTENT);
+        assertThat(existing.getInterviewRoundId()).isEqualTo(round);
+    }
+
+    @Test void duplicateSourceCannotSilentlyMoveToAnotherRoundOrDropItsRound() {
+        var jobs = mock(InterviewRecapJobRepository.class);
+        var service = new InterviewRecapQueueService(mock(InterviewRecapRepository.class), jobs, mock(InterviewContextAccess.class));
+        UUID owner = UUID.randomUUID(), process = UUID.randomUUID(), round = UUID.randomUUID();
+        var existing = com.projectardor.recap.domain.InterviewRecapJob.create(owner, "fixture", CONTENT, process, round);
+        when(jobs.findFirstByUserIdAndInputHashAndStatusInOrderByCreatedAtDesc(eq(owner), any(), any()))
+                .thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.request(owner, CONTENT, process, UUID.randomUUID()))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("不会静默改挂");
+        assertThatThrownBy(() -> service.request(owner, CONTENT, process))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("不会静默改挂");
+        verify(jobs, org.mockito.Mockito.never()).saveAndFlush(any());
+        assertThat(existing.getInterviewRoundId()).isEqualTo(round);
+    }
 }

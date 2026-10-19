@@ -27,3 +27,15 @@ export function InterviewContextFields({ opportunities }: { opportunities: Inter
     </label>
   </>;
 }
+
+export function InterviewRecordContext({ processId, roundId, opportunities }: {
+  processId: string | null; roundId: string | null | undefined; opportunities: InterviewReference[];
+}) {
+  const { t } = useLocale();
+  const interview = opportunities.find(item => item.id === processId);
+  const round = interview?.rounds?.find(item => item.id === roundId);
+  return <p className="mb-5 text-xs text-stone-500" data-interview-record-context>
+    {interview?.company ?? t("Interview record", "面试记录")}{" · "}
+    {round ? t(`Round ${round.roundNumber}`, `第 ${round.roundNumber} 轮`) : t("Round not specified", "轮次未指定")}
+  </p>;
+}

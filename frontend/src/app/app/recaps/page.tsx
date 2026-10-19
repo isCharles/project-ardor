@@ -10,11 +10,11 @@ import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale, type Locale } from "@/lib/locale";
 import styles from "./recaps.module.css";
 import { MinutesWorkspace } from "./minutes-workspace";
-import { InterviewContextFields, type InterviewReference } from "./interview-context-fields";
+import { InterviewContextFields, InterviewRecordContext, type InterviewReference } from "./interview-context-fields";
 
 type Performance = "STRONG" | "MIXED" | "WEAK" | "UNKNOWN";
 type Question = { id: string; sequenceNumber: number; questionText: string; candidateAnswer: string | null; followUps: string[]; assessment: string; performance: Performance; weaknessReason: string | null; betterAnswer: string | null; tags: string[] };
-type Recap = { id: string; title: string; overview: string; strengths: string[]; weaknesses: string[]; createdAt: string; jobOpportunityId: string | null; questions: Question[] };
+type Recap = { id: string; title: string; overview: string; strengths: string[]; weaknesses: string[]; createdAt: string; jobOpportunityId: string | null; interviewRoundId?: string | null; questions: Question[] };
 type RecapTask = { jobId: string | null; recapId: string | null; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"; attempts?: number; errorCode?: string | null; errorMessage?: string | null; createdAt?: string | null; finishedAt?: string | null };
 type OpportunityRef = InterviewReference;
 const performanceStyle: Record<Performance, string> = { STRONG: "bg-emerald-100 text-emerald-700", MIXED: "bg-amber-100 text-amber-700", WEAK: "bg-rose-100 text-rose-700", UNKNOWN: "bg-stone-100 text-stone-500" };
@@ -144,6 +144,7 @@ function RecapsContent() {
         activeJobs.length === 0 && <Link href={agentCreationHref("RECAPS", locale)} className={`${styles.panel} mx-auto block w-full max-w-md border-dashed px-5 py-16 text-center text-sm text-slate-400 transition hover:text-slate-600`}>{t("Organize your first interview with Ardor", "让 Ardor 整理第一次面试")}</Link>
       ) : selected ? (
         <section className={`${styles.panel} mt-8 p-6 md:p-9`}>
+          <InterviewRecordContext processId={selected.jobOpportunityId} roundId={selected.interviewRoundId} opportunities={opportunities} />
           <Report recap={selected} opportunities={opportunities} onDelete={() => remove(selected)} />
         </section>
       ) : (
