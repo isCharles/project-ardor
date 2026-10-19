@@ -105,9 +105,7 @@ public class InterviewRecapService {
             model = result.model();
         }
         // Exact repeats across segment boundaries are never duplicated in the final report.
-        var unique = new java.util.LinkedHashMap<String,QuestionDraft>();
-        for (var d : drafts) unique.putIfAbsent(d.questionText().replaceAll("\\s+", ""),d);
-        drafts = new ArrayList<>(unique.values());
+        drafts = new ArrayList<>(uniqueQuestions(drafts));
         if (drafts.isEmpty()) throw new IllegalStateException("没有从材料中识别出可复盘的问题");
         final String reportTitle=title, reportModel=model, overview=String.join("\n\n",overviews);
         final List<QuestionDraft> reportDrafts=drafts;
@@ -333,6 +331,8 @@ public class InterviewRecapService {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
         catch (Exception exception) { throw new IllegalStateException("无法生成内容指纹", exception); }
     }
-    private record QuestionDraft(String questionText, String candidateAnswer, List<String> followUps,
+    static List<QuestionDraft> uniqueQuestions(List<QuestionDraft> drafts) { return drafts.stream().distinct().toList(); }
+
+    record QuestionDraft(String questionText, String candidateAnswer, List<String> followUps,
             String assessment, QuestionPerformance performance, String weaknessReason, String betterAnswer, List<String> tags) {}
 }
