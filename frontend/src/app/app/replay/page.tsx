@@ -129,7 +129,7 @@ export default function ReplayPage() {
         .catch((reason) => {
           if (!active) return;
           if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
-          else setError({ reason, english: "Could not load the interview replay", chinese: "无法加载面试回放" });
+          else setError({ reason, english: "Could not load question practice", chinese: "无法加载单题训练" });
         })
         .finally(() => { if (active) setLoading(false); });
     }, 0);
@@ -199,9 +199,9 @@ export default function ReplayPage() {
   return <main className="ardor-workbench min-h-screen px-5 pb-20 pt-6 text-[#1d1d1f] md:px-10">
     <div className="mx-auto max-w-5xl">
       <Link href="/app/learning/progress" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70"><ArrowLeft className="size-4" />{t("Back to Progress", "返回补强进度")}</Link>
-      <header className="pb-9 pt-12 md:pt-16"><p className="text-xs font-medium tracking-[0.16em] text-violet-600">INTERVIEW REPLAY</p><h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em] md:text-6xl">{t("Answer it again.", "再回答一次。")}</h1></header>
+      <header className="pb-9 pt-12 md:pt-16"><p className="text-xs font-medium tracking-[0.16em] text-violet-600">{t("QUESTION PRACTICE", "单题训练")}</p><h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em] md:text-6xl">{t("Answer it again.", "再回答一次。")}</h1></header>
       {errorText && !replay && <div role="alert" className="rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{errorText}</div>}
-      {loading ? <div className="ardor-panel h-72 animate-pulse rounded-[2.5rem]" aria-label={t("Loading interview replay", "正在加载面试回放")} /> : replay && <>
+      {loading ? <div className="ardor-panel h-72 animate-pulse rounded-[2.5rem]" aria-label={t("Loading question practice", "正在加载单题训练")} /> : replay && <>
         <section className="relative overflow-hidden rounded-[2.5rem] border border-white/80 bg-white/75 p-6 shadow-[0_25px_80px_rgba(89,58,138,0.08)] backdrop-blur-xl md:p-10">
           <div className="pointer-events-none absolute -right-24 -top-40 size-[32rem] rounded-full bg-[radial-gradient(circle,rgba(251,153,151,0.38),rgba(168,143,255,0.18)_46%,transparent_72%)] blur-3xl" />
           <div className="relative"><p className="text-xs text-stone-500">{replay.recapTitle}</p>{activeRetest && <p className="mt-4 text-xs font-medium text-violet-600">{t("Variation retest", "变式复测")} · {new Date(activeRetest.dueAt).toLocaleString(locale === "en" ? "en-US" : "zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>}<h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-snug tracking-tight md:text-4xl">{activeRetest?.challenge ?? replay.questionText}</h2><p className="mt-5 text-sm text-stone-500">{activeRetest ? t(`Original question: ${replay.questionText}`, `原题：${replay.questionText}`) : t("Answer on your own first, then compare it with your previous response.", "先独立回答，再看当时与现在的差别。")}</p></div>
@@ -217,7 +217,7 @@ export default function ReplayPage() {
           {errorText && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{errorText}</p>}
         </form>
 
-        {latest && <section className="mt-8 space-y-5" aria-label={t("Latest replay result", "最新回放结果")}>
+        {latest && <section className="mt-8 space-y-5" aria-label={t("Latest practice result", "最新训练结果")}>
           <div className="flex flex-wrap items-center gap-3"><span className="rounded-full bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-700">{verdictLabel[latest.verdict]}</span><span className="text-xs text-stone-500">{t("AI comparison · not a skills certification", "AI 对比 · 不是能力认证")}</span></div>
           <p className="max-w-3xl text-lg leading-8 text-stone-800">{latest.comparison}</p>
           <div className="grid gap-4 md:grid-cols-2"><article className="rounded-3xl bg-white/65 p-6"><h3 className="text-xs font-medium text-stone-500">{t("Your earlier answer", "当时的回答")}</h3><p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">{replay.originalAnswer || t("The original notes did not record an answer, so progress cannot be assessed.", "原始材料未记录回答，无法判断是否进步。")}</p></article><article className="rounded-3xl bg-white/65 p-6"><h3 className="text-xs font-medium text-violet-600">{latest.challengeText ? t("Retest answer", "复测回答") : t("Your answer now", "现在的回答")}</h3>{latest.challengeText && <p className="mt-3 text-xs leading-5 text-violet-700">{latest.challengeText}</p>}<p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">{latest.answerText}</p></article></div>

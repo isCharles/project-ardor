@@ -1,6 +1,6 @@
 # Ardor 领域合同与迁移基线
 
-核对日期：2026-10-18。目标见 [整体架构演进规划](ARCHITECTURE_EVOLUTION.md)。本文件区分当前合同、兼容适配与尚待实施的模型，不替代原生 Goal。
+核对日期：2026-10-19。主分支基线包含 PR #133 的确认纪要流程。目标见 [整体架构演进规划](ARCHITECTURE_EVOLUTION.md)。本文件区分当前合同、兼容适配与尚待实施的模型，不替代原生 Goal。
 
 ## 1. 术语与状态所有权
 
@@ -9,6 +9,7 @@
 | 真实面试流程 / InterviewProcess | 求职 | `opportunity.JobOpportunity`；SCHEDULED、AWAITING_RESULT、NEXT_ROUND、REJECTED | 不是模拟会话，也不是完整投递漏斗 |
 | 面试轮次 / InterviewRound | 求职 | `OpportunityRound`，轮次号、环节、时间和时长 | 学习任务不是面试轮次 |
 | 面试记录与问题 | 求职 | `recap.InterviewRecap` 关联流程，尚无轮次 ID | 不推测历史轮次，不重复要求填写父对象拥有的信息 |
+| 原始转录、确认纪要与复盘版本 | 求职 | 原始任务保留原文；`interview_minutes` 可编辑；`interview_minutes_reviews` 保存不可变确认快照与异步结果 | Agent 不能代替用户确认；报告不是原文；新增轮次关联必须覆盖整条来源链 |
 | 投递活动 | 求职 | 日计数、目标与提醒 | 日计数不等于逐份投递记录 |
 | 学习计划 | 学习 | SCHEDULED、IN_PROGRESS、NEEDS_REVIEW、COMPLETED | 来源与目标面试是关联，不是全部学习都必须有面试父对象 |
 | 模拟面试 | 学习训练 | `interview` 包与既有 session 状态 | 名称必须明确 Mock Interview；真实面试保留 Interview |
@@ -61,5 +62,9 @@
 ## 5. 分阶段交付与未完成项
 
 本批覆盖 A/B：正式规划、领域合同、稳定入口目录、偏好兼容、新路径/旧路径共存与领域导航。以相关测试、CI、合并和部署证据为验收依据；本文件不预先声称这些检查已通过。
+
+本地回归入口：后端 `SidebarPreferencesServiceTests` / `SidebarPreferencesControllerTests` 覆盖旧 URL 映射、双投影原子保存、版本冲突与账户切换拒绝；前端 `navigation-catalog.mjs` 核对两份目录与真实页面，`domain-navigation-ui.mjs` 验证新旧路径、真实/模拟区分、训练参数、纪要编辑及 ID 偏好保存；`workspace-ui.mjs` 保留旧后端协议与账户隔离回归。新增检查接入 CI。它们不替代后续数据迁移、恢复演练和完整主线验收。
+
+回退本批前端可恢复旧菜单；旧后端只读取保留的 `sidebar` 投影。若旧后端修改偏好，递增的 sidebar revision 使新后端忽略过期 navigation 投影，再从旧 URL 适配。保留既有页面与 API，不需要降级数据库或删除用户偏好。
 
 后续仍包含 C–F：轮次—记录模型与来源消歧、跨域来源接口、训练/进度查询的后端归属、任务 Handler 与传输 DTO 解耦、Agent 运行/引导/恢复合同、模型能力与错误分类、观测/备份/部署验收。普通导航整理不能被算作这些目标的完成证据。

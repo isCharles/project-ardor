@@ -19,7 +19,7 @@ export function DomainHome({ practice = false }: { practice?: boolean }) {
     <p className="mb-8 mt-3 text-sm text-stone-500">{practice ? t("Prepare for the next real conversation.", "为下一场真实面试做好准备。") : t("From sending applications to your next interview.", "从投递开始，推进下一场面试。")}</p>
     <div className="grid gap-4 md:grid-cols-3">{ids.map(id => {
       const item = destinations.find(destination => destination.id === id)!;
-      return <Link key={id} href={item.href} className="group rounded-3xl border border-stone-200/70 bg-white/80 p-6 transition hover:border-violet-200 hover:bg-violet-50/60">
+      return <Link key={id} href={id === "learning.question-practice" ? "/app/learning/progress" : item.href} className="group rounded-3xl border border-stone-200/70 bg-white/80 p-6 transition hover:border-violet-200 hover:bg-violet-50/60">
         <div className="flex items-center justify-between gap-4"><h2 className="font-semibold text-stone-900">{t(item.en, item.zh)}</h2><ArrowUpRight aria-hidden="true" className="size-4 text-stone-400 group-hover:text-violet-600" /></div>
         <p className="mt-3 text-sm leading-6 text-stone-500">{t(...descriptions[id])}</p>
       </Link>;

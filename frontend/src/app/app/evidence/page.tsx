@@ -89,7 +89,7 @@ export default function EvidencePage() {
     }).catch((reason) => {
       if (!active) return;
       if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
-      else setError(reason instanceof Error ? reason.message : t("Could not load growth evidence", "无法加载能力证据"));
+      else setError(reason instanceof Error ? reason.message : t("Could not load learning progress", "无法加载补强进度"));
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [router, t]);
@@ -112,7 +112,7 @@ export default function EvidencePage() {
         </header>
 
         {error && <div role="alert" className="mb-6 rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
-        {loading ? <div className="ardor-panel h-72 animate-pulse rounded-[2.5rem]" aria-label={t("Loading growth evidence", "正在加载能力证据")} /> : tracks.length === 0 ? (
+        {loading ? <div className="ardor-panel h-72 animate-pulse rounded-[2.5rem]" aria-label={t("Loading learning progress", "正在加载补强进度")} /> : tracks.length === 0 ? (
           <section className="ardor-panel grid min-h-80 place-items-center rounded-[2.5rem] p-8 text-center">
             <div><CircleHelp className="mx-auto size-9 text-violet-500" /><h2 className="mt-5 text-2xl font-semibold">{t("Start with a real interview", "从一次真实复盘开始")}</h2><p className="mt-2 text-sm text-stone-500">{t("Questions to improve will appear here after an interview recap.", "面经里有待补强的问题时，这里会出现它的后续轨迹。")}</p><Link href="/app/recaps" className="mt-6 inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm text-white">{t("View interview notes", "查看面经")}<ArrowRight className="size-4" /></Link></div>
           </section>
