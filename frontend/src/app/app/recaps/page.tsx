@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { agentCreationHref } from "@/lib/agent-features";
-import { markBackgroundPending } from "@/lib/background-notifications";
 import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale, type Locale } from "@/lib/locale";
 import styles from "./recaps.module.css";
@@ -85,7 +84,16 @@ function RecapsContent() {
     const timer = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(timer);
   }, [activeJobs.length, load]);
-  async function organize(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError(""); try { const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content"), jobOpportunityId: data.get("jobOpportunityId") }) }); setShowForm(false); if (task.status === "COMPLETED" && task.recapId) router.push(`/app/recaps?selected=${task.recapId}`); else { markBackgroundPending("recaps"); router.push("/app?notice=recap-queued"); } } catch (reason) { setError(localizedError(reason, locale, "Could not submit interview notes", "提交失败")); } finally { setBusy(false); } }
+  async function organize(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError("");
+    try {
+      const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content"), jobOpportunityId: data.get("jobOpportunityId") }) });
+      setShowForm(false);
+      if (task.jobId) router.push(`/app/recaps?draft=${task.jobId}`);
+      else if (task.recapId) router.push(`/app/recaps?selected=${task.recapId}`);
+    } catch (reason) { setError(localizedError(reason, locale, "Could not submit interview notes", "提交失败")); }
+    finally { setBusy(false); }
+  }
   async function remove(recap: Recap) { if (!window.confirm(t(`Delete “${recap.title}”?`, `删除“${recap.title}”？`))) return; try { await api<void>(`/api/interview-recaps/${recap.id}`, { method: "DELETE" }); await load(); } catch (reason) { setError(localizedError(reason, locale, "Could not delete interview notes", "删除失败")); } }
 
   async function retryJob(jobId: string) {
