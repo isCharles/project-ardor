@@ -46,6 +46,13 @@ class LearningOriginHandlerTests {
         }
         verifyNoInteractions(records,resumes,knowledge,interviews);
     }
+    @Test void omittedCanonicalKindCannotSilentlyDiscardAnExplicitResourceId() {
+        for(var type:new LearningSourceType[]{null,LearningSourceType.MANUAL,LearningSourceType.AGENT}) {
+            assertThatThrownBy(() -> resolver.resolve(owner,type,null,new LearningContextInput(null,id,null,null)))
+                    .hasMessageContaining("自主学习来源不接受资源 ID");
+        }
+        verifyNoInteractions(records,resumes,knowledge,interviews);
+    }
     @Test void canonicalRecordAndQuestionKindsCannotBeGuessedFromTheOtherTable() {
         var source=new InterviewRecordSourceAccess.Source(InterviewRecordSourceAccess.Kind.INTERVIEW_RECORD,id,id,null,null);
         when(records.requireRecord(owner,id)).thenReturn(source);

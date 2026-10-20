@@ -176,6 +176,10 @@ class LearningPlanIdempotencyTests {
                 LearningSourceType.RESUME, source, DUE, context)).hasMessageContaining("来源类型不一致");
         assertThatThrownBy(() -> service.create(owner, request, "JVM", null,
                 LearningSourceType.RECAP, UUID.randomUUID(), DUE, context)).hasMessageContaining("来源 ID 不一致");
+        for(var type:new LearningSourceType[]{null,LearningSourceType.MANUAL,LearningSourceType.AGENT}) {
+            assertThatThrownBy(() -> service.create(owner, request, "JVM", null,type,null,DUE,
+                    new LearningContextInput(null,source,null,null))).hasMessageContaining("自主学习来源不接受资源 ID");
+        }
         org.mockito.Mockito.verifyNoInteractions(store, llm, contexts);
         // A valid retry still returns the committed result even if its original source no longer exists.
         assertThat(service.create(owner, request, "JVM", null,

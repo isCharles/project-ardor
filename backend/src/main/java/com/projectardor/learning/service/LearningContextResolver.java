@@ -59,7 +59,9 @@ public class LearningContextResolver {
         if (kind == LearningOriginKind.LEGACY_RECAP) throw new IllegalArgumentException("历史未知来源不能用于新建计划");
         if (kind != null && legacyType != null && kind.legacyType() != legacyType)
             throw new IllegalArgumentException("来源类型不一致");
-        if ((kind == LearningOriginKind.MANUAL || kind == LearningOriginKind.AGENT) && input.originResourceId() != null)
+        boolean autonomous = kind == LearningOriginKind.MANUAL || kind == LearningOriginKind.AGENT
+                || kind == null && (legacyType == null || legacyType == LearningSourceType.MANUAL || legacyType == LearningSourceType.AGENT);
+        if (autonomous && input.originResourceId() != null)
             throw new IllegalArgumentException("自主学习来源不接受资源 ID");
         if (input.targetRoundId() != null && input.targetInterviewId() == null)
             throw new IllegalArgumentException("准备目标轮次需要所属面试");

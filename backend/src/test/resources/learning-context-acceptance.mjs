@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { syntheticResumePdf } from "./acceptance-fixtures.mjs";
 if (process.env.ARDOR_ACCEPTANCE_DISPOSABLE_DB !== "true") throw new Error("Disposable database required");
 const base=process.env.ARDOR_ACCEPTANCE_API_BASE ?? "http://127.0.0.1:8080";
 const model=process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090";
@@ -9,8 +10,8 @@ class Client {
     const headers={};
     if (!["GET","HEAD"].includes(method)) {const csrf=await this.request("/api/auth/csrf");headers[csrf.headerName]=csrf.token;}
     headers.Cookie=[...this.cookies].map(([key,value])=>`${key}=${value}`).join("; ");
-    if(body) headers["Content-Type"]="application/json";
-    const response=await fetch(base+path,{method,headers,body:body?JSON.stringify(body):undefined});
+    if(body && !(body instanceof FormData)) headers["Content-Type"]="application/json";
+    const response=await fetch(base+path,{method,headers,body:body instanceof FormData?body:body?JSON.stringify(body):undefined});
     for(const line of response.headers.getSetCookie()){const pair=line.split(";")[0],at=pair.indexOf("=");this.cookies.set(pair.slice(0,at),pair.slice(at+1));}
     const text=await response.text();assert.equal(response.status,expected,`${method} ${path}: ${text.slice(0,200)}`);
     return text?JSON.parse(text):null;
@@ -35,6 +36,9 @@ const target=await a.request("/api/opportunities",{method:"POST",expected:201,bo
 const targetWithRound=await a.request(`/api/opportunities/${target.id}/rounds`,{method:"POST",expected:201,body:{stage:"TECHNICAL"}});
 const round=targetWithRound.rounds[0];
 const input={concept:"Persistence trade-offs",requestId:randomUUID(),originKind:"INTERVIEW_QUESTION",originResourceId:question.id,targetInterviewId:target.id,targetRoundId:round.id};
+for(const sourceType of [undefined,"MANUAL","AGENT"]) {
+  await a.request("/api/learning-plans",{method:"POST",expected:400,body:{concept:"Invalid autonomous source",requestId:randomUUID(),sourceType,originResourceId:question.id}});
+}
 const plan=await a.request("/api/learning-plans",{method:"POST",expected:201,body:input});
 assert.equal(plan.sourceType,"RECAP");assert.equal(plan.sourceId,question.id);
 assert.equal(plan.originKind,"INTERVIEW_QUESTION");assert.equal(plan.originRecordId,report.id);
@@ -56,6 +60,22 @@ assert.equal(legacy.originKind,"INTERVIEW_RECORD");assert.equal(legacy.originRec
 assert.equal(legacy.targetInterviewId,null,"Source interview is not an inferred target");
 const manual=await a.request("/api/learning-plans",{method:"POST",expected:201,body:{concept:"Independent learning",requestId:randomUUID(),sourceType:"MANUAL"}});
 assert.equal(manual.originKind,"MANUAL");assert.equal(manual.targetInterviewId,null);
+
+// Real domain-provider integration: owned uploads, reference resolution, creation,
+// and rejection of both reference lookup and creation by another user.
+const resumeUpload=new FormData();resumeUpload.set("file",new Blob([syntheticResumePdf()],{type:"application/pdf"}),"source-fixture.pdf");
+const resume=await a.request("/api/resumes",{method:"POST",expected:201,body:resumeUpload});
+const knowledgeUpload=new FormData();knowledgeUpload.set("file",new Blob(["# Recovery fixture\nCompare recovery time and acceptable data loss before choosing persistence."],{type:"text/plain"}),"source-fixture.txt");
+const document=await a.request("/api/knowledge/documents",{method:"POST",expected:201,body:knowledgeUpload});
+for(const [kind,material] of [["RESUME",resume],["KNOWLEDGE",document]]) {
+  const referencePath=`/api/learning-plans/origins/${kind}/${material.id}`;
+  const reference=await a.request(referencePath);assert.equal(reference.resourceId,material.id);assert.equal(reference.recordId,null);
+  await b.request(referencePath,{expected:404});
+  const sourceInput={concept:`Learning from ${kind}`,requestId:randomUUID(),originKind:kind,originResourceId:material.id};
+  const sourced=await a.request("/api/learning-plans",{method:"POST",expected:201,body:sourceInput});
+  assert.equal(sourced.originKind,kind);assert.equal(sourced.originResourceId,material.id);assert.equal(sourced.targetInterviewId,null);
+  await b.request("/api/learning-plans",{method:"POST",expected:404,body:{...sourceInput,requestId:randomUUID()}});
+}
 
 // Attempt history: one graded round keeps its own exercise snapshot, answers, score, evaluation and model.
 const attemptsPath=`/api/learning-plans/${manual.id}/attempts`;
