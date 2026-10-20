@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import com.projectardor.agent.tools.CareerAgentTools;
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.llm.service.LlmConfigService;
+import com.projectardor.platform.model.llm.service.LlmConfigService;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 import tools.jackson.databind.ObjectMapper;
 

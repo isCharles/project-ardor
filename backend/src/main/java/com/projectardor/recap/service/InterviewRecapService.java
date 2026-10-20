@@ -13,7 +13,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.llm.service.LlmGateway;
+import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.recap.domain.*;
 import com.projectardor.recap.repository.*;
 

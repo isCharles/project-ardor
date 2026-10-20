@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import com.projectardor.learning.domain.LearningSourceType;
-import com.projectardor.usage.QuotaRequestId;
+import com.projectardor.platform.usage.QuotaRequestId;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import jakarta.validation.constraints.NotBlank;

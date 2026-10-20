@@ -24,8 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.projectardor.agent.service.CareerAgentService;
 import com.projectardor.agent.service.AgentMemoryService;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
-import com.projectardor.usage.QuotaProtected;
-import com.projectardor.usage.UsageFeature;
+import com.projectardor.platform.usage.QuotaProtected;
+import com.projectardor.platform.usage.UsageFeature;
 
 import jakarta.validation.Valid;
 

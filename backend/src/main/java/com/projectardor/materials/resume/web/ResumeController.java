@@ -21,8 +21,8 @@ import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.materials.resume.domain.ResumeAnalysis;
 import com.projectardor.materials.resume.service.ResumeService;
 import com.projectardor.materials.resume.service.ResumeAnalysisQueueService;
-import com.projectardor.usage.QuotaProtected;
-import com.projectardor.usage.UsageFeature;
+import com.projectardor.platform.usage.QuotaProtected;
+import com.projectardor.platform.usage.UsageFeature;
 
 @RestController
 @RequestMapping("/api/resumes")

@@ -8,9 +8,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.stereotype.Service;
 
 import com.projectardor.agent.tools.CareerAgentTools;
-import com.projectardor.llm.service.LlmCallException;
-import com.projectardor.llm.service.LlmConfigService;
-import com.projectardor.llm.service.ToolCallingProbe;
+import com.projectardor.platform.model.llm.service.LlmCallException;
+import com.projectardor.platform.model.llm.service.LlmConfigService;
+import com.projectardor.platform.model.llm.service.ToolCallingProbe;
 
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolSpecification;

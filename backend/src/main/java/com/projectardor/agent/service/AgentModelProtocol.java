@@ -2,8 +2,8 @@ package com.projectardor.agent.service;
 
 import java.time.Duration;
 import com.projectardor.agent.ReasoningDepth;
-import com.projectardor.llm.service.LlmConfigService.LlmRuntimeConfig;
-import com.projectardor.llm.service.ModelProtocol;
+import com.projectardor.platform.model.llm.service.LlmConfigService.LlmRuntimeConfig;
+import com.projectardor.platform.model.llm.service.ModelProtocol;
 import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;

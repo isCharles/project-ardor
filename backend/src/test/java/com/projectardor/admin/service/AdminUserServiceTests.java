@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Test;
 
 import com.projectardor.platform.identity.auth.domain.UserAccount;
 import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
-import com.projectardor.usage.MembershipService;
-import com.projectardor.usage.MembershipTier;
+import com.projectardor.platform.usage.MembershipService;
+import com.projectardor.platform.usage.MembershipTier;
 
 class AdminUserServiceTests {
     @Test

@@ -1,6 +1,6 @@
 package com.projectardor.agent.service;
 
-import com.projectardor.llm.service.LlmCallException;
+import com.projectardor.platform.model.llm.service.LlmCallException;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 

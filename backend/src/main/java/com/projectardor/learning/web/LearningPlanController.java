@@ -18,10 +18,10 @@ import org.springframework.web.bind.annotation.RestController;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.learning.service.LearningPlanCreationStore;
-import com.projectardor.usage.QuotaProtected;
-import com.projectardor.usage.UsageFeature;
-import com.projectardor.aijobs.AiJobService;
-import com.projectardor.aijobs.AiJobResponse;
+import com.projectardor.platform.usage.QuotaProtected;
+import com.projectardor.platform.usage.UsageFeature;
+import com.projectardor.platform.jobs.aijobs.AiJobService;
+import com.projectardor.platform.jobs.aijobs.AiJobResponse;
 
 import jakarta.validation.Valid;
 

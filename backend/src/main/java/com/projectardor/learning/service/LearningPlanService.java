@@ -29,7 +29,7 @@ import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.domain.LearningStatus;
 import com.projectardor.learning.repository.LearningAttemptRepository;
 import com.projectardor.learning.repository.LearningPlanRepository;
-import com.projectardor.llm.service.LlmGateway;
+import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 
 import tools.jackson.core.type.TypeReference;

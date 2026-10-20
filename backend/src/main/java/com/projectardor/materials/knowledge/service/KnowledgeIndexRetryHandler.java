@@ -3,8 +3,8 @@ package com.projectardor.materials.knowledge.service;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
-import com.projectardor.background.BackgroundRetryHandler;
-import com.projectardor.background.BackgroundTaskStore;
+import com.projectardor.platform.notification.BackgroundRetryHandler;
+import com.projectardor.platform.notification.BackgroundTaskStore;
 
 @Component
 public class KnowledgeIndexRetryHandler implements BackgroundRetryHandler {

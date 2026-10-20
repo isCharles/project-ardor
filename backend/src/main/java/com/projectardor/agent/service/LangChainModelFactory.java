@@ -15,8 +15,8 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import com.projectardor.llm.service.LlmConfigService;
-import com.projectardor.llm.service.ModelProtocols;
+import com.projectardor.platform.model.llm.service.LlmConfigService;
+import com.projectardor.platform.model.llm.service.ModelProtocols;
 import com.projectardor.agent.ReasoningDepth;
 
 import dev.langchain4j.http.client.jdk.JdkHttpClientBuilder;

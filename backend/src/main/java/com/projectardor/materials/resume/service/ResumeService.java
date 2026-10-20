@@ -14,7 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.llm.service.LlmGateway;
+import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.materials.resume.domain.Resume;
 import com.projectardor.materials.resume.domain.ResumeAnalysis;
 import com.projectardor.materials.resume.domain.ResumeParseStatus;

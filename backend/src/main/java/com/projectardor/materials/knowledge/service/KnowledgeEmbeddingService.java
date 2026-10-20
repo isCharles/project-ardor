@@ -7,9 +7,9 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import com.projectardor.integrations.domain.AuxiliaryServiceType;
-import com.projectardor.integrations.service.AuxiliaryApiConfigService;
-import com.projectardor.integrations.service.AuxiliaryApiConfigService.AuxiliaryRuntimeConfig;
+import com.projectardor.platform.model.integrations.domain.AuxiliaryServiceType;
+import com.projectardor.platform.model.integrations.service.AuxiliaryApiConfigService;
+import com.projectardor.platform.model.integrations.service.AuxiliaryApiConfigService.AuxiliaryRuntimeConfig;
 
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.http.client.jdk.JdkHttpClientBuilder;

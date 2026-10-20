@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.llm.service.LlmGateway;
+import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.recap.domain.InterviewRecapQuestion;
 import com.projectardor.recap.domain.InterviewReplayAttempt;
 import com.projectardor.recap.domain.QuestionPerformance;

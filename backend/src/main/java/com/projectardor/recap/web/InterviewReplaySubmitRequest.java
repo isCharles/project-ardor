@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record InterviewReplaySubmitRequest(@NotNull UUID requestId,
-        @NotBlank @Size(max = 12000) String answer, UUID retestTaskId) implements com.projectardor.usage.QuotaRequestId {
+        @NotBlank @Size(max = 12000) String answer, UUID retestTaskId) implements com.projectardor.platform.usage.QuotaRequestId {
     public com.projectardor.recap.service.ReplayEvaluationCommand command() {
         return new com.projectardor.recap.service.ReplayEvaluationCommand(requestId,answer,retestTaskId);
     }

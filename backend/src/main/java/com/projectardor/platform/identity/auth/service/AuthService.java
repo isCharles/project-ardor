@@ -12,7 +12,7 @@ import com.projectardor.platform.identity.auth.domain.UserAccount;
 import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
 import com.projectardor.platform.identity.profile.domain.UserProfile;
 import com.projectardor.platform.identity.profile.repository.UserProfileRepository;
-import com.projectardor.usage.MembershipService;
+import com.projectardor.platform.usage.MembershipService;
 
 @Service
 public class AuthService {

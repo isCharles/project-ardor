@@ -2,9 +2,9 @@ package com.projectardor.learning.service;
 
 import java.util.UUID;
 import org.springframework.stereotype.Component;
-import com.projectardor.aijobs.AiJobHandler;
-import com.projectardor.aijobs.AiJobType;
-import com.projectardor.aijobs.AiJobWork;
+import com.projectardor.platform.jobs.aijobs.AiJobHandler;
+import com.projectardor.platform.jobs.aijobs.AiJobType;
+import com.projectardor.platform.jobs.aijobs.AiJobWork;
 import tools.jackson.databind.ObjectMapper;
 
 @Component

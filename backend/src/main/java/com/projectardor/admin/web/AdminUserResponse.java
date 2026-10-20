@@ -6,7 +6,7 @@ import java.util.UUID;
 import com.projectardor.platform.identity.auth.domain.UserAccount;
 import com.projectardor.platform.identity.auth.domain.UserRole;
 import com.projectardor.platform.identity.auth.domain.UserStatus;
-import com.projectardor.usage.MembershipTier;
+import com.projectardor.platform.usage.MembershipTier;
 
 public record AdminUserResponse(UUID id, String email, UserStatus status, UserRole role,
         MembershipTier membership, Instant createdAt) {
