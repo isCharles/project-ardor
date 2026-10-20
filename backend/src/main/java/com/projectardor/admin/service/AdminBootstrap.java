@@ -11,8 +11,8 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.projectardor.auth.domain.UserRole;
-import com.projectardor.auth.repository.UserAccountRepository;
+import com.projectardor.platform.identity.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
 
 @Component
 public class AdminBootstrap implements ApplicationRunner {

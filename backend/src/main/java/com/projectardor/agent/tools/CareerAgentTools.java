@@ -18,18 +18,18 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
 
-import com.projectardor.applications.service.ApplicationRhythmService;
-import com.projectardor.applications.web.ApplicationRhythmResponse;
+import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
+import com.projectardor.jobsearch.applicationactivity.web.ApplicationRhythmResponse;
 import com.projectardor.interview.service.InterviewService;
-import com.projectardor.calendar.domain.CalendarTaskPriority;
-import com.projectardor.calendar.domain.CalendarTaskSource;
-import com.projectardor.calendar.domain.CalendarTask;
-import com.projectardor.calendar.domain.RecurrenceFrequency;
-import com.projectardor.calendar.domain.TaskSeries;
-import com.projectardor.calendar.service.CalendarTaskService;
-import com.projectardor.calendar.service.TaskSeriesService;
-import com.projectardor.calendar.web.CalendarTaskResponse;
-import com.projectardor.calendar.web.TaskSeriesResponse;
+import com.projectardor.scheduling.domain.CalendarTaskPriority;
+import com.projectardor.scheduling.domain.CalendarTaskSource;
+import com.projectardor.scheduling.domain.CalendarTask;
+import com.projectardor.scheduling.domain.RecurrenceFrequency;
+import com.projectardor.scheduling.domain.TaskSeries;
+import com.projectardor.scheduling.service.CalendarTaskService;
+import com.projectardor.scheduling.service.TaskSeriesService;
+import com.projectardor.scheduling.web.CalendarTaskResponse;
+import com.projectardor.scheduling.web.TaskSeriesResponse;
 import com.projectardor.agent.service.AgentMemoryService;
 import com.projectardor.agent.web.AgentMemoryResponse;
 import com.projectardor.agent.web.AgentMemoryItemResponse;
@@ -49,8 +49,8 @@ import com.projectardor.agent.AgentContextReference;
 import com.projectardor.opportunity.service.OpportunityService;
 import com.projectardor.opportunity.service.InterviewProcessCommands;
 import com.projectardor.opportunity.service.InterviewProcessView;
-import com.projectardor.profile.domain.UserProfile;
-import com.projectardor.profile.service.ProfileService;
+import com.projectardor.platform.identity.profile.domain.UserProfile;
+import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.resume.domain.Resume;
 import com.projectardor.resume.domain.ResumeAnalysis;
 import com.projectardor.resume.service.ResumeAnalysisQueueService;
@@ -542,7 +542,7 @@ public class CareerAgentTools {
                 @P("完整说明，清空传空字符串") String description, @P("完整 ISO-8601 带时区时间；无截止时间传空字符串") String dueAt,
                 @P("完整优先级：LOW、MEDIUM、HIGH") String priority, @P("完整状态：TODO、IN_PROGRESS、COMPLETED、CANCELLED") String status) {
             return CalendarTaskResponse.from(calendarTaskService.updateGeneral(userId, uuid(taskId, "日程 ID"), title, description,
-                    nullableInstant(dueAt), parsePriority(priority), enumValue(com.projectardor.calendar.domain.CalendarTaskStatus.class, status, null)));
+                    nullableInstant(dueAt), parsePriority(priority), enumValue(com.projectardor.scheduling.domain.CalendarTaskStatus.class, status, null)));
         }
 
         @Tool(name = "list_recurring_tasks", value = "读取当前用户的重复安排（每天、每周、每月循环的日程规则）及其接下来几次的日期。用户问“我有哪些固定安排”，或需要修改、取消某条重复安排前定位对象时使用")

@@ -3,9 +3,9 @@ package com.projectardor.admin.web;
 import java.time.Instant;
 import java.util.UUID;
 
-import com.projectardor.auth.domain.UserAccount;
-import com.projectardor.auth.domain.UserRole;
-import com.projectardor.auth.domain.UserStatus;
+import com.projectardor.platform.identity.auth.domain.UserAccount;
+import com.projectardor.platform.identity.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.domain.UserStatus;
 import com.projectardor.usage.MembershipTier;
 
 public record AdminUserResponse(UUID id, String email, UserStatus status, UserRole role,

@@ -7,8 +7,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import com.projectardor.agent.domain.ConversationMessage;
 import com.projectardor.agent.repository.ConversationMessageRepository;
-import com.projectardor.auth.security.ArdorPrincipal;
-import com.projectardor.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.domain.UserRole;
 import com.projectardor.common.web.ResourceNotFoundException;
 import tools.jackson.databind.ObjectMapper;
 

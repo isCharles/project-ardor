@@ -21,8 +21,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import com.projectardor.auth.repository.UserAccountRepository;
-import com.projectardor.auth.security.CredentialFreshnessFilter;
+import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
+import com.projectardor.platform.identity.auth.security.CredentialFreshnessFilter;
 
 @Configuration
 public class SecurityConfig {

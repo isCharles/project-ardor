@@ -8,7 +8,7 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.springframework.stereotype.Component;
 
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 
 @Aspect
 @Component

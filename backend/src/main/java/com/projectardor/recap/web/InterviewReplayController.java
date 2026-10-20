@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.recap.service.InterviewReplayService;
 import com.projectardor.usage.QuotaProtected;
 import com.projectardor.usage.UsageFeature;

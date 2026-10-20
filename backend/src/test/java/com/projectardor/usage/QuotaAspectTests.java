@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 
 import com.projectardor.agent.web.AgentMessageRequest;
-import com.projectardor.auth.domain.UserRole;
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.learning.web.LearningPlanCreateRequest;
 
 class QuotaAspectTests {

@@ -1,4 +1,4 @@
-package com.projectardor.auth.security;
+package com.projectardor.platform.identity.auth.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -16,9 +16,9 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-import com.projectardor.auth.domain.UserAccount;
-import com.projectardor.auth.domain.UserRole;
-import com.projectardor.auth.repository.UserAccountRepository;
+import com.projectardor.platform.identity.auth.domain.UserAccount;
+import com.projectardor.platform.identity.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
 
 import jakarta.servlet.FilterChain;
 

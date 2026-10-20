@@ -5,7 +5,7 @@ import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.validation.annotation.Validated;
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 

@@ -1,4 +1,4 @@
-package com.projectardor.calendar.domain;
+package com.projectardor.scheduling.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

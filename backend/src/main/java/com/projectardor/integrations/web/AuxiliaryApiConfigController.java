@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.integrations.domain.AuxiliaryServiceType;
 import com.projectardor.integrations.service.AuxiliaryApiConfigService;
 import com.projectardor.integrations.service.AuxiliaryConnectionTestService;

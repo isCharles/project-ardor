@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.agent.service.AgentExecutionAuditStore;
 import com.projectardor.agent.service.AgentRunStore;
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 
 /**
  * Read-only execution/audit views for one owned agent run.

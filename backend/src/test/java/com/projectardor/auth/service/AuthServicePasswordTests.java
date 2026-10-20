@@ -1,4 +1,4 @@
-package com.projectardor.auth.service;
+package com.projectardor.platform.identity.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -10,9 +10,9 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
-import com.projectardor.auth.domain.UserAccount;
-import com.projectardor.auth.repository.UserAccountRepository;
-import com.projectardor.profile.repository.UserProfileRepository;
+import com.projectardor.platform.identity.auth.domain.UserAccount;
+import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
+import com.projectardor.platform.identity.profile.repository.UserProfileRepository;
 import com.projectardor.usage.MembershipService;
 
 class AuthServicePasswordTests {

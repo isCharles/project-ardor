@@ -22,8 +22,8 @@ import com.projectardor.interview.repository.InterviewEvaluationRepository;
 import com.projectardor.interview.repository.InterviewQuestionRepository;
 import com.projectardor.interview.repository.InterviewSessionRepository;
 import com.projectardor.llm.service.LlmGateway;
-import com.projectardor.profile.domain.UserProfile;
-import com.projectardor.profile.service.ProfileService;
+import com.projectardor.platform.identity.profile.domain.UserProfile;
+import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.resume.service.ResumeService;
 
 import tools.jackson.databind.ObjectMapper;

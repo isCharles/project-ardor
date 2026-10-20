@@ -21,8 +21,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
-import com.projectardor.auth.domain.UserRole;
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.config.SecurityConfig;
 
 class UsageAdminAuthorizationTests {
@@ -86,10 +86,10 @@ class UsageAdminAuthorizationTests {
         }
 
         @Bean
-        com.projectardor.auth.repository.UserAccountRepository userAccountRepository() {
-            var users = org.mockito.Mockito.mock(com.projectardor.auth.repository.UserAccountRepository.class);
+        com.projectardor.platform.identity.auth.repository.UserAccountRepository userAccountRepository() {
+            var users = org.mockito.Mockito.mock(com.projectardor.platform.identity.auth.repository.UserAccountRepository.class);
             org.mockito.Mockito.when(users.findById(org.mockito.ArgumentMatchers.any()))
-                    .thenReturn(java.util.Optional.of(com.projectardor.auth.domain.UserAccount.create("test@example.com", "")));
+                    .thenReturn(java.util.Optional.of(com.projectardor.platform.identity.auth.domain.UserAccount.create("test@example.com", "")));
             return users;
         }
     }

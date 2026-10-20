@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 import com.projectardor.agent.tools.CareerAgentTools;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.llm.service.LlmConfigService;
-import com.projectardor.profile.service.ProfileService;
+import com.projectardor.platform.identity.profile.service.ProfileService;
 import tools.jackson.databind.ObjectMapper;
 
 /** Endpoint-level cancellation wiring: no 500, owner-scoped lookup, truthful returned status. */

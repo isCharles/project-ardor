@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import com.projectardor.calendar.service.CalendarTaskService;
+import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.learning.domain.*;
@@ -81,7 +81,7 @@ class LearningArrangementTests {
             when(transactions.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
             service = new LearningPlanService(repository,
                 mock(com.projectardor.learning.repository.LearningAttemptRepository.class), llm, new LlmJsonParser(mapper), mapper, calendar,
-                mock(com.projectardor.profile.service.ProfileService.class), mock(LearningContextResolver.class), mock(LearningPlanCreationStore.class),
+                mock(com.projectardor.platform.identity.profile.service.ProfileService.class), mock(LearningContextResolver.class), mock(LearningPlanCreationStore.class),
                 mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class), transactions);
         }
     }

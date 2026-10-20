@@ -1,4 +1,4 @@
-package com.projectardor.auth.web;
+package com.projectardor.platform.identity.auth.web;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -10,9 +10,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.web.context.SecurityContextRepository;
 
-import com.projectardor.auth.domain.UserRole;
-import com.projectardor.auth.security.ArdorPrincipal;
-import com.projectardor.auth.service.AuthService;
+import com.projectardor.platform.identity.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.service.AuthService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.interview.domain.InterviewModality;
 import com.projectardor.interview.domain.InterviewSession;
 import com.projectardor.interview.service.InterviewService;

@@ -10,8 +10,8 @@ import com.projectardor.learning.review.domain.*;
 import com.projectardor.learning.review.repository.MemoryCardRepository;
 import com.projectardor.learning.review.repository.MemoryCardReviewRepository;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
-import com.projectardor.calendar.service.CalendarTaskService;
-import com.projectardor.profile.service.ProfileService;
+import com.projectardor.scheduling.service.CalendarTaskService;
+import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.common.web.ResourceNotFoundException;
 
 /** Learning owns card state and review history; interview records only supply owned source references. */

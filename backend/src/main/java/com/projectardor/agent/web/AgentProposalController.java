@@ -4,7 +4,7 @@ import java.util.Set;
 import java.util.UUID;
 import com.projectardor.agent.repository.ConversationMessageRepository;
 import com.projectardor.agent.service.AgentExecutionAuditStore;
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.common.web.ResourceNotFoundException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;

@@ -1,11 +1,11 @@
-package com.projectardor.calendar.service;
+package com.projectardor.scheduling.service;
 
 import java.time.*;
 import java.util.*;
 import org.junit.jupiter.api.Test;
-import com.projectardor.calendar.domain.*;
-import com.projectardor.calendar.repository.*;
-import com.projectardor.profile.service.ProfileService;
+import com.projectardor.scheduling.domain.*;
+import com.projectardor.scheduling.repository.*;
+import com.projectardor.platform.identity.profile.service.ProfileService;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 

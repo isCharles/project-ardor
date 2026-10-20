@@ -9,10 +9,10 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.projectardor.calendar.domain.CalendarTask;
-import com.projectardor.calendar.domain.CalendarTaskKind;
-import com.projectardor.calendar.domain.CalendarTaskStatus;
-import com.projectardor.calendar.repository.CalendarTaskRepository;
+import com.projectardor.scheduling.domain.CalendarTask;
+import com.projectardor.scheduling.domain.CalendarTaskKind;
+import com.projectardor.scheduling.domain.CalendarTaskStatus;
+import com.projectardor.scheduling.repository.CalendarTaskRepository;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.recap.repository.InterviewRecapQuestionRepository;
 import com.projectardor.recap.repository.InterviewReplayAttemptRepository;

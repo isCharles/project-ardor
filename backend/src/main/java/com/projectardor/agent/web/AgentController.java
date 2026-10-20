@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.projectardor.agent.service.CareerAgentService;
 import com.projectardor.agent.service.AgentMemoryService;
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.usage.QuotaProtected;
 import com.projectardor.usage.UsageFeature;
 

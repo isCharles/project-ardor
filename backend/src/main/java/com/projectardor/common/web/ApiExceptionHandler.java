@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
-import com.projectardor.auth.service.DuplicateEmailException;
+import com.projectardor.platform.identity.auth.service.DuplicateEmailException;
 import com.projectardor.common.security.ExternalHostResolutionException;
 import com.projectardor.llm.service.LlmCallException;
 import com.projectardor.speech.service.SpeechCallException;

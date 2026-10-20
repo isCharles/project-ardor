@@ -21,7 +21,7 @@ import com.projectardor.admin.service.AdminConnectionTestService;
 import com.projectardor.admin.service.AdminOverviewService;
 import com.projectardor.admin.service.AdminUserService;
 import com.projectardor.admin.service.SystemApiConfigService;
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 
 import jakarta.validation.Valid;
 

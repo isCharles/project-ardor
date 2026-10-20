@@ -37,3 +37,5 @@ scripts/dev-up.log
 
 # Private uploads left by older native development scripts must never enter Git.
 backend/data/
+# Local runtime data from native backend runs (resumes, uploads) must never enter Git.
+data/

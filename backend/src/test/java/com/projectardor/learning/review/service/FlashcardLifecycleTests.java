@@ -7,12 +7,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import com.projectardor.calendar.service.CalendarTaskService;
+import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.learning.review.domain.*;
 import com.projectardor.learning.review.repository.*;
-import com.projectardor.profile.domain.UserProfile;
-import com.projectardor.profile.service.ProfileService;
+import com.projectardor.platform.identity.profile.domain.UserProfile;
+import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
 
 class FlashcardLifecycleTests {

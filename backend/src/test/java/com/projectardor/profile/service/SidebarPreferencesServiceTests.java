@@ -1,4 +1,4 @@
-package com.projectardor.profile.service;
+package com.projectardor.platform.identity.profile.service;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

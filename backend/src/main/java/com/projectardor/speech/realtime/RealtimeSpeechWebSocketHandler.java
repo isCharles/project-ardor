@@ -18,7 +18,7 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.integrations.domain.AuxiliaryServiceType;
 import com.projectardor.integrations.service.AuxiliaryApiConfigService;
 import com.projectardor.interview.domain.InterviewModality;
