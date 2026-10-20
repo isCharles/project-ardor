@@ -61,7 +61,7 @@ import com.projectardor.recap.domain.MemoryCardRating;
 import com.projectardor.recap.domain.MemoryCardSource;
 import com.projectardor.recap.service.InterviewRecapService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
-import com.projectardor.recap.web.InterviewRecapResponse;
+import com.projectardor.recap.service.InterviewRecordView;
 import com.projectardor.recap.web.InterviewRecapTaskResponse;
 import com.projectardor.recap.web.MemoryCardResponse;
 import com.projectardor.websearch.service.TavilySearchService;
@@ -171,7 +171,7 @@ public class CareerAgentTools {
                 yield "用户在界面中明确指定了简历：" + resume.getOriginalFilename() + "（简历 ID：" + resume.getId() + "）。需要内容时调用简历工具读取或分析。";
             }
             case "RECAP" -> {
-                InterviewRecapResponse recap = interviewRecapService.detail(userId, contextId);
+                InterviewRecordView recap = interviewRecapService.detail(userId, contextId);
                 yield "用户在界面中明确指定了面经：" + recap.title() + "（面经 ID：" + recap.id() + "）。需要内容时调用 get_interview_recap。";
             }
             case "KNOWLEDGE" -> {
@@ -744,7 +744,7 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "get_interview_recap", value = "读取当前用户指定面经的完整逐题复盘；制定优化计划或生成记忆卡前必须先调用")
-        public InterviewRecapResponse getInterviewRecap(@P("面经 UUID") String recapId) {
+        public InterviewRecordView getInterviewRecap(@P("面经 UUID") String recapId) {
             return interviewRecapService.detail(userId, uuid(recapId, "面经 ID"));
         }
 
@@ -817,7 +817,7 @@ public class CareerAgentTools {
         @Tool(name = "delete_interview_recap", value = "永久删除当前用户指定面经。只有用户明确要求删除时使用；不会连带删除已经单独建立的记忆卡")
         public Map<String, Object> deleteInterviewRecap(@P("面经 UUID") String recapId) {
             UUID id = uuid(recapId, "面经 ID");
-            InterviewRecapResponse recap = interviewRecapService.detail(userId, id);
+            InterviewRecordView recap = interviewRecapService.detail(userId, id);
             return propose("interview_recap", id, recap.title(),
                     "已经单独建立的记忆卡不会被删除", "/api/interview-recaps/" + id);
         }

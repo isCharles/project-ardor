@@ -37,8 +37,8 @@ public class InterviewRecapController {
             @AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID jobId) {
         queueService.dismissFailed(principal.userId(), jobId);
     }
-    @GetMapping public List<InterviewRecapResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) { return service.list(principal.userId()); }
-    @GetMapping("/{id}") public InterviewRecapResponse get(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) { return service.detail(principal.userId(), id); }
+    @GetMapping public List<InterviewRecapResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) { return service.list(principal.userId()).stream().map(InterviewRecapResponse::from).toList(); }
+    @GetMapping("/{id}") public InterviewRecapResponse get(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) { return InterviewRecapResponse.from(service.detail(principal.userId(), id)); }
     @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) { service.delete(principal.userId(), id); }
 }

@@ -12,21 +12,25 @@ import com.projectardor.recap.domain.ReplayVerdict;
 public record InterviewReplayResponse(UUID questionId, UUID recapId, String recapTitle, String questionText,
         String originalAnswer, String originalAssessment, String weaknessReason,
         List<Attempt> attempts) {
+    public static InterviewReplayResponse from(com.projectardor.recap.service.QuestionPracticeView view) {
+        return new InterviewReplayResponse(view.questionId(),view.recapId(),view.recapTitle(),view.questionText(),
+                view.originalAnswer(),view.originalAssessment(),view.weaknessReason(),
+                view.attempts()==null ? null : view.attempts().stream().map(Attempt::from).toList());
+    }
     public static InterviewReplayResponse from(InterviewRecapQuestion question, InterviewRecap recap,
             List<InterviewReplayAttempt> attempts) {
-        return new InterviewReplayResponse(question.getId(), recap.getId(), recap.getTitle(),
-                question.getQuestionText(), question.getCandidateAnswer(), question.getAssessment(),
-                question.getWeaknessReason(), attempts.stream().map(Attempt::from).toList());
+        return from(com.projectardor.recap.service.QuestionPracticeView.from(question,recap,attempts));
     }
 
     public record Attempt(UUID id, UUID requestId, String answerText, ReplayVerdict verdict, String comparison,
             List<String> improvements, List<String> remainingGaps, String nextChallenge,
             String challengeText, Instant createdAt) {
+        public static Attempt from(com.projectardor.recap.service.QuestionPracticeView.Attempt view) {
+            return new Attempt(view.id(),view.requestId(),view.answerText(),view.verdict(),view.comparison(),
+                    view.improvements(),view.remainingGaps(),view.nextChallenge(),view.challengeText(),view.createdAt());
+        }
         public static Attempt from(InterviewReplayAttempt attempt) {
-            return new Attempt(attempt.getId(), attempt.getRequestId(), attempt.getAnswerText(),
-                    attempt.getVerdict(), attempt.getComparison(), attempt.getImprovements(),
-                    attempt.getRemainingGaps(), attempt.getNextChallenge(),
-                    attempt.getChallengeText(), attempt.getCreatedAt());
+            return from(com.projectardor.recap.service.QuestionPracticeView.Attempt.from(attempt));
         }
     }
 }

@@ -29,6 +29,16 @@ FROM interview_recaps WHERE interview_round_id IS NULL
 GROUP BY user_id, job_opportunity_id;
 ```
 
+## 面试记录与重答的应用视图
+
+InterviewRecapService 向 HTTP、Agent 和后台复盘返回同一 InterviewRecordView；InterviewReplayService 的读取返回 QuestionPracticeView。它们不再从 service 导入 recap.web 的响应类型。旧 HTTP DTO 只做适配，实体到应用视图的字段提取只有一个实现，避免 Agent、网页和 Worker 分别定义记录含义。
+
+保持原 JSON 属性名、顺序、枚举字符串及 null/空列表/空文本语义，包括 jobOpportunityId、interviewRoundId、问题序号、重答 requestId、challengeText 和时间。应用视图复制嵌套列表，不能通过调用方持有的可变集合改写快照；旧数据中的可空元素不被擅自清理或拒绝。
+
+这次只清理读取合同，不改原文、确认门槛、来源校验、事务、额度、异步作业、资源 ID、路由或删除级联。不宣称记忆卡物理包位置或所有 Agent 工具已完成迁移。
+
+InterviewRecordApplicationContractTests 对照旧 HTTP record 显式构造的期望值，核对逐字段 JSON、嵌套历史、不可变快照、当前用户绑定及禁止反向依赖 Web DTO。原有面试归属、确认纪要与重答测试继续适用。
+
 ## 验证边界
 
 `InterviewContextAccessTests` 覆盖跨用户、同用户不同父流程、缺失轮次和旧请求。`interview-minutes-acceptance.mjs` 在隔离库验证原文→指定轮次→确认快照→报告的传递，以及删除轮次/流程后保留材料；不在真实用户数据上测试删除。`interview-minutes-ui.mjs` 验证切换父对象清除旧子对象、原文和轮次参数提交、编辑保存与显式确认。

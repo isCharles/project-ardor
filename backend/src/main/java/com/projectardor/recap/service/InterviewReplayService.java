@@ -17,7 +17,6 @@ import com.projectardor.recap.domain.ReplayVerdict;
 import com.projectardor.recap.repository.InterviewRecapQuestionRepository;
 import com.projectardor.recap.repository.InterviewRecapRepository;
 import com.projectardor.recap.repository.InterviewReplayAttemptRepository;
-import com.projectardor.recap.web.InterviewReplayResponse;
 
 import tools.jackson.databind.JsonNode;
 
@@ -60,11 +59,11 @@ public class InterviewReplayService {
     }
 
     @Transactional(readOnly = true)
-    public InterviewReplayResponse view(UUID userId, UUID questionId) {
+    public QuestionPracticeView view(UUID userId, UUID questionId) {
         InterviewRecapQuestion question = ownedQuestion(userId, questionId);
         InterviewRecap recap = recaps.findByIdAndUserId(question.getRecapId(), userId)
                 .orElseThrow(() -> new ResourceNotFoundException("面经不存在"));
-        return InterviewReplayResponse.from(question, recap,
+        return QuestionPracticeView.from(question, recap,
                 attempts.findAllByUserIdAndRecapQuestionIdOrderByCreatedAtDesc(userId, questionId));
     }
 
