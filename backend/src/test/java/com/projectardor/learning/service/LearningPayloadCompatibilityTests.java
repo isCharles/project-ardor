@@ -15,6 +15,7 @@ class LearningPayloadCompatibilityTests {
     @Test void oldSixFieldPayloadRemainsByteForByteStableForPersistedJobHashes() {
         var input=new LearningPlanCreateRequest("Legacy lesson",null,LearningSourceType.MANUAL,null,null,request);
         assertThat(mapper.writeValueAsString(input)).isEqualTo("{\"concept\":\"Legacy lesson\",\"reason\":null,\"sourceType\":\"MANUAL\",\"sourceId\":null,\"scheduledAt\":null,\"requestId\":\"90000000-0000-0000-0000-000000000001\"}");
+        assertThat(mapper.writeValueAsString(input.command())).isEqualTo(mapper.writeValueAsString(input));
     }
 
     @Test void explicitContextStillSurvivesJobSerializationAndDeserialization() {
@@ -23,5 +24,7 @@ class LearningPayloadCompatibilityTests {
                 LearningOriginKind.INTERVIEW_QUESTION,question,target,round);
         var decoded=mapper.readValue(mapper.writeValueAsString(input),LearningPlanCreateRequest.class);
         assertThat(decoded.context()).isEqualTo(input.context());
+        assertThat(mapper.writeValueAsString(input.command())).isEqualTo(mapper.writeValueAsString(input));
+        assertThat(mapper.readValue(mapper.writeValueAsString(input),LearningCreationCommand.class).context()).isEqualTo(input.context());
     }
 }

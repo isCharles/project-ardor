@@ -67,7 +67,7 @@ public class LearningPlanController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public AiJobResponse queueCreate(@AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody LearningPlanCreateRequest request) {
-        return jobs.createLearning(principal.userId(), request);
+        return jobs.createLearning(principal.userId(), request.command());
     }
 
     @PostMapping("/{id}/evaluation-jobs")
@@ -75,7 +75,7 @@ public class LearningPlanController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public AiJobResponse queueEvaluation(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID id, @Valid @RequestBody LearningEvaluationQueueRequest request) {
-        return jobs.evaluateLearning(principal.userId(), id, request);
+        return jobs.evaluateLearning(principal.userId(), id, request.command());
     }
 
     @PostMapping("/{id}/begin")
