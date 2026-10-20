@@ -24,10 +24,6 @@ import com.projectardor.opportunity.domain.OpportunityStatus;
 import com.projectardor.opportunity.domain.RoundStage;
 import com.projectardor.opportunity.repository.JobOpportunityRepository;
 import com.projectardor.opportunity.repository.OpportunityRoundRepository;
-import com.projectardor.opportunity.web.OpportunityCreateRequest;
-import com.projectardor.opportunity.web.OpportunityResponse;
-import com.projectardor.opportunity.web.OpportunityRoundRequest;
-import com.projectardor.opportunity.web.OpportunityUpdateRequest;
 
 class OpportunityServiceTests {
 
@@ -44,14 +40,14 @@ class OpportunityServiceTests {
         UUID owner = UUID.randomUUID();
         var item = JobOpportunity.create(owner, "Example", "Backend", "Meet", "Old JD", "Old invite");
         when(opportunities.findByIdAndUserId(item.getId(), owner)).thenReturn(Optional.of(item));
-        service.update(owner, item.getId(), new OpportunityUpdateRequest(null, "", "", "", "", null));
+        service.update(owner, item.getId(), new InterviewProcessCommands.Update(null, "", "", "", "", null));
         assertThat(item.getCompany()).isEqualTo("Example");
         assertThat(item.getTargetRole()).isEmpty();
         assertThat(item.getPlatform()).isEmpty();
         assertThat(item.getJdContent()).isEmpty();
         assertThat(item.getInviteContent()).isEmpty();
         assertThatThrownBy(() -> service.update(owner, item.getId(),
-                new OpportunityUpdateRequest("", null, null, null, null, null)))
+                new InterviewProcessCommands.Update("", null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -63,7 +59,7 @@ class OpportunityServiceTests {
         when(rounds.findAllByUserIdAndOpportunityIdInOrderByRoundNumberAsc(eq(userId), any()))
                 .thenReturn(List.of());
 
-        List<OpportunityResponse> result = service.list(userId);
+        List<InterviewProcessView> result = service.list(userId);
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().company()).isEqualTo("字节跳动");
@@ -87,7 +83,7 @@ class OpportunityServiceTests {
         saveReturnsArguments();
         when(rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(any(), any())).thenReturn(List.of());
 
-        service.create(userId, new OpportunityCreateRequest(
+        service.create(userId, new InterviewProcessCommands.Create(
                 "字节跳动", "后端开发实习生", "飞书", "JD", "邀请原文",
                 "TECHNICAL", Instant.parse("2026-10-20T02:00:00Z"), 50, "一面"));
 
@@ -109,7 +105,7 @@ class OpportunityServiceTests {
         saveReturnsArguments();
         when(rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(any(), any())).thenReturn(List.of());
 
-        service.create(userId, new OpportunityCreateRequest(
+        service.create(userId, new InterviewProcessCommands.Create(
                 "Shopee", "", "", "", "", "", null, null, ""));
 
         ArgumentCaptor<JobOpportunity> created = ArgumentCaptor.forClass(JobOpportunity.class);
@@ -128,8 +124,8 @@ class OpportunityServiceTests {
         when(opportunities.findByIdAndUserId(processId, userId)).thenReturn(Optional.of(owned));
         when(rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(any(), any())).thenReturn(List.of());
 
-        OpportunityResponse result = service.update(userId, processId,
-                new OpportunityUpdateRequest(null, null, null, null, null, "AWAITING_RESULT"));
+        InterviewProcessView result = service.update(userId, processId,
+                new InterviewProcessCommands.Update(null, null, null, null, null, "AWAITING_RESULT"));
 
         assertThat(result.status()).isEqualTo("AWAITING_RESULT");
         assertThat(owned.getStatus()).isEqualTo(OpportunityStatus.AWAITING_RESULT);
@@ -143,8 +139,8 @@ class OpportunityServiceTests {
         when(opportunities.findByIdAndUserId(processId, userId)).thenReturn(Optional.of(owned));
         when(rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(any(), any())).thenReturn(List.of());
 
-        OpportunityResponse result = service.update(userId, processId,
-                new OpportunityUpdateRequest(null, null, null, null, null, "AWAITING_RESULT"));
+        InterviewProcessView result = service.update(userId, processId,
+                new InterviewProcessCommands.Update(null, null, null, null, null, "AWAITING_RESULT"));
 
         assertThat(result.status()).isEqualTo("AWAITING_RESULT");
     }
@@ -160,7 +156,7 @@ class OpportunityServiceTests {
                 .thenReturn(List.of(existing));
 
         assertThatThrownBy(() -> service.addRound(userId, processId,
-                new OpportunityRoundRequest(1, "TECHNICAL", null, null, null, null)))
+                new InterviewProcessCommands.Round(1, "TECHNICAL", null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("已存在");
         verify(rounds, never()).save(any());
@@ -178,7 +174,7 @@ class OpportunityServiceTests {
         saveReturnsArguments();
 
         service.addRound(userId, processId,
-                new OpportunityRoundRequest(null, "TECHNICAL", null, null, 60, null));
+                new InterviewProcessCommands.Round(null, "TECHNICAL", null, null, 60, null));
 
         ArgumentCaptor<OpportunityRound> saved = ArgumentCaptor.forClass(OpportunityRound.class);
         verify(rounds).save(saved.capture());
@@ -224,7 +220,7 @@ class OpportunityServiceTests {
         when(rounds.findByIdAndUserId(roundId, userId)).thenReturn(Optional.of(round));
 
         assertThatThrownBy(() -> service.updateRound(userId, processId, roundId,
-                new OpportunityRoundRequest(2, null, null, null, null, null)))
+                new InterviewProcessCommands.Round(2, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("轮次编号不能");
     }

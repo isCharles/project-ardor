@@ -31,27 +31,27 @@ public class OpportunityController {
 
     @GetMapping
     public List<OpportunityResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return service.list(principal.userId());
+        return service.list(principal.userId()).stream().map(OpportunityResponse::from).toList();
     }
 
     @GetMapping("/{opportunityId}")
     public OpportunityResponse detail(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID opportunityId) {
-        return service.detail(principal.userId(), opportunityId);
+        return OpportunityResponse.from(service.detail(principal.userId(), opportunityId));
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public OpportunityResponse create(@AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody OpportunityCreateRequest request) {
-        return service.create(principal.userId(), request);
+        return OpportunityResponse.from(service.create(principal.userId(), request.command()));
     }
 
     @PatchMapping("/{opportunityId}")
     public OpportunityResponse update(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID opportunityId,
             @Valid @RequestBody OpportunityUpdateRequest request) {
-        return service.update(principal.userId(), opportunityId, request);
+        return OpportunityResponse.from(service.update(principal.userId(), opportunityId, request.command()));
     }
 
     @PostMapping("/{opportunityId}/rounds")
@@ -59,7 +59,7 @@ public class OpportunityController {
     public OpportunityResponse addRound(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID opportunityId,
             @Valid @RequestBody OpportunityRoundRequest request) {
-        return service.addRound(principal.userId(), opportunityId, request);
+        return OpportunityResponse.from(service.addRound(principal.userId(), opportunityId, request.command()));
     }
 
     @PatchMapping("/{opportunityId}/rounds/{roundId}")
@@ -67,14 +67,14 @@ public class OpportunityController {
             @PathVariable UUID opportunityId,
             @PathVariable UUID roundId,
             @Valid @RequestBody OpportunityRoundRequest request) {
-        return service.updateRound(principal.userId(), opportunityId, roundId, request);
+        return OpportunityResponse.from(service.updateRound(principal.userId(), opportunityId, roundId, request.command()));
     }
 
     @DeleteMapping("/{opportunityId}/rounds/{roundId}")
     public OpportunityResponse deleteRound(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID opportunityId,
             @PathVariable UUID roundId) {
-        return service.deleteRound(principal.userId(), opportunityId, roundId);
+        return OpportunityResponse.from(service.deleteRound(principal.userId(), opportunityId, roundId));
     }
 
     @DeleteMapping("/{opportunityId}")

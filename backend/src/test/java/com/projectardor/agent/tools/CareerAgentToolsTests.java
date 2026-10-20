@@ -30,8 +30,8 @@ import com.projectardor.interview.service.InterviewService;
 import com.projectardor.knowledge.service.KnowledgeService;
 import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.opportunity.service.OpportunityService;
-import com.projectardor.opportunity.web.OpportunityResponse;
-import com.projectardor.opportunity.web.OpportunityRoundRequest;
+import com.projectardor.opportunity.service.InterviewProcessCommands;
+import com.projectardor.opportunity.service.InterviewProcessView;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecapService;
@@ -242,9 +242,9 @@ class CareerAgentToolsTests {
         UUID userId = UUID.randomUUID();
         UUID opportunityId = UUID.randomUUID();
         UUID ownedRound = UUID.randomUUID();
-        when(opportunities.detail(userId, opportunityId)).thenReturn(new OpportunityResponse(
+        when(opportunities.detail(userId, opportunityId)).thenReturn(new InterviewProcessView(
                 opportunityId, "字节跳动", "后端开发实习生", "Feishu", "REJECTED", null, null, 1,
-                List.of(new OpportunityResponse.Round(ownedRound, 1, "OTHER", null, null, 50, null)),
+                List.of(new InterviewProcessView.Round(ownedRound, 1, "OTHER", null, null, 50, null)),
                 Instant.now(), Instant.now()));
         CareerAgentTools tools = new CareerAgentTools(
                 mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
@@ -272,9 +272,9 @@ class CareerAgentToolsTests {
         UUID userId = UUID.randomUUID();
         UUID opportunityId = UUID.randomUUID();
         UUID roundId = UUID.randomUUID();
-        OpportunityResponse response = new OpportunityResponse(
+        InterviewProcessView response = new InterviewProcessView(
                 opportunityId, "Kuaishou", "AIGC Agent 开发", "ViewCoder", "SCHEDULED", null, null, 1,
-                List.of(new OpportunityResponse.Round(roundId, 1, "OTHER",
+                List.of(new InterviewProcessView.Round(roundId, 1, "OTHER",
                         Instant.parse("2026-10-19T00:00:00Z"), null, null, null)),
                 Instant.now(), Instant.now());
         when(opportunities.detail(userId, opportunityId)).thenReturn(response);
@@ -285,7 +285,7 @@ class CareerAgentToolsTests {
                 .updateJobOpportunityRound(opportunityId.toString(), roundId.toString(), "",
                         "2026-10-20T02:00:00Z", "", -1, null);
 
-        ArgumentCaptor<OpportunityRoundRequest> captor = ArgumentCaptor.forClass(OpportunityRoundRequest.class);
+        ArgumentCaptor<InterviewProcessCommands.Round> captor = ArgumentCaptor.forClass(InterviewProcessCommands.Round.class);
         verify(opportunities).updateRound(eq(userId), eq(opportunityId), eq(roundId), captor.capture());
         assertThat(captor.getValue().durationMinutes()).isNull();
         assertThat(captor.getValue().scheduledAt()).isEqualTo(Instant.parse("2026-10-20T02:00:00Z"));
@@ -296,7 +296,7 @@ class CareerAgentToolsTests {
         OpportunityService opportunities = mock(OpportunityService.class);
         UUID userId = UUID.randomUUID();
         UUID opportunityId = UUID.randomUUID();
-        OpportunityResponse response = new OpportunityResponse(
+        InterviewProcessView response = new InterviewProcessView(
                 opportunityId, "Kuaishou", "AIGC Agent 开发", "ViewCoder", "SCHEDULED", null, null, 1,
                 List.of(), Instant.now(), Instant.now());
         when(opportunities.addRound(eq(userId), eq(opportunityId), any())).thenReturn(response);
@@ -305,7 +305,7 @@ class CareerAgentToolsTests {
         tools.bind(userId, "给快手加一轮技术面")
                 .addJobOpportunityRound(opportunityId.toString(), null, "TECHNICAL", "", "", 0, "");
 
-        ArgumentCaptor<OpportunityRoundRequest> captor = ArgumentCaptor.forClass(OpportunityRoundRequest.class);
+        ArgumentCaptor<InterviewProcessCommands.Round> captor = ArgumentCaptor.forClass(InterviewProcessCommands.Round.class);
         verify(opportunities).addRound(eq(userId), eq(opportunityId), captor.capture());
         assertThat(captor.getValue().roundNumber()).isNull();
     }
