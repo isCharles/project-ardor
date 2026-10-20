@@ -6,8 +6,8 @@ import org.springframework.web.bind.annotation.*;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.recap.service.InterviewRecapService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
-import com.projectardor.usage.QuotaProtected;
-import com.projectardor.usage.UsageFeature;
+import com.projectardor.platform.usage.QuotaProtected;
+import com.projectardor.platform.usage.UsageFeature;
 import jakarta.validation.Valid;
 @RestController @RequestMapping("/api/interview-recaps")
 public class InterviewRecapController {

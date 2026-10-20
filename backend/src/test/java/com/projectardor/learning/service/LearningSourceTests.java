@@ -18,7 +18,7 @@ import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.repository.LearningPlanRepository;
-import com.projectardor.llm.service.LlmGateway;
+import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.recap.repository.InterviewRecapQuestionRepository;
 import com.projectardor.recap.repository.InterviewRecapRepository;

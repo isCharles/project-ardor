@@ -31,8 +31,8 @@ import com.projectardor.agent.web.AgentStateResponse;
 import com.projectardor.agent.web.AgentStreamEvent;
 import com.projectardor.agent.web.AgentRunResponse;
 import com.projectardor.common.security.ExternalHostResolutionException;
-import com.projectardor.llm.service.LlmCallException;
-import com.projectardor.llm.service.LlmConfigService;
+import com.projectardor.platform.model.llm.service.LlmCallException;
+import com.projectardor.platform.model.llm.service.LlmConfigService;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 import tools.jackson.databind.ObjectMapper;
 

@@ -3,7 +3,7 @@ package com.projectardor.agent.web;
 import java.util.UUID;
 import java.util.List;
 
-import com.projectardor.usage.QuotaRequestId;
+import com.projectardor.platform.usage.QuotaRequestId;
 import com.projectardor.agent.ReasoningDepth;
 
 import jakarta.validation.constraints.NotBlank;

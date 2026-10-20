@@ -8,7 +8,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.recap.service.InterviewMinutesService;
-import com.projectardor.usage.UsageFeature;
+import com.projectardor.platform.usage.UsageFeature;
 
 /** Confirmation is intentionally not exposed as an Agent tool. */
 @RestController
@@ -16,9 +16,9 @@ import com.projectardor.usage.UsageFeature;
 public class InterviewMinutesController {
     private final InterviewMinutesService minutes;
     private final com.projectardor.recap.service.InterviewRecapQueueService queue;
-    private final com.projectardor.usage.QuotaService quotas;
+    private final com.projectardor.platform.usage.QuotaService quotas;
     public InterviewMinutesController(InterviewMinutesService minutes,com.projectardor.recap.service.InterviewRecapQueueService queue,
-            com.projectardor.usage.QuotaService quotas) {
+            com.projectardor.platform.usage.QuotaService quotas) {
         this.minutes=minutes; this.queue=queue; this.quotas=quotas;
     }
     @PostMapping("/from-report/{recapId}")

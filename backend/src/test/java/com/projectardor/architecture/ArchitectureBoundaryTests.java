@@ -50,13 +50,13 @@ class ArchitectureBoundaryTests {
     @Test
     void modelPlatformDoesNotImportAssistantOrBusinessDomains() throws IOException {
         assertNoImports(
-                "llm",
+                "platform/model/llm",
                 Pattern.compile("import com\\.projectardor\\.(agent|assistant)\\.(service|tools|domain|repository|web)\\..*"));
     }
 
     @Test
     void platformJobKernelDoesNotImportBusinessWebDtos() throws IOException {
-        Path jobs = SOURCE_ROOT.resolve("aijobs");
+        Path jobs = SOURCE_ROOT.resolve("platform/jobs/aijobs");
         if (!Files.isDirectory(jobs)) {
             return;
         }

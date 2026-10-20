@@ -2,8 +2,8 @@ package com.projectardor.agent.service;
 
 import java.time.Duration;
 import org.springframework.stereotype.Component;
-import com.projectardor.llm.domain.LlmProvider;
-import com.projectardor.llm.service.LlmConfigService.LlmRuntimeConfig;
+import com.projectardor.platform.model.llm.domain.LlmProvider;
+import com.projectardor.platform.model.llm.service.LlmConfigService.LlmRuntimeConfig;
 import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;

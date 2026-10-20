@@ -19,8 +19,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.materials.knowledge.service.KnowledgeService;
-import com.projectardor.usage.QuotaProtected;
-import com.projectardor.usage.UsageFeature;
+import com.projectardor.platform.usage.QuotaProtected;
+import com.projectardor.platform.usage.UsageFeature;
 
 import jakarta.validation.Valid;
 

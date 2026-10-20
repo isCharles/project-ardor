@@ -26,7 +26,7 @@ import com.projectardor.interview.repository.InterviewAnswerRepository;
 import com.projectardor.interview.repository.InterviewEvaluationRepository;
 import com.projectardor.interview.repository.InterviewQuestionRepository;
 import com.projectardor.interview.repository.InterviewSessionRepository;
-import com.projectardor.llm.service.LlmGateway;
+import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.platform.identity.profile.domain.UserProfile;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.materials.resume.domain.ResumeAnalysis;

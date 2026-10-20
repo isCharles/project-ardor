@@ -3,7 +3,7 @@ package com.projectardor.learning.web;
 import java.util.List;
 import java.util.UUID;
 import jakarta.validation.constraints.*;
-import com.projectardor.usage.QuotaRequestId;
+import com.projectardor.platform.usage.QuotaRequestId;
 
 public record LearningEvaluationQueueRequest(@NotNull UUID requestId,
         @NotNull @Min(0) Integer expectedAttemptCount,

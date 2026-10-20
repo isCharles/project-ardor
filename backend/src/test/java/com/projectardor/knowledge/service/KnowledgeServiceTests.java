@@ -19,8 +19,8 @@ import com.projectardor.materials.knowledge.domain.KnowledgeDocument;
 import com.projectardor.materials.knowledge.repository.KnowledgeChunkRepository;
 import com.projectardor.materials.knowledge.repository.KnowledgeDocumentRepository;
 import com.projectardor.materials.knowledge.repository.KnowledgeVectorStore;
-import com.projectardor.websearch.service.TavilySearchService;
-import com.projectardor.websearch.service.WebSearchResult;
+import com.projectardor.platform.model.websearch.service.TavilySearchService;
+import com.projectardor.platform.model.websearch.service.WebSearchResult;
 
 class KnowledgeServiceTests {
     private KnowledgeDocumentRepository documentRepository;

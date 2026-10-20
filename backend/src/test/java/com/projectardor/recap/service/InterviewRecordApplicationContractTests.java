@@ -20,7 +20,7 @@ import com.projectardor.recap.web.InterviewRecapController;
 import com.projectardor.recap.web.InterviewRecapResponse;
 import com.projectardor.recap.web.InterviewReplayController;
 import com.projectardor.recap.web.InterviewReplayResponse;
-import com.projectardor.aijobs.AiJobService;
+import com.projectardor.platform.jobs.aijobs.AiJobService;
 import tools.jackson.databind.json.JsonMapper;
 
 class InterviewRecordApplicationContractTests {

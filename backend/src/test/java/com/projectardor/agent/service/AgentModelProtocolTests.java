@@ -14,8 +14,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import com.sun.net.httpserver.HttpServer;
 import com.projectardor.agent.ReasoningDepth;
-import com.projectardor.llm.domain.LlmProvider;
-import com.projectardor.llm.service.LlmConfigService;
+import com.projectardor.platform.model.llm.domain.LlmProvider;
+import com.projectardor.platform.model.llm.service.LlmConfigService;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.model.chat.ChatModel;
@@ -89,7 +89,7 @@ class AgentModelProtocolTests {
     @Test void factoriesContainNoProviderWireBranchesOrSdkSpecificBuilders() throws Exception {
         String factory=Files.readString(Path.of("src/main/java/com/projectardor/agent/service/LangChainModelFactory.java"),StandardCharsets.UTF_8);
         assertThat(factory).doesNotContain("case OPENAI_COMPATIBLE","case ANTHROPIC_COMPATIBLE","OpenAiChatModel.builder","AnthropicChatModel.builder");
-        String gateway=Files.readString(Path.of("src/main/java/com/projectardor/llm/service/CompatibleLlmGateway.java"),StandardCharsets.UTF_8);
+        String gateway=Files.readString(Path.of("src/main/java/com/projectardor/platform/model/llm/service/CompatibleLlmGateway.java"),StandardCharsets.UTF_8);
         assertThat(gateway).doesNotContain("case OPENAI_COMPATIBLE","case ANTHROPIC_COMPATIBLE","/chat/completions","/v1/messages");
     }
     @Test void bothSdkProtocolsCompleteAnActualToolRoundTrip() throws Exception {

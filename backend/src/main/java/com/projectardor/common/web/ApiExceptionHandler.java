@@ -14,9 +14,9 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import com.projectardor.platform.identity.auth.service.DuplicateEmailException;
 import com.projectardor.common.security.ExternalHostResolutionException;
-import com.projectardor.llm.service.LlmCallException;
-import com.projectardor.speech.service.SpeechCallException;
-import com.projectardor.usage.QuotaExceededException;
+import com.projectardor.platform.model.llm.service.LlmCallException;
+import com.projectardor.platform.model.speech.service.SpeechCallException;
+import com.projectardor.platform.usage.QuotaExceededException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {

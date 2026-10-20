@@ -4,8 +4,8 @@ import java.util.Locale;
 import java.util.Map;
 
 import com.projectardor.agent.ReasoningDepth;
-import com.projectardor.llm.domain.LlmProvider;
-import com.projectardor.llm.service.LlmConfigService.LlmRuntimeConfig;
+import com.projectardor.platform.model.llm.domain.LlmProvider;
+import com.projectardor.platform.model.llm.service.LlmConfigService.LlmRuntimeConfig;
 
 /** Conservative native mapping; unknown models still receive the depth's prompt guidance. */
 public final class ModelReasoningPolicy {

@@ -24,8 +24,8 @@ import com.projectardor.materials.knowledge.repository.KnowledgeVectorStore;
 import com.projectardor.materials.knowledge.web.KnowledgeDocumentResponse;
 import com.projectardor.materials.knowledge.web.KnowledgeResearchResponse;
 import com.projectardor.materials.knowledge.web.KnowledgeSearchResult;
-import com.projectardor.websearch.service.TavilySearchService;
-import com.projectardor.websearch.service.WebSearchResult;
+import com.projectardor.platform.model.websearch.service.TavilySearchService;
+import com.projectardor.platform.model.websearch.service.WebSearchResult;
 
 @Service
 public class KnowledgeService {

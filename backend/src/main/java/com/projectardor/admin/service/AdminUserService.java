@@ -13,7 +13,7 @@ import com.projectardor.platform.identity.auth.domain.UserRole;
 import com.projectardor.platform.identity.auth.domain.UserStatus;
 import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.usage.MembershipService;
+import com.projectardor.platform.usage.MembershipService;
 
 @Service
 public class AdminUserService {
@@ -31,7 +31,7 @@ public class AdminUserService {
         var tiers = memberships.tiers(users.stream().map(UserAccount::getId).toList());
         return users.stream()
                 .map(user -> AdminUserResponse.from(user,
-                        tiers.getOrDefault(user.getId(), com.projectardor.usage.MembershipTier.FREE)))
+                        tiers.getOrDefault(user.getId(), com.projectardor.platform.usage.MembershipTier.FREE)))
                 .toList();
     }
 

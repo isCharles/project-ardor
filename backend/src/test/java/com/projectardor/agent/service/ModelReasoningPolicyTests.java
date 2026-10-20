@@ -3,8 +3,8 @@ package com.projectardor.agent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 import com.projectardor.agent.ReasoningDepth;
-import com.projectardor.llm.domain.LlmProvider;
-import com.projectardor.llm.service.LlmConfigService.LlmRuntimeConfig;
+import com.projectardor.platform.model.llm.domain.LlmProvider;
+import com.projectardor.platform.model.llm.service.LlmConfigService.LlmRuntimeConfig;
 
 class ModelReasoningPolicyTests {
     private LlmRuntimeConfig config(LlmProvider provider, String model) {

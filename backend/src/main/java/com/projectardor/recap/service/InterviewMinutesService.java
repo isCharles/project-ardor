@@ -12,7 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.llm.service.LlmGateway;
+import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.recap.domain.InterviewRecapJob;
 
 /** Human confirmation is a persisted business boundary, not a model instruction. */
@@ -23,10 +23,10 @@ public class InterviewMinutesService {
     private final LlmJsonParser parser;
     private final TransactionTemplate tx;
     private final String skill;
-    private final com.projectardor.usage.QuotaService quotas;
+    private final com.projectardor.platform.usage.QuotaService quotas;
 
     public InterviewMinutesService(JdbcTemplate jdbc, LlmGateway llm, LlmJsonParser parser,
-            org.springframework.transaction.PlatformTransactionManager manager,com.projectardor.usage.QuotaService quotas) throws java.io.IOException {
+            org.springframework.transaction.PlatformTransactionManager manager,com.projectardor.platform.usage.QuotaService quotas) throws java.io.IOException {
         this.jdbc = jdbc; this.llm = llm; this.parser = parser; this.tx = new TransactionTemplate(manager);
         this.quotas=quotas;
         this.skill = new ClassPathResource("skills/interview-minutes/SKILL.md").getContentAsString(StandardCharsets.UTF_8);
@@ -109,7 +109,7 @@ public class InterviewMinutesService {
             boolean first= !Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM interview_minutes_reviews WHERE draft_id=? AND user_id=?)",
                     Boolean.class,id,userId));
             // Upload already paid for the first complete draft-and-review workflow.
-            if (!exists && !first) quotas.consume(userId,com.projectardor.usage.UsageFeature.INTERVIEW_RECAP,
+            if (!exists && !first) quotas.consume(userId,com.projectardor.platform.usage.UsageFeature.INTERVIEW_RECAP,
                     chargeId("revision:"+id+":"+revision));
             jdbc.update("""
                     INSERT INTO interview_minutes_reviews(id,draft_id,user_id,revision,minutes,status)
@@ -125,7 +125,7 @@ public class InterviewMinutesService {
         var attempts=jdbc.query("SELECT attempts FROM interview_minutes_reviews WHERE id=? AND draft_id=? AND user_id=? AND status='FAILED' FOR UPDATE",
                 (r,n) -> r.getInt(1),reviewId,id,userId);
         if (attempts.isEmpty()) throw new ResourceNotFoundException("可重试的复盘任务不存在");
-        quotas.consume(userId,com.projectardor.usage.UsageFeature.INTERVIEW_RECAP,chargeId("retry:"+reviewId+":"+attempts.getFirst()));
+        quotas.consume(userId,com.projectardor.platform.usage.UsageFeature.INTERVIEW_RECAP,chargeId("retry:"+reviewId+":"+attempts.getFirst()));
         if (jdbc.update("""
                 UPDATE interview_minutes_reviews SET status='QUEUED',error_message=NULL,started_at=NULL
                 WHERE id=? AND draft_id=? AND user_id=? AND status='FAILED'

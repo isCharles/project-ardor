@@ -26,7 +26,7 @@ import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecapService;
 import com.projectardor.materials.resume.service.ResumeAnalysisQueueService;
 import com.projectardor.materials.resume.service.ResumeService;
-import com.projectardor.websearch.service.TavilySearchService;
+import com.projectardor.platform.model.websearch.service.TavilySearchService;
 
 /** Proposal cards are stable, auditable entities; the legacy card key never changes. */
 class AgentProposalAuditTests {
@@ -116,6 +116,6 @@ class AgentProposalAuditTests {
                 mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class), mock(KnowledgeService.class), plans,
                 mock(ApplicationRhythmService.class), mock(OpportunityService.class),
-                mock(com.projectardor.aijobs.AiJobService.class), audit, mock(com.projectardor.learning.review.service.FlashcardService.class));
+                mock(com.projectardor.platform.jobs.aijobs.AiJobService.class), audit, mock(com.projectardor.learning.review.service.FlashcardService.class));
     }
 }

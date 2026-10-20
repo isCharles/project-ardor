@@ -6,12 +6,12 @@ import org.springframework.stereotype.Service;
 
 import com.projectardor.admin.domain.SystemApiServiceType;
 import com.projectardor.admin.web.AdminApiConfigRequest;
-import com.projectardor.integrations.service.AuxiliaryConnectionTestService;
-import com.projectardor.llm.service.LlmConnectionTestService;
-import com.projectardor.websearch.service.TavilySearchService;
-import com.projectardor.speech.service.SpeechService;
-import com.projectardor.integrations.domain.AuxiliaryServiceType;
-import com.projectardor.integrations.web.AuxiliaryConnectionTestResponse;
+import com.projectardor.platform.model.integrations.service.AuxiliaryConnectionTestService;
+import com.projectardor.platform.model.llm.service.LlmConnectionTestService;
+import com.projectardor.platform.model.websearch.service.TavilySearchService;
+import com.projectardor.platform.model.speech.service.SpeechService;
+import com.projectardor.platform.model.integrations.domain.AuxiliaryServiceType;
+import com.projectardor.platform.model.integrations.web.AuxiliaryConnectionTestResponse;
 
 @Service
 public class AdminConnectionTestService {

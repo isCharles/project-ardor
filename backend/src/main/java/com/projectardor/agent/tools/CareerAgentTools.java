@@ -64,8 +64,8 @@ import com.projectardor.recap.service.InterviewRecordView;
 import com.projectardor.recap.web.InterviewRecapTaskResponse;
 import com.projectardor.learning.review.service.FlashcardService;
 import com.projectardor.learning.review.service.FlashcardView;
-import com.projectardor.websearch.service.TavilySearchService;
-import com.projectardor.websearch.service.WebSearchResult;
+import com.projectardor.platform.model.websearch.service.TavilySearchService;
+import com.projectardor.platform.model.websearch.service.WebSearchResult;
 
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
@@ -90,7 +90,7 @@ public class CareerAgentTools {
     private final LearningPlanService learningPlanService;
     private final ApplicationRhythmService applicationRhythmService;
     private final OpportunityService opportunityService;
-    private final com.projectardor.aijobs.AiJobService aiJobs;
+    private final com.projectardor.platform.jobs.aijobs.AiJobService aiJobs;
     private final com.projectardor.agent.service.AgentExecutionAuditStore executionAudit;
 
     /** Compatibility constructor for existing call sites/tests; proposals then carry no audit row. */
@@ -108,7 +108,7 @@ public class CareerAgentTools {
             KnowledgeService knowledgeService,
             LearningPlanService learningPlanService,
             ApplicationRhythmService applicationRhythmService, OpportunityService opportunityService,
-            com.projectardor.aijobs.AiJobService aiJobs,FlashcardService flashcards) {
+            com.projectardor.platform.jobs.aijobs.AiJobService aiJobs,FlashcardService flashcards) {
         this(resumeService, resumeAnalysisQueueService, interviewService, profileService, memoryService,
                 calendarTaskService, taskSeriesService, interviewRecapService, interviewRecapQueueService,
                 tavilySearchService, knowledgeService, learningPlanService, applicationRhythmService,
@@ -130,7 +130,7 @@ public class CareerAgentTools {
             KnowledgeService knowledgeService,
             LearningPlanService learningPlanService,
             ApplicationRhythmService applicationRhythmService, OpportunityService opportunityService,
-            com.projectardor.aijobs.AiJobService aiJobs,
+            com.projectardor.platform.jobs.aijobs.AiJobService aiJobs,
             com.projectardor.agent.service.AgentExecutionAuditStore executionAudit,FlashcardService flashcards) {
         this.resumeService = resumeService;
         this.resumeAnalysisQueueService = resumeAnalysisQueueService;
@@ -689,7 +689,7 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "finish_interview", value = "全部题目回答完毕后提交后台评价任务；返回任务 UUID，可以稍后查看，不能声称已生成评价")
-        public com.projectardor.aijobs.AiJobResponse finishInterview(@P("面试 UUID") String interviewId) {
+        public com.projectardor.platform.jobs.aijobs.AiJobResponse finishInterview(@P("面试 UUID") String interviewId) {
             UUID id = uuid(interviewId, "面试 ID");
             UUID action = logicalActionId == null ? runRequestId : logicalActionId;
             UUID request = action == null ? UUID.randomUUID()
@@ -698,7 +698,7 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "get_ai_job", value = "读取当前用户的后台学习生成、练习评分或面试评估任务状态；完成后用对应业务工具读取报告")
-        public com.projectardor.aijobs.AiJobResponse getAiJob(@P("后台任务 UUID") String jobId) {
+        public com.projectardor.platform.jobs.aijobs.AiJobResponse getAiJob(@P("后台任务 UUID") String jobId) {
             return aiJobs.status(userId, uuid(jobId, "任务 ID"));
         }
 

@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.llm.service.LlmCallException;
+import com.projectardor.platform.model.llm.service.LlmCallException;
 import com.projectardor.materials.resume.domain.Resume;
 import com.projectardor.materials.resume.domain.ResumeAnalysis;
 import com.projectardor.materials.resume.domain.ResumeAnalysisJob;

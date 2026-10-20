@@ -14,10 +14,10 @@ import com.projectardor.admin.repository.SystemApiConfigRepository;
 import com.projectardor.admin.web.AdminApiConfigRequest;
 import com.projectardor.admin.web.AdminApiConfigResponse;
 import com.projectardor.common.security.ExternalBaseUrlPolicy;
-import com.projectardor.integrations.service.AuxiliaryApiConfigService.AuxiliaryRuntimeConfig;
-import com.projectardor.llm.domain.LlmProvider;
-import com.projectardor.llm.security.ApiKeyCipher;
-import com.projectardor.llm.service.LlmConfigService.LlmRuntimeConfig;
+import com.projectardor.platform.model.integrations.service.AuxiliaryApiConfigService.AuxiliaryRuntimeConfig;
+import com.projectardor.platform.model.llm.domain.LlmProvider;
+import com.projectardor.platform.model.llm.security.ApiKeyCipher;
+import com.projectardor.platform.model.llm.service.LlmConfigService.LlmRuntimeConfig;
 
 @Service
 public class SystemApiConfigService {

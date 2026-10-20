@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.llm.service.LlmGateway;
+import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.recap.domain.InterviewRecap;
 import com.projectardor.recap.domain.InterviewRecapQuestion;
 import com.projectardor.recap.domain.InterviewReplayAttempt;
