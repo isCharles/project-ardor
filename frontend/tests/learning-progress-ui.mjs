@@ -41,6 +41,8 @@ try {
   const page=await context.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
   await page.goto(origin+"/app/learning/progress");
   await page.getByRole("heading",{name:"Synthetic gap first",exact:true}).waitFor();
+  assert.equal(await page.getByRole("link",{name:/Question practice attempts/}).count(),0,"An account total must not link to a question-required route without a question");
+  assert.equal(await page.getByRole("link",{name:"Try again",exact:true}).getAttribute("href"),"/app/learning/practice/questions?question=first");
   assert.equal(await page.locator('[data-progress-question="first"]').count(),1);
   for(const name of ["First exact plan first","Second exact plan first"])await page.getByRole("link",{name,exact:true}).waitFor();
   assert.match(await page.getByRole("link",{name:"Preparing for another interview · Specific round",exact:true}).getAttribute("href"),/selected=another-interview/);

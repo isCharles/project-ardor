@@ -150,7 +150,8 @@ try {
 
   await page.goto(`${origin}/app/evidence`);
   await page.getByRole("link", { name: /Try again|重新回答/ }).first().click();
-  await page.waitForURL(new RegExp(`/app/replay\\?question=${weak.id}`));
+  await page.waitForURL(url => ["/app/replay", "/app/learning/practice/questions"].includes(url.pathname)
+    && url.searchParams.get("question") === weak.id);
   await page.getByText(weak.questionText).first().waitFor();
 
   const plans = await page.evaluate(async () => {

@@ -137,10 +137,11 @@ function ProgressContent({ source }: { source: string | null }) {
             [t("Learning plans", "学习计划"), data.accountSummary.learningPlans, "/app/learning"],
             [t("Recorded learning attempts", "已保存的学习尝试"), data.accountSummary.recordedLearningAttempts, "/app/learning"],
             [t("Flashcards", "记忆卡"), data.accountSummary.flashcards, "/app/learning/review"],
-            [t("Question practice attempts", "重答次数"), data.accountSummary.replayAttempts, "/app/learning/practice/questions"],
-          ].map(([label, count, href]) => <Link key={String(label)} href={String(href)} className="min-w-0 rounded-2xl border border-white/80 bg-white/65 p-4">
-            <span className="block text-2xl font-semibold">{count}</span><span className="mt-1 block text-xs text-stone-500">{label}</span>
-          </Link>)}
+            [t("Question practice attempts", "重答次数"), data.accountSummary.replayAttempts, null],
+          ].map(([label, count, href]) => <div key={String(label)} className="min-w-0 rounded-2xl border border-white/80 bg-white/65 p-4">
+            {href ? <Link href={String(href)} className="block"><span className="block text-2xl font-semibold">{count}</span><span className="mt-1 block text-xs text-stone-500">{label}</span></Link>
+              : <><span className="block text-2xl font-semibold">{count}</span><span className="mt-1 block text-xs text-stone-500">{label}</span></>}
+          </div>)}
         </section>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2 text-sm text-stone-500">
           <p>{t("Interview questions to improve", "有待补强的面试问题")} · {data.totalQuestions}</p>
@@ -173,7 +174,7 @@ function ProgressContent({ source }: { source: string | null }) {
                 <p className="mt-3 text-sm text-stone-600">{t("Attempts", "尝试次数")} · {track.replay?.attemptCount ?? 0}</p>
                 {track.replay?.latestVerdict && <p className="mt-1 break-words text-xs text-stone-500">{t("Latest result", "最近结果")} · {verdicts[track.replay.latestVerdict] ?? t("Not enough evidence", "证据不足")}</p>}
                 {track.replay?.latestAt && <p className="mt-1 text-xs text-stone-500">{new Date(track.replay.latestAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN")}</p>}
-                <Link href={"/app/learning/practice/questions?question=" + q.id} className="mt-3 block text-sm text-violet-700">{t("Practice again", "再次作答")}</Link>
+                <Link href={"/app/learning/practice/questions?question=" + q.id} className="mt-3 block text-sm text-violet-700">{t("Try again", "重新回答")}</Link>
               </section>
               <section className="min-w-0">
                 <h3 className="text-sm font-medium">{t("Flashcard review", "记忆卡复习")}</h3>

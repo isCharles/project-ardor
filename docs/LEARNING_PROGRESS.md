@@ -28,5 +28,6 @@
 - LearningProgressServiceTests：来源/目标分离、全部计划保留、旧来源不猜测、独立学习统计、外部用户隔离、分页与领域依赖边界。
 - learning-context-acceptance.mjs：隔离真实 PostgreSQL/HTTP 中，两轮来源面试→单题/整场学习→重答→卡片复习→进度，另一场备考目标独立；跨用户和非法分页拒绝。模型使用合成响应，不代表真实模型质量评测。
 - frontend/tests/learning-progress-ui.mjs：分页、多个计划/卡片、重答、语言切换、刷新、空状态、旧路径、窄屏和长错误。
+- frontend/tests/learning-progress-live.mjs：生产构建连接明确指定的隔离后端，从虚构账号、两轮面试及确认纪要创建学习/重答/卡片复习，再在真实浏览器验证关联结果。所有业务响应来自真实后端与 PostgreSQL，不使用 API mock；LLM 仍为模拟服务。须显式设置 ARDOR_ACCEPTANCE_DISPOSABLE_DB=true、ARDOR_ACCEPTANCE_API_BASE 与 ARDOR_ACCEPTANCE_LLM_BASE，在 frontend 目录执行 node tests/learning-progress-live.mjs；本机浏览器可设置 ARDOR_UI_BROWSER_CHANNEL=msedge。
 
 本批不新增 migration。回退应用即可保留所有原业务事实；旧前端可继续使用原有列表接口。新前端需要具备此查询的后端，不能先单独部署到旧服务器。
