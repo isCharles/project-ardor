@@ -32,18 +32,28 @@ public class AgentRunStore {
             rs.getObject("id", UUID.class), rs.getObject("conversation_id", UUID.class),
             rs.getString("message"), rs.getString("status"), rs.getString("label"),
             rs.getString("error_code"), rs.getString("error_message"), rs.getBoolean("retryable"),
-            rs.getBoolean("tool_started"), rs.getTimestamp("created_at").toInstant(),
+            rs.getBoolean("tool_started"), rs.getObject("assistant_message_id", UUID.class),
+            rs.getTimestamp("created_at").toInstant(),
             rs.getTimestamp("updated_at").toInstant());
 
     private final JdbcTemplate jdbc;
     private final AgentConversationStore conversations;
     private final EntityManager entityManager;
+    private final AgentExecutionAuditStore executionAudit;
     private final ConcurrentHashMap<UUID, ActiveRun> activeRuns = new ConcurrentHashMap<>();
 
     public AgentRunStore(JdbcTemplate jdbc, AgentConversationStore conversations, EntityManager entityManager) {
+        this(jdbc, conversations, entityManager, null);
+    }
+
+    /** The audit projection is optional so isolation tests can run without it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentRunStore(JdbcTemplate jdbc, AgentConversationStore conversations, EntityManager entityManager,
+            AgentExecutionAuditStore executionAudit) {
         this.jdbc = jdbc;
         this.conversations = conversations;
         this.entityManager = entityManager;
+        this.executionAudit = executionAudit;
     }
 
     /** The UUID is supplied by the browser, but ownership and request contents are checked on every reuse. */
@@ -113,7 +123,7 @@ public class AgentRunStore {
     public AgentRun get(UUID userId, UUID requestId) {
         return jdbc.query("""
                 SELECT id, conversation_id, message, status, label, error_code, error_message,
-                       retryable, tool_started, created_at, updated_at
+                       retryable, tool_started, assistant_message_id, created_at, updated_at
                 FROM agent_runs WHERE id = ? AND user_id = ?
                 """, RUN_MAPPER, requestId, userId).stream().findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("请求记录不存在"));
@@ -131,7 +141,7 @@ public class AgentRunStore {
     public Optional<AgentRun> latest(UUID userId, UUID conversationId) {
         return jdbc.query("""
                 SELECT id, conversation_id, message, status, label, error_code, error_message,
-                       retryable, tool_started, created_at, updated_at
+                       retryable, tool_started, assistant_message_id, created_at, updated_at
                 FROM agent_runs WHERE user_id = ? AND conversation_id = ?
                 ORDER BY created_at DESC, id DESC LIMIT 1
                 """, RUN_MAPPER, userId, conversationId).stream().findFirst();
@@ -154,7 +164,8 @@ public class AgentRunStore {
         return jdbc.query("""
                 SELECT q.id,q.conversation_id,q.payload->>'message' AS message,q.status,
                   '未执行' AS label,CASE WHEN q.status='CANCELLED' THEN 'SUPERSEDED' ELSE 'QUEUE_NOT_STARTED' END AS error_code,
-                  q.error_message,false AS retryable,false AS tool_started,q.created_at,q.updated_at
+                  q.error_message,false AS retryable,false AS tool_started,CAST(NULL AS uuid) AS assistant_message_id,
+                  q.created_at,q.updated_at
                 FROM agent_message_queue q WHERE q.user_id=? AND q.conversation_id=?
                   AND (q.status IN ('FAILED','INTERRUPTED') OR (q.status='CANCELLED' AND q.error_message='已由后续补充替代，未执行'))
                   AND NOT EXISTS(SELECT 1 FROM agent_runs r WHERE r.id=q.id AND r.user_id=q.user_id)
@@ -229,6 +240,10 @@ public class AgentRunStore {
         }
         List<ConversationMessage> saved = conversations.appendExchange(
                 userId, conversation, message, answer, trace, references);
+        // The exchange is the server-side proof of request/assistant-message identity; the entity
+        // fields are updated before the flush so the saved response already carries the run link.
+        saved.get(0).linkRun(requestId, requestId);
+        saved.get(1).linkRun(requestId, requestId);
         // JDBC's owner-scoped message FK is immediate; flush JPA inserts before referencing the assistant row.
         entityManager.flush();
         int updated = jdbc.update("""
@@ -239,17 +254,24 @@ public class AgentRunStore {
                 WHERE id = ? AND user_id = ? AND status IN ('RUNNING', 'INTERRUPTED')
                 """, saved.get(1).getId(), requestId, userId);
         if (updated != 1) throw new IllegalStateException("请求状态已改变，回复未保存");
+        if (executionAudit != null) {
+            executionAudit.linkRunExchange(userId, requestId, saved.get(0).getId(), saved.get(1).getId());
+        }
         activeRuns.remove(requestId);
         return saved;
     }
 
     public AgentRun fail(UUID userId, UUID requestId, String code, String message, boolean retryable) {
-        jdbc.update("""
+        int updated = jdbc.update("""
                 UPDATE agent_runs SET status = 'FAILED', label = '执行失败', error_code = ?,
                        error_message = ?, retryable = CASE WHEN tool_started THEN FALSE ELSE ? END,
                        updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ? AND status = 'RUNNING'
                 """, code, message, retryable, requestId, userId);
+        if (updated > 0 && executionAudit != null) {
+            // A started tool whose result never arrived is UNKNOWN, never a fabricated success.
+            executionAudit.finishInterruptedRun(userId, requestId, code);
+        }
         activeRuns.remove(requestId);
         return get(userId, requestId);
     }
@@ -267,7 +289,7 @@ public class AgentRunStore {
     public AgentRun cancel(UUID userId, UUID requestId, boolean localExecutorOwnsRun) {
         AgentRun run = get(userId, requestId);
         if (!"RUNNING".equals(run.status()) || localExecutorOwnsRun) return run;
-        jdbc.update("""
+        int updated = jdbc.update("""
                 UPDATE agent_runs SET status = 'INTERRUPTED', label = '状态待确认',
                        error_code = 'AGENT_RUN_CANCELLED',
                        error_message = '已停止本轮；当前服务无法确认远端模型执行是否已终止，已开始的操作请核验结果。',
@@ -275,6 +297,9 @@ public class AgentRunStore {
                        finished_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ? AND status = 'RUNNING'
                 """, requestId, userId);
+        if (updated > 0 && executionAudit != null) {
+            executionAudit.finishInterruptedRun(userId, requestId, "AGENT_RUN_CANCELLED");
+        }
         activeRuns.remove(requestId);
         return get(userId, requestId);
     }
@@ -292,17 +317,24 @@ public class AgentRunStore {
     /** A dead server cannot finish a run; do not let it remain "running" forever. */
     @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
     public void interruptStaleRuns() {
-        List<UUID> candidates = jdbc.queryForList("SELECT id FROM agent_runs WHERE status='RUNNING' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '2 minutes'", UUID.class);
-        for (UUID requestId : candidates) {
+        List<StaleRun> candidates = jdbc.query("""
+                SELECT id, user_id FROM agent_runs WHERE status = 'RUNNING'
+                  AND updated_at < CURRENT_TIMESTAMP - INTERVAL '2 minutes'
+                """, (rs, row) -> new StaleRun(rs.getObject("id", UUID.class), rs.getObject("user_id", UUID.class)));
+        for (StaleRun candidate : candidates) {
+            UUID requestId = candidate.id();
             if (activeRuns.containsKey(requestId)) continue;
-        jdbc.update("""
-                UPDATE agent_runs SET status = 'INTERRUPTED', label = '状态待确认',
-                       error_code = 'AGENT_RUN_INTERRUPTED',
-                       error_message = '长时间未收到执行进展，无法确认操作是否已完成；请检查日历等操作结果后再试',
-                       retryable = FALSE, updated_at = CURRENT_TIMESTAMP,
-                       finished_at = CURRENT_TIMESTAMP
-                WHERE id=? AND status = 'RUNNING' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '2 minutes'
-                """, requestId);
+            jdbc.update("""
+                    UPDATE agent_runs SET status = 'INTERRUPTED', label = '状态待确认',
+                           error_code = 'AGENT_RUN_INTERRUPTED',
+                           error_message = '长时间未收到执行进展，无法确认操作是否已完成；请检查日历等操作结果后再试',
+                           retryable = FALSE, updated_at = CURRENT_TIMESTAMP,
+                           finished_at = CURRENT_TIMESTAMP
+                    WHERE id=? AND status = 'RUNNING' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '2 minutes'
+                    """, requestId);
+            if (executionAudit != null) {
+                executionAudit.finishInterruptedRun(candidate.userId(), requestId, "AGENT_RUN_INTERRUPTED");
+            }
         }
     }
 
@@ -333,8 +365,17 @@ public class AgentRunStore {
 
     public record AgentRun(UUID id, UUID conversationId, String message, String status, String label,
             String errorCode, String errorMessage, boolean retryable, boolean toolStarted,
-            Instant createdAt, Instant updatedAt) {
+            UUID assistantMessageId, Instant createdAt, Instant updatedAt) {
+        /** Compatibility constructor for call sites that predate the assistant-message link. */
+        public AgentRun(UUID id, UUID conversationId, String message, String status, String label,
+                String errorCode, String errorMessage, boolean retryable, boolean toolStarted,
+                Instant createdAt, Instant updatedAt) {
+            this(id, conversationId, message, status, label, errorCode, errorMessage, retryable,
+                    toolStarted, null, createdAt, updatedAt);
+        }
     }
 
     private record ActiveRun(UUID userId, Instant startedAt) {}
+
+    private record StaleRun(UUID id, UUID userId) {}
 }

@@ -108,6 +108,7 @@ public class CareerAgentService {
     private final AgentStreamProgress streamProgress;
     private final AgentToolApprovals toolApprovals;
     private final AgentPermissionGrants permissionGrants;
+    private final AgentExecutionAuditStore executionAudit;
     private final java.time.Duration silenceTimeout;
     private final java.time.Duration totalTimeout;
     private final ConcurrentHashMap<UUID, ActiveStream> activeStreams = new ConcurrentHashMap<>();
@@ -131,7 +132,7 @@ public class CareerAgentService {
             ProfileService profileService,
             ObjectMapper objectMapper,
             AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals,
-            AgentPermissionGrants permissionGrants,
+            AgentPermissionGrants permissionGrants, AgentExecutionAuditStore executionAudit,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:90s}") java.time.Duration silenceTimeout,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.total-timeout:10m}") java.time.Duration totalTimeout) {
         this.store = store;
@@ -146,6 +147,7 @@ public class CareerAgentService {
         this.streamProgress = streamProgress;
         this.toolApprovals = toolApprovals;
         this.permissionGrants = permissionGrants;
+        this.executionAudit = executionAudit;
         if (silenceTimeout.isNegative() || silenceTimeout.isZero() || totalTimeout.isNegative() || totalTimeout.isZero()) throw new IllegalArgumentException("Agent 运行期限必须大于零");
         this.silenceTimeout = silenceTimeout; this.totalTimeout = totalTimeout;
     }
@@ -373,13 +375,15 @@ public class CareerAgentService {
             // the agent proposed, so each becomes a button in the transcript.
             String interruptedRequest = runStore.interruptedRequest(userId, conversation.getId(), requestId);
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId)
+                    .withConversationId(conversation.getId())
                     .withInterviewAnswerContext(interviewAnswerContext(userId, conversation.getId()))
                     .withInterruptedRequest(interruptedRequest)
                     .withDateCorrectionContext(dateCorrectionContext(userId, conversation.getId(), references, interruptedRequest));
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, depth, lease))
                     .systemMessage(systemPrompt(userId, message) + depth.guidance()).chatMemory(memory)
-                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings, sink::waitingForApproval, message, permissionGrants))
+                    .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings,
+                            sink::waitingForApproval, message, permissionGrants, executionAudit, conversation.getId()))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
             if (finished.get()) {
                 streamProgress.finish(progressId, true);
