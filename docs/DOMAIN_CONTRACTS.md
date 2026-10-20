@@ -15,7 +15,7 @@
 | 学习尝试与内容版本 | 学习 | V52 新增 `learning_attempts`（每轮提交一行不可变事实）与 `learning_plans.content_version`/`exercises_version`；旧 `last_evaluation.attempts` 仅作兼容投影 | 尝试历史不是最后分数缓存；版本号不是资源 UUID；回填的 LEGACY 行不伪造评分模型 |
 | 模拟面试 | 学习训练 | `interview` 包与既有 session 状态 | 名称必须明确 Mock Interview；真实面试保留 Interview |
 | 重答与复测 | 学习训练 | `InterviewReplayAttempt` 等现有实现 | 不是录音播放，不与模拟会话共用万能状态表 |
-| 记忆卡 | 学习复习 | 当前仍在 recap 包 | 不属于面经才能存在，不与 Agent 长期记忆混同 |
+| 记忆卡 | 学习复习 | learning.review 拥有实体、仓储、FlashcardService 和复习历史；旧接口为传输适配，见 [复习合同](FLASHCARD_REVIEW.md) | 不属于面经才能存在，不与 Agent 长期记忆混同 |
 | 补强进度 | 学习查询 | LearningProgressService 通过具名跨域接口分页聚合问题、学习、重答与卡片复习；旧 evidence 路径兼容 | 不新建 Evidence CRUD；分数/次数不是能力证明；来源不等于准备目标，见 [查询合同](LEARNING_PROGRESS.md) |
 | 简历与知识资料 | 资料 | 现有 resume、knowledge、解析/索引 | 报告是派生结果，不能覆盖源版本 |
 | 日程与重复事项 | 日程 | calendar；关联其他领域安排 | 日历完成不能替代学习评分或面试结果 |

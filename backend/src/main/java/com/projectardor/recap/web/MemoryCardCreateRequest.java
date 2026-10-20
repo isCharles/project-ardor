@@ -2,7 +2,7 @@ package com.projectardor.recap.web;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import com.projectardor.recap.domain.MemoryCardSource;
+import com.projectardor.learning.review.domain.MemoryCardSource;
 import jakarta.validation.constraints.*;
 public record MemoryCardCreateRequest(MemoryCardSource sourceType, @Size(max=240) String sourceLabel,
         @Size(max=1000) String sourceUrl, @NotBlank @Size(max=12000) String front,

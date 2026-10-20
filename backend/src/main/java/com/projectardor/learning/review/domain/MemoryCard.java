@@ -1,4 +1,4 @@
-package com.projectardor.recap.domain;
+package com.projectardor.learning.review.domain;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;

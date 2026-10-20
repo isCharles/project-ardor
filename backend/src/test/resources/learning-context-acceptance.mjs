@@ -146,4 +146,28 @@ await a.request(`/api/interview-recaps/${report.id}`,{method:"DELETE",expected:2
 const retained=await a.request(`/api/learning-plans/${plan.id}`);
 assert.equal(retained.originKind,"INTERVIEW_QUESTION");assert.equal(retained.originResourceId,question.id);
 assert.equal((await a.request("/api/learning-plans",{method:"POST",expected:201,body:input})).id,plan.id,"Valid retry does not require a deleted source to exist");
-console.log("PASS: explicit origins, independent targets, owner/parent isolation, sync/async learning, attempt history, multi-round source to replay/review/progress, idempotency and deletion preservation");
+// Learning owns the existing card/review tables. Moving Java ownership must not
+// reset state, broaden deletion, or make independent cards depend on a record.
+let ownedCards=await a.request("/api/memory-cards");
+let detached=ownedCards.find(item=>item.id===card.id);
+assert.ok(detached,"Deleting the source report preserves its standalone card");
+assert.equal(detached.recapQuestionId,null);
+assert.equal(detached.repetitions,1);
+const updatedCard=await a.request("/api/memory-cards/"+card.id,{method:"PUT",body:{front:"Edited synthetic prompt",back:"Edited synthetic answer",tags:["edited"]}});
+assert.equal(updatedCard.repetitions,1);assert.equal(updatedCard.intervalDays,detached.intervalDays);
+assert.equal(updatedCard.nextReviewAt,detached.nextReviewAt);
+await b.request("/api/memory-cards/"+card.id,{method:"PUT",expected:404,body:{front:"Foreign edit",back:"Foreign edit",tags:[]}});
+const suspended=await a.request("/api/memory-cards/"+card.id+"/suspend",{method:"POST"});
+assert.equal(suspended.status,"SUSPENDED");
+await a.request("/api/memory-cards/"+card.id+"/reviews",{method:"POST",expected:409,body:{rating:"GOOD"}});
+await a.request("/api/memory-cards/"+card.id+"/suspend?value=false",{method:"POST"});
+const newer=await a.request("/api/memory-cards",{method:"POST",expected:201,body:{sourceType:"AGENT",front:"Independent later card",back:"Independent answer",tags:[]}});
+const foreignCard=await b.request("/api/memory-cards",{method:"POST",expected:201,body:{sourceType:"AGENT",front:"Another owner card",back:"Another owner answer",tags:[]}});
+await a.request("/api/memory-cards/snapshot",{method:"DELETE",expected:404,body:{ids:[card.id,foreignCard.id]}});
+assert.ok((await a.request("/api/memory-cards")).some(item=>item.id===card.id),"Mixed-owner snapshot is rejected before deleting any owned card");
+await a.request("/api/memory-cards/snapshot",{method:"DELETE",expected:204,body:{ids:[card.id,card.id]}});
+ownedCards=await a.request("/api/memory-cards");
+assert.ok(!ownedCards.some(item=>item.id===card.id));
+assert.ok(ownedCards.some(item=>item.id===newer.id),"A snapshot cannot delete a card created outside that snapshot");
+assert.ok((await b.request("/api/memory-cards")).some(item=>item.id===foreignCard.id));
+console.log("PASS: explicit origins, independent targets, owned learning/review progress, card lifecycle and snapshot isolation, retained history, idempotency and deletion preservation");

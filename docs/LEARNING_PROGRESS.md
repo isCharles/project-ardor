@@ -6,7 +6,7 @@
 
 - GET /api/learning-progress?page=0&size=20 从认证上下文取得用户，每页最多 50 道 WEAK/MIXED 真实面试问题。sourceInterviewId 可限定来源面试，先校验归属；不是备考目标筛选。
 - 求职领域的 InterviewQuestionProgressAccess 提供问题与记录、真实流程、轮次引用；学习查询不访问求职 Repository。
-- 训练/复习的 QuestionPracticeProgressAccess 提供关联卡片的复习次数，以及重答总次数和最近结果。没有卡背、重答正文或完整模型评价。
+- 学习复习的 FlashcardProgressAccess 提供关联卡片的复习次数，QuestionPracticeProgressAccess 提供重答总次数和最近结果；各自拥有自己的存储查询。没有卡背、重答正文或完整模型评价。
 - 学习领域读取自己的计划摘要，保留全部单题计划和单独列出的整场面试计划，不只取第一份。准备目标独立展示，不从来源推断。
 - 旧 RECAP 来源只通过既有、受用户限定的来源解析接口消歧；不能可靠解析则不关联，不凭 UUID 或页面位置猜测。
 - 顶部账户统计覆盖自主学习与复习，即使没有真实面试问题仍显示。已保存尝试数是历史事实行数，不冒充从未保留的历史次数。

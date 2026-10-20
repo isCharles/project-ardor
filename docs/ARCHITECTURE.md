@@ -63,7 +63,7 @@ CareerAgentService ─> LangChain4j AI Services + Chat Memory + Tools
 
 ## 当前模块与目标归属
 
-现有生产包包含 `opportunity`、`applications`、`recap`、`interview`、`learning`、`resume`、`knowledge`、`calendar`、`agent`、`aijobs`、`background`、`llm`、`speech`、`usage`、`profile`、`auth`、`admin`、`integrations`、`websearch` 与基础配置。`interview` 目前仍实现模拟面试，真实面试由 `opportunity` 实现；`recap` 仍混有记录、卡片与重答。
+现有生产包包含 `opportunity`、`applications`、`recap`、`interview`、`learning`、`resume`、`knowledge`、`calendar`、`agent`、`aijobs`、`background`、`llm`、`speech`、`usage`、`profile`、`auth`、`admin`、`integrations`、`websearch` 与基础配置。`interview` 目前仍实现模拟面试，真实面试由 `opportunity` 实现；`recap` 仍保留记录与重答，卡片与复习历史已由 `learning.review` 管理，见 [学习复习合同](FLASHCARD_REVIEW.md)。
 
 目标归属为求职、学习、资料、助手、日程和平台的逻辑边界，并非一次性移动全部目录。普通业务服务不得继续扩大跨域 Repository 访问；现存耦合按阶段替换。导航收拢不代表这些内部边界已经完成，具体迁移合同见上方文档。
 

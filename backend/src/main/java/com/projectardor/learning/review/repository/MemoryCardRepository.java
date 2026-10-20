@@ -1,8 +1,8 @@
-package com.projectardor.recap.repository;
+package com.projectardor.learning.review.repository;
 import java.time.Instant;
 import java.util.*;
 import org.springframework.data.jpa.repository.JpaRepository;
-import com.projectardor.recap.domain.*;
+import com.projectardor.learning.review.domain.*;
 public interface MemoryCardRepository extends JpaRepository<MemoryCard, UUID> {
     interface ProgressCard {
         UUID getId(); UUID getRecapQuestionId(); MemoryCardStatus getStatus();
