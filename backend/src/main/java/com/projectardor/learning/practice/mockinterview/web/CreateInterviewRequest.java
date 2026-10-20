@@ -1,0 +1,28 @@
+package com.projectardor.learning.practice.mockinterview.web;
+
+import java.util.UUID;
+
+import com.projectardor.learning.practice.mockinterview.domain.InterviewModality;
+
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record CreateInterviewRequest(
+        UUID resumeAnalysisId,
+        InterviewModality modality,
+        @Size(max = 160) String targetCompany,
+        @NotBlank @Size(max = 160) String targetRole,
+        @Min(3) @Max(10) Integer questionCount,
+        /** Optional real interview process this mock session prepares for. */
+        UUID jobOpportunityId) {
+
+    public int resolvedQuestionCount() {
+        return questionCount == null ? 5 : questionCount;
+    }
+
+    public InterviewModality resolvedModality() {
+        return modality == null ? InterviewModality.TEXT : modality;
+    }
+}

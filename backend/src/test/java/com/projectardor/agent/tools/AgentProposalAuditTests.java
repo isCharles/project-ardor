@@ -17,7 +17,7 @@ import com.projectardor.agent.service.AgentMemoryService;
 import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
 import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.scheduling.service.TaskSeriesService;
-import com.projectardor.interview.service.InterviewService;
+import com.projectardor.learning.practice.mockinterview.service.InterviewService;
 import com.projectardor.materials.knowledge.service.KnowledgeService;
 import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.opportunity.service.OpportunityService;
