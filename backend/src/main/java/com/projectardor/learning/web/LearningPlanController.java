@@ -87,7 +87,14 @@ public class LearningPlanController {
     @QuotaProtected(UsageFeature.LEARNING_ATTEMPT)
     public LearningPlanResponse attempt(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID id, @Valid @RequestBody LearningAttemptRequest request) {
-        return LearningPlanResponse.from(service.submit(principal.userId(), id, request.answers()));
+        return LearningPlanResponse.from(service.submit(principal.userId(), id, request.answers(),
+                request.expectedAttemptCount(), request.exercisesVersion(), null));
+    }
+
+    @GetMapping("/{id}/attempts")
+    public List<LearningAttemptResponse> attempts(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable UUID id) {
+        return service.attempts(principal.userId(), id).stream().map(LearningAttemptResponse::from).toList();
     }
 
     @DeleteMapping("/{id}")

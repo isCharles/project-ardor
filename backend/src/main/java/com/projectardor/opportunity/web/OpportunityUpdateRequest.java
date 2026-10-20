@@ -9,4 +9,8 @@ public record OpportunityUpdateRequest(
         @Size(max = 80) String platform,
         @Size(max = 50000) String jdContent,
         @Size(max = 50000) String inviteContent,
-        @Size(max = 32) String status) {}
+        @Size(max = 32) String status) {
+    public com.projectardor.opportunity.service.InterviewProcessCommands.Update command() {
+        return new com.projectardor.opportunity.service.InterviewProcessCommands.Update(company,targetRole,platform,jdContent,inviteContent,status);
+    }
+}

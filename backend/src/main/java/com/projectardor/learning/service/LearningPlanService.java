@@ -23,9 +23,11 @@ import com.projectardor.calendar.domain.CalendarTaskSource;
 import com.projectardor.calendar.service.CalendarTaskService;
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
+import com.projectardor.learning.domain.LearningAttempt;
 import com.projectardor.learning.domain.LearningPlan;
 import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.domain.LearningStatus;
+import com.projectardor.learning.repository.LearningAttemptRepository;
 import com.projectardor.learning.repository.LearningPlanRepository;
 import com.projectardor.llm.service.LlmGateway;
 import com.projectardor.profile.service.ProfileService;
@@ -36,7 +38,11 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class LearningPlanService {
+    /** Versioned identity of the evaluation contract persisted with every graded attempt. */
+    static final String EVALUATION_PROMPT_VERSION = "learning-evaluation-v1";
+
     private final LearningPlanRepository repository;
+    private final LearningAttemptRepository attempts;
     private final LlmGateway llmGateway;
     private final LlmJsonParser jsonParser;
     private final ObjectMapper objectMapper;
@@ -48,13 +54,14 @@ public class LearningPlanService {
     private final LearningPlanAgentSlots agentSlots;
     private final TransactionTemplate transactions;
 
-    public LearningPlanService(LearningPlanRepository repository, LlmGateway llmGateway,
-            LlmJsonParser jsonParser, ObjectMapper objectMapper,
+    public LearningPlanService(LearningPlanRepository repository, LearningAttemptRepository attempts,
+            LlmGateway llmGateway, LlmJsonParser jsonParser, ObjectMapper objectMapper,
             CalendarTaskService calendarTaskService, ProfileService profileService,
             LearningContextResolver contexts,
             LearningPlanCreationStore creationStore, LearningPlanGenerationGate generationGate,
             LearningPlanAgentSlots agentSlots, PlatformTransactionManager transactionManager) {
         this.repository = repository;
+        this.attempts = attempts;
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
         this.objectMapper = objectMapper;
@@ -171,28 +178,90 @@ public class LearningPlanService {
     }
 
     public LearningPlan submit(UUID userId, UUID planId, List<String> rawAnswers) {
-        return submit(userId, planId, rawAnswers, null, null);
+        return submit(userId, planId, rawAnswers, null, null, null);
     }
 
-    public LearningPlan submit(UUID userId, UUID planId, List<String> rawAnswers, Integer requestedRound, UUID requestId) {
+    /** Async evaluation entry point: the AI job id doubles as the submission idempotency key. */
+    public LearningPlan submit(UUID userId, UUID planId, List<String> rawAnswers, Integer expectedAttemptCount,
+            UUID requestId) {
+        return submit(userId, planId, rawAnswers, expectedAttemptCount, null, requestId);
+    }
+
+    /**
+     * Grades one round without a database lock and commits it under the plan row lock.
+     * Explicit attempt/content version fences are checked before the model call so stale
+     * answers never consume a model call or attach to a regenerated exercise set.
+     */
+    public LearningPlan submit(UUID userId, UUID planId, List<String> rawAnswers, Integer expectedAttemptCount,
+            Integer expectedExercisesVersion, UUID requestId) {
         LearningPlan plan = get(userId, planId);
-        if (hasSubmission(plan, requestId)) return plan;
-        if (requestedRound != null && requestedRound != plan.getAttemptCount())
+        LearningAttempt previous = requestId == null ? null
+                : attempts.findByUserIdAndRequestId(userId, requestId).orElse(null);
+        if (previous != null) {
+            if (!previous.getPlanId().equals(planId)) throw new IllegalStateException("请求 ID 已用于其他学习尝试");
+            return plan;
+        }
+        // Pre-V52 history only exists in the compatibility projection; keep honoring it.
+        if (hasLegacySubmission(plan, requestId)) return plan;
+        if (expectedAttemptCount != null && expectedAttemptCount != plan.getAttemptCount())
             throw new IllegalStateException("学习轮次已更新，请刷新后重新提交");
+        if (expectedExercisesVersion != null && expectedExercisesVersion != plan.getExercisesVersion())
+            throw new IllegalStateException("学习内容已更新，请刷新后重新提交");
         if (plan.getStatus() == LearningStatus.COMPLETED) {
             throw new IllegalStateException("这项学习已经完成");
         }
-        List<String> answers = rawAnswers == null ? List.of()
-                : rawAnswers.stream().map(value -> value == null ? "" : value.strip()).toList();
-        if (answers.size() != plan.getExercises().size() || answers.stream().anyMatch(String::isBlank)) {
+        List<String> answers = normalizedAnswers(rawAnswers);
+        List<Map<String, Object>> exercises = plan.getExercises();
+        if (answers.size() != exercises.size() || answers.stream().anyMatch(String::isBlank)) {
             throw new IllegalArgumentException("请完成全部练习后再提交");
         }
-        int expectedAttemptCount = plan.getAttemptCount();
+        int attemptCountAtRead = plan.getAttemptCount();
+        int contentVersionAtRead = plan.getContentVersion();
+        int exercisesVersionAtRead = plan.getExercisesVersion();
         Instant expectedSchedule = plan.getScheduledAt();
-        List<Map<String, Object>> attempts = new ArrayList<>();
+        List<Map<String, Object>> gradedItems = gradedItems(exercises, answers);
+        LlmGateway.LlmResult result = llmGateway.completeJson(userId, evaluationPrompt(),
+                "学习主题：" + plan.getConcept() + "\n练习与回答：" + json(gradedItems));
+        JsonNode node = jsonParser.parseObject(result.content());
+        int modelScore = node.path("score").asInt(-1);
+        // When the whole exercise set is multiple choice, the score is arithmetic —
+        // asking the model to re-judge selections only invites invented deductions.
+        int gradedScore = gradedItems.stream().allMatch(item -> item.containsKey("choiceCorrect"))
+                ? (int) Math.round(100.0 * gradedItems.stream()
+                        .filter(item -> Boolean.TRUE.equals(item.get("choiceCorrect"))).count() / gradedItems.size())
+                : modelScore;
+        if (gradedScore < 0 || gradedScore > 100) throw new IllegalStateException("模型没有返回有效练习分数");
+        // The model call runs without a database lock. Recheck under a row lock and commit
+        // the attempt row, its compatibility projection and calendar state in one transaction.
+        return transactions.execute(status -> commitAttempt(userId, planId, attemptCountAtRead,
+                contentVersionAtRead, exercisesVersionAtRead, exercises, answers, gradedItems, node,
+                gradedScore, result.model(), requestId, expectedSchedule));
+    }
+
+    @Transactional(readOnly = true)
+    public List<LearningAttempt> attempts(UUID userId, UUID planId) {
+        get(userId, planId);
+        return attempts.findAllByUserIdAndPlanIdOrderByAttemptNoAsc(userId, planId);
+    }
+
+    private List<String> normalizedAnswers(List<String> rawAnswers) {
+        return rawAnswers == null ? List.of()
+                : rawAnswers.stream().map(value -> value == null ? "" : value.strip()).toList();
+    }
+
+    /** Legacy compatibility fallback for submissions recorded before V52. */
+    private boolean hasLegacySubmission(LearningPlan plan, UUID requestId) {
+        if (requestId == null || !(plan.getLastEvaluation().get("attempts") instanceof List<?> history)) return false;
+        return history.stream().anyMatch(item -> item instanceof Map<?, ?> map
+                && requestId.toString().equals(map.get("requestId")));
+    }
+
+    private List<Map<String, Object>> gradedItems(List<Map<String, Object>> exercises, List<String> answers) {
+        List<Map<String, Object>> items = new ArrayList<>();
         for (int index = 0; index < answers.size(); index++) {
-            Map<String, Object> exercise = plan.getExercises().get(index);
+            Map<String, Object> exercise = exercises.get(index);
             Map<String, Object> item = new LinkedHashMap<>();
+            if (exercise.get("exerciseId") != null) item.put("exerciseId", exercise.get("exerciseId"));
             item.put("question", exercise.get("question"));
             item.put("type", exercise.getOrDefault("type", "SHORT_ANSWER"));
             item.put("rubric", exercise.get("rubric"));
@@ -209,50 +278,38 @@ public class LearningPlanService {
                     item.put("choiceCorrect", correct.equals(answers.get(index)));
                 }
             }
-            attempts.add(item);
+            items.add(item);
         }
-        LlmGateway.LlmResult result = llmGateway.completeJson(userId, evaluationPrompt(),
-                "学习主题：" + plan.getConcept() + "\n练习与回答：" + json(attempts));
-        JsonNode node = jsonParser.parseObject(result.content());
-        int modelScore = node.path("score").asInt(-1);
-        // When the whole exercise set is multiple choice, the score is arithmetic —
-        // asking the model to re-judge selections only invites invented deductions.
-        int gradedScore = attempts.stream().allMatch(item -> item.containsKey("choiceCorrect"))
-                ? (int) Math.round(100.0 * attempts.stream()
-                        .filter(item -> Boolean.TRUE.equals(item.get("choiceCorrect"))).count() / attempts.size())
-                : modelScore;
-        if (gradedScore < 0 || gradedScore > 100) throw new IllegalStateException("模型没有返回有效练习分数");
-        // The model call runs without a database lock. Recheck under a row lock and
-        // commit the feedback together with its calendar state in one transaction.
-        return transactions.execute(status -> commitAttempt(userId, planId, expectedAttemptCount,
-                answers, node, gradedScore, requestId, expectedSchedule));
-    }
-
-    private boolean hasSubmission(LearningPlan plan, UUID requestId) {
-        if (requestId == null || !(plan.getLastEvaluation().get("attempts") instanceof List<?> attempts)) return false;
-        return attempts.stream().anyMatch(item -> item instanceof Map<?, ?> map
-                && requestId.toString().equals(map.get("requestId")));
+        return items;
     }
 
     private LearningPlan commitAttempt(UUID userId, UUID planId, int expectedAttemptCount,
-            List<String> answers, JsonNode node, int score, UUID requestId, Instant expectedSchedule) {
+            int expectedContentVersion, int expectedExercisesVersion, List<Map<String, Object>> exercises,
+            List<String> answers, List<Map<String, Object>> gradedItems, JsonNode node, int score,
+            String evaluationModel, UUID requestId, Instant expectedSchedule) {
         LearningPlan plan = repository.findOwnedForUpdate(planId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("学习计划不存在"));
-        if (hasSubmission(plan, requestId)) return plan;
-        if (plan.getStatus() == LearningStatus.COMPLETED || plan.getAttemptCount() != expectedAttemptCount) {
+        if (requestId != null && attempts.findByUserIdAndRequestId(userId, requestId).isPresent()) return plan;
+        if (hasLegacySubmission(plan, requestId)) return plan;
+        if (plan.getStatus() == LearningStatus.COMPLETED || plan.getAttemptCount() != expectedAttemptCount
+                || plan.getContentVersion() != expectedContentVersion
+                || plan.getExercisesVersion() != expectedExercisesVersion) {
             throw new IllegalStateException("学习内容已更新，请刷新后重新提交");
         }
-        Map<String, Object> evaluation = new LinkedHashMap<>(
+        Map<String, Object> modelEvaluation = new LinkedHashMap<>(
                 objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() {}));
         // The next round's rubric is for grading only; never expose it through lastEvaluation.
-        evaluation.remove("nextExercises");
+        modelEvaluation.remove("nextExercises");
+        Map<String, Object> historyEvaluation = attemptEvaluation(modelEvaluation, gradedItems,
+                expectedContentVersion, expectedExercisesVersion);
+        Map<String, Object> projection = new LinkedHashMap<>(modelEvaluation);
         List<Object> history = new ArrayList<>();
         if (plan.getLastEvaluation().get("attempts") instanceof List<?> previous) {
             history.addAll(previous.subList(Math.max(0, previous.size() - 19), previous.size()));
         }
         List<Map<String, Object>> answeredItems = new ArrayList<>();
         for (int index = 0; index < answers.size(); index++) {
-            Map<String, Object> exercise = plan.getExercises().get(index);
+            Map<String, Object> exercise = exercises.get(index);
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("question", exercise.get("question"));
             item.put("type", exercise.getOrDefault("type", "SHORT_ANSWER"));
@@ -266,16 +323,46 @@ public class LearningPlanService {
         recordedAttempt.put("score", score);
         recordedAttempt.put("submittedAt", Instant.now().toString());
         recordedAttempt.put("feedback", node.path("feedback").asText(""));
-        recordedAttempt.put("questionFeedback", evaluation.getOrDefault("questionFeedback", List.of()));
+        recordedAttempt.put("questionFeedback", modelEvaluation.getOrDefault("questionFeedback", List.of()));
         history.add(recordedAttempt);
-        evaluation.put("attempts", history);
+        projection.put("attempts", history);
         List<Map<String, Object>> followUps = score >= 80 ? List.of() : optionalExercises(node.path("nextExercises"));
         Instant nextReview = score >= 80 ? null : java.util.Objects.equals(plan.getScheduledAt(), expectedSchedule)
                 ? tomorrowMorning(userId) : plan.getScheduledAt();
-        plan.recordAttempt(score, evaluation, nextReview, followUps);
+        // One immutable attempt row per graded round. attempt_no is assigned under the plan
+        // row lock from stored history, not just attempt_count: anomalous pre-V52 projections
+        // can contain more rows than attempt_count (backfilled as 1..N). Using max(stored,
+        // attempt_count) + 1 keeps the unique key safe without rewriting historical counts or
+        // turning every later submission into a rollback; attempt_no may therefore jump.
+        int attemptNo = Math.max(attempts.maxAttemptNo(userId, planId), expectedAttemptCount) + 1;
+        attempts.save(LearningAttempt.graded(userId, planId, attemptNo, requestId,
+                exercises, answers, score, historyEvaluation, evaluationModel,
+                EVALUATION_PROMPT_VERSION, Instant.now()));
+        plan.recordAttempt(score, projection, nextReview, followUps);
         LearningPlan saved = repository.save(plan);
         syncCalendar(saved);
         return saved;
+    }
+
+    /** Keeps per-round evidence the truncated compatibility projection never stored. */
+    private Map<String, Object> attemptEvaluation(Map<String, Object> modelEvaluation,
+            List<Map<String, Object>> gradedItems, int contentVersion, int exercisesVersion) {
+        Map<String, Object> value = new LinkedHashMap<>(modelEvaluation);
+        value.put("contentVersion", contentVersion);
+        value.put("exercisesVersion", exercisesVersion);
+        List<Map<String, Object>> choices = new ArrayList<>();
+        for (Map<String, Object> item : gradedItems) {
+            if (!item.containsKey("choiceCorrect")) continue;
+            Map<String, Object> choice = new LinkedHashMap<>();
+            choice.put("exerciseId", item.get("exerciseId"));
+            choice.put("question", item.get("question"));
+            choice.put("selected", item.get("answer"));
+            choice.put("correctOption", item.get("correctOption"));
+            choice.put("correct", item.get("choiceCorrect"));
+            choices.add(choice);
+        }
+        if (!choices.isEmpty()) value.put("choices", choices);
+        return value;
     }
 
     @Transactional
@@ -330,6 +417,9 @@ public class LearningPlanService {
                 exercise.put("options", List.of("正确", "错误"));
                 exercise.put("correctOption", answer.asBoolean() ? 0 : 1);
             }
+            // Stable question identity: attempt snapshots and follow-up sets keep referring to
+            // the same exercise even if the plan is read again or a model regenerates wording.
+            exercise.put("exerciseId", UUID.randomUUID().toString());
             values.add(exercise);
         }
         if (values.size() < 2) throw new IllegalStateException("模型返回的有效练习题少于 2 道");

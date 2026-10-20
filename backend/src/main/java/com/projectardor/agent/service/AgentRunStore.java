@@ -218,8 +218,14 @@ public class AgentRunStore {
     @Transactional
     public List<ConversationMessage> complete(UUID userId, UUID requestId, Conversation conversation,
             String message, String answer, String trace, List<AgentContextReference> references) {
-        if (!List.of("RUNNING", "INTERRUPTED").contains(get(userId, requestId).status())) {
+        AgentRun current = get(userId, requestId);
+        if (!List.of("RUNNING", "INTERRUPTED").contains(current.status())) {
             throw new IllegalStateException("请求已结束，不能再次保存回复");
+        }
+        // An explicit cancel with no local executor is final: a late reply must not overwrite it.
+        // Unconfirmed stale interruptions remain completable so a slow but live run can still land its reply.
+        if ("INTERRUPTED".equals(current.status()) && "AGENT_RUN_CANCELLED".equals(current.errorCode())) {
+            throw new IllegalStateException("本轮已停止，不能保存迟到的回复");
         }
         List<ConversationMessage> saved = conversations.appendExchange(
                 userId, conversation, message, answer, trace, references);
@@ -244,6 +250,31 @@ public class AgentRunStore {
                        updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ? AND status = 'RUNNING'
                 """, code, message, retryable, requestId, userId);
+        activeRuns.remove(requestId);
+        return get(userId, requestId);
+    }
+
+    /**
+     * Explicit, owner-scoped cancellation contract.
+     *
+     * <p>A terminal run is returned unchanged so repeated or late cancel clicks are idempotent.
+     * A RUNNING run owned by a live local stream is left to the caller's terminate hook, which
+     * fences the lease and writes the real terminal status. A RUNNING run without a local
+     * executor (service restart, another process, or a fenced stream that could not persist)
+     * is marked INTERRUPTED: this process cannot prove that the remote model or tool work
+     * stopped, so it must not claim a successful cancel. Callers report the returned status.
+     */
+    public AgentRun cancel(UUID userId, UUID requestId, boolean localExecutorOwnsRun) {
+        AgentRun run = get(userId, requestId);
+        if (!"RUNNING".equals(run.status()) || localExecutorOwnsRun) return run;
+        jdbc.update("""
+                UPDATE agent_runs SET status = 'INTERRUPTED', label = '状态待确认',
+                       error_code = 'AGENT_RUN_CANCELLED',
+                       error_message = '已停止本轮；当前服务无法确认远端模型执行是否已终止，已开始的操作请核验结果。',
+                       retryable = FALSE, updated_at = CURRENT_TIMESTAMP,
+                       finished_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ? AND status = 'RUNNING'
+                """, requestId, userId);
         activeRuns.remove(requestId);
         return get(userId, requestId);
     }
