@@ -37,6 +37,7 @@ CareerAgentService ─> LangChain4j AI Services + Chat Memory + Tools
 - `ResumeService`、`OpportunityService`（真实面试）、`InterviewService`（模拟面试）、`LearningPlanService` 与日程等应用 Service 承担校验、授权、事务与业务状态转换。
 - 真实面试通过 `InterviewProcessCommands` 与不可变 `InterviewProcessView` 提供应用合同，HTTP 和 Agent 各做边界适配；旧 `Opportunity` API 和实体身份保留。其他领域仍需逐步清理，不能据此声称全站已脱离 Web DTO。
 - Agent Tool 只是薄适配器，不能复制或绕过 Service 逻辑。
+- 平台层（`llm`、`usage`、`aijobs`、`background`）不得导入业务域 Service/Tool/Repository；模型连接测试如需 Agent 能力，通过 `ToolCallingProbe` 等接口由业务层实现。架构边界测试见 `ArchitectureBoundaryTests`。
 - 对话历史保存在 `conversations/messages`；用户可以拥有多个未归档会话，请求明确携带当前 `conversationId`，每次只把该会话的最近窗口装入 Chat Memory。
 - 当前长期记忆使用 `user_agent_memory_items` 条目，`AgentMemoryService` 汇总仍有效的内容；旧 `user_agent_memories` 是历史兼容结构，不是新的单一真相源。用户可查看、修改和删除，自动维护仍须满足来源、敏感信息和业务授权约束。
 - 当前会话上下文、用户总体记忆和简历/面试业务数据是三个独立边界，不能互相替代。
