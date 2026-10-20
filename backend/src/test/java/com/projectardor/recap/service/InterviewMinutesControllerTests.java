@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import com.projectardor.auth.domain.UserRole;
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.recap.web.InterviewMinutesController;
 import com.projectardor.usage.QuotaService;
 

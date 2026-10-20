@@ -32,10 +32,10 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import com.projectardor.agent.service.AgentExecutionAuditStore;
 import com.projectardor.agent.service.AgentRunStore;
-import com.projectardor.auth.domain.UserAccount;
-import com.projectardor.auth.domain.UserRole;
-import com.projectardor.auth.repository.UserAccountRepository;
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.domain.UserAccount;
+import com.projectardor.platform.identity.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.common.web.ApiExceptionHandler;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.config.SecurityConfig;

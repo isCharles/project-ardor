@@ -3,7 +3,7 @@ package com.projectardor.recap.web;
 import java.time.Instant;
 import java.util.UUID;
 
-import com.projectardor.calendar.domain.CalendarTask;
+import com.projectardor.scheduling.domain.CalendarTask;
 
 public record InterviewRetestResponse(UUID id, UUID attemptId, Instant dueAt, String challenge) {
     public static InterviewRetestResponse from(CalendarTask task) {

@@ -7,8 +7,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import com.projectardor.calendar.domain.CalendarTaskSource;
-import com.projectardor.calendar.service.CalendarTaskService;
+import com.projectardor.scheduling.domain.CalendarTaskSource;
+import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.learning.domain.LearningPlan;
 import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.repository.LearningPlanRepository;

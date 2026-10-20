@@ -33,7 +33,7 @@ import com.projectardor.agent.web.AgentRunResponse;
 import com.projectardor.common.security.ExternalHostResolutionException;
 import com.projectardor.llm.service.LlmCallException;
 import com.projectardor.llm.service.LlmConfigService;
-import com.projectardor.profile.service.ProfileService;
+import com.projectardor.platform.identity.profile.service.ProfileService;
 import tools.jackson.databind.ObjectMapper;
 
 import dev.langchain4j.data.message.AiMessage;

@@ -1,13 +1,13 @@
-package com.projectardor.profile.service;
+package com.projectardor.platform.identity.profile.service;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import com.projectardor.auth.domain.UserRole;
-import com.projectardor.auth.security.ArdorPrincipal;
-import com.projectardor.profile.web.SidebarPreferencesController;
+import com.projectardor.platform.identity.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.profile.web.SidebarPreferencesController;
 
 class SidebarPreferencesControllerTests {
     private final SidebarPreferencesService service = mock(SidebarPreferencesService.class);

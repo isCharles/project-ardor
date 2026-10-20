@@ -14,14 +14,14 @@ import org.mockito.ArgumentCaptor;
 
 import com.projectardor.agent.service.AgentExecutionAuditStore;
 import com.projectardor.agent.service.AgentMemoryService;
-import com.projectardor.applications.service.ApplicationRhythmService;
-import com.projectardor.calendar.service.CalendarTaskService;
-import com.projectardor.calendar.service.TaskSeriesService;
+import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
+import com.projectardor.scheduling.service.CalendarTaskService;
+import com.projectardor.scheduling.service.TaskSeriesService;
 import com.projectardor.interview.service.InterviewService;
 import com.projectardor.knowledge.service.KnowledgeService;
 import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.opportunity.service.OpportunityService;
-import com.projectardor.profile.service.ProfileService;
+import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecapService;
 import com.projectardor.resume.service.ResumeAnalysisQueueService;

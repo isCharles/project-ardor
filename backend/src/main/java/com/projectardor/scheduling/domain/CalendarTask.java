@@ -1,0 +1,215 @@
+package com.projectardor.scheduling.domain;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.UUID;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+
+@Entity
+@Table(name = "tasks")
+public class CalendarTask {
+    @Id private UUID id;
+    @Column(name = "user_id", nullable = false) private UUID userId;
+    @Column(name = "source_interview_id") private UUID sourceInterviewId;
+    @Column(name = "job_opportunity_id") private UUID jobOpportunityId;
+    @Column(name = "memory_card_id") private UUID memoryCardId;
+    @Column(name = "learning_plan_id") private UUID learningPlanId;
+    @Column(name = "replay_question_id") private UUID replayQuestionId;
+    @Column(name = "replay_attempt_id") private UUID replayAttemptId;
+    @Column(name = "series_id") private UUID seriesId;
+    @Column(name = "occurrence_date") private LocalDate occurrenceDate;
+    @Column(name = "user_modified", nullable = false) private boolean userModified;
+    @Column(nullable = false, length = 240) private String title;
+    @Column(columnDefinition = "text") private String description;
+    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private CalendarTaskStatus status;
+    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private CalendarTaskPriority priority;
+    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private CalendarTaskSource source;
+    @Enumerated(EnumType.STRING) @Column(name = "task_kind", nullable = false, length = 32) private CalendarTaskKind taskKind;
+    @Column(name = "review_date") private LocalDate reviewDate;
+    @Column(name = "action_path", length = 512) private String actionPath;
+    @Column(name = "due_at") private Instant dueAt;
+    @Column(name = "completed_at") private Instant completedAt;
+    @Column(name = "created_at", nullable = false) private Instant createdAt;
+    @Column(name = "updated_at", nullable = false) private Instant updatedAt;
+
+    protected CalendarTask() {}
+
+    private CalendarTask(
+            UUID userId,
+            String title,
+            String description,
+            Instant dueAt,
+            CalendarTaskPriority priority,
+            CalendarTaskSource source,
+            UUID jobOpportunityId) {
+        this.id = UUID.randomUUID();
+        this.userId = userId;
+        this.title = title;
+        this.description = description;
+        this.dueAt = dueAt;
+        this.priority = priority;
+        this.source = source;
+        this.jobOpportunityId = jobOpportunityId;
+        this.taskKind = CalendarTaskKind.GENERAL;
+        this.status = CalendarTaskStatus.TODO;
+    }
+
+    public static CalendarTask create(
+            UUID userId,
+            String title,
+            String description,
+            Instant dueAt,
+            CalendarTaskPriority priority,
+            CalendarTaskSource source) {
+        return create(userId, title, description, dueAt, priority, source, null);
+    }
+
+    public static CalendarTask create(
+            UUID userId,
+            String title,
+            String description,
+            Instant dueAt,
+            CalendarTaskPriority priority,
+            CalendarTaskSource source,
+            UUID jobOpportunityId) {
+        return new CalendarTask(userId, title, description, dueAt, priority, source, jobOpportunityId);
+    }
+
+    public static CalendarTask createMemoryReview(
+            UUID userId, LocalDate reviewDate, int cardCount, Instant dueAt) {
+        CalendarTask task = new CalendarTask(userId, "记忆卡复习", cardCount + " 张待复习", dueAt,
+                CalendarTaskPriority.HIGH, CalendarTaskSource.AGENT, null);
+        task.taskKind = CalendarTaskKind.MEMORY_REVIEW;
+        task.reviewDate = reviewDate;
+        task.actionPath = "/app/cards";
+        return task;
+    }
+
+    public static CalendarTask createLearning(
+            UUID userId, UUID learningPlanId, String concept, String reason,
+            Instant dueAt, CalendarTaskSource source) {
+        CalendarTask task = new CalendarTask(userId, concept, reason, dueAt,
+                CalendarTaskPriority.HIGH, source, null);
+        task.learningPlanId = learningPlanId;
+        task.taskKind = CalendarTaskKind.LEARNING;
+        task.actionPath = "/app/learning?id=" + learningPlanId;
+        return task;
+    }
+
+    public static CalendarTask createInterviewRetest(
+            UUID userId, UUID questionId, UUID replayAttemptId, String challenge, Instant dueAt) {
+        CalendarTask task = new CalendarTask(userId, "面试复测", challenge, dueAt,
+                CalendarTaskPriority.HIGH, CalendarTaskSource.MANUAL, null);
+        task.taskKind = CalendarTaskKind.INTERVIEW_RETEST;
+        task.replayQuestionId = questionId;
+        task.replayAttemptId = replayAttemptId;
+        task.actionPath = "/app/replay?question=" + questionId + "&retest=" + task.id;
+        return task;
+    }
+
+    /** One dated occurrence of a repeating series; an ordinary task otherwise. */
+    public static CalendarTask createOccurrence(TaskSeries series, LocalDate occurrenceDate) {
+        CalendarTask task = new CalendarTask(
+                series.getUserId(), series.getTitle(), series.getDescription(),
+                series.dueAtOn(occurrenceDate), series.getPriority(), series.getSource(), null);
+        task.seriesId = series.getId();
+        task.occurrenceDate = occurrenceDate;
+        return task;
+    }
+
+    public void refreshFromSeries(TaskSeries series) {
+        if (!series.getId().equals(seriesId) || !series.getUserId().equals(userId)) throw new IllegalArgumentException("重复安排归属不匹配");
+        this.title = series.getTitle();
+        this.description = series.getDescription();
+        this.priority = series.getPriority();
+        this.dueAt = series.dueAtOn(occurrenceDate);
+    }
+
+    public void scheduleMemoryCardReview(int cardCount, Instant dueAt) {
+        this.title = "记忆卡复习";
+        this.description = cardCount + " 张待复习";
+        this.dueAt = dueAt;
+        this.priority = CalendarTaskPriority.HIGH;
+        this.status = CalendarTaskStatus.TODO;
+        this.completedAt = null;
+    }
+
+    public void scheduleLearning(String concept, String reason, Instant dueAt, boolean completed) {
+        this.title = concept;
+        this.description = reason;
+        this.dueAt = dueAt;
+        this.status = completed ? CalendarTaskStatus.COMPLETED : CalendarTaskStatus.TODO;
+        if (!completed) this.completedAt = null;
+        else if (this.completedAt == null) this.completedAt = Instant.now();
+        this.taskKind = CalendarTaskKind.LEARNING;
+        this.actionPath = "/app/learning?id=" + learningPlanId;
+    }
+
+    public void completeInterviewRetest() {
+        if (taskKind != CalendarTaskKind.INTERVIEW_RETEST) {
+            throw new IllegalStateException("不是面试复测任务");
+        }
+        status = CalendarTaskStatus.COMPLETED;
+        completedAt = Instant.now();
+    }
+
+    public void update(
+            String title,
+            String description,
+            Instant dueAt,
+            CalendarTaskPriority priority,
+            CalendarTaskStatus status) {
+        this.title = title;
+        this.description = description;
+        this.dueAt = dueAt;
+        this.priority = priority;
+        if (this.status != status) {
+            this.status = status;
+            this.completedAt = status == CalendarTaskStatus.COMPLETED ? Instant.now() : null;
+        }
+        this.userModified = true;
+    }
+
+    @PrePersist
+    void onCreate() {
+        Instant now = Instant.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = Instant.now();
+    }
+
+    public UUID getId() { return id; }
+    public UUID getUserId() { return userId; }
+    public UUID getJobOpportunityId() { return jobOpportunityId; }
+    public UUID getMemoryCardId() { return memoryCardId; }
+    public UUID getLearningPlanId() { return learningPlanId; }
+    public UUID getReplayQuestionId() { return replayQuestionId; }
+    public UUID getReplayAttemptId() { return replayAttemptId; }
+    public UUID getSeriesId() { return seriesId; }
+    public LocalDate getOccurrenceDate() { return occurrenceDate; }
+    public boolean isUserModified() { return userModified; }
+    public String getTitle() { return title; }
+    public String getDescription() { return description; }
+    public CalendarTaskStatus getStatus() { return status; }
+    public CalendarTaskPriority getPriority() { return priority; }
+    public CalendarTaskSource getSource() { return source; }
+    public CalendarTaskKind getTaskKind() { return taskKind; }
+    public LocalDate getReviewDate() { return reviewDate; }
+    public String getActionPath() { return actionPath; }
+    public Instant getDueAt() { return dueAt; }
+    public Instant getCompletedAt() { return completedAt; }
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+}

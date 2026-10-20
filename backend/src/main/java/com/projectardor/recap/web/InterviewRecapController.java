@@ -3,7 +3,7 @@ import java.util.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import com.projectardor.auth.security.ArdorPrincipal;
+import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.recap.service.InterviewRecapService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.usage.QuotaProtected;

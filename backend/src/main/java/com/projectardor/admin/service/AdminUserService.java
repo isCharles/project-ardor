@@ -8,10 +8,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.projectardor.admin.web.AdminUserResponse;
 import com.projectardor.admin.web.AdminUserUpdateRequest;
-import com.projectardor.auth.domain.UserAccount;
-import com.projectardor.auth.domain.UserRole;
-import com.projectardor.auth.domain.UserStatus;
-import com.projectardor.auth.repository.UserAccountRepository;
+import com.projectardor.platform.identity.auth.domain.UserAccount;
+import com.projectardor.platform.identity.auth.domain.UserRole;
+import com.projectardor.platform.identity.auth.domain.UserStatus;
+import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.usage.MembershipService;
 

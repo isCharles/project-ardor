@@ -1,4 +1,4 @@
-package com.projectardor.applications.service;
+package com.projectardor.jobsearch.applicationactivity.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import com.projectardor.profile.service.ProfileService;
+import com.projectardor.platform.identity.profile.service.ProfileService;
 
 class ApplicationRhythmServiceTests {
     private final ZoneId zone = ZoneId.of("Asia/Shanghai");

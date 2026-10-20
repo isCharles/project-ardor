@@ -11,8 +11,8 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import com.projectardor.auth.domain.UserAccount;
-import com.projectardor.auth.repository.UserAccountRepository;
+import com.projectardor.platform.identity.auth.domain.UserAccount;
+import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
 import com.projectardor.usage.MembershipService;
 import com.projectardor.usage.MembershipTier;
 

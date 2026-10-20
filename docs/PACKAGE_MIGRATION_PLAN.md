@@ -32,7 +32,7 @@
 | `applications.*` | `jobsearch.applicationactivity.*` |
 | `calendar.*` | `scheduling.*` |
 | `profile.*` | `platform.identity.profile.*` |
-| `auth.*` | `platform.identity.*` |
+| `auth.*` | `platform.identity.auth.*` |
 
 ### B2 materials（resume / knowledge）
 

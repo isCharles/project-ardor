@@ -16,12 +16,12 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 
-import com.projectardor.calendar.service.CalendarTaskService;
+import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.llm.service.LlmGateway;
-import com.projectardor.profile.domain.UserProfile;
-import com.projectardor.profile.service.ProfileService;
+import com.projectardor.platform.identity.profile.domain.UserProfile;
+import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.recap.domain.InterviewRecapQuestion;
 import com.projectardor.recap.domain.InterviewRecap;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
