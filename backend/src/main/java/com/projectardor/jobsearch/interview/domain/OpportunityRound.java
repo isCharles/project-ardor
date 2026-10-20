@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.domain;
+package com.projectardor.jobsearch.interview.domain;
 
 import java.time.Instant;
 import java.util.UUID;

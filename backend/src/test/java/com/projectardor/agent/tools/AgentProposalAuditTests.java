@@ -20,7 +20,7 @@ import com.projectardor.scheduling.service.TaskSeriesService;
 import com.projectardor.learning.practice.mockinterview.service.InterviewService;
 import com.projectardor.materials.knowledge.service.KnowledgeService;
 import com.projectardor.learning.service.LearningPlanService;
-import com.projectardor.opportunity.service.OpportunityService;
+import com.projectardor.jobsearch.interview.service.OpportunityService;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecapService;

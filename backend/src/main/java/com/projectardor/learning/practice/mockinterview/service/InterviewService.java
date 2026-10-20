@@ -55,7 +55,7 @@ public class InterviewService {
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactions;
     private final LeetCodeHot100 hot100;
-    private final com.projectardor.opportunity.service.OpportunityService opportunities;
+    private final com.projectardor.jobsearch.interview.service.OpportunityService opportunities;
 
     public InterviewService(
             InterviewSessionRepository sessionRepository,
@@ -69,7 +69,7 @@ public class InterviewService {
             ObjectMapper objectMapper,
             org.springframework.transaction.PlatformTransactionManager transactionManager,
             LeetCodeHot100 hot100,
-            com.projectardor.opportunity.service.OpportunityService opportunities) {
+            com.projectardor.jobsearch.interview.service.OpportunityService opportunities) {
         this.sessionRepository = sessionRepository;
         this.questionRepository = questionRepository;
         this.answerRepository = answerRepository;

@@ -9,9 +9,9 @@ import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
 import com.projectardor.materials.resume.service.ResumeSourceAccess;
 import com.projectardor.materials.knowledge.service.KnowledgeSourceAccess;
-import com.projectardor.opportunity.service.InterviewContextAccess;
-import com.projectardor.opportunity.repository.JobOpportunityRepository;
-import com.projectardor.opportunity.repository.OpportunityRoundRepository;
+import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
+import com.projectardor.jobsearch.interview.repository.JobOpportunityRepository;
+import com.projectardor.jobsearch.interview.repository.OpportunityRoundRepository;
 
 class LearningContextResolverTests {
     private final InterviewRecordSourceAccess sources = mock(InterviewRecordSourceAccess.class);

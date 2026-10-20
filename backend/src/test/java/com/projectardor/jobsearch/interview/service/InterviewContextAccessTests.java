@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.service;
+package com.projectardor.jobsearch.interview.service;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -6,11 +6,11 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.opportunity.domain.JobOpportunity;
-import com.projectardor.opportunity.domain.OpportunityRound;
-import com.projectardor.opportunity.domain.RoundStage;
-import com.projectardor.opportunity.repository.JobOpportunityRepository;
-import com.projectardor.opportunity.repository.OpportunityRoundRepository;
+import com.projectardor.jobsearch.interview.domain.JobOpportunity;
+import com.projectardor.jobsearch.interview.domain.OpportunityRound;
+import com.projectardor.jobsearch.interview.domain.RoundStage;
+import com.projectardor.jobsearch.interview.repository.JobOpportunityRepository;
+import com.projectardor.jobsearch.interview.repository.OpportunityRoundRepository;
 
 class InterviewContextAccessTests {
     private final JobOpportunityRepository processes = mock(JobOpportunityRepository.class);

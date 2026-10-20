@@ -1,10 +1,10 @@
-package com.projectardor.opportunity.service;
+package com.projectardor.jobsearch.interview.service;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import com.projectardor.opportunity.domain.JobOpportunity;
-import com.projectardor.opportunity.domain.OpportunityRound;
+import com.projectardor.jobsearch.interview.domain.JobOpportunity;
+import com.projectardor.jobsearch.interview.domain.OpportunityRound;
 
 /** Owned application read model. A real interview, not a mock session or a transport response. */
 public record InterviewProcessView(UUID id, String company, String targetRole, String platform, String status,

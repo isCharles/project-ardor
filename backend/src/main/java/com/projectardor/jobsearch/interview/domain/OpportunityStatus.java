@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.domain;
+package com.projectardor.jobsearch.interview.domain;
 
 /**
  * The four states a real interview process can be in. Anything finer-grained

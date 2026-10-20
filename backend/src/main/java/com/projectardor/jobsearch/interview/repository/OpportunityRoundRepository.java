@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.repository;
+package com.projectardor.jobsearch.interview.repository;
 
 import java.util.Collection;
 import java.util.List;
@@ -7,7 +7,7 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.projectardor.opportunity.domain.OpportunityRound;
+import com.projectardor.jobsearch.interview.domain.OpportunityRound;
 
 public interface OpportunityRoundRepository extends JpaRepository<OpportunityRound, UUID> {
     Optional<OpportunityRound> findByIdAndUserId(UUID id, UUID userId);

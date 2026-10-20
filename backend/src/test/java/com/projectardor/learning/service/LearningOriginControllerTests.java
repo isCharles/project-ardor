@@ -11,7 +11,7 @@ import com.projectardor.learning.web.LearningOriginController;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
 import com.projectardor.materials.resume.service.ResumeSourceAccess;
 import com.projectardor.materials.knowledge.service.KnowledgeSourceAccess;
-import com.projectardor.opportunity.service.InterviewContextAccess;
+import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
 
 class LearningOriginControllerTests {
     @Test void sourceNavigationUsesAuthenticatedOwnerAndReturnsOnlyReferenceMetadata() {

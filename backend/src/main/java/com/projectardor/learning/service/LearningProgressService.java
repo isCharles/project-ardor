@@ -16,7 +16,7 @@ import com.projectardor.recap.service.InterviewQuestionProgressAccess;
 import com.projectardor.recap.service.QuestionPracticeProgressAccess;
 import com.projectardor.learning.review.service.FlashcardProgressAccess;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
-import com.projectardor.opportunity.service.InterviewContextAccess;
+import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
 import com.projectardor.common.web.ResourceNotFoundException;
 
 /** Read-only learning query. Source ownership and practice facts remain with their domains. */

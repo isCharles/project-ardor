@@ -1,11 +1,11 @@
-package com.projectardor.opportunity.service;
+package com.projectardor.jobsearch.interview.service;
 
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.opportunity.repository.JobOpportunityRepository;
-import com.projectardor.opportunity.repository.OpportunityRoundRepository;
+import com.projectardor.jobsearch.interview.repository.JobOpportunityRepository;
+import com.projectardor.jobsearch.interview.repository.OpportunityRoundRepository;
 
 /** Owned interview references for other domains; no repositories or Web DTOs leave this boundary. */
 @Service

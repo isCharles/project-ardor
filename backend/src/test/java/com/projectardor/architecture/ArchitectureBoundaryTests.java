@@ -27,9 +27,9 @@ class ArchitectureBoundaryTests {
     private static final Path SOURCE_ROOT = resolveSourceRoot();
 
     @Test
-    void opportunityServicesUseApplicationViewsInsteadOfOwnWebDtos() throws IOException {
+    void jobSearchInterviewServicesUseApplicationViewsInsteadOfOwnWebDtos() throws IOException {
         assertNoImports(
-                "opportunity/service",
+                "jobsearch/interview/service",
                 Pattern.compile("import com\\.projectardor\\.opportunity\\.web\\..*"));
     }
 

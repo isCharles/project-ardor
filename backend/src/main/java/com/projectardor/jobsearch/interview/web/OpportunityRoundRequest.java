@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.web;
+package com.projectardor.jobsearch.interview.web;
 
 import java.time.Instant;
 
@@ -12,7 +12,7 @@ public record OpportunityRoundRequest(
         Instant occurredAt,
         Integer durationMinutes,
         @Size(max = 2000) String note) {
-    public com.projectardor.opportunity.service.InterviewProcessCommands.Round command() {
-        return new com.projectardor.opportunity.service.InterviewProcessCommands.Round(roundNumber,stage,scheduledAt,occurredAt,durationMinutes,note);
+    public com.projectardor.jobsearch.interview.service.InterviewProcessCommands.Round command() {
+        return new com.projectardor.jobsearch.interview.service.InterviewProcessCommands.Round(roundNumber,stage,scheduledAt,occurredAt,durationMinutes,note);
     }
 }

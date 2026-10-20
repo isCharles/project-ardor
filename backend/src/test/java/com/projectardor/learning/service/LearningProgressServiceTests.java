@@ -19,7 +19,7 @@ import com.projectardor.recap.service.InterviewQuestionProgressAccess;
 import com.projectardor.recap.service.QuestionPracticeProgressAccess;
 import com.projectardor.learning.review.service.FlashcardProgressAccess;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
-import com.projectardor.opportunity.service.InterviewContextAccess;
+import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
 import com.projectardor.common.web.ResourceNotFoundException;
 
 class LearningProgressServiceTests {
@@ -84,6 +84,6 @@ class LearningProgressServiceTests {
     }
     @Test void learningQueryCannotReachOtherDomainsRepositoriesOrTransportDtos() throws Exception {
         String code=Files.readString(Path.of("src/main/java/com/projectardor/learning/service/LearningProgressService.java"),StandardCharsets.UTF_8);
-        assertThat(code).doesNotContain("com.projectardor.recap.repository", "com.projectardor.opportunity.repository", "com.projectardor.learning.web");
+        assertThat(code).doesNotContain("com.projectardor.recap.repository", "com.projectardor.jobsearch.interview.repository", "com.projectardor.learning.web");
     }
 }

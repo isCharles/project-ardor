@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.platform.model.llm.service.LlmCallException;
-import com.projectardor.opportunity.service.InterviewContextAccess;
+import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
 import com.projectardor.recap.domain.InterviewRecapJob;
 import com.projectardor.recap.domain.InterviewRecapJobStatus;
 import com.projectardor.recap.repository.InterviewRecapJobRepository;

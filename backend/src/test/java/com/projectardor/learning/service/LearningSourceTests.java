@@ -43,7 +43,7 @@ class LearningSourceTests {
                 mock(ProfileService.class), LearningOriginTestHandlers.resolver(new com.projectardor.recap.service.InterviewRecordSourceAccess(recaps, questions),
                     new com.projectardor.materials.resume.service.ResumeSourceAccess(mock(ResumeRepository.class)),
                     new com.projectardor.materials.knowledge.service.KnowledgeSourceAccess(mock(KnowledgeDocumentRepository.class)),
-                    mock(com.projectardor.opportunity.service.InterviewContextAccess.class)),
+                    mock(com.projectardor.jobsearch.interview.service.InterviewContextAccess.class)),
                 mock(LearningPlanCreationStore.class),
                 mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class),
                 mock(org.springframework.transaction.PlatformTransactionManager.class));
@@ -67,7 +67,7 @@ class LearningSourceTests {
                 mock(ProfileService.class), LearningOriginTestHandlers.resolver(mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class),
                     new com.projectardor.materials.resume.service.ResumeSourceAccess(resumes),
                     new com.projectardor.materials.knowledge.service.KnowledgeSourceAccess(knowledge),
-                    mock(com.projectardor.opportunity.service.InterviewContextAccess.class)),
+                    mock(com.projectardor.jobsearch.interview.service.InterviewContextAccess.class)),
                 mock(LearningPlanCreationStore.class), mock(LearningPlanGenerationGate.class),
                 mock(LearningPlanAgentSlots.class),
                 mock(org.springframework.transaction.PlatformTransactionManager.class));
