@@ -17,7 +17,7 @@ class LearningOriginControllerTests {
     @Test void sourceNavigationUsesAuthenticatedOwnerAndReturnsOnlyReferenceMetadata() {
         var records = mock(InterviewRecordSourceAccess.class);
         var interviews = mock(InterviewContextAccess.class);
-        var resolver = new LearningContextResolver(records, mock(ResumeSourceAccess.class), mock(KnowledgeSourceAccess.class), interviews);
+        var resolver = LearningOriginTestHandlers.resolver(records, mock(ResumeSourceAccess.class), mock(KnowledgeSourceAccess.class), interviews);
         var principal = new ArdorPrincipal(UUID.randomUUID(), "fixture@ardor.invalid", "unused", true, UserRole.USER);
         UUID question = UUID.randomUUID(), record = UUID.randomUUID();
         when(records.requireQuestion(principal.userId(), question)).thenReturn(new InterviewRecordSourceAccess.Source(

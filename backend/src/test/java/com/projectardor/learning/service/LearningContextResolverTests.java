@@ -16,7 +16,7 @@ import com.projectardor.opportunity.repository.OpportunityRoundRepository;
 class LearningContextResolverTests {
     private final InterviewRecordSourceAccess sources = mock(InterviewRecordSourceAccess.class);
     private final InterviewContextAccess interviews = mock(InterviewContextAccess.class);
-    private final LearningContextResolver resolver = new LearningContextResolver(sources, mock(ResumeSourceAccess.class), mock(KnowledgeSourceAccess.class), interviews);
+    private final LearningContextResolver resolver = LearningOriginTestHandlers.resolver(sources, mock(ResumeSourceAccess.class), mock(KnowledgeSourceAccess.class), interviews);
     private final UUID owner=UUID.randomUUID(), question=UUID.randomUUID(), record=UUID.randomUUID();
 
     private InterviewRecordSourceAccess.Source source() {
@@ -71,7 +71,7 @@ class LearningContextResolverTests {
 
     @Test void targetRoundCannotBeSuppliedWithoutItsParentInterview() {
         var realAccess=new InterviewContextAccess(mock(JobOpportunityRepository.class),mock(OpportunityRoundRepository.class));
-        var resolverWithParentChecks=new LearningContextResolver(sources,mock(ResumeSourceAccess.class),mock(KnowledgeSourceAccess.class),realAccess);
+        var resolverWithParentChecks=LearningOriginTestHandlers.resolver(sources,mock(ResumeSourceAccess.class),mock(KnowledgeSourceAccess.class),realAccess);
         assertThatThrownBy(() -> resolverWithParentChecks.resolve(owner,LearningSourceType.MANUAL,null,
                 new LearningContextInput(null,null,null,UUID.randomUUID()))).isInstanceOf(IllegalArgumentException.class);
     }

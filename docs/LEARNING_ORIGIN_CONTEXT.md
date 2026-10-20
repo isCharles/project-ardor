@@ -18,7 +18,9 @@
 
 学习服务通过 `InterviewRecordSourceAccess`、`ResumeSourceAccess`、`KnowledgeSourceAccess` 调用来源所有者，通过 `InterviewContextAccess` 校验准备目标，不直接访问其他领域 Repository。来源接口只返回必要身份/归属，不向调用者转交私有正文或 Web DTO。
 
-当前 `LearningContextResolver` 统一适配这些已存在的来源类型，不是任意实体关系引擎。后台任务 Handler、传输 DTO 和其他跨域依赖的整体清理仍属于后续阶段；不能把这批接口调整称为全部边界已完成。
+`LearningContextResolver` 通过显式 `LearningOriginHandler` 注册调度规范来源。面试记录、简历、知识和自主学习各自提供身份校验适配器，返回最小引用，不返回正文。重复、缺失、空注册及历史不确定类型注册会在启动时拒绝；历史 `RECAP` 仍通过拥有者接口消歧后走规范处理器，不能猜表或静默关联其他用户资源。
+
+新增来源时需明确来源类型、兼容投影、必要的新增迁移/约束、拥有者接口及处理器和展示合同；不再向中央来源调度追加分支，也不允许模型或用户动态注册处理器。这不是任意实体关系引擎。注册/边界测试不替代真实扩展验收；其他跨域依赖和全部领域解耦仍须逐批验证。
 
 ## V51、历史与回退
 

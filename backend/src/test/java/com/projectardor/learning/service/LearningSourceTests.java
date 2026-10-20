@@ -39,7 +39,7 @@ class LearningSourceTests {
         when(questions.findByIdAndUserId(foreignQuestionId, userId)).thenReturn(Optional.empty());
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), new LearningContextResolver(new com.projectardor.recap.service.InterviewRecordSourceAccess(recaps, questions),
+                mock(ProfileService.class), LearningOriginTestHandlers.resolver(new com.projectardor.recap.service.InterviewRecordSourceAccess(recaps, questions),
                     new com.projectardor.resume.service.ResumeSourceAccess(mock(ResumeRepository.class)),
                     new com.projectardor.knowledge.service.KnowledgeSourceAccess(mock(KnowledgeDocumentRepository.class)),
                     mock(com.projectardor.opportunity.service.InterviewContextAccess.class)),
@@ -62,7 +62,7 @@ class LearningSourceTests {
         KnowledgeDocumentRepository knowledge = mock(KnowledgeDocumentRepository.class);
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), new LearningContextResolver(mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class),
+                mock(ProfileService.class), LearningOriginTestHandlers.resolver(mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class),
                     new com.projectardor.resume.service.ResumeSourceAccess(resumes),
                     new com.projectardor.knowledge.service.KnowledgeSourceAccess(knowledge),
                     mock(com.projectardor.opportunity.service.InterviewContextAccess.class)),
