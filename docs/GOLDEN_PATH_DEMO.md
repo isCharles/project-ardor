@@ -15,7 +15,7 @@
 
 `.github/workflows/golden-path-acceptance.yml` 在一次性 PostgreSQL、Redis 和假模型服务中运行 `backend/src/test/resources/golden-path-acceptance.mjs`。它已覆盖异步面经整理、弱题回放、学习复练、日历联动、跨用户读取与写入拒绝（包括回放提交、复测安排与完成、学习计划及关联日历任务）、Agent 计划确认、失败任务重试、取消中的复测回滚以及并发学习评分。假模型有意返回固定数据和可控故障，所以该检查**不证明**真实模型质量、外部网络、浏览器页面观感或本机 Docker 正常。
 
-同一工作流还会用 `learning-context-acceptance.mjs` 在一次性数据库、假模型下验证学习尝试历史接口（版本字段、稳定题目 ID、陈旧围栏 409、跨用户 404、一条评分一条历史、题目快照/rubric/选择题判定/评分模型可读），并按 `interview-round-upgrade.sh` 的升级探针在已填充 V51 数据库上真实执行 V52：覆盖 0 次、2 次、20+ 次旧历史与 LEGACY 来源的回填和异常报告。探针只使用一次性数据库，详见 [学习尝试历史与内容版本合同](LEARNING_ATTEMPT_HISTORY.md)。
+同一工作流还会用 `learning-context-acceptance.mjs` 在一次性数据库、假模型下验证学习尝试历史接口：版本字段、新生成题目的 `exerciseId`（存在性、重复读取不变、尝试快照与被作答题目一致、替换题目集后不复用旧 ID）、陈旧围栏 409、跨用户 404、一条评分一条历史、题目快照/rubric/选择题判定/评分模型可读。随后按 `interview-round-upgrade.sh` 的升级探针在已填充 V51 数据库上真实执行 V52：覆盖 0 次、2 次、20+ 次旧历史、投影条数 > `attempt_count` 的对抗行与 LEGACY 来源的回填，并执行 `learning-attempts-upgrade-anomaly-report.sql` 只读异常报告 SQL 并断言输出（探针不验证运行时 HTTP 提交路径，该路径由上面的 Java 单测覆盖）。探针只使用一次性数据库，详见 [学习尝试历史与内容版本合同](LEARNING_ATTEMPT_HISTORY.md)。
 
 相关前后端 PR 或手动触发同一工作流时，还会启动一次性前端并用 Chromium 运行 `frontend/tests/golden-path-ui.mjs`：检查登录、删除后的 Agent 学习建议在刷新后仍显示为已移除、另一条待确认建议须由用户点击才创建且刷新后不重复、两轮练习的反馈与历史记录及日历完成状态、面经报告；另用隔离账号检查失败面经的页面重试和用户间列表隔离、从薄弱题进入 Agent 时自动带上题目与面经引用但不擅自创建计划、弱题重答遇到模型故障后答案跨页面保留且重试只生成一条记录、从日历进入变式复测并完成、上海时区缺失日期与公司岗位的逐项补全。浏览器检查覆盖这些合成数据路径的页面行为，但仍不证明真实模型质量或所有页面的视觉效果。它使用假模型，不产生真实模型调用费用，但会增加 GitHub Actions 运行时间。
 

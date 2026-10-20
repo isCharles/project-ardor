@@ -49,5 +49,10 @@ stop_probe
 start_probe
 docker exec -i ardor-acceptance-postgres psql -v ON_ERROR_STOP=1 -U ardor -d "$probe_db" \
   < "backend/src/test/resources/$fixture-upgrade-verify.sql"
+# Optional read-only anomaly report assertions (currently only the V51 learning-attempt probe).
+if test -f "backend/src/test/resources/$fixture-upgrade-anomaly-report.sql"; then
+  docker exec -i ardor-acceptance-postgres psql -v ON_ERROR_STOP=1 -U ardor -d "$probe_db" \
+    < "backend/src/test/resources/$fixture-upgrade-anomaly-report.sql"
+fi
 stop_probe
 echo "PASS: populated V$baseline -> latest upgrade preserves the $fixture contract"

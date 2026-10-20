@@ -330,9 +330,12 @@ public class LearningPlanService {
         Instant nextReview = score >= 80 ? null : java.util.Objects.equals(plan.getScheduledAt(), expectedSchedule)
                 ? tomorrowMorning(userId) : plan.getScheduledAt();
         // One immutable attempt row per graded round. attempt_no is assigned under the plan
-        // row lock; the (user_id, plan_id, attempt_no) unique key turns racing writers into
-        // an explicit conflict instead of overwriting history.
-        attempts.save(LearningAttempt.graded(userId, planId, expectedAttemptCount + 1, requestId,
+        // row lock from stored history, not just attempt_count: anomalous pre-V52 projections
+        // can contain more rows than attempt_count (backfilled as 1..N). Using max(stored,
+        // attempt_count) + 1 keeps the unique key safe without rewriting historical counts or
+        // turning every later submission into a rollback; attempt_no may therefore jump.
+        int attemptNo = Math.max(attempts.maxAttemptNo(userId, planId), expectedAttemptCount) + 1;
+        attempts.save(LearningAttempt.graded(userId, planId, attemptNo, requestId,
                 exercises, answers, score, historyEvaluation, evaluationModel,
                 EVALUATION_PROMPT_VERSION, Instant.now()));
         plan.recordAttempt(score, projection, nextReview, followUps);

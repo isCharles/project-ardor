@@ -15,7 +15,7 @@ BEGIN
     -- their lesson/exercises/last_evaluation/progress untouched.
     IF (SELECT count(*) FROM learning_plans
         WHERE user_id = '60000000-0000-0000-0000-000000000001'
-          AND content_version = 1 AND exercises_version = 1) <> 3 THEN
+          AND content_version = 1 AND exercises_version = 1) <> 4 THEN
         RAISE EXCEPTION 'Historical plans did not receive default content/exercise versions';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM learning_plans
@@ -71,6 +71,33 @@ BEGIN
         RAISE EXCEPTION 'Duplicate historical request ID was not deduplicated';
     END IF;
 
+    -- Inconsistent projection: 3 rounds but attempt_count = 1 were backfilled as attempt_no
+    -- 1..3 without rewriting attempt_count. The runtime therefore allocates the next attempt
+    -- from max(stored attempt_no, attempt_count) + 1 so the unique key cannot collide.
+    SELECT count(*), min(attempt_no), max(attempt_no) INTO retained, first_attempt_no, last_attempt_no
+        FROM learning_attempts WHERE plan_id = '61000000-0000-0000-0000-000000000003';
+    IF retained <> 3 OR first_attempt_no <> 1 OR last_attempt_no <> 3 THEN
+        RAISE EXCEPTION 'Inconsistent projection was not backfilled as stored history (rows=%, first=%, last=%)',
+            retained, first_attempt_no, last_attempt_no;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM learning_attempts
+        WHERE plan_id = '61000000-0000-0000-0000-000000000003' AND attempt_no = 3
+          AND legacy AND score = 50 AND answers = '["Adversarial A3"]'::jsonb) THEN
+        RAISE EXCEPTION 'Inconsistent projection history was changed or invented';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM learning_plans
+        WHERE id = '61000000-0000-0000-0000-000000000003'
+          AND attempt_count = 1
+          AND jsonb_array_length(last_evaluation -> 'attempts') = 3) THEN
+        RAISE EXCEPTION 'Inconsistent historical attempt_count or projection was rewritten';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM learning_plans p
+        WHERE p.id = '61000000-0000-0000-0000-000000000003'
+          AND (SELECT GREATEST(COALESCE(max(a.attempt_no), 0), p.attempt_count) + 1
+               FROM learning_attempts a WHERE a.plan_id = p.id AND a.user_id = p.user_id) = 4) THEN
+        RAISE EXCEPTION 'Next attempt number must continue after the stored maximum (expected 4)';
+    END IF;
+
     -- Truncated 25-round history: the retained newest 20 are numbered 6..25, not 1..20.
     SELECT count(*), min(attempt_no), max(attempt_no) INTO retained, first_attempt_no, last_attempt_no
         FROM learning_attempts WHERE plan_id = '61000000-0000-0000-0000-000000000025';
@@ -88,7 +115,7 @@ BEGIN
 
     -- No fabricated grading metadata or rubric and no silently non-legacy backfill row.
     SELECT count(*), count(*) FILTER (WHERE NOT legacy) INTO backfilled, non_legacy FROM learning_attempts;
-    IF backfilled <> 22 THEN RAISE EXCEPTION 'Expected 22 backfilled attempts, found %', backfilled; END IF;
+    IF backfilled <> 25 THEN RAISE EXCEPTION 'Expected 25 backfilled attempts, found %', backfilled; END IF;
     IF non_legacy <> 0 THEN RAISE EXCEPTION 'Backfilled history must stay legacy'; END IF;
     IF EXISTS (SELECT 1 FROM learning_attempts
         WHERE model_name IS NOT NULL OR prompt_version IS NOT NULL) THEN
@@ -128,6 +155,7 @@ BEGIN
         RAISE EXCEPTION 'Deleting a learning plan left its attempts behind';
     END IF;
 
+    RAISE NOTICE 'V52 anomaly handling verified: inconsistent projection attempt_no 1..3, next allocation 4';
     RAISE NOTICE 'V52 backfill verified: attempts=%, legacy=%, retained_plan_rounds=% (attempt_no %..%)',
         backfilled, backfilled, retained, first_attempt_no, last_attempt_no;
 END $$;

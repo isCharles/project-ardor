@@ -224,6 +224,37 @@ class LearningPlanServiceTests {
         assertThat(f.saved).isEmpty();
     }
 
+    @Test
+    void anomalousLegacyProjectionContinuesAfterTheHighestStoredAttemptNo() {
+        Fixture f = new Fixture();
+        f.modelReturns(WEAK);
+        // Simulates an inconsistent pre-V52 projection: attempt_count says 1 but the legacy
+        // array held 3 rounds, so V52 backfilled attempt_no 1..3 for this plan.
+        f.plan.recordAttempt(60, Map.of("attempts", List.of(
+                Map.of("items", List.of(), "score", 50),
+                Map.of("items", List.of(), "score", 50),
+                Map.of("items", List.of(), "score", 50))), Instant.now());
+        f.storedMaxAttemptNo.set(3);
+        List<String> answers = List.of("JVM 管理内存并执行字节码", "B");
+
+        LearningPlan afterAnomalousHistory = f.service.submit(f.userId, f.plan.getId(), answers, 1, null);
+        assertThat(afterAnomalousHistory.getAttemptCount()).isEqualTo(2);
+        assertThat(f.saved).hasSize(1);
+        // Attempt numbers continue after the stored maximum instead of colliding with the
+        // backfilled rows (the old attempt_count + 1 allocation produced 2 and a 500 rollback).
+        assertThat(f.saved.getFirst().getAttemptNo()).isEqualTo(4);
+        f.modelReturns(WEAK);
+        LearningPlan afterSecondRound = f.service.submit(f.userId, f.plan.getId(), answers, 2, null);
+
+        assertThat(afterSecondRound.getAttemptCount()).isEqualTo(3);
+        assertThat(f.saved).hasSize(2);
+        assertThat(f.saved.get(1).getAttemptNo()).isEqualTo(5);
+        assertThat(f.saved.stream().map(LearningAttempt::getAttemptNo)).doesNotHaveDuplicates();
+        // History stays readable and ordered; anomalous legacy numbering is neither hidden nor rewritten.
+        assertThat(f.service.attempts(f.userId, f.plan.getId()))
+                .extracting(LearningAttempt::getAttemptNo).containsExactly(4, 5);
+    }
+
     private static List<Map<String, Object>> storedChoices(Map<String, Object> evaluation) {
         assertThat(evaluation.get("choices")).isInstanceOf(List.class);
         List<Map<String, Object>> choices = new ArrayList<>();
@@ -245,6 +276,8 @@ class LearningPlanServiceTests {
         final ProfileService profiles = mock(ProfileService.class);
         final List<LearningAttempt> saved = new ArrayList<>();
         final Map<UUID, LearningAttempt> byRequest = new HashMap<>();
+        final java.util.concurrent.atomic.AtomicInteger storedMaxAttemptNo =
+                new java.util.concurrent.atomic.AtomicInteger();
         final LearningPlan plan;
         final LearningPlanService service;
 
@@ -254,6 +287,7 @@ class LearningPlanServiceTests {
             when(plans.findByIdAndUserId(plan.getId(), userId)).thenReturn(Optional.of(plan));
             when(plans.findOwnedForUpdate(plan.getId(), userId)).thenReturn(Optional.of(plan));
             when(plans.save(any(LearningPlan.class))).thenAnswer(call -> call.getArgument(0));
+            when(attempts.maxAttemptNo(any(), any())).thenAnswer(call -> storedMaxAttemptNo.get());
             when(attempts.findByUserIdAndRequestId(any(), any())).thenAnswer(call -> {
                 UUID requestId = call.getArgument(1);
                 return Optional.ofNullable(requestId == null ? null : byRequest.get(requestId));
@@ -261,6 +295,7 @@ class LearningPlanServiceTests {
             when(attempts.save(any(LearningAttempt.class))).thenAnswer(call -> {
                 LearningAttempt attempt = call.getArgument(0);
                 saved.add(attempt);
+                storedMaxAttemptNo.accumulateAndGet(attempt.getAttemptNo(), Math::max);
                 if (attempt.getRequestId() != null) byRequest.put(attempt.getRequestId(), attempt);
                 return attempt;
             });
