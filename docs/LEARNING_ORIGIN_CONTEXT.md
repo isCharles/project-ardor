@@ -1,0 +1,30 @@
+# 学习来源与准备目标合同
+
+来源回答“为什么学、依据什么”，准备目标回答“为哪场面试或轮次准备”。两者独立；自主学习不需要面试父对象，也不会因为一份来源材料被删除而删除学习成果。
+
+## 新旧 API
+
+- 规范来源为 `originKind` + `originResourceId`：`INTERVIEW_RECORD`、`INTERVIEW_QUESTION`、`RESUME`、`KNOWLEDGE`，或无资源 ID 的 `MANUAL`、`AGENT`。面试来源另外保存服务端解析的 `originRecordId`，前端不再把问题 UUID 当报告 UUID 试探或扫描所有报告。
+- 准备目标为可选 `targetInterviewId` + `targetRoundId`；轮次必须属于同一当前用户及该目标流程。来源所属的面试/轮次不能自动成为准备目标。
+- `sourceType` / `sourceId` 保留兼容投影：两种面试来源仍投影为 `RECAP`，资源 ID 不变。旧请求仍经过所有者校验并解析唯一类型；冲突或无法定位的新来源请求会拒绝，不静默猜测。
+- 同时传新旧字段时必须一致。`LEGACY_RECAP` 仅为历史不确定状态，不能作为新计划的来源类型。旧应用回退期间写入的空规范字段在读取时明确降级，不能冒充已解析来源。
+- 同步创建、异步创建和 Agent 的待确认建议携带同一上下文。请求身份覆盖来源和目标；改变目标不能使用旧请求 ID 静默复用另一份计划。未带新字段的旧请求保持原幂等摘要。
+- 计划生成前校验来源和目标；来源 UUID 与学习身份不互相替换。Agent 仍只提出创建建议，用户点击后进入受鉴权的业务接口；删除确认规则不变。
+
+## 领域边界
+
+学习服务通过 `InterviewRecordSourceAccess`、`ResumeSourceAccess`、`KnowledgeSourceAccess` 调用来源所有者，通过 `InterviewContextAccess` 校验准备目标，不直接访问其他领域 Repository。来源接口只返回必要身份/归属，不向调用者转交私有正文或 Web DTO。
+
+当前 `LearningContextResolver` 统一适配这些已存在的来源类型，不是任意实体关系引擎。后台任务 Handler、传输 DTO 和其他跨域依赖的整体清理仍属于后续阶段；不能把这批接口调整称为全部边界已完成。
+
+## V51、历史与回退
+
+V51 只新增规范来源、准备目标、索引和目标外键，保留原字段与所有资源 UUID。对已存在的 `RECAP`：仅在当前用户下恰好匹配一张资源表时识别为记录或问题；缺失、跨用户、同 UUID 同时匹配记录与问题，均标为 `LEGACY_RECAP`，不猜、不删除。原课程、题目、评分、练习历史和日期不变，全部历史准备目标保持空值。
+
+来源不添加删除级联外键，保留已验证的来源身份。删除目标流程或轮次只清空目标关联，不删除计划和日程；沿用原有学习生命周期。回退应用可忽略新增可空列，禁止为回退删除 schema 或改写已执行迁移。密钥需继续由安全部署配置保管，数据库备份不等于密钥备份。
+
+## 验收入口
+
+`LearningContextResolverTests` 验证类型、所有者/父子关系和目标独立；`learning-context-acceptance.mjs` 在隔离数据库、假模型下验证同步/异步传递、重复请求、拒绝跨用户/跨父对象，以及删除后的成果保留。`learning-context-ui.mjs` 验证不同的来源和准备目标链接、历史不确定提示、窄屏和不再猜表。
+
+`learning-origin-upgrade-fixture.sql` / `learning-origin-upgrade-verify.sql` 通过升级探针的 `learning` 配置真实执行已填充 V50→最新版本升级，包含正常记录、单题、缺失、歧义与跨用户来源；接入 CI。新增迁移不得只用文本检查或单元测试代替实际执行。

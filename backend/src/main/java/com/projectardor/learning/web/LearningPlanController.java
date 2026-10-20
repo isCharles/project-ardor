@@ -59,7 +59,7 @@ public class LearningPlanController {
     public LearningPlanResponse create(@AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody LearningPlanCreateRequest request) {
         return LearningPlanResponse.from(service.create(principal.userId(), request.requestId(), request.concept(),
-                request.reason(), request.sourceType(), request.sourceId(), request.scheduledAt()));
+                request.reason(), request.sourceType(), request.sourceId(), request.scheduledAt(), request.context()));
     }
 
     @PostMapping("/jobs")

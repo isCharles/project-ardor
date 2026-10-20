@@ -118,8 +118,7 @@ class LearningPlanIdempotencyTests {
         LlmGateway llm = mock(LlmGateway.class);
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
-                mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class),
+                mock(ProfileService.class), mock(LearningContextResolver.class),
                 store, mock(LearningPlanGenerationGate.class),
                 mock(LearningPlanAgentSlots.class),
                 mock(org.springframework.transaction.PlatformTransactionManager.class));
@@ -143,8 +142,7 @@ class LearningPlanIdempotencyTests {
         LlmGateway llm = mock(LlmGateway.class);
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class), mock(com.projectardor.resume.repository.ResumeRepository.class),
-                mock(com.projectardor.knowledge.repository.KnowledgeDocumentRepository.class),
+                mock(ProfileService.class), mock(LearningContextResolver.class),
                 store, mock(LearningPlanGenerationGate.class), slots,
                 mock(org.springframework.transaction.PlatformTransactionManager.class));
 

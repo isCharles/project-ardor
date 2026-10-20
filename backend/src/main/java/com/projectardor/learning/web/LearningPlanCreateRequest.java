@@ -15,5 +15,14 @@ public record LearningPlanCreateRequest(
         LearningSourceType sourceType,
         UUID sourceId,
         Instant scheduledAt,
-        UUID requestId) implements QuotaRequestId {
+        UUID requestId,
+        com.projectardor.learning.domain.LearningOriginKind originKind,
+        UUID originResourceId, UUID targetInterviewId, UUID targetRoundId) implements QuotaRequestId {
+    public LearningPlanCreateRequest(String concept, String reason, LearningSourceType sourceType, UUID sourceId,
+            Instant scheduledAt, UUID requestId) {
+        this(concept,reason,sourceType,sourceId,scheduledAt,requestId,null,null,null,null);
+    }
+    public com.projectardor.learning.service.LearningContextInput context() {
+        return com.projectardor.learning.service.LearningContextInput.optional(originKind,originResourceId,targetInterviewId,targetRoundId);
+    }
 }

@@ -2,8 +2,9 @@
 
 import { BookOpenText } from "lucide-react";
 import { useLocale } from "@/lib/locale";
+import { LearningContext, type PlanContext } from "./learning-context";
 
-type Proposal = { label: string; detail: string; state: string; error?: string; learningPlan?: { requestId: string; scheduledAt: string | null } | null };
+type Proposal = { label: string; detail: string; state: string; error?: string; learningPlan?: (PlanContext & { requestId: string; scheduledAt: string | null }) | null };
 
 export function LearningPermissions<T extends Proposal>({ items, onReject, onConfirm }: { items: T[]; onReject: (item: T) => void; onConfirm: (item: T) => void }) {
   const { t, locale } = useLocale();
@@ -14,6 +15,7 @@ export function LearningPermissions<T extends Proposal>({ items, onReject, onCon
       <div className="min-w-0 flex-1">
         <h3 className="break-words font-medium text-stone-800">{t(`Create a learning plan for “${item.label}”?`, `创建「${item.label}」学习计划？`)}</h3>
         {item.detail && <p className="mt-2 break-words text-xs leading-5 text-stone-600">{item.detail}</p>}
+        {item.learningPlan && <div className="mt-2"><LearningContext plan={item.learningPlan} /></div>}
         {item.learningPlan?.scheduledAt && <p className="mt-2 text-xs text-stone-500">{t("Scheduled time", "安排时间")} · {new Date(item.learningPlan.scheduledAt).toLocaleString(locale === "en" ? "en-US" : "zh-CN")}</p>}
         <p className="mt-2 text-xs leading-5 text-stone-500">{t("Confirm to generate a lesson and practice in the background and add the plan to Learning and your calendar. Existing plans stay unchanged. Reject to create nothing.", "确认后将后台生成讲解与练习，加入学习模块和日历；已有计划保持不变。拒绝则不创建。")}</p>
         {item.error && <p role="alert" className="mt-2 break-words text-xs text-rose-600">{item.error}</p>}

@@ -3,9 +3,14 @@ set -euo pipefail
 test "${ARDOR_ACCEPTANCE_DISPOSABLE_DB:-}" = true
 test -n "${RUNNER_TEMP:-}"
 
-# This harness addresses only the isolated container created by acceptance CI.
-docker exec ardor-acceptance-postgres createdb -U ardor ardor_round_upgrade
-export DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/ardor_round_upgrade
+# Explicit acceptance profiles only; never accept an arbitrary database or source path.
+case "${1:-rounds}" in
+  rounds) probe_db=ardor_round_upgrade; baseline=49; fixture=interview-round ;;
+  learning) probe_db=ardor_learning_origin_upgrade; baseline=50; fixture=learning-origin ;;
+  *) echo "Unknown upgrade profile" >&2; exit 1 ;;
+esac
+docker exec ardor-acceptance-postgres createdb -U ardor "$probe_db"
+export DATABASE_URL="jdbc:postgresql://127.0.0.1:5432/$probe_db"
 probe_pid=
 stop_probe() {
   if test -n "$probe_pid" && test "$probe_pid" -gt 1 && kill -0 "$probe_pid" 2>/dev/null; then
@@ -32,12 +37,16 @@ start_probe() {
   echo "Upgrade probe did not become healthy" >&2
   return 1
 }
-start_probe --spring.flyway.target=49 --spring.jpa.hibernate.ddl-auto=none
-docker exec -i ardor-acceptance-postgres psql -v ON_ERROR_STOP=1 -U ardor -d ardor_round_upgrade \
-  < backend/src/test/resources/interview-round-upgrade-fixture.sql
+start_probe "--spring.flyway.target=$baseline" --spring.jpa.hibernate.ddl-auto=none
+if test "$fixture" = learning-origin; then
+  docker exec -i ardor-acceptance-postgres psql -v ON_ERROR_STOP=1 -U ardor -d "$probe_db" \
+    < backend/src/test/resources/interview-round-upgrade-fixture.sql
+fi
+docker exec -i ardor-acceptance-postgres psql -v ON_ERROR_STOP=1 -U ardor -d "$probe_db" \
+  < "backend/src/test/resources/$fixture-upgrade-fixture.sql"
 stop_probe
 start_probe
-docker exec -i ardor-acceptance-postgres psql -v ON_ERROR_STOP=1 -U ardor -d ardor_round_upgrade \
-  < backend/src/test/resources/interview-round-upgrade-verify.sql
+docker exec -i ardor-acceptance-postgres psql -v ON_ERROR_STOP=1 -U ardor -d "$probe_db" \
+  < "backend/src/test/resources/$fixture-upgrade-verify.sql"
 stop_probe
-echo "PASS: populated V49 -> V50 upgrade preserves transcripts, reports and confirmed snapshots without invented rounds"
+echo "PASS: populated V$baseline -> latest upgrade preserves the $fixture contract"

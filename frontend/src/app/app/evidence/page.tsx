@@ -35,6 +35,7 @@ type Plan = {
   concept: string;
   sourceType: string;
   sourceId: string | null;
+  originKind?: string; originResourceId?: string | null;
   status: "SCHEDULED" | "IN_PROGRESS" | "NEEDS_REVIEW" | "COMPLETED";
   attemptCount: number;
   lastScore: number | null;
@@ -57,8 +58,8 @@ function learningHref(recap: Recap, question: Question, locale: string) {
   const params = new URLSearchParams({
     new: "1",
     prefill: locale === "en"
-      ? `Create a learning plan for the weakness exposed by “${question.questionText}” in this interview. Use sourceType RECAP and sourceId ${question.id}. Check the original notes before identifying the weakness; do not invent one.`
-      : `针对这份面经里「${question.questionText}」暴露的薄弱点，帮我安排一个学习计划。sourceType 用 RECAP，sourceId 用面经问题 ID ${question.id}。先根据原文确认薄弱点，不要凭空猜测。`,
+      ? `Create a learning plan for the weakness exposed by “${question.questionText}” in this interview. Use originKind INTERVIEW_QUESTION and sourceId ${question.id}. Check the original notes before identifying the weakness; do not invent one. Do not infer a preparation target from this source.`
+      : `针对这份面试记录里「${question.questionText}」暴露的薄弱点，帮我安排一个学习计划。originKind 用 INTERVIEW_QUESTION，sourceId 用问题 ID ${question.id}。先根据原文确认薄弱点，不要凭空猜测；不要把来源面试自动当成准备目标。`,
     contextType: "RECAP",
     contextId: recap.id,
     contextLabel: recap.title,
@@ -121,8 +122,8 @@ export default function EvidencePage() {
             <p className="text-sm text-stone-500">{t(`${tracks.length} interview questions to improve`, `${tracks.length} 个有待补强的真实问题`)}</p>
             {tracks.map(({ recap, question }) => {
               const card = linkedCards.get(question.id);
-              const exactPlans = plans.filter((plan) => plan.sourceType === "RECAP" && plan.sourceId === question.id);
-              const broadPlans = plans.filter((plan) => plan.sourceType === "RECAP" && plan.sourceId === recap.id);
+              const exactPlans = plans.filter((plan) => plan.originKind ? plan.originKind === "INTERVIEW_QUESTION" && plan.originResourceId === question.id : plan.sourceType === "RECAP" && plan.sourceId === question.id);
+              const broadPlans = plans.filter((plan) => plan.originKind ? plan.originKind === "INTERVIEW_RECORD" && plan.originResourceId === recap.id : plan.sourceType === "RECAP" && plan.sourceId === recap.id);
               const plan = exactPlans[0];
               return <article key={question.id} className="relative overflow-hidden rounded-[2.2rem] border border-white/85 bg-white/75 p-6 shadow-[0_18px_60px_rgba(80,55,115,0.07)] backdrop-blur-xl md:p-9">
                 <div className="pointer-events-none absolute -right-20 -top-28 size-72 rounded-full bg-[radial-gradient(circle,rgba(255,167,125,0.26),rgba(172,148,255,0.15)_48%,transparent_73%)] blur-2xl" />

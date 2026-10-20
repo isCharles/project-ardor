@@ -314,6 +314,22 @@ class CareerAgentToolsTests {
         return toolsFor(opportunities,mock(InterviewRecapQueueService.class));
     }
 
+    @Test void learningProposalCarriesExplicitOriginAndIndependentTargetInItsRequestIdentity() {
+        var tools=toolsFor(mock(OpportunityService.class),mock(InterviewRecapQueueService.class));
+        UUID user=UUID.randomUUID(),run=UUID.randomUUID(),question=UUID.randomUUID(),target=UUID.randomUUID(),round=UUID.randomUUID();
+        var bound=tools.bind(user,"请建议学习计划",run);
+        bound.createLearningPlan("JVM","Synthetic gap",null,null,question.toString(),"INTERVIEW_QUESTION",target.toString(),round.toString());
+        var input=bound.pendingConfirmations().getFirst().learningPlan();
+        assertThat(input.originKind()).isEqualTo(com.projectardor.learning.domain.LearningOriginKind.INTERVIEW_QUESTION);
+        assertThat(input.sourceType()).isEqualTo(com.projectardor.learning.domain.LearningSourceType.RECAP);
+        assertThat(input.originResourceId()).isEqualTo(question);
+        assertThat(input.targetInterviewId()).isEqualTo(target);
+        assertThat(input.targetRoundId()).isEqualTo(round);
+        var changed=tools.bind(user,"请建议学习计划",run);
+        changed.createLearningPlan("JVM","Synthetic gap",null,null,question.toString(),"INTERVIEW_QUESTION",UUID.randomUUID().toString(),null);
+        assertThat(changed.pendingConfirmations().getFirst().learningPlan().requestId()).isNotEqualTo(input.requestId());
+    }
+
     @Test void transcriptToolPersistsTrustedUserMessageInsteadOfModelRewrite() {
         var queue=mock(InterviewRecapQueueService.class);
         UUID user=UUID.randomUUID(),opportunity=UUID.randomUUID();

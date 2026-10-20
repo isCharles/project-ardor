@@ -51,7 +51,7 @@ public class AiJobService {
         return switch (job.type()) {
             case LEARNING_CREATE -> {
                 var input = mapper.readValue(job.payload(), LearningPlanCreateRequest.class);
-                var plan = learning.create(job.userId(), job.id(), input.concept(), input.reason(), input.sourceType(), input.sourceId(), input.scheduledAt());
+                var plan = learning.create(job.userId(), job.id(), input.concept(), input.reason(), input.sourceType(), input.sourceId(), input.scheduledAt(), input.context());
                 yield "/app/learning?id=" + plan.getId();
             }
             case LEARNING_EVALUATE -> {

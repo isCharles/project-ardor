@@ -26,7 +26,9 @@ public record LearningPlanResponse(
         Instant nextReviewAt,
         Instant completedAt,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        com.projectardor.learning.domain.LearningOriginKind originKind,
+        UUID originResourceId, UUID originRecordId, UUID targetInterviewId, UUID targetRoundId) {
 
     public static LearningPlanResponse from(LearningPlan plan) {
         List<ExerciseResponse> exercises = plan.getExercises().stream()
@@ -39,7 +41,10 @@ public record LearningPlanResponse(
                 plan.getSourceType(), plan.getSourceId(), plan.getStatus(), plan.getLesson(),
                 exercises, plan.getLastEvaluation(), plan.getLastScore(), plan.getAttemptCount(),
                 plan.getScheduledAt(), plan.getNextReviewAt(), plan.getCompletedAt(),
-                plan.getCreatedAt(), plan.getUpdatedAt());
+                plan.getCreatedAt(), plan.getUpdatedAt(), plan.getOriginKind() != null ? plan.getOriginKind()
+                    : plan.getSourceType() == LearningSourceType.RECAP ? com.projectardor.learning.domain.LearningOriginKind.LEGACY_RECAP
+                    : com.projectardor.learning.domain.LearningOriginKind.valueOf(plan.getSourceType().name()),
+                plan.getOriginResourceId(),plan.getOriginRecordId(),plan.getTargetInterviewId(),plan.getTargetRoundId());
     }
 
     public record ExerciseResponse(String question, String type, List<String> options) {}
