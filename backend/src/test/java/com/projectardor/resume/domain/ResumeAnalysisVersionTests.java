@@ -1,4 +1,4 @@
-package com.projectardor.resume.domain;
+package com.projectardor.materials.resume.domain;
 
 import java.util.Map;
 import java.util.UUID;

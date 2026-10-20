@@ -18,14 +18,14 @@ import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmS
 import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.scheduling.service.TaskSeriesService;
 import com.projectardor.interview.service.InterviewService;
-import com.projectardor.knowledge.service.KnowledgeService;
+import com.projectardor.materials.knowledge.service.KnowledgeService;
 import com.projectardor.learning.service.LearningPlanService;
 import com.projectardor.opportunity.service.OpportunityService;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecapService;
-import com.projectardor.resume.service.ResumeAnalysisQueueService;
-import com.projectardor.resume.service.ResumeService;
+import com.projectardor.materials.resume.service.ResumeAnalysisQueueService;
+import com.projectardor.materials.resume.service.ResumeService;
 import com.projectardor.websearch.service.TavilySearchService;
 
 /** Proposal cards are stable, auditable entities; the legacy card key never changes. */

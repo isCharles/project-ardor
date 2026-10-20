@@ -1,4 +1,4 @@
-package com.projectardor.knowledge.service;
+package com.projectardor.materials.knowledge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

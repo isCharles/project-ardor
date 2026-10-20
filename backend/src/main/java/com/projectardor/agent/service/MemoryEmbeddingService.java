@@ -15,8 +15,8 @@ import org.springframework.stereotype.Service;
 
 import com.projectardor.agent.domain.AgentMemoryItem;
 import com.projectardor.agent.repository.MemoryVectorStore;
-import com.projectardor.knowledge.service.KnowledgeEmbeddingService;
-import com.projectardor.knowledge.service.KnowledgeEmbeddingService.EmbeddingVector;
+import com.projectardor.materials.knowledge.service.KnowledgeEmbeddingService;
+import com.projectardor.materials.knowledge.service.KnowledgeEmbeddingService.EmbeddingVector;
 
 /**
  * Retrieves the memories worth injecting for one user turn. With an embedding model the
