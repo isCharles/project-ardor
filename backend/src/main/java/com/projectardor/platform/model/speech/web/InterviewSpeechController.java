@@ -14,9 +14,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
-import com.projectardor.interview.domain.InterviewModality;
-import com.projectardor.interview.domain.InterviewSession;
-import com.projectardor.interview.service.InterviewService;
+import com.projectardor.learning.practice.mockinterview.domain.InterviewModality;
+import com.projectardor.learning.practice.mockinterview.domain.InterviewSession;
+import com.projectardor.learning.practice.mockinterview.service.InterviewService;
 import com.projectardor.platform.model.speech.service.SpeechService;
 import com.projectardor.platform.usage.QuotaProtected;
 import com.projectardor.platform.usage.UsageFeature;

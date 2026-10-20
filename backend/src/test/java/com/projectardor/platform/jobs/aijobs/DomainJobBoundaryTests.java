@@ -13,7 +13,7 @@ class DomainJobBoundaryTests {
     @Test void dispatchersDoNotImportTransportDtosOrReachDomainRepositories() throws Exception {
         for (String path:List.of("platform/jobs/aijobs/AiJobService.java", "platform/notification/BackgroundTaskService.java",
                 "learning/service/LearningCreationJobHandler.java", "learning/service/LearningEvaluationJobHandler.java",
-                "recap/service/ReplayEvaluationJobHandler.java", "interview/service/MockInterviewEvaluationJobHandler.java")) {
+                "recap/service/ReplayEvaluationJobHandler.java", "learning/practice/mockinterview/service/MockInterviewEvaluationJobHandler.java")) {
             String source=Files.readString(ROOT.resolve(path),StandardCharsets.UTF_8);
             assertThat(source).as(path).doesNotContain(".web.",".repository.");
         }

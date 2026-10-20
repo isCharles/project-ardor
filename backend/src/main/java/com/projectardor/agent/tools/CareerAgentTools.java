@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
 
 import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
 import com.projectardor.jobsearch.applicationactivity.web.ApplicationRhythmResponse;
-import com.projectardor.interview.service.InterviewService;
+import com.projectardor.learning.practice.mockinterview.service.InterviewService;
 import com.projectardor.scheduling.domain.CalendarTaskPriority;
 import com.projectardor.scheduling.domain.CalendarTaskSource;
 import com.projectardor.scheduling.domain.CalendarTask;
@@ -33,9 +33,9 @@ import com.projectardor.scheduling.web.TaskSeriesResponse;
 import com.projectardor.agent.service.AgentMemoryService;
 import com.projectardor.agent.web.AgentMemoryResponse;
 import com.projectardor.agent.web.AgentMemoryItemResponse;
-import com.projectardor.interview.web.InterviewEvaluationResponse;
-import com.projectardor.interview.web.InterviewProgressResponse;
-import com.projectardor.interview.web.InterviewSessionResponse;
+import com.projectardor.learning.practice.mockinterview.web.InterviewEvaluationResponse;
+import com.projectardor.learning.practice.mockinterview.web.InterviewProgressResponse;
+import com.projectardor.learning.practice.mockinterview.web.InterviewSessionResponse;
 import com.projectardor.materials.knowledge.service.KnowledgeService;
 import com.projectardor.materials.knowledge.web.KnowledgeDocumentResponse;
 import com.projectardor.materials.knowledge.web.KnowledgeResearchResponse;
@@ -660,7 +660,7 @@ public class CareerAgentTools {
             return InterviewSessionResponse.from(interviewService.create(
                     userId,
                     nullableUuid(resumeAnalysisId, "简历分析 ID"),
-                    com.projectardor.interview.domain.InterviewModality.TEXT,
+                    com.projectardor.learning.practice.mockinterview.domain.InterviewModality.TEXT,
                     blankToNull(targetCompany),
                     targetRole,
                     questionCount == null ? 5 : questionCount,
