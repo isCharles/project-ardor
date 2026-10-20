@@ -57,6 +57,7 @@ jobs:
         shell: bash
         run: |
           cd backend
+          mvn -B -q test
           mvn -B -q -DskipTests package
           echo "ARDOR_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
           echo "ARDOR_ACCEPTANCE_UI_SUFFIX=$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')" >> "$GITHUB_ENV"

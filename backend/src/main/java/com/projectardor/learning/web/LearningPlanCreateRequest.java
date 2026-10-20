@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.usage.QuotaRequestId;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -16,8 +17,10 @@ public record LearningPlanCreateRequest(
         UUID sourceId,
         Instant scheduledAt,
         UUID requestId,
-        com.projectardor.learning.domain.LearningOriginKind originKind,
-        UUID originResourceId, UUID targetInterviewId, UUID targetRoundId) implements QuotaRequestId {
+        @JsonInclude(JsonInclude.Include.NON_NULL) com.projectardor.learning.domain.LearningOriginKind originKind,
+        @JsonInclude(JsonInclude.Include.NON_NULL) UUID originResourceId,
+        @JsonInclude(JsonInclude.Include.NON_NULL) UUID targetInterviewId,
+        @JsonInclude(JsonInclude.Include.NON_NULL) UUID targetRoundId) implements QuotaRequestId {
     public LearningPlanCreateRequest(String concept, String reason, LearningSourceType sourceType, UUID sourceId,
             Instant scheduledAt, UUID requestId) {
         this(concept,reason,sourceType,sourceId,scheduledAt,requestId,null,null,null,null);
