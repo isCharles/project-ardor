@@ -65,7 +65,7 @@ E2 的 V53 只新增可空列、新表和索引：`messages.request_id/run_id` �
 
 ## 5. 分阶段交付与未完成项
 
-本批覆盖 A/B：正式规划、领域合同、稳定入口目录、偏好兼容、新路径/旧路径共存与领域导航。以相关测试、CI、合并和部署证据为验收依据；本文件不预先声称这些检查已通过。
+截至 2026-10-20，A–E 的主要批次已合并（PR #134–#147）；本文件记录已核验的合同，完整证据与未验证项见 [领域重构收尾状态](REFACTOR_STATUS.md)。本文件不预先声称整体重构完成：普通导航整理、Handler 注册或单个领域包移动都不能替代数据迁移、恢复演练、部署验收与旧客户端兼容核验。
 
 本地回归入口：后端 `SidebarPreferencesServiceTests` / `SidebarPreferencesControllerTests` 覆盖旧 URL 映射、双投影原子保存、版本冲突与账户切换拒绝；前端 `navigation-catalog.mjs` 核对两份目录与真实页面，`domain-navigation-ui.mjs` 验证新旧路径、真实/模拟区分、训练参数、纪要编辑及 ID 偏好保存；`workspace-ui.mjs` 保留旧后端协议与账户隔离回归。新增检查接入 CI。它们不替代后续数据迁移、恢复演练和完整主线验收。
 
@@ -73,4 +73,4 @@ E2 的 V53 只新增可空列、新表和索引：`messages.request_id/run_id` �
 
 D 的任务边界批次通过领域 Handler 注册执行与重试，应用命令不再复用 Web DTO，详见 [领域任务边界](DOMAIN_JOB_HANDLERS.md)。旧任务类型、payload 和结果链接保持兼容；未知类型拒绝，不回落到其他领域。此处仅约束该批实际列出的边界。
 
-后续仍包含 C–F 的剩余验收：训练/进度查询的后端归属、其他跨域接口和工具解耦、Agent 运行/引导/恢复合同、模型能力与错误分类、观测/备份/部署及真实扩展验收。各批测试、CI、合并及部署应分别核验，普通导航整理或 Handler 注册不能被算作全部目标的完成证据。学习尝试历史与内容版本合同已由 V52 落地，见 [学习尝试历史与内容版本合同](LEARNING_ATTEMPT_HISTORY.md)；它不等于 C 阶段其余训练/进度归属已完成。
+当前仍待完成（不属于已核验合同）：E3 的 Agent 聊天错误码统一到 `llm` 结构化分类；观测（requestId/runId/toolCallId/jobId 串联）、备份与恢复演练；多副本限制（取消不跨实例传播、complete 的 TOCTOU 仅在单实例假设下安全）；目标包结构（`jobsearch`/`materials`/`assistant`/`platform`）只作长期方向，尚未整体搬迁。已完成的 C/D/E 批次与实测证据见 [领域重构收尾状态](REFACTOR_STATUS.md)。

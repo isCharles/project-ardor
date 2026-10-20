@@ -6,6 +6,7 @@
 
 - 普通分析由 CompatibleLlmGateway 根据注册的 JsonModelProtocol 调用协议适配器。适配器拥有 HTTP 路径、请求体、鉴权头与返回结构；网关保留错误分类。业务 Service 继续只使用 LlmGateway。
 - Agent 由 LangChainModelFactory 根据注册的 AgentModelProtocol 创建同步或流式模型。协议适配器拥有 SDK 参数；工厂保留当前用户配置选择、超时、代理及取消租约的 transport 包装。
+- 连接测试的 JSON 探测属于平台层；Tool Calling 探测需要 Agent 的聊天模型工厂与工具 schema，因此通过 `ToolCallingProbe` 接口由 Agent 侧实现。`llm` 包不导入 `agent` 包，依赖方向由架构边界测试守护。
 - ModelProtocols 在启动时拒绝重复、缺失及无身份的注册；不按集合顺序猜一个实现，不在协议调用失败后试另一种协议。
 - 现有协议为 OPENAI_COMPATIBLE、ANTHROPIC_COMPATIBLE。接入新品牌但沿用兼容协议只需连接配置；新增真正不同的协议须声明稳定身份，并提供 JSON 与 Agent 适配器及合同测试，不修改中央执行分支或业务 Service。
 - Agent 适配器可提供自己的 reasoning 映射。现有模型仍复用 ModelReasoningPolicy 的保守映射；未知模型不会凭名称自动获得“原生思考控制”。该静态映射不是服务商实时能力探测。
