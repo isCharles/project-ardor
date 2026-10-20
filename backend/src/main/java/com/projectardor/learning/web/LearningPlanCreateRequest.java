@@ -28,4 +28,8 @@ public record LearningPlanCreateRequest(
     public com.projectardor.learning.service.LearningContextInput context() {
         return com.projectardor.learning.service.LearningContextInput.optional(originKind,originResourceId,targetInterviewId,targetRoundId);
     }
+    public com.projectardor.learning.service.LearningCreationCommand command() {
+        return new com.projectardor.learning.service.LearningCreationCommand(concept,reason,sourceType,sourceId,scheduledAt,requestId,
+                originKind,originResourceId,targetInterviewId,targetRoundId);
+    }
 }

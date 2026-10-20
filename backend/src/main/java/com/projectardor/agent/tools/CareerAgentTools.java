@@ -43,7 +43,7 @@ import com.projectardor.knowledge.web.KnowledgeSearchResult;
 import com.projectardor.learning.domain.LearningPlan;
 import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.service.LearningPlanService;
-import com.projectardor.learning.web.LearningPlanCreateRequest;
+import com.projectardor.learning.service.LearningCreationCommand;
 import com.projectardor.learning.web.LearningPlanResponse;
 import com.projectardor.agent.AgentContextReference;
 import com.projectardor.opportunity.service.OpportunityService;
@@ -355,7 +355,7 @@ public class CareerAgentTools {
             }
             UUID requestId = runId == null ? UUID.randomUUID()
                     : UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8));
-            LearningPlanCreateRequest input = new LearningPlanCreateRequest(
+            LearningCreationCommand input = new LearningCreationCommand(
                     topic, why, source, sourceUuid, dueAt, requestId,origin,origin == null ? null : sourceUuid,target,targetRound);
             pending.add(new PendingConfirmation("learning_plan", null, topic,
                     why == null ? "请确认后生成讲解、练习和日历安排" : why,
@@ -1002,11 +1002,11 @@ public class CareerAgentTools {
      */
     public record PendingConfirmation(
             String kind, UUID targetId, String label, String detail, String endpoint,
-            LearningPlanCreateRequest learningPlan, List<UUID> targetIds) {
+            LearningCreationCommand learningPlan, List<UUID> targetIds) {
         public PendingConfirmation(String kind, UUID targetId, String label, String detail, String endpoint) {
             this(kind, targetId, label, detail, endpoint, null, null);
         }
-        public PendingConfirmation(String kind, UUID targetId, String label, String detail, String endpoint, LearningPlanCreateRequest learningPlan) {
+        public PendingConfirmation(String kind, UUID targetId, String label, String detail, String endpoint, LearningCreationCommand learningPlan) {
             this(kind, targetId, label, detail, endpoint, learningPlan, null);
         }
     }
