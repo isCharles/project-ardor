@@ -40,7 +40,7 @@ public class InterviewReplayController {
     @GetMapping
     public InterviewReplayResponse view(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID questionId) {
-        return service.view(principal.userId(), questionId);
+        return InterviewReplayResponse.from(service.view(principal.userId(), questionId));
     }
 
     @PostMapping

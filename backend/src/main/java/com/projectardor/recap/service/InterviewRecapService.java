@@ -20,7 +20,6 @@ import com.projectardor.llm.service.LlmGateway;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.domain.*;
 import com.projectardor.recap.repository.*;
-import com.projectardor.recap.web.InterviewRecapResponse;
 
 import tools.jackson.databind.JsonNode;
 
@@ -57,25 +56,25 @@ public class InterviewRecapService {
         this.profileService = profileService;
     }
 
-    public InterviewRecapResponse organize(UUID userId, String rawContent, InterviewRecapSource sourceType) {
+    public InterviewRecordView organize(UUID userId, String rawContent, InterviewRecapSource sourceType) {
         return organize(userId, rawContent, sourceType, null);
     }
 
-    public InterviewRecapResponse organize(UUID userId, String rawContent, InterviewRecapSource sourceType,
+    public InterviewRecordView organize(UUID userId, String rawContent, InterviewRecapSource sourceType,
             UUID jobOpportunityId) {
         return organizeInternal(userId,rawContent,sourceType,jobOpportunityId,null,null);
     }
 
-    public InterviewRecapResponse organizeConfirmed(UUID userId, String minutes, UUID opportunityId, UUID reviewId) {
+    public InterviewRecordView organizeConfirmed(UUID userId, String minutes, UUID opportunityId, UUID reviewId) {
         return organizeConfirmed(userId, minutes, opportunityId, null, reviewId);
     }
 
-    public InterviewRecapResponse organizeConfirmed(UUID userId, String minutes, UUID opportunityId, UUID roundId, UUID reviewId) {
+    public InterviewRecordView organizeConfirmed(UUID userId, String minutes, UUID opportunityId, UUID roundId, UUID reviewId) {
         InterviewMinutesService.validate(minutes);
         return organizeInternal(userId,minutes,InterviewRecapSource.NOTES,opportunityId,roundId,Objects.requireNonNull(reviewId));
     }
 
-    private InterviewRecapResponse organizeInternal(UUID userId, String rawContent, InterviewRecapSource sourceType,
+    private InterviewRecordView organizeInternal(UUID userId, String rawContent, InterviewRecapSource sourceType,
             UUID jobOpportunityId, UUID roundId, UUID reviewId) {
         String content = required(rawContent, "面试内容不能为空", 50000);
         if (content.length() < 30) throw new IllegalArgumentException("面试内容太短，请至少提供一段问题或回忆");
@@ -131,30 +130,30 @@ public class InterviewRecapService {
                         draft.performance(), draft.weaknessReason(), draft.betterAnswer(), draft.tags()));
             }
             questionRepository.saveAll(questions);
-            return InterviewRecapResponse.from(recap, questions);
+            return InterviewRecordView.from(recap, questions);
         });
     }
 
-    public InterviewRecapResponse organize(UUID userId, String rawContent) {
+    public InterviewRecordView organize(UUID userId, String rawContent) {
         return organize(userId, rawContent, InterviewRecapSource.NOTES);
     }
 
     @Transactional(readOnly = true)
-    public List<InterviewRecapResponse> list(UUID userId) {
+    public List<InterviewRecordView> list(UUID userId) {
         Map<UUID, List<InterviewRecapQuestion>> questionsByRecap = questionRepository
                 .findAllByUserIdOrderByRecapIdAscSequenceNumberAsc(userId).stream()
                 .collect(Collectors.groupingBy(InterviewRecapQuestion::getRecapId));
         return recapRepository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
-                .map(recap -> InterviewRecapResponse.from(
+                .map(recap -> InterviewRecordView.from(
                         recap, questionsByRecap.getOrDefault(recap.getId(), List.of())))
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public InterviewRecapResponse detail(UUID userId, UUID recapId) {
+    public InterviewRecordView detail(UUID userId, UUID recapId) {
         InterviewRecap recap = recapRepository.findByIdAndUserId(recapId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("面经不存在"));
-        return InterviewRecapResponse.from(recap,
+        return InterviewRecordView.from(recap,
                 questionRepository.findAllByUserIdAndRecapIdOrderBySequenceNumber(userId, recapId));
     }
 
