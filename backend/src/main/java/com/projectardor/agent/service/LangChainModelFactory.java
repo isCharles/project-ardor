@@ -16,15 +16,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.projectardor.llm.service.LlmConfigService;
+import com.projectardor.llm.service.ModelProtocols;
 import com.projectardor.agent.ReasoningDepth;
 
 import dev.langchain4j.http.client.jdk.JdkHttpClientBuilder;
-import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
-import dev.langchain4j.model.openai.OpenAiChatModel;
-import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
-import dev.langchain4j.model.anthropic.AnthropicStreamingChatModel;
 
 @Component
 public class LangChainModelFactory {
@@ -33,22 +30,32 @@ public class LangChainModelFactory {
     private static final int MODEL_INTERNAL_RETRIES = 0;
 
     private final LlmConfigService configService;
+    private final ModelProtocols<AgentModelProtocol> protocols;
     private final String proxyHost;
     private final int proxyPort;
     private final Duration connectTimeout;
     private final Duration readTimeout;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public LangChainModelFactory(
             LlmConfigService configService,
             @Value("${app.http.proxy-host:}") String proxyHost,
             @Value("${app.http.proxy-port:0}") int proxyPort,
             @Value("${app.http.connect-timeout:10s}") Duration connectTimeout,
-            @Value("${app.http.read-timeout:120s}") Duration readTimeout) {
+            @Value("${app.http.read-timeout:120s}") Duration readTimeout,
+            List<AgentModelProtocol> protocols) {
         this.configService = configService;
+        this.protocols = new ModelProtocols<>(protocols);
         this.proxyHost = proxyHost;
         this.proxyPort = proxyPort;
         this.connectTimeout = connectTimeout;
         this.readTimeout = readTimeout;
+    }
+
+    /** Compatibility for non-Spring construction of the two existing protocols. */
+    public LangChainModelFactory(LlmConfigService configService,String proxyHost,int proxyPort,Duration connectTimeout,Duration readTimeout) {
+        this(configService,proxyHost,proxyPort,connectTimeout,readTimeout,
+                List.of(new OpenAiAgentModelProtocol(),new AnthropicAgentModelProtocol()));
     }
 
     public ChatModel create(UUID userId) {
@@ -64,34 +71,13 @@ public class LangChainModelFactory {
     }
 
     public ModelReasoningPolicy.Profile reasoningProfile(UUID userId) {
-        return ModelReasoningPolicy.resolve(configService.getRuntimeConfig(userId), ReasoningDepth.AUTO);
+        var config=configService.getRuntimeConfig(userId);
+        return protocols.require(config.provider()).reasoning(config,ReasoningDepth.AUTO);
     }
 
     public ChatModel create(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth) {
-        var profile = ModelReasoningPolicy.resolve(config, depth);
-        return switch (config.provider()) {
-            case OPENAI_COMPATIBLE -> OpenAiChatModel.builder()
-                    .httpClientBuilder(httpClientBuilder())
-                    .baseUrl(config.baseUrl())
-                    .apiKey(config.apiKey())
-                    .modelName(config.model())
-                    .reasoningEffort(profile.effort()).customParameters(profile.extra())
-                    .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking(), "reasoning_content")
-                    .timeout(readTimeout)
-                    .maxRetries(MODEL_INTERNAL_RETRIES)
-                    .build();
-            case ANTHROPIC_COMPATIBLE -> AnthropicChatModel.builder()
-                    .httpClientBuilder(httpClientBuilder())
-                    .baseUrl(config.baseUrl())
-                    .apiKey(config.apiKey())
-                    .modelName(config.model())
-                    .maxTokens(profile.maxTokens()).thinkingType(profile.thinkingType())
-                    .thinkingBudgetTokens(profile.budget()).customParameters(profile.extra())
-                    .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking())
-                    .timeout(readTimeout)
-                    .maxRetries(MODEL_INTERNAL_RETRIES)
-                    .build();
-        };
+        var protocol=protocols.require(config.provider());
+        return protocol.chat(config,protocol.reasoning(config,depth),httpClientBuilder(),readTimeout,MODEL_INTERNAL_RETRIES);
     }
 
     public StreamingChatModel createStreaming(UUID userId) {
@@ -103,19 +89,9 @@ public class LangChainModelFactory {
     }
     StreamingChatModel createStreaming(UUID userId, ReasoningDepth depth, AgentStreamLease lease) {
         LlmConfigService.LlmRuntimeConfig config = configService.getRuntimeConfig(userId);
-        var profile = ModelReasoningPolicy.resolve(config, depth);
+        var protocol=protocols.require(config.provider());
         dev.langchain4j.http.client.HttpClientBuilder transport = lease == null ? httpClientBuilder() : new LeasedHttpClientBuilder(httpClientBuilder(), lease);
-        return switch (config.provider()) {
-            case OPENAI_COMPATIBLE -> OpenAiStreamingChatModel.builder()
-                    .httpClientBuilder(transport).baseUrl(config.baseUrl()).apiKey(config.apiKey())
-                    .modelName(config.model()).reasoningEffort(profile.effort()).customParameters(profile.extra())
-                    .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking(), "reasoning_content").timeout(readTimeout).build();
-            case ANTHROPIC_COMPATIBLE -> AnthropicStreamingChatModel.builder()
-                    .httpClientBuilder(transport).baseUrl(config.baseUrl()).apiKey(config.apiKey())
-                    .modelName(config.model()).maxTokens(profile.maxTokens()).thinkingType(profile.thinkingType())
-                    .thinkingBudgetTokens(profile.budget()).customParameters(profile.extra())
-                    .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking()).timeout(readTimeout).build();
-        };
+        return protocol.streaming(config,protocol.reasoning(config,depth),transport,readTimeout);
     }
 
     private JdkHttpClientBuilder httpClientBuilder() {
