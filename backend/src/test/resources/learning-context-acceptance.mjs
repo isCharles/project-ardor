@@ -56,6 +56,42 @@ assert.equal(legacy.originKind,"INTERVIEW_RECORD");assert.equal(legacy.originRec
 assert.equal(legacy.targetInterviewId,null,"Source interview is not an inferred target");
 const manual=await a.request("/api/learning-plans",{method:"POST",expected:201,body:{concept:"Independent learning",requestId:randomUUID(),sourceType:"MANUAL"}});
 assert.equal(manual.originKind,"MANUAL");assert.equal(manual.targetInterviewId,null);
+
+// Attempt history: one graded round keeps its own exercise snapshot, answers, score, evaluation and model.
+const attemptsPath=`/api/learning-plans/${manual.id}/attempts`;
+assert.equal(manual.contentVersion,1,"A generated lesson starts at content version 1");
+assert.equal(manual.exercisesVersion,1,"A generated exercise set starts at version 1");
+assert.ok(manual.exercises.every(item=>typeof item.exerciseId==="string"&&item.exerciseId.length>0),
+  "Every generated exercise carries an exerciseId");
+const generatedExerciseIds=manual.exercises.map(item=>item.exerciseId);
+assert.deepEqual((await a.request(`/api/learning-plans/${manual.id}`)).exercises.map(item=>item.exerciseId),
+  generatedExerciseIds,"Re-reading a plan must keep the same exercise ids");
+await b.request(attemptsPath,{expected:404});
+await a.request(attemptsPath,{method:"POST",expected:409,body:{answers:manual.exercises.map(()=>"stale answer"),expectedAttemptCount:7}});
+await a.request(attemptsPath,{method:"POST",expected:409,body:{answers:manual.exercises.map(()=>"stale answer"),exercisesVersion:7}});
+assert.equal((await a.request(attemptsPath)).length,0,"Stale fences must reject before grading");
+const attemptAnswers=manual.exercises.map(item=>item.type==="MULTIPLE_CHOICE"?"记录写命令":"先明确恢复目标，再比较 RDB 与 AOF。");
+const graded=await a.request(attemptsPath,{method:"POST",body:{answers:attemptAnswers,expectedAttemptCount:0,exercisesVersion:1}});
+assert.equal(graded.attemptCount,1);assert.equal(graded.status,"NEEDS_REVIEW");
+assert.equal(graded.exercisesVersion,2,"A weak round replaces the exercise set with a new version");
+const replacedExerciseIds=graded.exercises.map(item=>item.exerciseId);
+assert.ok(replacedExerciseIds.every(id=>typeof id==="string"&&id.length>0),"Replaced exercises keep stable ids");
+assert.ok(replacedExerciseIds.every(id=>!generatedExerciseIds.includes(id)),
+  "A replaced exercise set must not reuse the previous ids");
+const history=await a.request(attemptsPath);
+assert.equal(history.length,1,"One graded round must become one attempt row");
+const attempt=history[0];
+assert.equal(attempt.attemptNo,1);assert.equal(attempt.legacy,false);
+assert.equal(attempt.modelName,"golden-path-model");assert.equal(attempt.promptVersion,"learning-evaluation-v1");
+assert.deepEqual(attempt.answers,attemptAnswers);
+assert.deepEqual(attempt.exercises.map(item=>item.exerciseId),generatedExerciseIds,
+  "The attempt snapshot must keep the ids of the exercise set that was actually answered");
+assert.equal(attempt.score,65);
+assert.ok(Array.isArray(attempt.exercises[0].rubric)&&attempt.exercises[0].rubric.length>0,"Attempt snapshot keeps the rubric");
+assert.equal(attempt.evaluation.nextFocus,"恢复时间与数据丢失窗口");
+assert.equal(attempt.evaluation.choices[0].correct,true,"Stored choice grading matches the selected option");
+await a.request(attemptsPath,{method:"POST",expected:409,body:{answers:attemptAnswers,expectedAttemptCount:1,exercisesVersion:1}});
+assert.equal((await a.request(`/api/learning-plans/${manual.id}`)).attemptCount,1,"A stale retry must not grade twice");
 await a.request(`/api/opportunities/${target.id}`,{method:"DELETE",expected:204});
 assert.equal((await a.request(`/api/learning-plans/${plan.id}`)).targetInterviewId,null);
 await a.request(`/api/interview-recaps/${report.id}`,{method:"DELETE",expected:204});

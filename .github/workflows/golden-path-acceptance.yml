@@ -113,6 +113,8 @@ jobs:
         run: bash backend/src/test/resources/interview-round-upgrade.sh
       - name: Verify populated V50 learning origin upgrade
         run: bash backend/src/test/resources/interview-round-upgrade.sh learning
+      - name: Verify populated V51 learning attempt upgrade
+        run: bash backend/src/test/resources/interview-round-upgrade.sh attempts
 
       - name: Run end-to-end Golden Path
         shell: bash

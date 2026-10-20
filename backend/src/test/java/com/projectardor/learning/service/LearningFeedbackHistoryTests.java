@@ -49,7 +49,8 @@ class LearningFeedbackHistoryTests {
         ObjectMapper mapper = new ObjectMapper();
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
-        LearningPlanService service = new LearningPlanService(repository, llm,
+        LearningPlanService service = new LearningPlanService(repository,
+                mock(com.projectardor.learning.repository.LearningAttemptRepository.class), llm,
                 new LlmJsonParser(mapper), mapper, mock(CalendarTaskService.class),
                 mock(ProfileService.class), mock(LearningContextResolver.class),
                 mock(LearningPlanCreationStore.class),

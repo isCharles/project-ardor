@@ -26,8 +26,10 @@ V51 只新增规范来源、准备目标、索引和目标外键，保留原字�
 
 来源不添加删除级联外键，保留已验证的来源身份。删除目标流程或轮次只清空目标关联，不删除计划和日程；沿用原有学习生命周期。回退应用可忽略新增可空列，禁止为回退删除 schema 或改写已执行迁移。密钥需继续由安全部署配置保管，数据库备份不等于密钥备份。
 
+学习提交与评分历史属于独立合同：V52 新增 `learning_attempts` 与内容/题目版本，旧 `last_evaluation.attempts` 只作兼容投影；来源与准备目标字段在该合同中保持不变。见 [学习尝试历史与内容版本合同](LEARNING_ATTEMPT_HISTORY.md)。
+
 ## 验收入口
 
-`LearningContextResolverTests` 验证类型、所有者/父子关系和目标独立；`learning-context-acceptance.mjs` 在隔离数据库、假模型下验证同步/异步传递、重复请求、拒绝跨用户/跨父对象，以及删除后的成果保留。`learning-context-ui.mjs` 验证不同的来源和准备目标链接、历史不确定提示、窄屏和不再猜表。
+`LearningContextResolverTests` 验证类型、所有者/父子关系和目标独立；`learning-context-acceptance.mjs` 在隔离数据库、假模型下验证同步/异步传递、重复请求、拒绝跨用户/跨父对象、尝试历史与版本围栏，以及删除后的成果保留。`learning-context-ui.mjs` 验证不同的来源和准备目标链接、历史不确定提示、窄屏和不再猜表。
 
 `learning-origin-upgrade-fixture.sql` / `learning-origin-upgrade-verify.sql` 通过升级探针的 `learning` 配置真实执行已填充 V50→最新版本升级，包含正常记录、单题、缺失、歧义与跨用户来源；接入 CI。新增迁移不得只用文本检查或单元测试代替实际执行。

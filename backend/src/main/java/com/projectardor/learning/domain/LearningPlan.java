@@ -37,6 +37,8 @@ public class LearningPlan {
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private LearningStatus status;
     @JdbcTypeCode(SqlTypes.JSON) @Column(nullable = false, columnDefinition = "jsonb") private Map<String, Object> lesson = new LinkedHashMap<>();
     @JdbcTypeCode(SqlTypes.JSON) @Column(nullable = false, columnDefinition = "jsonb") private List<Map<String, Object>> exercises = List.of();
+    @Column(name = "content_version", nullable = false) private int contentVersion = 1;
+    @Column(name = "exercises_version", nullable = false) private int exercisesVersion = 1;
     @JdbcTypeCode(SqlTypes.JSON) @Column(name = "last_evaluation", nullable = false, columnDefinition = "jsonb") private Map<String, Object> lastEvaluation = new LinkedHashMap<>();
     @Column(name = "last_score") private Integer lastScore;
     @Column(name = "attempt_count", nullable = false) private int attemptCount;
@@ -110,10 +112,17 @@ public class LearningPlan {
             this.nextReviewAt = nextReviewAt;
             this.scheduledAt = nextReviewAt;
             this.completedAt = null;
+            // A replacement exercise set is new content: increment its version so a stale
+            // answer captured against the previous set can never be attached to these questions.
             if (followUpExercises != null && !followUpExercises.isEmpty()) {
-                this.exercises = List.copyOf(followUpExercises);
+                replaceExercises(followUpExercises);
             }
         }
+    }
+
+    public void replaceExercises(List<Map<String, Object>> nextExercises) {
+        this.exercises = List.copyOf(nextExercises);
+        this.exercisesVersion++;
     }
 
     @PrePersist void onCreate() { Instant now = Instant.now(); createdAt = now; updatedAt = now; }
@@ -140,6 +149,8 @@ public class LearningPlan {
     public LearningStatus getStatus() { return status; }
     public Map<String, Object> getLesson() { return Map.copyOf(lesson); }
     public List<Map<String, Object>> getExercises() { return List.copyOf(exercises); }
+    public int getContentVersion() { return contentVersion; }
+    public int getExercisesVersion() { return exercisesVersion; }
     public Map<String, Object> getLastEvaluation() { return Map.copyOf(lastEvaluation); }
     public Integer getLastScore() { return lastScore; }
     public int getAttemptCount() { return attemptCount; }
