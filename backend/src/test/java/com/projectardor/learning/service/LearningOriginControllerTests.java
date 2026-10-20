@@ -9,8 +9,8 @@ import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.learning.domain.LearningOriginKind;
 import com.projectardor.learning.web.LearningOriginController;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
-import com.projectardor.resume.service.ResumeSourceAccess;
-import com.projectardor.knowledge.service.KnowledgeSourceAccess;
+import com.projectardor.materials.resume.service.ResumeSourceAccess;
+import com.projectardor.materials.knowledge.service.KnowledgeSourceAccess;
 import com.projectardor.opportunity.service.InterviewContextAccess;
 
 class LearningOriginControllerTests {

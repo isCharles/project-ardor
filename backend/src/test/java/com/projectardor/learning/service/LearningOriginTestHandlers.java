@@ -3,10 +3,10 @@ package com.projectardor.learning.service;
 import java.util.List;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
 import com.projectardor.recap.service.InterviewLearningOriginHandler;
-import com.projectardor.resume.service.ResumeSourceAccess;
-import com.projectardor.resume.service.ResumeLearningOriginHandler;
-import com.projectardor.knowledge.service.KnowledgeSourceAccess;
-import com.projectardor.knowledge.service.KnowledgeLearningOriginHandler;
+import com.projectardor.materials.resume.service.ResumeSourceAccess;
+import com.projectardor.materials.resume.service.ResumeLearningOriginHandler;
+import com.projectardor.materials.knowledge.service.KnowledgeSourceAccess;
+import com.projectardor.materials.knowledge.service.KnowledgeLearningOriginHandler;
 import com.projectardor.opportunity.service.InterviewContextAccess;
 
 final class LearningOriginTestHandlers {

@@ -1,4 +1,4 @@
-package com.projectardor.knowledge.service;
+package com.projectardor.materials.knowledge.service;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
@@ -10,7 +10,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
-import com.projectardor.knowledge.repository.KnowledgeVectorStore;
+import com.projectardor.materials.knowledge.repository.KnowledgeVectorStore;
 
 class KnowledgeIndexSchedulerTests {
 

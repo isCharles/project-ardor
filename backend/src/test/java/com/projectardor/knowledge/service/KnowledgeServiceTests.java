@@ -1,4 +1,4 @@
-package com.projectardor.knowledge.service;
+package com.projectardor.materials.knowledge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -15,10 +15,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
-import com.projectardor.knowledge.domain.KnowledgeDocument;
-import com.projectardor.knowledge.repository.KnowledgeChunkRepository;
-import com.projectardor.knowledge.repository.KnowledgeDocumentRepository;
-import com.projectardor.knowledge.repository.KnowledgeVectorStore;
+import com.projectardor.materials.knowledge.domain.KnowledgeDocument;
+import com.projectardor.materials.knowledge.repository.KnowledgeChunkRepository;
+import com.projectardor.materials.knowledge.repository.KnowledgeDocumentRepository;
+import com.projectardor.materials.knowledge.repository.KnowledgeVectorStore;
 import com.projectardor.websearch.service.TavilySearchService;
 import com.projectardor.websearch.service.WebSearchResult;
 

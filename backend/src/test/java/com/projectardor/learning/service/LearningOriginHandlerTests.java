@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
 import com.projectardor.learning.domain.LearningOriginKind;
 import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
-import com.projectardor.resume.service.ResumeSourceAccess;
-import com.projectardor.knowledge.service.KnowledgeSourceAccess;
+import com.projectardor.materials.resume.service.ResumeSourceAccess;
+import com.projectardor.materials.knowledge.service.KnowledgeSourceAccess;
 import com.projectardor.opportunity.service.InterviewContextAccess;
 import com.projectardor.common.web.ResourceNotFoundException;
 
@@ -71,6 +71,6 @@ class LearningOriginHandlerTests {
     }
     @Test void coordinatorNoLongerImportsResumeKnowledgeOrDispatchesCanonicalSourcesBySwitch() throws Exception {
         String source=Files.readString(Path.of("src/main/java/com/projectardor/learning/service/LearningContextResolver.java"),StandardCharsets.UTF_8);
-        assertThat(source).doesNotContain("com.projectardor.resume", "com.projectardor.knowledge", ".repository.", ".web.", "switch (");
+        assertThat(source).doesNotContain("com.projectardor.materials.resume", "com.projectardor.materials.knowledge", ".repository.", ".web.", "switch (");
     }
 }

@@ -1,11 +1,11 @@
-package com.projectardor.knowledge.service;
+package com.projectardor.materials.knowledge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import com.projectardor.knowledge.repository.KnowledgeVectorStore;
+import com.projectardor.materials.knowledge.repository.KnowledgeVectorStore;
 
 class KnowledgeIndexTaskLifecycleTests {
     private final UUID user = UUID.randomUUID(), chunk = UUID.randomUUID();

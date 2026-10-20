@@ -1,4 +1,4 @@
-package com.projectardor.resume.service;
+package com.projectardor.materials.resume.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

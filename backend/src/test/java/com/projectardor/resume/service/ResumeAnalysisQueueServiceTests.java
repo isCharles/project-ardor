@@ -1,4 +1,4 @@
-package com.projectardor.resume.service;
+package com.projectardor.materials.resume.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -10,10 +10,10 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
-import com.projectardor.resume.domain.Resume;
-import com.projectardor.resume.repository.ResumeAnalysisJobRepository;
-import com.projectardor.resume.repository.ResumeAnalysisRepository;
-import com.projectardor.resume.repository.ResumeRepository;
+import com.projectardor.materials.resume.domain.Resume;
+import com.projectardor.materials.resume.repository.ResumeAnalysisJobRepository;
+import com.projectardor.materials.resume.repository.ResumeAnalysisRepository;
+import com.projectardor.materials.resume.repository.ResumeRepository;
 
 class ResumeAnalysisQueueServiceTests {
 
