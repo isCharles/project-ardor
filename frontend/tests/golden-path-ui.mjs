@@ -271,7 +271,7 @@ try {
   const replayWeak = replayRecaps[0].questions.find((item) => item.performance === "WEAK");
   assert.ok(replayWeak);
   await replayPage.goto(`${origin}/app/evidence`);
-  await replayPage.getByRole("link", { name: /Make a learning plan|制定补强计划/ }).first().click();
+  await replayPage.getByRole("link", { name: /Ask Ardor for a learning plan|让 Ardor 制定学习计划/ }).first().click();
   await replayPage.getByRole("textbox", { name: /Message Ardor|给 Ardor 发消息/ }).waitFor();
   const learningDraft = await replayPage.getByRole("textbox", { name: /Message Ardor|给 Ardor 发消息/ }).inputValue();
   assert.ok(learningDraft.includes(replayWeak.id),

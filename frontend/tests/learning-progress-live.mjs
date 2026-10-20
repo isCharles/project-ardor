@@ -41,16 +41,23 @@ try {
   await req(path+"/confirm","POST",{revision:draft.revision,requestId:randomUUID()});
   const done=await until(()=>req(path),d=>d.reviews[0]?.status==="COMPLETED");
   const report=await req("/api/interview-recaps/"+done.reviews[0].recapId),question=report.questions[0];
-  const plan=await req("/api/learning-plans","POST",{concept:"Live connected progress plan",requestId:randomUUID(),originKind:"INTERVIEW_QUESTION",originResourceId:question.id},201);
-  const card=await req("/api/memory-cards","POST",{front:"Synthetic recovery test",back:"Compare recovery loss and latency.",sourceType:"INTERVIEW",recapQuestionId:question.id},201);
-  await req("/api/memory-cards/"+card.id+"/reviews","POST",{rating:"GOOD"});
-  await req("/api/interview-replays/questions/"+question.id,"POST",{requestId:randomUUID(),answer:"Use recovery requirements to compare snapshot and log trade-offs before deciding."},201);
-  // Only forwards transport to the explicitly opted-in backend. No API response fixtures.
+  // Real transport, including the unsent Ardor handoff; no API response fixtures.
   await context.route("**/api/**",async route=>{
     const u=new URL(route.request().url());const r=await route.fetch({url:backend+u.pathname+u.search});
     await route.fulfill({response:r});
   });
   const page=await context.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
+  await page.goto(origin+"/app/learning/progress?sourceInterviewId="+interview.id);
+  await page.getByRole("link",{name:"Ask Ardor for a learning plan",exact:true}).click();
+  const composer=page.getByRole("textbox",{name:/Message Ardor|给 Ardor 发消息/});
+  await composer.waitFor();
+  assert.ok((await composer.inputValue()).includes(question.id),"Handoff retains the exact source question");
+  assert.equal(await page.getByRole("button",{name:/Remove attachment|移除资料/}).count(),1);
+  assert.equal((await req("/api/learning-plans")).length,0,"Opening a suggested draft must not create a plan");
+  const plan=await req("/api/learning-plans","POST",{concept:"Live connected progress plan",requestId:randomUUID(),originKind:"INTERVIEW_QUESTION",originResourceId:question.id},201);
+  const card=await req("/api/memory-cards","POST",{front:"Synthetic recovery test",back:"Compare recovery loss and latency.",sourceType:"INTERVIEW",recapQuestionId:question.id},201);
+  await req("/api/memory-cards/"+card.id+"/reviews","POST",{rating:"GOOD"});
+  await req("/api/interview-replays/questions/"+question.id,"POST",{requestId:randomUUID(),answer:"Use recovery requirements to compare snapshot and log trade-offs before deciding."},201);
   await page.goto(origin+"/app/learning/progress?sourceInterviewId="+interview.id);
   await page.getByRole("heading",{name:question.questionText,exact:true}).waitFor();
   assert.equal(await page.locator('a[href="/app/learning?id='+plan.id+'"]').count(),1);
