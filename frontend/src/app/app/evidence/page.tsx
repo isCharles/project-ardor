@@ -1,44 +1,24 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, CircleHelp, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowRight, BookOpen, RotateCcw, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
-type Question = {
-  id: string;
-  questionText: string;
-  candidateAnswer: string | null;
-  weaknessReason: string | null;
-  performance: "STRONG" | "MIXED" | "WEAK" | "UNKNOWN";
-  tags: string[];
+type Question = { id: string; questionText: string };
+type Recap = { id: string; title: string };
+type Plan = { id: string; concept: string; status: string; attemptCount: number; lastScore: number | null; targetInterviewId: string | null; targetRoundId: string | null };
+type Track = {
+  question: Question & { recapId: string; recapTitle: string; observation: string | null; performance: string; interviewId: string | null; roundId: string | null };
+  learningPlans: Plan[]; interviewLearningPlans: Plan[];
+  cards: { id: string; status: string; repetitions: number; nextReviewAt: string | null }[];
+  replay: { attemptCount: number; latestVerdict: string | null; latestAt: string | null } | null;
 };
-type Recap = {
-  id: string;
-  title: string;
-  createdAt: string;
-  questions: Question[];
-};
-type Card = {
-  id: string;
-  recapQuestionId: string | null;
-  front: string;
-  repetitions: number;
-  nextReviewAt: string;
-  status: "NEW" | "LEARNING" | "REVIEW" | "SUSPENDED";
-};
-type Plan = {
-  id: string;
-  concept: string;
-  sourceType: string;
-  sourceId: string | null;
-  originKind?: string; originResourceId?: string | null;
-  status: "SCHEDULED" | "IN_PROGRESS" | "NEEDS_REVIEW" | "COMPLETED";
-  attemptCount: number;
-  lastScore: number | null;
+type Progress = {
+  page: number; hasNext: boolean; totalQuestions: number; unresolvedSources: number; tracks: Track[];
+  accountSummary: { learningPlans: number; recordedLearningAttempts: number; flashcards: number; replayAttempts: number };
 };
 
 function agentHref(recap: Recap, question: Question, locale: string) {
@@ -67,82 +47,148 @@ function learningHref(recap: Recap, question: Question, locale: string) {
   return `/app?${params.toString()}`;
 }
 
+
 export default function EvidencePage() {
+  return <Suspense fallback={<div role="status" className="p-8">…</div>}><ProgressScope /></Suspense>;
+}
+
+function ProgressScope() {
+  const search = useSearchParams();
+  const source = search.get("sourceInterviewId");
+  return <ProgressContent key={source ?? ""} source={source} />;
+}
+
+function ProgressContent({ source }: { source: string | null }) {
   const router = useRouter();
   const { locale, t } = useLocale();
-  const [recaps, setRecaps] = useState<Recap[]>([]);
-  const [cards, setCards] = useState<Card[]>([]);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<Progress | null>(null);
+  const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const activeRequest = useRef<{ active: boolean } | null>(null);
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
-    let active = true;
-    Promise.all([
-      api<Recap[]>("/api/interview-recaps"),
-      api<Card[]>("/api/memory-cards"),
-      api<Plan[]>("/api/learning-plans"),
-    ]).then(([loadedRecaps, loadedCards, loadedPlans]) => {
-      if (!active) return;
-      setRecaps(loadedRecaps);
-      setCards(loadedCards);
-      setPlans(loadedPlans);
-    }).catch((reason) => {
-      if (!active) return;
+    const ticket = { active: true };
+    activeRequest.current = ticket;
+    const query = new URLSearchParams({ page: "0", size: "20" });
+    if (source) query.set("sourceInterviewId", source);
+    api<Progress>("/api/learning-progress?" + query).then(value => {
+      if (ticket.active) setData(value);
+    }).catch(reason => {
+      if (!ticket.active) return;
       if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
-      else setError(reason instanceof Error ? reason.message : t("Could not load learning progress", "无法加载补强进度"));
-    }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [router, t]);
+      else setError(reason instanceof Error ? reason.message : "Unknown error");
+    }).finally(() => { if (ticket.active) setBusy(false); });
+    return () => { ticket.active = false; };
+  }, [router, source, refresh]);
 
-  const tracks = useMemo(() => recaps.flatMap((recap) => recap.questions
-    .filter((question) => question.performance === "WEAK" || question.performance === "MIXED")
-    .map((question) => ({ recap, question })))
-    .sort((left, right) => Date.parse(right.recap.createdAt) - Date.parse(left.recap.createdAt)), [recaps]);
-  const linkedCards = useMemo(() => new Map(cards.filter((card) => card.recapQuestionId)
-    .map((card) => [card.recapQuestionId, card])), [cards]);
+  async function more() {
+    if (!data || busy || !data.hasNext) return;
+    const ticket = activeRequest.current;
+    setBusy(true); setError("");
+    const query = new URLSearchParams({ page: String(data.page + 1), size: "20" });
+    if (source) query.set("sourceInterviewId", source);
+    try {
+      const next = await api<Progress>("/api/learning-progress?" + query);
+      if (!ticket?.active) return;
+      setData(previous => previous ? { ...next, unresolvedSources: previous.unresolvedSources + next.unresolvedSources,
+        tracks: [...new Map([...previous.tracks, ...next.tracks].map(track => [track.question.id, track])).values()] } : next);
+    } catch (reason) {
+      if (!ticket?.active) return;
+      if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
+      else setError(reason instanceof Error ? reason.message : "Unknown error");
+    } finally { if (ticket?.active) setBusy(false); }
+  }
 
-  return (
-    <main className="ardor-workbench min-h-screen px-5 pb-20 pt-6 text-[#1d1d1f] md:px-10">
-      <div className="mx-auto max-w-6xl">
-        <Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70 hover:text-stone-900"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link>
-        <header className="pb-9 pt-12 md:pt-16">
-          <p className="text-xs font-medium tracking-[0.16em] text-violet-600">{t("LEARNING · PROGRESS", "学习 · 补强进度")}</p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em] md:text-6xl">{t("See how you grow.", "知道进步从哪来。")}</h1>
-          <p className="mt-4 text-sm text-stone-500">{t("Real interviews reveal gaps. Your next steps show progress.", "真实面试留下问题；后续行动留下证据。")}</p>
-        </header>
+  function planList(plans: Plan[], interviewId: string | null) {
+    return <ul className="mt-3 space-y-3">{plans.map(plan => <li key={plan.id} className="min-w-0">
+      <Link href={"/app/learning?id=" + plan.id} className="block break-words text-sm font-medium text-violet-700 hover:underline">{plan.concept}</Link>
+      <p className="mt-1 text-xs text-stone-500">{t("Practice attempts", "练习次数")} {plan.attemptCount}{plan.lastScore !== null && <> · {t("Latest score", "最近评分")} {plan.lastScore}</>}{plan.status === "COMPLETED" && <> · {t("Completed", "已完成")}</>}</p>
+      {plan.targetInterviewId && <Link href={"/app/job-search/interviews?selected=" + plan.targetInterviewId} className="mt-1 block text-xs text-stone-600 underline">
+        {plan.targetInterviewId === interviewId ? t("Preparing for this interview", "准备本场面试") : t("Preparing for another interview", "准备另一场面试")}
+        {plan.targetRoundId && <> · {t("Specific round", "已指定轮次")}</>}
+      </Link>}
+    </li>)}</ul>;
+  }
 
-        {error && <div role="alert" className="mb-6 rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
-        {loading ? <div className="ardor-panel h-72 animate-pulse rounded-[2.5rem]" aria-label={t("Loading learning progress", "正在加载补强进度")} /> : tracks.length === 0 ? (
-          <section className="ardor-panel grid min-h-80 place-items-center rounded-[2.5rem] p-8 text-center">
-            <div><CircleHelp className="mx-auto size-9 text-violet-500" /><h2 className="mt-5 text-2xl font-semibold">{t("Start with a real interview", "从一次真实复盘开始")}</h2><p className="mt-2 text-sm text-stone-500">{t("Questions to improve will appear here after an interview recap.", "面经里有待补强的问题时，这里会出现它的后续轨迹。")}</p><Link href="/app/recaps" className="mt-6 inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm text-white">{t("View interview notes", "查看面经")}<ArrowRight className="size-4" /></Link></div>
-          </section>
-        ) : (
-          <div className="space-y-5">
-            <p className="text-sm text-stone-500">{t(`${tracks.length} interview questions to improve`, `${tracks.length} 个有待补强的真实问题`)}</p>
-            {tracks.map(({ recap, question }) => {
-              const card = linkedCards.get(question.id);
-              const exactPlans = plans.filter((plan) => plan.originKind ? plan.originKind === "INTERVIEW_QUESTION" && plan.originResourceId === question.id : plan.sourceType === "RECAP" && plan.sourceId === question.id);
-              const broadPlans = plans.filter((plan) => plan.originKind ? plan.originKind === "INTERVIEW_RECORD" && plan.originResourceId === recap.id : plan.sourceType === "RECAP" && plan.sourceId === recap.id);
-              const plan = exactPlans[0];
-              return <article key={question.id} className="relative overflow-hidden rounded-[2.2rem] border border-white/85 bg-white/75 p-6 shadow-[0_18px_60px_rgba(80,55,115,0.07)] backdrop-blur-xl md:p-9">
-                <div className="pointer-events-none absolute -right-20 -top-28 size-72 rounded-full bg-[radial-gradient(circle,rgba(255,167,125,0.26),rgba(172,148,255,0.15)_48%,transparent_73%)] blur-2xl" />
-                <div className="relative">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500"><span className={`rounded-full px-2.5 py-1 ${question.performance === "WEAK" ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-700"}`}>{question.performance === "WEAK" ? t("Needs work", "薄弱") : t("Practice more", "需巩固")}</span><span>{recap.title}</span></div>
-                  <h2 className="mt-4 max-w-4xl text-xl font-semibold leading-snug tracking-tight md:text-2xl">{question.questionText}</h2>
-                  <Link href={`/app/replay?question=${question.id}`} className="mt-4 inline-flex items-center gap-2 rounded-full bg-stone-950 px-4 py-2 text-xs font-medium text-white transition hover:bg-stone-800"><RotateCcw className="size-3.5" />{t("Try again", "重新回答")}<ArrowRight className="size-3.5" /></Link>
-                  <div className="mt-6 grid gap-3 md:grid-cols-3">
-                    <div className="rounded-3xl bg-rose-50/65 p-5"><span className="text-xs font-medium text-rose-600">{t("What happened", "当时的表现")}</span><p className="mt-3 line-clamp-4 text-sm leading-6 text-stone-700">{question.weaknessReason || question.candidateAnswer || t("Not enough source material to assess this yet.", "原始材料不足，暂不能判断具体原因。")}</p><Link href={`/app/recaps?selected=${recap.id}`} className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-stone-600 hover:text-stone-950">{t("View original notes", "看原始面经")}<ArrowRight className="size-3.5" /></Link></div>
-                    <div className="rounded-3xl bg-violet-50/70 p-5"><span className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-700"><BookOpen className="size-3.5" />{t("Learning", "学习")}</span>{plan ? <><p className="mt-3 text-sm font-medium text-stone-800">{plan.concept}</p><p className="mt-1 text-xs text-stone-500">{plan.attemptCount ? t(`${plan.attemptCount} practice attempts${plan.lastScore === null ? "" : ` · latest score ${plan.lastScore}`}`, `练习 ${plan.attemptCount} 次${plan.lastScore === null ? "" : ` · 最近 ${plan.lastScore} 分`}`) : t("No practice yet", "尚未练习")}</p><Link href={`/app/learning?id=${plan.id}`} className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-violet-700">{t("Continue learning", "继续学习")}<ArrowRight className="size-3.5" /></Link></> : <><p className="mt-3 text-sm leading-6 text-stone-500">{broadPlans.length ? t("A plan exists for this interview, but not this question yet.", "已有整场面试的学习计划，尚未关联到这道题。") : t("No learning plan for this question yet.", "尚无针对这道题的学习记录。")}</p><Link href={learningHref(recap, question, locale)} className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-violet-700">{t("Make a learning plan", "制定补强计划")}<ArrowRight className="size-3.5" /></Link></>}</div>
-                    <div className="rounded-3xl bg-blue-50/70 p-5"><span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700"><RotateCcw className="size-3.5" />{t("Flashcard", "记忆卡")}</span>{card ? <><p className="mt-3 line-clamp-2 text-sm font-medium text-stone-800">{card.front}</p><p className="mt-1 text-xs text-stone-500">{card.repetitions ? t(`${card.repetitions} self-rated reviews`, `自评复习 ${card.repetitions} 次`) : t("Not reviewed yet", "尚未复习")} · {card.status === "SUSPENDED" ? t("Paused", "已暂停") : t("Awaiting next review", "等待下次复习")}</p><Link href={`/app/cards?card=${card.id}`} className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-blue-700">{t("Open card", "打开卡片")}<ArrowRight className="size-3.5" /></Link></> : <><p className="mt-3 text-sm text-stone-500">{t("No linked flashcard yet.", "还没有关联的记忆卡。")}</p><Link href={agentHref(recap, question, locale)} className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-blue-700"><Sparkles className="size-3.5" />{t("Ask Ardor to design one", "让 Ardor 设计")}<ArrowRight className="size-3.5" /></Link></>}</div>
-                  </div>
-                </div>
-              </article>;
-            })}
-            <p className="px-2 text-xs leading-5 text-stone-500">{t("Review counts and practice scores show progress, not mastery. Revisit the concept later with a new variation.", "复习次数与练习分数是过程记录，不等于已经掌握；后续需要延迟变式复测。")}</p>
-          </div>
-        )}
-      </div>
-    </main>
-  );
+  const verdicts: Record<string, string> = {
+    CLEARER: t("Clearer", "比原来更清楚"), SIMILAR: t("Similar", "与原来相近"),
+    NEEDS_WORK: t("Needs work", "仍需练习"), UNKNOWN: t("Not enough evidence", "证据不足"),
+  };
+
+  return <main className="ardor-workbench min-h-screen min-w-0 px-5 pb-20 pt-8 text-[#1d1d1f] md:px-10">
+    <div className="mx-auto max-w-6xl">
+      <header className="flex flex-wrap items-end justify-between gap-4 pb-8 pt-6">
+        <div><p className="text-xs tracking-widest text-violet-600">{t("LEARNING · PROGRESS", "学习 · 补强进度")}</p>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight md:text-5xl">{t("Your next steps, connected.", "看见每一步的进展。")}</h1>
+          <p className="mt-3 text-sm text-stone-500">{t("Practice and review records, not a mastery score.", "串起学习、重答与复习记录，不把次数当成掌握程度。")}</p>
+        </div>
+        <button disabled={busy} onClick={() => { setBusy(true); setError(""); setData(null); setRefresh(value => value + 1); }} className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white/70 px-4 py-2 text-sm disabled:opacity-50">
+          <RotateCcw className={"size-4 " + (busy ? "animate-spin motion-reduce:animate-none" : "")} />{t("Refresh", "刷新")}
+        </button>
+      </header>
+      {error && <div role="alert" className="mb-6 rounded-2xl bg-red-50 p-4 text-sm text-red-700">
+        <p>{t("Could not load progress. Try refreshing.", "无法加载进度，请刷新重试。")}</p>
+        <details className="mt-2"><summary>{t("View details", "查看详情")}</summary><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all">{error}</pre></details>
+      </div>}
+      {data && <>
+        <section aria-label={t("Account activity", "账户活动")} className="mb-9 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            [t("Learning plans", "学习计划"), data.accountSummary.learningPlans, "/app/learning"],
+            [t("Recorded learning attempts", "已保存的学习尝试"), data.accountSummary.recordedLearningAttempts, "/app/learning"],
+            [t("Flashcards", "记忆卡"), data.accountSummary.flashcards, "/app/learning/review"],
+            [t("Question practice attempts", "重答次数"), data.accountSummary.replayAttempts, null],
+          ].map(([label, count, href]) => <div key={String(label)} className="min-w-0 rounded-2xl border border-white/80 bg-white/65 p-4">
+            {href ? <Link href={String(href)} className="block"><span className="block text-2xl font-semibold">{count}</span><span className="mt-1 block text-xs text-stone-500">{label}</span></Link>
+              : <><span className="block text-2xl font-semibold">{count}</span><span className="mt-1 block text-xs text-stone-500">{label}</span></>}
+          </div>)}
+        </section>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 text-sm text-stone-500">
+          <p>{t("Interview questions to improve", "有待补强的面试问题")} · {data.totalQuestions}</p>
+          {source && <Link href="/app/learning/progress" className="underline">{t("Show all interviews", "查看全部面试")}</Link>}
+        </div>
+        {data.unresolvedSources > 0 && <p role="status" className="mb-4 text-sm text-amber-700">{t("Some legacy sources could not be resolved. They were not guessed or linked.", "部分旧来源无法可靠解析，未猜测或强行关联。")}</p>}
+        {!data.tracks.length && <section className="rounded-3xl bg-white/65 p-8">
+          <h2 className="text-lg font-semibold">{t("No interview gaps recorded here yet.", "这里还没有面试补强记录。")}</h2>
+          <p className="mt-2 text-sm text-stone-500">{t("Independent learning and review still count in your account activity above.", "自主学习和复习仍保留在上方账户活动中，不需要先有一场面试。")}</p>
+          <Link className="mt-4 inline-flex items-center gap-2 text-sm text-violet-700" href="/app/job-search/notes">{t("Open interview notes", "查看面试记录")}<ArrowRight className="size-4" /></Link>
+        </section>}
+        <div className="space-y-6">{data.tracks.map(track => {
+          const q = track.question, recap = { id: q.recapId, title: q.recapTitle };
+          return <article key={q.id} data-progress-question={q.id} className="min-w-0 rounded-3xl border border-white/80 bg-white/70 p-5 md:p-8">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500">
+              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">{q.performance === "WEAK" ? t("Needs work", "薄弱") : t("Practice more", "需巩固")}</span>
+              <Link href={"/app/recaps?selected=" + q.recapId} className="min-w-0 truncate underline">{q.recapTitle}</Link>
+              {q.roundId && <span>{t("Round-linked record", "已关联面试轮次")}</span>}
+            </div>
+            <h2 className="mt-4 break-words text-xl font-semibold">{q.questionText}</h2>
+            <p className="mt-3 line-clamp-4 break-words text-sm leading-6 text-stone-600">{q.observation || t("Source material is insufficient to assess the gap.", "材料不足，暂不能判断具体原因。")}</p>
+            <div className="mt-6 grid gap-6 md:grid-cols-3">
+              <section className="min-w-0">
+                <h3 className="flex items-center gap-2 text-sm font-medium"><BookOpen className="size-4" />{t("Learning for this question", "针对这道题的学习")}</h3>
+                {track.learningPlans.length ? planList(track.learningPlans, q.interviewId) : <Link href={learningHref(recap, q, locale)} className="mt-3 block text-sm text-violet-700">{t("Ask Ardor for a learning plan", "让 Ardor 制定学习计划")}</Link>}
+                {track.interviewLearningPlans.length > 0 && <details className="mt-4"><summary className="text-xs text-stone-500">{t("Interview-wide plans", "整场面试的学习计划")} · {track.interviewLearningPlans.length}</summary>{planList(track.interviewLearningPlans, q.interviewId)}</details>}
+              </section>
+              <section className="min-w-0">
+                <h3 className="text-sm font-medium">{t("Question practice", "重答训练")}</h3>
+                <p className="mt-3 text-sm text-stone-600">{t("Attempts", "尝试次数")} · {track.replay?.attemptCount ?? 0}</p>
+                {track.replay?.latestVerdict && <p className="mt-1 break-words text-xs text-stone-500">{t("Latest result", "最近结果")} · {verdicts[track.replay.latestVerdict] ?? t("Not enough evidence", "证据不足")}</p>}
+                {track.replay?.latestAt && <p className="mt-1 text-xs text-stone-500">{new Date(track.replay.latestAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN")}</p>}
+                <Link href={"/app/learning/practice/questions?question=" + q.id} className="mt-3 block text-sm text-violet-700">{t("Try again", "重新回答")}</Link>
+              </section>
+              <section className="min-w-0">
+                <h3 className="text-sm font-medium">{t("Flashcard review", "记忆卡复习")}</h3>
+                {track.cards.length ? <ul className="mt-3 space-y-3">{track.cards.map((card, index) => <li key={card.id}>
+                  <Link href={"/app/cards?card=" + card.id} className="text-sm text-violet-700">{t("Open card", "打开卡片")} {index + 1}</Link>
+                  <p className="mt-1 text-xs text-stone-500">{t("Self-rated reviews", "自评复习")} · {card.repetitions}{card.status === "SUSPENDED" && <> · {t("Paused", "已暂停")}</>}</p>
+                </li>)}</ul> : <Link href={agentHref(recap, q, locale)} className="mt-3 inline-flex items-center gap-1 text-sm text-violet-700"><Sparkles className="size-3.5" />{t("Ask Ardor to design a card", "让 Ardor 设计记忆卡")}</Link>}
+              </section>
+            </div>
+          </article>;
+        })}</div>
+        {data.hasNext && <button disabled={busy} onClick={() => void more()} className="mx-auto mt-8 block rounded-full bg-stone-950 px-6 py-2.5 text-sm text-white disabled:opacity-50">{busy ? t("Loading…", "加载中…") : t("Load more", "加载更多")}</button>}
+      </>}
+      {busy && !data && <p role="status" className="py-12 text-sm text-stone-500">{t("Loading progress…", "正在加载进度…")}</p>}
+    </div>
+  </main>;
 }

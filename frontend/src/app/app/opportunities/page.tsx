@@ -370,6 +370,9 @@ export default function OpportunitiesPage() {
                       <tr key={`${item.id}-detail`} className="border-b border-stone-100 bg-stone-50/60">
                         <td colSpan={8} className="px-6 py-5">
                           <div className="min-w-0 space-y-2">
+                            <Link href={"/app/learning/progress?sourceInterviewId=" + item.id} className="inline-flex items-center gap-2 py-2 text-sm text-violet-700 hover:underline">
+                              <GraduationCap className="size-4" />{t("View learning progress from this interview", "查看这场面试的补强进度")}
+                            </Link>
                             {recapsFor(item).map((recap) => (
                               <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`}
                                 className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-violet-50 px-4 py-2.5 text-sm text-violet-900 transition hover:bg-violet-100">

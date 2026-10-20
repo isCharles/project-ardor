@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 import com.projectardor.learning.domain.LearningAttempt;
 
 public interface LearningAttemptRepository extends JpaRepository<LearningAttempt, UUID> {
+    long countByUserId(UUID owner);
     Optional<LearningAttempt> findByUserIdAndRequestId(UUID userId, UUID requestId);
     List<LearningAttempt> findAllByUserIdAndPlanIdOrderByAttemptNoAsc(UUID userId, UUID planId);
 
