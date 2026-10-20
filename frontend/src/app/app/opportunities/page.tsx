@@ -8,6 +8,7 @@ import { FormEvent, Fragment, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 import { AppDialog } from "@/components/ui/app-dialog";
+import type { PlanContext } from "@/components/ardor/learning-context";
 
 type Round = {
   id: string;
@@ -35,7 +36,7 @@ type Opportunity = {
 
 type RecapRef = { id: string; title: string; jobOpportunityId: string | null; questions: { id: string }[] };
 type MemoryCardRef = { id: string; recapQuestionId: string | null; status: string };
-type LearningPlanRef = { id: string; concept: string; sourceType: string; sourceId: string | null; status: string };
+type LearningPlanRef = PlanContext & { id: string; concept: string; status: string };
 
 const STATUSES = ["SCHEDULED", "AWAITING_RESULT", "NEXT_ROUND", "REJECTED"];
 
@@ -127,10 +128,16 @@ export default function OpportunitiesPage() {
   function plansFor(item: Opportunity) {
     const linked = recapsFor(item);
     const recapIds = new Set(linked.map((recap) => recap.id));
-    // A plan's source may be the whole recap or one of its questions; both are valid.
     const questionIds = new Set(linked.flatMap((recap) => recap.questions.map((question) => question.id)));
-    return plans.filter((plan) => plan.sourceType === "RECAP" && plan.sourceId !== null
-      && (recapIds.has(plan.sourceId) || questionIds.has(plan.sourceId)));
+    return plans.flatMap<LearningPlanRef & { relation: "TARGET" | "SOURCE" }>((plan) => {
+      if (plan.targetInterviewId === item.id) return [{ ...plan, relation: "TARGET" as const }];
+      const id = plan.originResourceId;
+      const fromHere = plan.originKind === "INTERVIEW_RECORD" ? !!id && recapIds.has(id)
+        : plan.originKind === "INTERVIEW_QUESTION" ? !!id && questionIds.has(id)
+        : !plan.originKind && plan.sourceType === "RECAP" && !!plan.sourceId
+          && (recapIds.has(plan.sourceId) || questionIds.has(plan.sourceId));
+      return fromHere ? [{ ...plan, relation: "SOURCE" as const }] : [];
+    });
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -383,7 +390,7 @@ export default function OpportunitiesPage() {
                               <Link key={plan.id} href={`/app/learning?id=${plan.id}`}
                                 className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-amber-50 px-4 py-2.5 text-sm text-amber-900 transition hover:bg-amber-100">
                                 <GraduationCap className="size-4 shrink-0 text-amber-600" />
-                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-amber-600">{t("Learning", "学习")}</span>
+                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-amber-600">{plan.relation === "TARGET" ? t("Preparation", "面试准备") : t("Learning from here", "来源于此")}</span>
                                 <span className="min-w-0 flex-1 truncate" title={plan.concept}>{plan.concept}</span>
                                 <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{plan.status}</span>
                               </Link>

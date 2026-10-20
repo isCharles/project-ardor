@@ -29,6 +29,11 @@ public class LearningPlan {
     @Column(columnDefinition = "text") private String reason;
     @Enumerated(EnumType.STRING) @Column(name = "source_type", nullable = false, length = 32) private LearningSourceType sourceType;
     @Column(name = "source_id") private UUID sourceId;
+    @Enumerated(EnumType.STRING) @Column(name = "origin_kind", length = 32) private LearningOriginKind originKind;
+    @Column(name = "origin_resource_id") private UUID originResourceId;
+    @Column(name = "origin_record_id") private UUID originRecordId;
+    @Column(name = "target_interview_id") private UUID targetInterviewId;
+    @Column(name = "target_round_id") private UUID targetRoundId;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private LearningStatus status;
     @JdbcTypeCode(SqlTypes.JSON) @Column(nullable = false, columnDefinition = "jsonb") private Map<String, Object> lesson = new LinkedHashMap<>();
     @JdbcTypeCode(SqlTypes.JSON) @Column(nullable = false, columnDefinition = "jsonb") private List<Map<String, Object>> exercises = List.of();
@@ -122,6 +127,16 @@ public class LearningPlan {
     public String getReason() { return reason; }
     public LearningSourceType getSourceType() { return sourceType; }
     public UUID getSourceId() { return sourceId; }
+    public LearningOriginKind getOriginKind() { return originKind; }
+    public UUID getOriginResourceId() { return originResourceId; }
+    public UUID getOriginRecordId() { return originRecordId; }
+    public UUID getTargetInterviewId() { return targetInterviewId; }
+    public UUID getTargetRoundId() { return targetRoundId; }
+    public void assignContext(LearningOriginKind kind, UUID resourceId, UUID recordId, UUID interviewId, UUID roundId) {
+        if (originKind != null) throw new IllegalStateException("学习来源不能静默改挂");
+        if (kind == null || kind == LearningOriginKind.LEGACY_RECAP) throw new IllegalArgumentException("新计划需要明确来源");
+        originKind=kind; originResourceId=resourceId; originRecordId=recordId; targetInterviewId=interviewId; targetRoundId=roundId;
+    }
     public LearningStatus getStatus() { return status; }
     public Map<String, Object> getLesson() { return Map.copyOf(lesson); }
     public List<Map<String, Object>> getExercises() { return List.copyOf(exercises); }

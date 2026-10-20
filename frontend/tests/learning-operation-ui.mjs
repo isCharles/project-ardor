@@ -27,10 +27,11 @@ try {
     else if (path === "/api/auth/csrf") body = { token: "fixture", headerName: "X-CSRF-TOKEN" };
     else if (path === "/api/profile/sidebar") body = { userId: "learning-ui-owner", hrefs: ["/app"], revision: 0, configured: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
+    else if (path === "/api/opportunities/proposal-target") body = { id: "proposal-target", company: "Preparation employer", targetRole: "Backend", rounds: [{ id: "proposal-round", roundNumber: 2 }] };
     else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [
       { id: "proposal-user", role: "USER", conversationId: conversation.id, content: "Prepare a JVM lesson", createdAt: conversation.createdAt },
       { id: "proposal-answer", role: "ASSISTANT", conversationId: conversation.id, content: "Synthetic learning proposal answer", createdAt: conversation.createdAt, proposalResolutions: resolutions,
-        runTrace: JSON.stringify({ status: "COMPLETED", elapsedMs: 100, steps: [], proposals: [{ kind: "learning_plan", label: "JVM memory", detail: "Review memory regions and practice explaining GC.", endpoint: "/api/learning-plans/jobs", learningPlan: { requestId, concept: "JVM memory", reason: "Synthetic practice gap", sourceType: "MANUAL", sourceId: null, scheduledAt: "2099-10-19T01:00:00Z" } }] }) },
+        runTrace: JSON.stringify({ status: "COMPLETED", elapsedMs: 100, steps: [], proposals: [{ kind: "learning_plan", label: "JVM memory", detail: "Review memory regions and practice explaining GC.", endpoint: "/api/learning-plans/jobs", learningPlan: { requestId, concept: "JVM memory", reason: "Synthetic practice gap", sourceType: "RECAP", sourceId: "proposal-question", scheduledAt: "2099-10-19T01:00:00Z", originKind: "INTERVIEW_QUESTION", originResourceId: "proposal-question", targetInterviewId: "proposal-target", targetRoundId: "proposal-round" } }] }) },
     ] };
     else if (path.endsWith("/proposal-resolution") && route.request().method() === "PUT") {
       const decision = route.request().postDataJSON();
@@ -41,6 +42,10 @@ try {
     else if (path === "/api/learning-plans/request-status") body = [{ requestId, status: job?.status === "COMPLETED" ? "CREATED" : "MISSING", planId: job?.status === "COMPLETED" ? "created-fixture" : null }];
     else if (path === "/api/learning-plans/jobs" && route.request().method() === "POST") {
       submissions++; assert.equal(route.request().postDataJSON().requestId, requestId);
+      assert.equal(route.request().postDataJSON().originKind, "INTERVIEW_QUESTION");
+      assert.equal(route.request().postDataJSON().originResourceId, "proposal-question");
+      assert.equal(route.request().postDataJSON().targetInterviewId, "proposal-target");
+      assert.equal(route.request().postDataJSON().targetRoundId, "proposal-round");
       if (failSubmission) return route.fulfill({ status: 503, json: { message: "Synthetic creation failure" } });
       job = { id: requestId, status: "RUNNING", resultPath: null }; body = job;
     }
@@ -52,6 +57,7 @@ try {
   await page.goto(`${origin}/app`);
   const dock = page.getByRole("region", { name: "Learning creation confirmation", exact: true });
   await dock.getByRole("heading", { name: "Create a learning plan for “JVM memory”?", exact: true }).waitFor();
+  await dock.getByRole("link", { name: "Preparation target", exact: true }).getByText(/Preparation employer/).waitFor();
   assert.equal(submissions, 0);
   await page.locator(".ardor-composer-enter").evaluateAll(elements => Promise.all(elements.flatMap(element => element.getAnimations()).map(animation => animation.finished.catch(() => undefined))));
   const bounds = await dock.boundingBox(), composer = await page.getByRole("textbox", { name: "Message Ardor", exact: true }).boundingBox();

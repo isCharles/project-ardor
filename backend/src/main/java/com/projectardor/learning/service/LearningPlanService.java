@@ -29,10 +29,6 @@ import com.projectardor.learning.domain.LearningStatus;
 import com.projectardor.learning.repository.LearningPlanRepository;
 import com.projectardor.llm.service.LlmGateway;
 import com.projectardor.profile.service.ProfileService;
-import com.projectardor.recap.repository.InterviewRecapQuestionRepository;
-import com.projectardor.recap.repository.InterviewRecapRepository;
-import com.projectardor.resume.repository.ResumeRepository;
-import com.projectardor.knowledge.repository.KnowledgeDocumentRepository;
 
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
@@ -46,10 +42,7 @@ public class LearningPlanService {
     private final ObjectMapper objectMapper;
     private final CalendarTaskService calendarTaskService;
     private final ProfileService profileService;
-    private final InterviewRecapRepository recapRepository;
-    private final InterviewRecapQuestionRepository recapQuestionRepository;
-    private final ResumeRepository resumeRepository;
-    private final KnowledgeDocumentRepository knowledgeRepository;
+    private final LearningContextResolver contexts;
     private final LearningPlanCreationStore creationStore;
     private final LearningPlanGenerationGate generationGate;
     private final LearningPlanAgentSlots agentSlots;
@@ -58,8 +51,7 @@ public class LearningPlanService {
     public LearningPlanService(LearningPlanRepository repository, LlmGateway llmGateway,
             LlmJsonParser jsonParser, ObjectMapper objectMapper,
             CalendarTaskService calendarTaskService, ProfileService profileService,
-            InterviewRecapRepository recapRepository, InterviewRecapQuestionRepository recapQuestionRepository,
-            ResumeRepository resumeRepository, KnowledgeDocumentRepository knowledgeRepository,
+            LearningContextResolver contexts,
             LearningPlanCreationStore creationStore, LearningPlanGenerationGate generationGate,
             LearningPlanAgentSlots agentSlots, PlatformTransactionManager transactionManager) {
         this.repository = repository;
@@ -68,10 +60,7 @@ public class LearningPlanService {
         this.objectMapper = objectMapper;
         this.calendarTaskService = calendarTaskService;
         this.profileService = profileService;
-        this.recapRepository = recapRepository;
-        this.recapQuestionRepository = recapQuestionRepository;
-        this.resumeRepository = resumeRepository;
-        this.knowledgeRepository = knowledgeRepository;
+        this.contexts = contexts;
         this.creationStore = creationStore;
         this.generationGate = generationGate;
         this.agentSlots = agentSlots;
@@ -85,7 +74,12 @@ public class LearningPlanService {
 
     public LearningPlan create(UUID userId, UUID requestId, String rawConcept, String rawReason,
             LearningSourceType sourceType, UUID sourceId, Instant scheduledAt) {
-        return createInternal(userId, requestId, rawConcept, rawReason, sourceType, sourceId, scheduledAt, false);
+        return create(userId, requestId, rawConcept, rawReason, sourceType, sourceId, scheduledAt, null);
+    }
+
+    public LearningPlan create(UUID userId, UUID requestId, String rawConcept, String rawReason,
+            LearningSourceType sourceType, UUID sourceId, Instant scheduledAt, LearningContextInput context) {
+        return createInternal(userId, requestId, rawConcept, rawReason, sourceType, sourceId, scheduledAt, false, context);
     }
 
     public LearningPlan createForAgent(UUID userId, UUID logicalActionId, UUID runId,
@@ -95,38 +89,29 @@ public class LearningPlanService {
         LearningSourceType source = sourceType == null ? LearningSourceType.AGENT : sourceType;
         UUID requestId = logicalActionId == null || runId == null ? null
                 : agentSlots.resolve(userId, logicalActionId, runId, concept, reason, source, sourceId, scheduledAt);
-        return createInternal(userId, requestId, concept, reason, source, sourceId, scheduledAt, true);
+        return createInternal(userId, requestId, concept, reason, source, sourceId, scheduledAt, true, null);
     }
 
     private LearningPlan createInternal(UUID userId, UUID requestId, String rawConcept, String rawReason,
-            LearningSourceType sourceType, UUID sourceId, Instant scheduledAt, boolean agentRetry) {
+            LearningSourceType sourceType, UUID sourceId, Instant scheduledAt, boolean agentRetry, LearningContextInput context) {
+        LearningContextResolver.validateAgreement(sourceType, sourceId, context);
         String concept = required(rawConcept, "学习概念不能为空", 160);
         String reason = optional(rawReason, 4000);
-        LearningSourceType source = sourceType == null ? LearningSourceType.MANUAL : sourceType;
+        LearningSourceType source = context != null && context.originKind() != null ? context.originKind().legacyType()
+                : sourceType == null ? LearningSourceType.MANUAL : sourceType;
+        UUID effectiveSourceId = context != null && context.originResourceId() != null ? context.originResourceId() : sourceId;
         // Agent retries can regenerate wording and schedule. Its trusted per-action slot is the identity;
         // manual requests remain strict about every input field.
         String requestHash = requestId == null ? null : agentRetry
                 ? requestHash(requestId.toString(), null, LearningSourceType.AGENT, null, null)
-                : requestHash(concept, reason, source, sourceId, scheduledAt);
+                : requestHash(concept, reason, source, effectiveSourceId, scheduledAt, context);
         LearningPlan previous = creationStore.existing(userId, requestId, requestHash);
         if (previous != null) return previous;
         try (LearningPlanGenerationGate.Reservation ignored = generationGate.reserve(userId, requestId, requestHash)) {
             // Another request may have committed between the first lookup and reservation.
             previous = creationStore.existing(userId, requestId, requestHash);
             if (previous != null) return previous;
-            if (source == LearningSourceType.RECAP && sourceId != null
-                    && recapRepository.findByIdAndUserId(sourceId, userId).isEmpty()
-                    && recapQuestionRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
-                throw new ResourceNotFoundException("面经来源不存在");
-            }
-            if (source == LearningSourceType.RESUME && sourceId != null
-                    && resumeRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
-                throw new ResourceNotFoundException("简历来源不存在");
-            }
-            if (source == LearningSourceType.KNOWLEDGE && sourceId != null
-                    && knowledgeRepository.findByIdAndUserId(sourceId, userId).isEmpty()) {
-                throw new ResourceNotFoundException("知识库来源不存在");
-            }
+            var resolved = contexts.resolve(userId, sourceType, sourceId, context);
             if (scheduledAt != null && !scheduledAt.isAfter(Instant.now())) {
                 throw new IllegalArgumentException("学习时间已过，请重新安排");
             }
@@ -136,9 +121,10 @@ public class LearningPlanService {
             JsonNode root = jsonParser.parseObject(result.content());
             Map<String, Object> lesson = lesson(root.path("lesson"));
             List<Map<String, Object>> exercises = exercises(root.path("exercises"));
-            return creationStore.save(userId, requestId, LearningPlan.create(
-                    userId, requestId, requestHash, concept, reason, source, sourceId,
-                    lesson, exercises, schedule, result.model()));
+            var candidate = LearningPlan.create(userId, requestId, requestHash, concept, reason, source, effectiveSourceId,
+                    lesson, exercises, schedule, result.model());
+            candidate.assignContext(resolved.kind(), resolved.resourceId(), resolved.recordId(), resolved.targetInterviewId(), resolved.targetRoundId());
+            return creationStore.save(userId, requestId, candidate);
         }
     }
 
@@ -444,9 +430,15 @@ public class LearningPlanService {
 
     private String requestHash(String concept, String reason, LearningSourceType source,
             UUID sourceId, Instant scheduledAt) {
+        return requestHash(concept, reason, source, sourceId, scheduledAt, null);
+    }
+
+    private String requestHash(String concept, String reason, LearningSourceType source,
+            UUID sourceId, Instant scheduledAt, LearningContextInput context) {
         String input = framed(concept) + framed(reason) + framed(source.name())
                 + framed(sourceId == null ? null : sourceId.toString())
                 + framed(scheduledAt == null ? null : scheduledAt.toString());
+        if (context != null) input += framed("LEARNING_CONTEXT_V1") + framed(context.signature());
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(input.getBytes(StandardCharsets.UTF_8)));

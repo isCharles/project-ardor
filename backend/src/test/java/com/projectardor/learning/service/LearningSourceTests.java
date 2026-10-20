@@ -39,8 +39,10 @@ class LearningSourceTests {
         when(questions.findByIdAndUserId(foreignQuestionId, userId)).thenReturn(Optional.empty());
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), recaps, questions,
-                mock(ResumeRepository.class), mock(KnowledgeDocumentRepository.class),
+                mock(ProfileService.class), new LearningContextResolver(new com.projectardor.recap.service.InterviewRecordSourceAccess(recaps, questions),
+                    new com.projectardor.resume.service.ResumeSourceAccess(mock(ResumeRepository.class)),
+                    new com.projectardor.knowledge.service.KnowledgeSourceAccess(mock(KnowledgeDocumentRepository.class)),
+                    mock(com.projectardor.opportunity.service.InterviewContextAccess.class)),
                 mock(LearningPlanCreationStore.class),
                 mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class),
                 mock(org.springframework.transaction.PlatformTransactionManager.class));
@@ -60,8 +62,10 @@ class LearningSourceTests {
         KnowledgeDocumentRepository knowledge = mock(KnowledgeDocumentRepository.class);
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), mock(InterviewRecapRepository.class),
-                mock(InterviewRecapQuestionRepository.class), resumes, knowledge,
+                mock(ProfileService.class), new LearningContextResolver(mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class),
+                    new com.projectardor.resume.service.ResumeSourceAccess(resumes),
+                    new com.projectardor.knowledge.service.KnowledgeSourceAccess(knowledge),
+                    mock(com.projectardor.opportunity.service.InterviewContextAccess.class)),
                 mock(LearningPlanCreationStore.class), mock(LearningPlanGenerationGate.class),
                 mock(LearningPlanAgentSlots.class),
                 mock(org.springframework.transaction.PlatformTransactionManager.class));

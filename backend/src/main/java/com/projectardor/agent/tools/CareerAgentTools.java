@@ -310,15 +310,28 @@ public class CareerAgentTools {
             return LearningPlanResponse.from(learningPlanService.begin(userId, uuid(planId, "学习计划 ID")));
         }
 
-        @Tool(name = "create_learning_plan", value = "向用户提议一项概念学习计划和日程；只有用户点击确认后才生成，不能声称已创建")
+        public Map<String, Object> createLearningPlan(String concept, String reason, String scheduledAt, String sourceType, String sourceId) {
+            return createLearningPlan(concept,reason,scheduledAt,sourceType,sourceId,null,null,null);
+        }
+
+        @Tool(name = "create_learning_plan", value = "向用户提议一项概念学习计划和日程；只有用户点击确认后才生成，不能声称已创建。originKind 区分整份记录与问题；准备目标必须独立指定，不能把来源面试自动当成目标")
         public Map<String, Object> createLearningPlan(
                 @P("简洁明确的学习概念，例如 JVM 或数据库索引") String concept,
                 @P(value = "为什么需要学习；引用用户真实表现，不得虚构", required = false) String reason,
                 @P(value = "带时区的 ISO-8601 学习时间；留空则安排明天 09:00", required = false) String scheduledAt,
                 @P(value = "来源类型：AGENT、RESUME、RECAP 或 KNOWLEDGE；留空用 AGENT", required = false) String sourceType,
-                @P(value = "来源对象 UUID；针对面经某题时传问题 UUID，针对整场面试时传面经 UUID；没有则留空", required = false) String sourceId) {
-            LearningSourceType source = enumValue(LearningSourceType.class, sourceType, LearningSourceType.AGENT);
+                @P(value = "来源对象 UUID；针对面经某题时传问题 UUID，针对整场面试时传面经 UUID；没有则留空", required = false) String sourceId,
+                @P(value = "明确来源 MANUAL/AGENT/RESUME/KNOWLEDGE/INTERVIEW_RECORD/INTERVIEW_QUESTION；旧调用可省略",required=false) String originKind,
+                @P(value = "本次准备的真实面试流程 UUID，可省略；先读取真实面试，不能从来源推断",required=false) String targetInterviewId,
+                @P(value = "准备目标的轮次 UUID，可省略；必须属于 targetInterviewId",required=false) String targetRoundId) {
+            var origin = enumValue(com.projectardor.learning.domain.LearningOriginKind.class,originKind,null);
+            if (origin == com.projectardor.learning.domain.LearningOriginKind.LEGACY_RECAP) throw new IllegalArgumentException("新建议必须明确来源类型");
+            LearningSourceType source = enumValue(LearningSourceType.class, sourceType, origin == null ? LearningSourceType.AGENT : origin.legacyType());
+            if (origin != null && origin.legacyType() != source) throw new IllegalArgumentException("来源类型不一致");
             UUID sourceUuid = nullableUuid(sourceId, "来源 ID");
+            UUID target = nullableUuid(targetInterviewId,"目标面试 ID"), targetRound = nullableUuid(targetRoundId,"目标轮次 ID");
+            if (targetRound != null && target == null) throw new IllegalArgumentException("指定目标轮次前需要明确目标面试");
+            var context = com.projectardor.learning.service.LearningContextInput.optional(origin,origin == null ? null : sourceUuid,target,targetRound);
             Instant dueAt = nullableInstant(scheduledAt);
             if (concept == null || concept.isBlank() || concept.strip().length() > 160) {
                 throw new IllegalArgumentException("学习概念须在 1 到 160 字之间");
@@ -334,10 +347,18 @@ public class CareerAgentTools {
             UUID runId = logicalActionId == null ? runRequestId : logicalActionId;
             String identity = userId + ":" + runId + ":" + topic + ":" + why + ":"
                     + source + ":" + sourceUuid + ":" + dueAt;
+            if (context != null) {
+                var framed = new StringBuilder("LEARNING_CONTEXT_V1:");
+                for (Object value : new Object[]{userId,runId,topic,why,source,sourceUuid,dueAt,context.signature()}) {
+                    String part=value == null ? null : value.toString();
+                    framed.append(part == null ? "-1:" : part.length()+":"+part);
+                }
+                identity=framed.toString();
+            }
             UUID requestId = runId == null ? UUID.randomUUID()
                     : UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8));
             LearningPlanCreateRequest input = new LearningPlanCreateRequest(
-                    topic, why, source, sourceUuid, dueAt, requestId);
+                    topic, why, source, sourceUuid, dueAt, requestId,origin,origin == null ? null : sourceUuid,target,targetRound);
             pending.add(new PendingConfirmation("learning_plan", null, topic,
                     why == null ? "请确认后生成讲解、练习和日历安排" : why,
                     "/api/learning-plans/jobs", input));

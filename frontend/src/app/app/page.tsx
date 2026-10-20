@@ -22,6 +22,7 @@ import { ExecutionTrace } from "@/components/ardor/execution-trace";
 import { DeletionPermissions } from "@/components/ardor/deletion-permissions";
 import { OperationPermissions } from "@/components/ardor/operation-permissions";
 import { LearningPermissions } from "@/components/ardor/learning-permissions";
+import type { PlanContext } from "@/components/ardor/learning-context";
 import { QueuedMessages } from "@/components/ardor/queued-messages";
 import type { AgentFeature } from "@/lib/agent-features";
 import { featureHref } from "@/lib/agent-features";
@@ -42,7 +43,7 @@ type AgentRun = { id: string; conversationId: string; message: string; status: "
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
    button, and pressing it is an ordinary authenticated DELETE from here — the
    model never gets to destroy anything on its own say-so. */
-type LearningPlanProposal = { concept: string; reason: string | null; sourceType: string; sourceId: string | null; scheduledAt: string | null; requestId: string };
+type LearningPlanProposal = PlanContext & { concept: string; reason: string | null; scheduledAt: string | null; requestId: string };
 type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; targetIds?: string[] | null; sourceMessageId?: string; learningPlan?: LearningPlanProposal | null };
 type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "GENERATING" | "DONE" | "DISMISSED" | "FAILED" | "EXPIRED" | "REMOVED"; error?: string; createdPlanId?: string };
 type RunStep = ToolMeasurement & { key: string; label: string; elapsedMs: number; done: boolean };

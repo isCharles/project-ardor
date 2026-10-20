@@ -26,6 +26,7 @@ try {
   recaps.push({ ...recaps[0], id: "linked", title: longTitle, jobOpportunityId: "process-one", questions: [{ id: "question-one" }] });
   const opportunities = [{ id: "process-one", company: "Fixture company", targetRole: "Backend intern", platform: "Fixture", status: "AWAITING_RESULT", currentRound: 1,
     rounds: [{ id: "round-one", roundNumber: 1, stage: "TECHNICAL", scheduledAt: "2026-10-20T01:00:00Z", occurredAt: null, durationMinutes: 60, note: null }] }];
+  opportunities.push({ ...opportunities[0], id: "process-two", company: "Preparation employer", rounds: [] });
   let slowJob = false, jobPolls = 0;
   await context.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
@@ -41,7 +42,7 @@ try {
       : path === "/api/agent/permissions" ? { globalLevel: 0, modules: [] }
       : path === "/api/opportunities" ? opportunities
       : path === "/api/memory-cards" ? [1, 2].map(id => ({ id: `card-${id}`, recapQuestionId: "question-one", front: cardFront, status: "ACTIVE" }))
-      : path === "/api/learning-plans" ? [{ id: "plan-one", concept: longConcept, sourceType: "RECAP", sourceId: "question-one", status: "SCHEDULED" }]
+      : path === "/api/learning-plans" ? [{ id: "plan-one", concept: longConcept, sourceType: "RECAP", sourceId: "question-one", originKind: "INTERVIEW_QUESTION", originResourceId: "question-one", originRecordId: "linked", targetInterviewId: "process-two", status: "SCHEDULED" }]
       : path === "/api/interview-recaps" ? recaps : [];
     await route.fulfill({ json: body });
   });
@@ -66,6 +67,9 @@ try {
   await page.goto(`${origin}/app/opportunities?selected=process-one`);
   const cardsLink = page.getByRole("link", { name: "Flashcards 2", exact: true });
   await cardsLink.waitFor();
+  const sourcePlan=page.locator('a[href="/app/learning?id=plan-one"]');
+  assert.match(await sourcePlan.innerText(),/Learning from here/i);
+  assert.doesNotMatch(await sourcePlan.innerText(),/Preparation/i);
   assert.ok(!(await page.locator("main").innerText()).includes("PRIVATE_CARD_BODY_"), "Card bodies must not render, including concatenated summaries");
   for (const width of [1440, 900, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -89,6 +93,12 @@ try {
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: ".next/pipeline-compact-associations.png", fullPage: true });
+  await page.goto(`${origin}/app/opportunities?selected=process-two`);
+  const targetPlan=page.locator('a[href="/app/learning?id=plan-one"]');
+  await targetPlan.waitFor();
+  assert.equal(await targetPlan.count(),1,"One plan must appear only once in a target interview");
+  assert.match(await targetPlan.innerText(),/Preparation/i);
+  assert.doesNotMatch(await targetPlan.innerText(),/Learning from here/i);
   assert.deepEqual(errors, []);
   console.log("Pipeline UI: notes navigation, polling, compact associations and count-only cards passed at desktop/tablet/mobile widths.");
 } finally { await browser?.close(); server.kill(); }
