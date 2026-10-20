@@ -14,6 +14,7 @@ import com.projectardor.learning.repository.LearningPlanRepository;
 import com.projectardor.learning.repository.LearningAttemptRepository;
 import com.projectardor.recap.service.InterviewQuestionProgressAccess;
 import com.projectardor.recap.service.QuestionPracticeProgressAccess;
+import com.projectardor.learning.review.service.FlashcardProgressAccess;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
 import com.projectardor.opportunity.service.InterviewContextAccess;
 import com.projectardor.common.web.ResourceNotFoundException;
@@ -23,14 +24,15 @@ import com.projectardor.common.web.ResourceNotFoundException;
 public class LearningProgressService {
     private final InterviewQuestionProgressAccess questions;
     private final QuestionPracticeProgressAccess practice;
+    private final FlashcardProgressAccess review;
     private final LearningPlanRepository plans;
     private final LearningAttemptRepository attempts;
     private final InterviewRecordSourceAccess legacySources;
     private final InterviewContextAccess interviews;
-    public LearningProgressService(InterviewQuestionProgressAccess questions, QuestionPracticeProgressAccess practice,
+    public LearningProgressService(InterviewQuestionProgressAccess questions, QuestionPracticeProgressAccess practice,FlashcardProgressAccess review,
             LearningPlanRepository plans, LearningAttemptRepository attempts,
             InterviewRecordSourceAccess legacySources, InterviewContextAccess interviews) {
-        this.questions=questions;this.practice=practice;this.plans=plans;this.attempts=attempts;
+        this.questions=questions;this.practice=practice;this.review=review;this.plans=plans;this.attempts=attempts;
         this.legacySources=legacySources;this.interviews=interviews;
     }
     @Transactional(readOnly=true)
@@ -42,6 +44,7 @@ public class LearningProgressService {
         var questionIds=new LinkedHashSet<UUID>();var sourceIds=new LinkedHashSet<UUID>();
         for(var question:window.questions()) { questionIds.add(question.id());sourceIds.add(question.id());sourceIds.add(question.recapId()); }
         var snapshot=practice.snapshot(owner,questionIds);
+        var cardSnapshot=review.snapshot(owner,questionIds);
         var exact=new LinkedHashMap<UUID,List<Plan>>();var broad=new LinkedHashMap<UUID,List<Plan>>();
         int unresolvedSources=0;
         if(!sourceIds.isEmpty()) for(var plan:plans.progressPlans(owner,sourceIds)) {
@@ -62,9 +65,9 @@ public class LearningProgressService {
         }
         var tracks=window.questions().stream().map(question -> new Track(question,
                 exact.getOrDefault(question.id(),List.of()),broad.getOrDefault(question.recapId(),List.of()),
-                snapshot.cards().getOrDefault(question.id(),List.of()),snapshot.replays().get(question.id()))).toList();
+                cardSnapshot.cards().getOrDefault(question.id(),List.of()),snapshot.replays().get(question.id()))).toList();
         return new View(page,size,window.total(),(long)page*size+tracks.size()<window.total(),sourceInterviewId,
-                new AccountSummary(plans.countByUserId(owner),attempts.countByUserId(owner),snapshot.totalCards(),snapshot.totalReplayAttempts()),
+                new AccountSummary(plans.countByUserId(owner),attempts.countByUserId(owner),cardSnapshot.totalCards(),snapshot.totalReplayAttempts()),
                 unresolvedSources,tracks);
     }
     public record Plan(UUID id,String concept,String status,int attemptCount,Integer lastScore,String sourceType,UUID sourceId,
@@ -72,7 +75,7 @@ public class LearningProgressService {
     /** Account counts remain visible even without a real interview; they are not mastery scores. */
     public record AccountSummary(long learningPlans,long recordedLearningAttempts,long flashcards,long replayAttempts) {}
     public record Track(InterviewQuestionProgressAccess.Question question,List<Plan> learningPlans,List<Plan> interviewLearningPlans,
-            List<QuestionPracticeProgressAccess.Card> cards,QuestionPracticeProgressAccess.Replay replay) {
+            List<FlashcardProgressAccess.Card> cards,QuestionPracticeProgressAccess.Replay replay) {
         public Track { learningPlans=List.copyOf(learningPlans);interviewLearningPlans=List.copyOf(interviewLearningPlans);cards=List.copyOf(cards); }
     }
     public record View(int page,int size,long totalQuestions,boolean hasNext,UUID sourceInterviewId,

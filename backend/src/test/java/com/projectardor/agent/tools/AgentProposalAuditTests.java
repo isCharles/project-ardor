@@ -116,6 +116,6 @@ class AgentProposalAuditTests {
                 mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
                 mock(TavilySearchService.class), mock(KnowledgeService.class), plans,
                 mock(ApplicationRhythmService.class), mock(OpportunityService.class),
-                mock(com.projectardor.aijobs.AiJobService.class), audit);
+                mock(com.projectardor.aijobs.AiJobService.class), audit, mock(com.projectardor.learning.review.service.FlashcardService.class));
     }
 }

@@ -4,8 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -13,11 +11,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import com.projectardor.calendar.service.CalendarTaskService;
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.llm.service.LlmGateway;
-import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.domain.*;
 import com.projectardor.recap.repository.*;
 
@@ -35,25 +31,14 @@ public class InterviewRecapService {
 
     private final InterviewRecapRepository recapRepository;
     private final InterviewRecapQuestionRepository questionRepository;
-    private final MemoryCardRepository cardRepository;
-    private final MemoryCardReviewRepository reviewRepository;
     private final LlmGateway llmGateway;
     private final LlmJsonParser jsonParser;
-    private final CalendarTaskService calendarTaskService;
     private final TransactionTemplate transactions;
-    private final ProfileService profileService;
 
-    public InterviewRecapService(InterviewRecapRepository recapRepository,
-            InterviewRecapQuestionRepository questionRepository, MemoryCardRepository cardRepository,
-            MemoryCardReviewRepository reviewRepository, LlmGateway llmGateway,
-            LlmJsonParser jsonParser, CalendarTaskService calendarTaskService,
-            org.springframework.transaction.PlatformTransactionManager transactionManager,
-            ProfileService profileService) {
-        this.recapRepository = recapRepository; this.questionRepository = questionRepository;
-        this.cardRepository = cardRepository; this.reviewRepository = reviewRepository;
-        this.llmGateway = llmGateway; this.jsonParser = jsonParser; this.calendarTaskService = calendarTaskService;
-        this.transactions = new TransactionTemplate(transactionManager);
-        this.profileService = profileService;
+    public InterviewRecapService(InterviewRecapRepository recapRepository,InterviewRecapQuestionRepository questionRepository,
+            LlmGateway llmGateway,LlmJsonParser jsonParser,org.springframework.transaction.PlatformTransactionManager transactionManager) {
+        this.recapRepository=recapRepository;this.questionRepository=questionRepository;
+        this.llmGateway=llmGateway;this.jsonParser=jsonParser;this.transactions=new TransactionTemplate(transactionManager);
     }
 
     public InterviewRecordView organize(UUID userId, String rawContent, InterviewRecapSource sourceType) {
@@ -164,122 +149,6 @@ public class InterviewRecapService {
         recapRepository.delete(recap);
     }
 
-    @Transactional
-    public MemoryCard createCard(UUID userId, MemoryCardSource sourceType, String sourceLabel, String sourceUrl,
-            String front, String back, List<String> tags, Instant nextReviewAt, UUID recapQuestionId) {
-        MemoryCardSource resolvedSource = sourceType == null ? MemoryCardSource.KNOWLEDGE : sourceType;
-        String url = nullable(sourceUrl, 1000);
-        if (resolvedSource == MemoryCardSource.WEB && url == null) {
-            throw new IllegalArgumentException("网络题必须提供可核验的来源链接");
-        }
-        if (recapQuestionId != null) {
-            if (resolvedSource != MemoryCardSource.INTERVIEW) {
-                throw new IllegalArgumentException("只有面试来源的记忆卡才能关联面经问题");
-            }
-            questionRepository.findByIdAndUserId(recapQuestionId, userId)
-                    .orElseThrow(() -> new ResourceNotFoundException("面经问题不存在"));
-            if (cardRepository.findByUserIdAndRecapQuestionId(userId, recapQuestionId).isPresent()) {
-                throw new IllegalArgumentException("这道面经问题已有记忆卡");
-            }
-        }
-        MemoryCard card = cardRepository.save(MemoryCard.create(userId, recapQuestionId, resolvedSource,
-                nullable(sourceLabel, 240), url, required(front, "卡片问题不能为空", 12000),
-                required(back, "卡片答案不能为空", 20000), normalizeTags(tags),
-                nextReviewAt == null ? Instant.now() : nextReviewAt));
-        refreshDate(userId, localDate(userId, card.getNextReviewAt()));
-        return card;
-    }
-
-    @Transactional(readOnly = true)
-    public List<MemoryCard> listCards(UUID userId, boolean dueOnly) {
-        if (dueOnly) return cardRepository.findAllByUserIdAndStatusNotAndNextReviewAtLessThanEqualOrderByNextReviewAtAsc(
-                userId, MemoryCardStatus.SUSPENDED, Instant.now());
-        return cardRepository.findAllByUserIdOrderByNextReviewAtAscCreatedAtDesc(userId);
-    }
-
-    @Transactional
-    public MemoryCard updateCard(UUID userId, UUID cardId, String front, String back, List<String> tags) {
-        MemoryCard card = getCard(userId, cardId);
-        card.edit(required(front, "卡片问题不能为空", 12000),
-                required(back, "卡片答案不能为空", 20000), normalizeTags(tags));
-        return card;
-    }
-
-    @Transactional
-    public MemoryCard review(UUID userId, UUID cardId, MemoryCardRating rating) {
-        MemoryCard card = getCard(userId, cardId);
-        if (card.getStatus() == MemoryCardStatus.SUSPENDED) throw new IllegalStateException("已暂停的卡片不能复习");
-        if (rating == null) throw new IllegalArgumentException("复习结果不能为空");
-        LocalDate previousDate = localDate(userId, card.getNextReviewAt());
-        MemoryCard.ReviewResult result = card.review(rating, Instant.now());
-        reviewRepository.save(MemoryCardReview.create(userId, cardId, rating,
-                result.previousIntervalDays(), result.nextIntervalDays()));
-        LocalDate nextDate = localDate(userId, card.getNextReviewAt());
-        refreshDate(userId, previousDate);
-        if (!nextDate.equals(previousDate)) refreshDate(userId, nextDate);
-        return card;
-    }
-
-    @Transactional
-    public MemoryCard suspend(UUID userId, UUID cardId, boolean suspended) {
-        MemoryCard card = getCard(userId, cardId);
-        LocalDate previousDate = localDate(userId, card.getNextReviewAt());
-        card.suspend(suspended);
-        LocalDate nextDate = localDate(userId, card.getNextReviewAt());
-        refreshDate(userId, previousDate);
-        if (!nextDate.equals(previousDate)) refreshDate(userId, nextDate);
-        return card;
-    }
-
-    @Transactional
-    public void deleteCard(UUID userId, UUID cardId) {
-        MemoryCard card = getCard(userId, cardId);
-        LocalDate date = localDate(userId, card.getNextReviewAt());
-        cardRepository.delete(card);
-        cardRepository.flush();
-        refreshDate(userId, date);
-    }
-
-    @Transactional
-    public void deleteAllCards(UUID userId) {
-        List<MemoryCard> cards = cardRepository.findAllByUserIdOrderByNextReviewAtAscCreatedAtDesc(userId);
-        Set<LocalDate> dates = cards.stream().map(card -> localDate(userId, card.getNextReviewAt()))
-                .collect(java.util.stream.Collectors.toSet());
-        cardRepository.deleteAll(cards);
-        cardRepository.flush();
-        dates.forEach(date -> refreshDate(userId, date));
-    }
-
-    @Transactional
-    public void deleteCardSnapshot(UUID userId, List<UUID> ids) {
-        var cards = ids.stream().distinct().map(id -> getCard(userId, id)).toList();
-        Set<LocalDate> dates = cards.stream().map(card -> localDate(userId, card.getNextReviewAt()))
-                .collect(java.util.stream.Collectors.toSet());
-        cardRepository.deleteAll(cards);
-        cardRepository.flush();
-        dates.forEach(date -> refreshDate(userId, date));
-    }
-
-    private MemoryCard getCard(UUID userId, UUID cardId) {
-        return cardRepository.findByIdAndUserId(cardId, userId)
-                .orElseThrow(() -> new ResourceNotFoundException("记忆卡不存在"));
-    }
-
-    private void refreshDate(UUID userId, LocalDate date) {
-        ZoneId userZone = userZone(userId);
-        Instant from = date.atStartOfDay(userZone).toInstant();
-        Instant to = date.plusDays(1).atStartOfDay(userZone).toInstant();
-        long count = cardRepository.countByUserIdAndStatusNotAndNextReviewAtGreaterThanEqualAndNextReviewAtLessThan(
-                userId, MemoryCardStatus.SUSPENDED, from, to);
-        Instant firstDue = cardRepository.findFirstByUserIdAndStatusNotAndNextReviewAtGreaterThanEqualAndNextReviewAtLessThanOrderByNextReviewAtAsc(
-                userId, MemoryCardStatus.SUSPENDED, from, to).map(MemoryCard::getNextReviewAt).orElse(from);
-        calendarTaskService.refreshMemoryCardReview(userId, date, Math.toIntExact(count), firstDue);
-    }
-
-    private LocalDate localDate(UUID userId, Instant value) { return value.atZone(userZone(userId)).toLocalDate(); }
-
-    private ZoneId userZone(UUID userId) { return ZoneId.of(profileService.get(userId).getTimezone()); }
-
     private List<QuestionDraft> parseQuestions(JsonNode node) {
         if (!node.isArray()) return List.of();
         List<QuestionDraft> result = new ArrayList<>();
@@ -306,11 +175,6 @@ public class InterviewRecapService {
             if (result.size() >= maxItems) break;
         }
         return result;
-    }
-    private List<String> normalizeTags(List<String> tags) {
-        if (tags == null) return List.of();
-        return tags.stream().filter(Objects::nonNull).map(String::strip).filter(value -> !value.isBlank())
-                .map(value -> value.substring(0, Math.min(value.length(), 80))).distinct().limit(12).toList();
     }
     private String text(JsonNode node, String field, String fallback, int max) {
         String value = nullable(node, field, max); return value == null ? fallback : value;

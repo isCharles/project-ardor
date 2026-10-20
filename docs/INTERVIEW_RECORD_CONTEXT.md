@@ -35,7 +35,7 @@ InterviewRecapService 向 HTTP、Agent 和后台复盘返回同一 InterviewReco
 
 保持原 JSON 属性名、顺序、枚举字符串及 null/空列表/空文本语义，包括 jobOpportunityId、interviewRoundId、问题序号、重答 requestId、challengeText 和时间。应用视图复制嵌套列表，不能通过调用方持有的可变集合改写快照；旧数据中的可空元素不被擅自清理或拒绝。
 
-这次只清理读取合同，不改原文、确认门槛、来源校验、事务、额度、异步作业、资源 ID、路由或删除级联。不宣称记忆卡物理包位置或所有 Agent 工具已完成迁移。
+这次只清理读取合同，不改原文、确认门槛、来源校验、事务、额度、异步作业、资源 ID、路由或删除级联。记忆卡的独立状态所有权另见 [学习复习合同](FLASHCARD_REVIEW.md)；其他 Agent 工具的边界仍按阶段处理。
 
 InterviewRecordApplicationContractTests 对照旧 HTTP record 显式构造的期望值，核对逐字段 JSON、嵌套历史、不可变快照、当前用户绑定及禁止反向依赖 Web DTO。原有面试归属、确认纪要与重答测试继续适用。
 

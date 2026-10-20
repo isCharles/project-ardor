@@ -17,6 +17,7 @@ import com.projectardor.learning.repository.LearningPlanRepository;
 import com.projectardor.learning.repository.LearningAttemptRepository;
 import com.projectardor.recap.service.InterviewQuestionProgressAccess;
 import com.projectardor.recap.service.QuestionPracticeProgressAccess;
+import com.projectardor.learning.review.service.FlashcardProgressAccess;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
 import com.projectardor.opportunity.service.InterviewContextAccess;
 import com.projectardor.common.web.ResourceNotFoundException;
@@ -24,17 +25,19 @@ import com.projectardor.common.web.ResourceNotFoundException;
 class LearningProgressServiceTests {
     private final InterviewQuestionProgressAccess questions=mock(InterviewQuestionProgressAccess.class);
     private final QuestionPracticeProgressAccess practice=mock(QuestionPracticeProgressAccess.class);
+    private final FlashcardProgressAccess review=mock(FlashcardProgressAccess.class);
     private final LearningPlanRepository plans=mock(LearningPlanRepository.class);
     private final LearningAttemptRepository attempts=mock(LearningAttemptRepository.class);
     private final InterviewRecordSourceAccess sources=mock(InterviewRecordSourceAccess.class);
     private final InterviewContextAccess interviews=mock(InterviewContextAccess.class);
-    private final LearningProgressService service=new LearningProgressService(questions,practice,plans,attempts,sources,interviews);
+    private final LearningProgressService service=new LearningProgressService(questions,practice,review,plans,attempts,sources,interviews);
     private final UUID owner=UUID.randomUUID(),question=UUID.randomUUID(),record=UUID.randomUUID(),sourceInterview=UUID.randomUUID(),round=UUID.randomUUID();
 
     private void oneQuestion() {
         when(questions.questions(owner,null,0,20)).thenReturn(new InterviewQuestionProgressAccess.Window(1,List.of(
                 new InterviewQuestionProgressAccess.Question(question,record,"Fixture question","Fixture observation","WEAK","Fixture record",Instant.now(),sourceInterview,round))));
-        when(practice.snapshot(any(),any())).thenReturn(new QuestionPracticeProgressAccess.Snapshot(3,4,Map.of(),Map.of()));
+        when(practice.snapshot(any(),any())).thenReturn(new QuestionPracticeProgressAccess.Snapshot(4,Map.of()));
+        when(review.snapshot(any(),any())).thenReturn(new FlashcardProgressAccess.Snapshot(3,Map.of()));
     }
     private LearningPlanRepository.ProgressPlan plan(LearningOriginKind kind,UUID id) {
         var plan=mock(LearningPlanRepository.ProgressPlan.class);
@@ -61,7 +64,8 @@ class LearningProgressServiceTests {
     }
     @Test void noInterviewQuestionsDoesNotHideAutonomousLearningAndReviewCounts() {
         when(questions.questions(owner,null,0,20)).thenReturn(new InterviewQuestionProgressAccess.Window(0,List.of()));
-        when(practice.snapshot(owner,java.util.Set.of())).thenReturn(new QuestionPracticeProgressAccess.Snapshot(2,0,Map.of(),Map.of()));
+        when(practice.snapshot(owner,java.util.Set.of())).thenReturn(new QuestionPracticeProgressAccess.Snapshot(0,Map.of()));
+        when(review.snapshot(owner,java.util.Set.of())).thenReturn(new FlashcardProgressAccess.Snapshot(2,Map.of()));
         when(plans.countByUserId(owner)).thenReturn(5L);when(attempts.countByUserId(owner)).thenReturn(7L);
         var result=service.view(owner,null,0,20);
         assertThat(result.tracks()).isEmpty();assertThat(result.accountSummary().learningPlans()).isEqualTo(5);
@@ -71,12 +75,12 @@ class LearningProgressServiceTests {
     @Test void foreignSourceInterviewIsRejectedBeforeAnyProgressLookup() {
         doThrow(new ResourceNotFoundException("missing")).when(interviews).require(owner,sourceInterview,null);
         assertThatThrownBy(() -> service.view(owner,sourceInterview,0,20)).isInstanceOf(ResourceNotFoundException.class);
-        verifyNoInteractions(questions,practice,plans,attempts,sources);
+        verifyNoInteractions(questions,practice,review,plans,attempts,sources);
     }
     @Test void invalidPaginationNeverReachesRepositories() {
         for(int[] input:new int[][]{{-1,20},{0,0},{0,51},{Integer.MAX_VALUE,20}})
             assertThatThrownBy(() -> service.view(owner,null,input[0],input[1])).isInstanceOf(IllegalArgumentException.class);
-        verifyNoInteractions(questions,practice,plans,attempts,sources,interviews);
+        verifyNoInteractions(questions,practice,review,plans,attempts,sources,interviews);
     }
     @Test void learningQueryCannotReachOtherDomainsRepositoriesOrTransportDtos() throws Exception {
         String code=Files.readString(Path.of("src/main/java/com/projectardor/learning/service/LearningProgressService.java"),StandardCharsets.UTF_8);

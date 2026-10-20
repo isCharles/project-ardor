@@ -1,5 +1,5 @@
-package com.projectardor.recap.repository;
+package com.projectardor.learning.review.repository;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
-import com.projectardor.recap.domain.MemoryCardReview;
+import com.projectardor.learning.review.domain.MemoryCardReview;
 public interface MemoryCardReviewRepository extends JpaRepository<MemoryCardReview, UUID> {}

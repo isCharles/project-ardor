@@ -1,4 +1,4 @@
-package com.projectardor.recap.domain;
+package com.projectardor.learning.review.domain;
 
 import java.time.Instant;
 import java.util.UUID;

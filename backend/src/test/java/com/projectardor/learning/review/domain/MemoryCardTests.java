@@ -1,4 +1,4 @@
-package com.projectardor.recap.domain;
+package com.projectardor.learning.review.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

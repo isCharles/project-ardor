@@ -1,4 +1,4 @@
-package com.projectardor.recap.service;
+package com.projectardor.learning.review.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -23,22 +23,23 @@ import com.projectardor.llm.service.LlmGateway;
 import com.projectardor.profile.domain.UserProfile;
 import com.projectardor.profile.service.ProfileService;
 import com.projectardor.recap.domain.InterviewRecapQuestion;
-import com.projectardor.recap.domain.MemoryCard;
-import com.projectardor.recap.domain.MemoryCardSource;
+import com.projectardor.recap.domain.InterviewRecap;
+import com.projectardor.recap.service.InterviewRecordSourceAccess;
+import com.projectardor.learning.review.domain.MemoryCard;
+import com.projectardor.learning.review.domain.MemoryCardSource;
 import com.projectardor.recap.domain.QuestionPerformance;
 import com.projectardor.recap.repository.InterviewRecapQuestionRepository;
 import com.projectardor.recap.repository.InterviewRecapRepository;
-import com.projectardor.recap.repository.MemoryCardRepository;
-import com.projectardor.recap.repository.MemoryCardReviewRepository;
+import com.projectardor.learning.review.repository.MemoryCardRepository;
+import com.projectardor.learning.review.repository.MemoryCardReviewRepository;
 
-class EvidenceLinkServiceTests {
+class FlashcardSourceTests {
     private final InterviewRecapQuestionRepository questions = mock(InterviewRecapQuestionRepository.class);
     private final MemoryCardRepository cards = mock(MemoryCardRepository.class);
     private final ProfileService profiles = mock(ProfileService.class);
-    private final InterviewRecapService service = new InterviewRecapService(
-            mock(InterviewRecapRepository.class), questions, cards, mock(MemoryCardReviewRepository.class),
-            mock(LlmGateway.class), mock(LlmJsonParser.class), mock(CalendarTaskService.class),
-            mock(PlatformTransactionManager.class), profiles);
+    private final InterviewRecapRepository records=mock(InterviewRecapRepository.class);
+    private final FlashcardService service = new FlashcardService(cards,mock(MemoryCardReviewRepository.class),
+            new InterviewRecordSourceAccess(records,questions),mock(CalendarTaskService.class),profiles);
 
     @Test
     void cardCanKeepTheOwnedQuestionAsEvidence() {
@@ -52,10 +53,10 @@ class EvidenceLinkServiceTests {
         when(profile.getTimezone()).thenReturn("Asia/Shanghai");
         when(profiles.get(userId)).thenReturn(profile);
 
-        MemoryCard card = service.createCard(userId, MemoryCardSource.INTERVIEW, "面经", null,
+        FlashcardView card = service.createCard(userId, MemoryCardSource.INTERVIEW, "面经", null,
                 "解释 JVM 内存模型", "回答框架", List.of("JVM"), Instant.now(), questionId);
 
-        assertThat(card.getRecapQuestionId()).isEqualTo(questionId);
+        assertThat(card.recapQuestionId()).isEqualTo(questionId);
     }
 
     @Test
@@ -95,7 +96,11 @@ class EvidenceLinkServiceTests {
     }
 
     private InterviewRecapQuestion question(UUID userId) {
-        return InterviewRecapQuestion.create(userId, UUID.randomUUID(), 1, "解释 JVM", null,
+        var question=InterviewRecapQuestion.create(userId, UUID.randomUUID(), 1, "解释 JVM", null,
                 List.of(), "需补充", QuestionPerformance.WEAK, "概念不清", null, List.of("JVM"));
+        var record=mock(InterviewRecap.class);
+        when(record.getId()).thenReturn(question.getRecapId());
+        when(records.findByIdAndUserId(question.getRecapId(),userId)).thenReturn(Optional.of(record));
+        return question;
     }
 }

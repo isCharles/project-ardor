@@ -4,12 +4,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import com.projectardor.auth.security.ArdorPrincipal;
-import com.projectardor.recap.service.InterviewRecapService;
+import com.projectardor.learning.review.service.FlashcardService;
 import jakarta.validation.Valid;
 @RestController @RequestMapping("/api/memory-cards")
 public class MemoryCardController {
-    private final InterviewRecapService service;
-    public MemoryCardController(InterviewRecapService service) { this.service = service; }
+    private final FlashcardService service;
+    public MemoryCardController(FlashcardService service) { this.service = service; }
     @GetMapping public List<MemoryCardResponse> list(@AuthenticationPrincipal ArdorPrincipal principal,
             @RequestParam(defaultValue = "false") boolean dueOnly) { return service.listCards(principal.userId(), dueOnly).stream().map(MemoryCardResponse::from).toList(); }
     @PostMapping @ResponseStatus(HttpStatus.CREATED)

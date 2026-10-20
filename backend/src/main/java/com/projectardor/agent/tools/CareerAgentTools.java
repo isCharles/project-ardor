@@ -56,14 +56,14 @@ import com.projectardor.resume.domain.ResumeAnalysis;
 import com.projectardor.resume.service.ResumeAnalysisQueueService;
 import com.projectardor.resume.service.ResumeService;
 import com.projectardor.resume.web.ResumeAnalysisTaskResponse;
-import com.projectardor.recap.domain.MemoryCard;
-import com.projectardor.recap.domain.MemoryCardRating;
-import com.projectardor.recap.domain.MemoryCardSource;
+import com.projectardor.learning.review.domain.MemoryCardRating;
+import com.projectardor.learning.review.domain.MemoryCardSource;
 import com.projectardor.recap.service.InterviewRecapService;
 import com.projectardor.recap.service.InterviewRecapQueueService;
 import com.projectardor.recap.service.InterviewRecordView;
 import com.projectardor.recap.web.InterviewRecapTaskResponse;
-import com.projectardor.recap.web.MemoryCardResponse;
+import com.projectardor.learning.review.service.FlashcardService;
+import com.projectardor.learning.review.service.FlashcardView;
 import com.projectardor.websearch.service.TavilySearchService;
 import com.projectardor.websearch.service.WebSearchResult;
 
@@ -83,6 +83,7 @@ public class CareerAgentTools {
     private final CalendarTaskService calendarTaskService;
     private final TaskSeriesService taskSeriesService;
     private final InterviewRecapService interviewRecapService;
+    private final FlashcardService flashcards;
     private final InterviewRecapQueueService interviewRecapQueueService;
     private final TavilySearchService tavilySearchService;
     private final KnowledgeService knowledgeService;
@@ -107,11 +108,11 @@ public class CareerAgentTools {
             KnowledgeService knowledgeService,
             LearningPlanService learningPlanService,
             ApplicationRhythmService applicationRhythmService, OpportunityService opportunityService,
-            com.projectardor.aijobs.AiJobService aiJobs) {
+            com.projectardor.aijobs.AiJobService aiJobs,FlashcardService flashcards) {
         this(resumeService, resumeAnalysisQueueService, interviewService, profileService, memoryService,
                 calendarTaskService, taskSeriesService, interviewRecapService, interviewRecapQueueService,
                 tavilySearchService, knowledgeService, learningPlanService, applicationRhythmService,
-                opportunityService, aiJobs, null);
+                opportunityService, aiJobs, null, flashcards);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -130,7 +131,7 @@ public class CareerAgentTools {
             LearningPlanService learningPlanService,
             ApplicationRhythmService applicationRhythmService, OpportunityService opportunityService,
             com.projectardor.aijobs.AiJobService aiJobs,
-            com.projectardor.agent.service.AgentExecutionAuditStore executionAudit) {
+            com.projectardor.agent.service.AgentExecutionAuditStore executionAudit,FlashcardService flashcards) {
         this.resumeService = resumeService;
         this.resumeAnalysisQueueService = resumeAnalysisQueueService;
         this.interviewService = interviewService;
@@ -147,6 +148,7 @@ public class CareerAgentTools {
         this.opportunityService = opportunityService;
         this.aiJobs = aiJobs;
         this.executionAudit = executionAudit;
+        this.flashcards = java.util.Objects.requireNonNull(flashcards);
     }
 
     public BoundCareerTools bind(UUID trustedUserId, String trustedUserRequest) {
@@ -749,17 +751,17 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "list_due_memory_cards", value = "列出当前用户今天已经到期、需要复习的记忆卡")
-        public List<MemoryCardResponse> listDueMemoryCards() {
-            return interviewRecapService.listCards(userId, true).stream().map(MemoryCardResponse::from).toList();
+        public List<FlashcardView> listDueMemoryCards() {
+            return flashcards.listCards(userId, true);
         }
 
         @Tool(name = "list_memory_cards", value = "列出当前用户的全部记忆卡和 UUID；查找或删除卡片前使用")
-        public List<MemoryCardResponse> listMemoryCards() {
-            return interviewRecapService.listCards(userId, false).stream().map(MemoryCardResponse::from).toList();
+        public List<FlashcardView> listMemoryCards() {
+            return flashcards.listCards(userId, false);
         }
 
         @Tool(name = "create_memory_card", value = "建立一张可独立复习的记忆卡。来自面经时先理解考点，再把口语化原题改写成脱离上下文也明确的考察题，禁止直接复制‘讲讲里面’‘再说一下’等追问")
-        public MemoryCardResponse createMemoryCard(
+        public FlashcardView createMemoryCard(
                 @P("卡片正面的问题") String question,
                 @P("卡片背面的参考答案或回答框架") String answer,
                 @P(value = "来源：INTERVIEW、KNOWLEDGE、AGENT 或 WEB", required = false) String sourceType,
@@ -767,36 +769,36 @@ public class CareerAgentTools {
                 @P(value = "网络题的可核验链接；非网络题传空字符串", required = false) String sourceUrl,
                 @P(value = "知识点标签，多个用英文逗号分隔", required = false) String tags,
                 @P(value = "来自面经时填写面经问题 UUID；其它来源留空", required = false) String recapQuestionId) {
-            return MemoryCardResponse.from(interviewRecapService.createCard(userId,
+            return flashcards.createCard(userId,
                     enumValue(MemoryCardSource.class, sourceType, MemoryCardSource.AGENT), sourceLabel, sourceUrl,
                     question, answer, tags == null ? List.of() : List.of(tags.split(",")), Instant.now(),
-                    nullableUuid(recapQuestionId, "面经问题 ID")));
+                    nullableUuid(recapQuestionId, "面经问题 ID"));
         }
 
         @Tool(name = "review_memory_card", value = "用户完成记忆卡后登记掌握结果并安排下次复习。只有用户明确评价后才能调用")
-        public MemoryCardResponse reviewMemoryCard(
+        public FlashcardView reviewMemoryCard(
                 @P("记忆卡 UUID") String cardId,
                 @P("结果：AGAIN、HARD、GOOD 或 EASY") String rating) {
-            return MemoryCardResponse.from(interviewRecapService.review(userId, uuid(cardId, "记忆卡 ID"),
-                    enumValue(MemoryCardRating.class, rating, null)));
+            return flashcards.review(userId, uuid(cardId, "记忆卡 ID"),
+                    enumValue(MemoryCardRating.class, rating, null));
         }
 
         @Tool(name = "update_memory_card", value = "编辑当前用户记忆卡的问题、参考答案和标签，保留复习进度。先用 list_memory_cards 读取原内容，再提供完整修订值，保留用户未要求修改的部分")
-        public MemoryCardResponse updateMemoryCard(@P("记忆卡 UUID") String cardId,
+        public FlashcardView updateMemoryCard(@P("记忆卡 UUID") String cardId,
                 @P("完整的修订后问题") String question,
                 @P("完整的修订后参考答案") String answer,
                 @P("完整的英文逗号分隔标签，清空传空字符串") String tags) {
             UUID id = uuid(cardId, "记忆卡 ID");
-            return MemoryCardResponse.from(interviewRecapService.updateCard(userId, id,
-                    question, answer, tags == null ? List.of() : List.of(tags.split(","))));
+            return flashcards.updateCard(userId, id,
+                    question, answer, tags == null ? List.of() : List.of(tags.split(",")));
         }
 
         @Tool(name = "delete_memory_card", value = "永久删除当前用户指定的一张记忆卡。只有用户明确要求删除时使用")
         public Map<String, Object> deleteMemoryCard(@P("记忆卡 UUID") String cardId) {
             UUID id = uuid(cardId, "记忆卡 ID");
-            String front = interviewRecapService.listCards(userId, false).stream()
-                    .filter(card -> card.getId().equals(id))
-                    .map(MemoryCard::getFront)
+            String front = flashcards.listCards(userId, false).stream()
+                    .filter(card -> card.id().equals(id))
+                    .map(FlashcardView::front)
                     .findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("这张记忆卡不存在"));
             return propose("memory_card", id, front, "删除这张记忆卡及其复习进度",
@@ -804,13 +806,13 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "suspend_memory_card", value = "暂停或恢复当前用户记忆卡的复习，并同步复习日程；只在用户明确要求时使用，先列表获取真实 UUID")
-        public MemoryCardResponse suspendMemoryCard(@P("记忆卡 UUID") String cardId, @P("true 暂停，false 恢复") boolean suspended) {
-            return MemoryCardResponse.from(interviewRecapService.suspend(userId, uuid(cardId, "记忆卡 ID"), suspended));
+        public FlashcardView suspendMemoryCard(@P("记忆卡 UUID") String cardId, @P("true 暂停，false 恢复") boolean suspended) {
+            return flashcards.suspend(userId, uuid(cardId, "记忆卡 ID"), suspended);
         }
 
         @Tool(name = "delete_all_memory_cards", value = "永久删除当前用户的全部记忆卡。仅当用户明确说删除全部记忆卡时使用")
         public Map<String, Object> deleteAllMemoryCards() {
-            var ids = interviewRecapService.listCards(userId, false).stream().map(MemoryCard::getId).toList();
+            var ids = flashcards.listCards(userId, false).stream().map(FlashcardView::id).toList();
             return proposeSnapshot("all_memory_cards", "当前记忆卡（" + ids.size() + " 张）", "只删除这次列出的卡片及其复习进度，之后新增的卡片不受影响", "/api/memory-cards/snapshot", ids);
         }
 
