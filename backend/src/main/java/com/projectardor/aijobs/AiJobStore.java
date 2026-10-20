@@ -81,16 +81,16 @@ public class AiJobStore {
         jdbc.update("""
                 UPDATE ai_jobs SET status = 'COMPLETED', result_path = ?, error_code = NULL,
                     error_message = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND user_id = ? AND status = 'RUNNING'
-                """, resultPath, job.id(), job.userId());
+                WHERE id = ? AND user_id = ? AND status = 'RUNNING' AND attempts = ?
+                """, resultPath, job.id(), job.userId(), job.attempts());
     }
 
     public void fail(Job job, String code, String message) {
         jdbc.update("""
                 UPDATE ai_jobs SET status = 'FAILED', error_code = ?, error_message = ?,
                     finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND user_id = ? AND status = 'RUNNING'
-                """, code, message.substring(0, Math.min(500, message.length())), job.id(), job.userId());
+                WHERE id = ? AND user_id = ? AND status = 'RUNNING' AND attempts = ?
+                """, code, message.substring(0, Math.min(500, message.length())), job.id(), job.userId(), job.attempts());
     }
 
     public Job retry(UUID userId, UUID id) {
@@ -105,7 +105,8 @@ public class AiJobStore {
     }
 
     public void heartbeat(Job job) {
-        jdbc.update("UPDATE ai_jobs SET updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND status = 'RUNNING'", job.id(), job.userId());
+        jdbc.update("UPDATE ai_jobs SET updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND status = 'RUNNING' AND attempts = ?",
+                job.id(), job.userId(), job.attempts());
     }
 
     public void recoverStale() {
