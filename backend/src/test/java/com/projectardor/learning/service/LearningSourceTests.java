@@ -37,7 +37,8 @@ class LearningSourceTests {
         LlmGateway llm = mock(LlmGateway.class);
         when(recaps.findByIdAndUserId(foreignQuestionId, userId)).thenReturn(Optional.empty());
         when(questions.findByIdAndUserId(foreignQuestionId, userId)).thenReturn(Optional.empty());
-        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
+        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class),
+                mock(com.projectardor.learning.repository.LearningAttemptRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
                 mock(ProfileService.class), new LearningContextResolver(new com.projectardor.recap.service.InterviewRecordSourceAccess(recaps, questions),
                     new com.projectardor.resume.service.ResumeSourceAccess(mock(ResumeRepository.class)),
@@ -60,7 +61,8 @@ class LearningSourceTests {
         LlmGateway llm = mock(LlmGateway.class);
         ResumeRepository resumes = mock(ResumeRepository.class);
         KnowledgeDocumentRepository knowledge = mock(KnowledgeDocumentRepository.class);
-        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
+        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class),
+                mock(com.projectardor.learning.repository.LearningAttemptRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
                 mock(ProfileService.class), new LearningContextResolver(mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class),
                     new com.projectardor.resume.service.ResumeSourceAccess(resumes),

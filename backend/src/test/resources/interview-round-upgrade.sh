@@ -7,6 +7,7 @@ test -n "${RUNNER_TEMP:-}"
 case "${1:-rounds}" in
   rounds) probe_db=ardor_round_upgrade; baseline=49; fixture=interview-round ;;
   learning) probe_db=ardor_learning_origin_upgrade; baseline=50; fixture=learning-origin ;;
+  attempts) probe_db=ardor_learning_attempt_upgrade; baseline=51; fixture=learning-attempts ;;
   *) echo "Unknown upgrade profile" >&2; exit 1 ;;
 esac
 docker exec ardor-acceptance-postgres createdb -U ardor "$probe_db"
