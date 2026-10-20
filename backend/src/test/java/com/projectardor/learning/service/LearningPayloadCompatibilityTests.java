@@ -27,4 +27,17 @@ class LearningPayloadCompatibilityTests {
         assertThat(mapper.writeValueAsString(input.command())).isEqualTo(mapper.writeValueAsString(input));
         assertThat(mapper.readValue(mapper.writeValueAsString(input),LearningCreationCommand.class).context()).isEqualTo(input.context());
     }
+
+    @Test void evaluationAndReplayApplicationCommandsKeepPersistedTransportPayloadsStable() {
+        var evaluation=new com.projectardor.learning.web.LearningEvaluationQueueRequest(request,2,java.util.List.of("Saved answer"));
+        String evaluationJson=mapper.writeValueAsString(evaluation);
+        assertThat(mapper.writeValueAsString(evaluation.command())).isEqualTo(evaluationJson);
+        assertThat(mapper.readValue(evaluationJson,LearningEvaluationCommand.class)).isEqualTo(evaluation.command());
+        for(UUID retest:new UUID[]{null,UUID.randomUUID()}) {
+            var replay=new com.projectardor.recap.web.InterviewReplaySubmitRequest(request,"Saved answer",retest);
+            String replayJson=mapper.writeValueAsString(replay);
+            assertThat(mapper.writeValueAsString(replay.command())).isEqualTo(replayJson);
+            assertThat(mapper.readValue(replayJson,com.projectardor.recap.service.ReplayEvaluationCommand.class)).isEqualTo(replay.command());
+        }
+    }
 }

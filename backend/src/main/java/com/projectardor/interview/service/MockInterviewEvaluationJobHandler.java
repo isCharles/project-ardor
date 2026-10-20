@@ -2,7 +2,9 @@ package com.projectardor.interview.service;
 
 import java.util.UUID;
 import org.springframework.stereotype.Component;
-import com.projectardor.aijobs.*;
+import com.projectardor.aijobs.AiJobHandler;
+import com.projectardor.aijobs.AiJobType;
+import com.projectardor.aijobs.AiJobWork;
 
 /** Legacy task name remains INTERVIEW_EVALUATE; it still means mock interview, never a real round. */
 @Component

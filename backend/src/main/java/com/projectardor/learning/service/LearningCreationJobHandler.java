@@ -1,7 +1,9 @@
 package com.projectardor.learning.service;
 
 import org.springframework.stereotype.Component;
-import com.projectardor.aijobs.*;
+import com.projectardor.aijobs.AiJobHandler;
+import com.projectardor.aijobs.AiJobType;
+import com.projectardor.aijobs.AiJobWork;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
