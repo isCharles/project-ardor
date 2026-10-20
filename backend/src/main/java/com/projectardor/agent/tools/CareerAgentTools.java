@@ -73,6 +73,8 @@ import dev.langchain4j.agent.tool.Tool;
 @Component
 public class CareerAgentTools {
 
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(CareerAgentTools.class);
+
     private final ResumeService resumeService;
     private final ResumeAnalysisQueueService resumeAnalysisQueueService;
     private final InterviewService interviewService;
@@ -88,7 +90,9 @@ public class CareerAgentTools {
     private final ApplicationRhythmService applicationRhythmService;
     private final OpportunityService opportunityService;
     private final com.projectardor.aijobs.AiJobService aiJobs;
+    private final com.projectardor.agent.service.AgentExecutionAuditStore executionAudit;
 
+    /** Compatibility constructor for existing call sites/tests; proposals then carry no audit row. */
     public CareerAgentTools(
             ResumeService resumeService,
             ResumeAnalysisQueueService resumeAnalysisQueueService,
@@ -104,6 +108,29 @@ public class CareerAgentTools {
             LearningPlanService learningPlanService,
             ApplicationRhythmService applicationRhythmService, OpportunityService opportunityService,
             com.projectardor.aijobs.AiJobService aiJobs) {
+        this(resumeService, resumeAnalysisQueueService, interviewService, profileService, memoryService,
+                calendarTaskService, taskSeriesService, interviewRecapService, interviewRecapQueueService,
+                tavilySearchService, knowledgeService, learningPlanService, applicationRhythmService,
+                opportunityService, aiJobs, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public CareerAgentTools(
+            ResumeService resumeService,
+            ResumeAnalysisQueueService resumeAnalysisQueueService,
+            InterviewService interviewService,
+            ProfileService profileService,
+            AgentMemoryService memoryService,
+            CalendarTaskService calendarTaskService,
+            TaskSeriesService taskSeriesService,
+            InterviewRecapService interviewRecapService,
+            InterviewRecapQueueService interviewRecapQueueService,
+            TavilySearchService tavilySearchService,
+            KnowledgeService knowledgeService,
+            LearningPlanService learningPlanService,
+            ApplicationRhythmService applicationRhythmService, OpportunityService opportunityService,
+            com.projectardor.aijobs.AiJobService aiJobs,
+            com.projectardor.agent.service.AgentExecutionAuditStore executionAudit) {
         this.resumeService = resumeService;
         this.resumeAnalysisQueueService = resumeAnalysisQueueService;
         this.interviewService = interviewService;
@@ -119,6 +146,7 @@ public class CareerAgentTools {
         this.applicationRhythmService = applicationRhythmService;
         this.opportunityService = opportunityService;
         this.aiJobs = aiJobs;
+        this.executionAudit = executionAudit;
     }
 
     public BoundCareerTools bind(UUID trustedUserId, String trustedUserRequest) {
@@ -179,6 +207,7 @@ public class CareerAgentTools {
         private final String originalUserMessage;
         private final UUID logicalActionId;
         private final UUID runRequestId;
+        private UUID conversationId;
         private boolean interviewAnswerContext;
         private String interruptedRequest = "";
         private String dateCorrectionContext = "";
@@ -210,6 +239,42 @@ public class CareerAgentTools {
         public BoundCareerTools withInterviewAnswerContext(boolean active) { interviewAnswerContext = active; return this; }
         public BoundCareerTools withDateCorrectionContext(String context) { dateCorrectionContext = context == null ? "" : context; return this; }
         public BoundCareerTools withInterruptedRequest(String request) { interruptedRequest = request == null ? "" : request; return this; }
+        /** The owned conversation this run belongs to; used only to persist proposal audit facts. */
+        public BoundCareerTools withConversationId(UUID conversationId) { this.conversationId = conversationId; return this; }
+
+        /**
+         * A deterministic per-run identity for a confirmation card. Re-reading the saved trace or
+         * sending the same confirmation twice yields the same ID; the card is no longer identified
+         * only by parsing JSON. It is an audit identity, not an authorization token.
+         */
+        private UUID proposalId(String kind, UUID targetId, String endpoint, String identity) {
+            String seed = "ardor:proposal:" + userId + ":" + runRequestId + ":" + kind + ":"
+                    + targetId + ":" + endpoint + ":" + pending.size() + ":" + (identity == null ? "" : identity);
+            return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8));
+        }
+
+        private static String legacyKey(PendingConfirmation confirmation) {
+            return confirmation.learningPlan() != null
+                    ? confirmation.learningPlan().requestId().toString()
+                    : confirmation.kind() + ":" + confirmation.endpoint();
+        }
+
+        /** Best-effort structured audit of a generated card; never blocks the card itself. */
+        private void recordProposal(PendingConfirmation confirmation, UUID learningRequestId) {
+            if (executionAudit == null || userId == null || runRequestId == null || conversationId == null) return;
+            try {
+                executionAudit.recordProposal(new com.projectardor.agent.service.AgentExecutionAuditStore.ProposalRecord(
+                        confirmation.proposalId(),
+                        com.projectardor.agent.service.AgentExecutionAuditStore.ToolCallContext.of(
+                                userId, conversationId, runRequestId),
+                        confirmation.kind(), confirmation.targetId(), confirmation.targetIds(),
+                        legacyKey(confirmation), confirmation.label(), confirmation.detail(),
+                        confirmation.endpoint(), learningRequestId));
+            } catch (RuntimeException failure) {
+                LOG.warn("Could not record proposal audit: kind={}, failure={}",
+                        confirmation.kind(), failure.getClass().getSimpleName());
+            }
+        }
 
         /**
          * Describes one deletion for the user to approve by clicking.
@@ -223,7 +288,11 @@ public class CareerAgentTools {
          */
         private Map<String, Object> propose(
                 String kind, UUID targetId, String label, String detail, String endpoint) {
-            pending.add(new PendingConfirmation(kind, targetId, label, detail, endpoint));
+            UUID proposalId = proposalId(kind, targetId, endpoint, null);
+            PendingConfirmation confirmation = new PendingConfirmation(kind, targetId, label, detail, endpoint,
+                    null, null, proposalId);
+            pending.add(confirmation);
+            recordProposal(confirmation, null);
             return Map.of(
                     "status", "CONFIRMATION_REQUIRED",
                     "kind", kind,
@@ -235,7 +304,11 @@ public class CareerAgentTools {
 
         private Map<String, Object> proposeSnapshot(String kind, String label, String detail, String endpoint, List<UUID> ids) {
             if (ids.size() > 5000) throw new IllegalArgumentException("一次最多确认删除 5000 项，请缩小范围");
-            pending.add(new PendingConfirmation(kind, null, label, detail, endpoint, null, List.copyOf(ids)));
+            UUID proposalId = proposalId(kind, null, endpoint, String.valueOf(ids.size()));
+            PendingConfirmation confirmation = new PendingConfirmation(kind, null, label, detail, endpoint, null,
+                    List.copyOf(ids), proposalId);
+            pending.add(confirmation);
+            recordProposal(confirmation, null);
             return Map.of("status", "CONFIRMATION_REQUIRED", "target", label, "message", "请用户点击已显示的确认按钮；尚未删除任何内容。");
         }
 
@@ -357,9 +430,12 @@ public class CareerAgentTools {
                     : UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8));
             LearningCreationCommand input = new LearningCreationCommand(
                     topic, why, source, sourceUuid, dueAt, requestId,origin,origin == null ? null : sourceUuid,target,targetRound);
-            pending.add(new PendingConfirmation("learning_plan", null, topic,
+            PendingConfirmation confirmation = new PendingConfirmation("learning_plan", null, topic,
                     why == null ? "请确认后生成讲解、练习和日历安排" : why,
-                    "/api/learning-plans/jobs", input));
+                    "/api/learning-plans/jobs", input, null,
+                    proposalId("learning_plan", null, "/api/learning-plans/jobs", requestId.toString()));
+            pending.add(confirmation);
+            recordProposal(confirmation, requestId);
             return Map.of("status", "CONFIRMATION_REQUIRED", "kind", "learning_plan",
                     "target", topic, "message", "已向用户展示学习计划确认按钮；尚未创建计划或日程。请说明建议原因，等待用户点击，不要再次调用本工具。");
         }
@@ -999,15 +1075,21 @@ public class CareerAgentTools {
     /**
      * A deletion the agent has proposed and the user has not yet approved.
      * {@code endpoint} is the ordinary REST path the confirmation button calls.
+     * {@code proposalId} is a stable per-run audit identity; old clients keep using the legacy
+     * card key and can ignore it.
      */
     public record PendingConfirmation(
             String kind, UUID targetId, String label, String detail, String endpoint,
-            LearningCreationCommand learningPlan, List<UUID> targetIds) {
+            LearningCreationCommand learningPlan, List<UUID> targetIds, UUID proposalId) {
         public PendingConfirmation(String kind, UUID targetId, String label, String detail, String endpoint) {
-            this(kind, targetId, label, detail, endpoint, null, null);
+            this(kind, targetId, label, detail, endpoint, null, null, null);
         }
         public PendingConfirmation(String kind, UUID targetId, String label, String detail, String endpoint, LearningCreationCommand learningPlan) {
-            this(kind, targetId, label, detail, endpoint, learningPlan, null);
+            this(kind, targetId, label, detail, endpoint, learningPlan, null, null);
+        }
+        public PendingConfirmation(String kind, UUID targetId, String label, String detail, String endpoint,
+                LearningCreationCommand learningPlan, List<UUID> targetIds) {
+            this(kind, targetId, label, detail, endpoint, learningPlan, targetIds, null);
         }
     }
 }

@@ -21,7 +21,11 @@
 | `resumes` | `user_id` | 文件元数据、解析文本与解析状态 | 按用户和创建时间索引 |
 | `resume_analyses` | `user_id` | 可复用的结构化分析 | 关联同一用户的 resume |
 | `conversations` | `user_id` | 可持续的 Agent 会话和上下文 | active / archived |
-| `messages` | `user_id` | 用户、助手、系统和 Tool 消息 | `context_references` 保存随消息发送的简历、面经、知识文档或学习计划引用 |
+| `messages` | `user_id` | 用户、助手、系统和 Tool 消息 | `context_references` 保存随消息发送的简历、面经、知识文档或学习计划引用；V53 起 `request_id`/`run_id` 可空关联持久化运行 |
+| `agent_runs` | `user_id` | 一次持久化 Agent 运行及终态 | 浏览器 requestId 即主键；`assistant_message_id` 指向最终助手消息；进度快照有界 |
+| `agent_tool_calls` | `user_id` | 每次工具调用的授权来源、状态与参数/结果摘要 | 复合外键约束用户、会话、运行与消息归属；不保存原始参数/结果正文 |
+| `agent_proposals` | `user_id` | 确认卡片实体与展示决定（`PROPOSED`/`CONFIRMED`/`DISMISSED`/`EXPIRED`/`CANCELLED`） | `id` 为稳定 proposalId；`legacy_key` 兼容旧卡片 key；决定不证明业务写入成功 |
+| `agent_tool_audit` | `user_id` | 既有审计投影，V53 增加 `approval_source`（旧行默认 `AUTO`） | 只存参数摘要；自动放行、逐次确认与卡片生成均留痕 |
 | `user_agent_memories` | `user_id` | 跨会话共享、用户可管理的总体记忆 | 每个用户最多一份，最多 4000 字符 |
 | `interview_sessions` | `user_id` | 面试目标、模态和生命周期 | 模态可扩展，V0.1 只使用 TEXT |
 | `interview_questions` | `user_id` | 有序问题和评价标准 | session 内序号唯一 |
@@ -83,6 +87,8 @@
 `exercise_snapshot` 是本次实际作答的题目数组（question/type/options/rubric/correctOption/exerciseId），`answers` 是按题目顺序的字符串数组。回填行缺少旧投影未保存的 rubric/model/prompt 时保持 NULL 并标 `legacy = true`。
 
 JSONB 仍需在应用层映射为有类型的 DTO，并记录 `prompt_version` 与 `model_name`，以便回放和升级。学习尝试合同见 [学习尝试历史与内容版本合同](LEARNING_ATTEMPT_HISTORY.md)。
+
+兼容投影：`messages.tool_calls` 仍是历史执行 trace（工作记录、思考、提案）的旧投影，`messages.proposal_resolutions` 仍是旧卡片决定投影；V53 起结构化事实写入 `agent_tool_calls`/`agent_proposals`。读取新事实优先，旧投影继续写入以兼容旧客户端与旧历史。历史回填只接受可证明关系（见 [Agent 执行关联与审计合同](AGENT_EXECUTION_CONTRACTS.md)），不按时间或文本相似猜测。
 
 ## 隔离示例
 

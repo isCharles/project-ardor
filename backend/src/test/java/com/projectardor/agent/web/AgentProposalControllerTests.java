@@ -45,4 +45,36 @@ class AgentProposalControllerTests {
         assertThatThrownBy(() -> controller.resolve(principal, message.getId(), new AgentProposalController.Decision("owned-request", "ALLOW")))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test void stableProposalIdResolvesTheSameLegacyCardKeyAndAuditsTheFirstDecision() {
+        var store = mock(com.projectardor.agent.service.AgentExecutionAuditStore.class);
+        var audited = new AgentProposalController(messages, new ObjectMapper(), store);
+        UUID proposalId = UUID.randomUUID();
+        var message = ConversationMessage.assistant(owner, UUID.randomUUID(), "Suggested operation",
+                "{\"proposals\":[{\"kind\":\"memory_item\",\"endpoint\":\"/api/agent/memory/items/fixture\","
+                        + "\"proposalId\":\"" + proposalId + "\"}]}");
+        when(messages.findByIdAndUserId(message.getId(), owner)).thenReturn(Optional.of(message));
+        when(messages.resolveProposal(owner, message.getId(), "memory_item:/api/agent/memory/items/fixture", "DONE"))
+                .thenReturn(1);
+
+        audited.resolve(principal, message.getId(), new AgentProposalController.Decision(proposalId.toString(), "DONE"));
+
+        verify(messages).resolveProposal(owner, message.getId(), "memory_item:/api/agent/memory/items/fixture", "DONE");
+        verify(store).decideProposal(owner, message.getId(), proposalId,
+                "memory_item:/api/agent/memory/items/fixture", "DONE");
+    }
+
+    @Test void laterDecisionDoesNotRewriteTheStructuredProposalLifecycle() {
+        var store = mock(com.projectardor.agent.service.AgentExecutionAuditStore.class);
+        var audited = new AgentProposalController(messages, new ObjectMapper(), store);
+        var message = ConversationMessage.assistant(owner, UUID.randomUUID(), "Suggested operation",
+                "{\"proposals\":[{\"kind\":\"memory_item\",\"endpoint\":\"/api/agent/memory/items/fixture\"}]}");
+        when(messages.findByIdAndUserId(message.getId(), owner)).thenReturn(Optional.of(message));
+        when(messages.resolveProposal(owner, message.getId(), "memory_item:/api/agent/memory/items/fixture", "DISMISSED"))
+                .thenReturn(0, 1);
+
+        audited.resolve(principal, message.getId(), new AgentProposalController.Decision("memory_item:/api/agent/memory/items/fixture", "DISMISSED"));
+
+        verify(store, never()).decideProposal(any(), any(), any(), any(), any());
+    }
 }
