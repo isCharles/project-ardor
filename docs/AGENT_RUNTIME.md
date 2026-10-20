@@ -8,6 +8,12 @@
 
 工具提案与异步任务须区分：`create_learning_plan` 只提供待确认建议，实际讲解和练习生成发生在用户确认后的后台任务中；工具的毫秒计时并非完整学习生成耗时。
 
+## 执行关联与审计
+
+V53 起，持久化运行同时写入结构化执行事实：`messages.request_id/run_id` 关联消息与运行，`agent_tool_calls` 记录每次工具调用的授权来源（`AUTO`/`CONFIRMED`/`DELETE_PROPOSAL`/`PROPOSAL`）、状态、参数/结果摘要与可选业务引用，`agent_proposals` 记录确认卡片的稳定 `proposalId` 与生命周期。运行成功保存交流时，`agent_runs.assistant_message_id` 与消息、工具调用、提案的 `message_id` 在同一事务内补齐；取消、总时限、静默超时、失败和失联只把仍开始的工具标为 `UNKNOWN` 并记录真实终止码，已完成的调用保留 `COMPLETED`，不伪造成功。旧 `messages.tool_calls`/`proposal_resolutions` JSON 投影与旧卡片 key 继续保留，旧客户端行为不变。
+
+`GET /api/agent/runs/{requestId}/tool-calls` 与 `GET /api/agent/runs/{requestId}/audit` 在运行属主校验后返回只读事实；未知或他人的运行仍返回 404。审计只存摘要与关联引用，不存完整提示词、结果正文或密钥，也不能作为授权或业务完成证明。完整合同与兼容/回退说明见 [Agent 执行关联与审计合同](AGENT_EXECUTION_CONTRACTS.md)。
+
 逐次授权的等待与业务执行分别测量：`approvalWaitMs` 从准备请求到批准/拒绝，`businessMs` 只统计真正进入业务执行器的部分；`elapsedMs` 仍保留工具全流程耗时，供整轮归因使用。用户拒绝、权限过期或运行取消后未执行的工具显示 `NOT_EXECUTED`，业务执行为 0，不标成已成功读取或写入。页面优先显示业务耗时，有授权等待时另列一行；历史 trace 和恢复快照保存相同口径。旧记录没有细分字段时继续显示原总耗时，不倒推无法知道的数据。
 
 ## 公开输出与断流恢复

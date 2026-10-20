@@ -29,11 +29,19 @@ public record AgentStreamEvent(
     /** What the confirmation button says, and the authenticated action it offers. */
     public record AgentConfirmation(
             String kind, UUID targetId, String label, String detail, String endpoint,
-            LearningCreationCommand learningPlan, java.util.List<UUID> targetIds) {
+            LearningCreationCommand learningPlan, java.util.List<UUID> targetIds,
+            /** Stable per-run proposal identity; presentation/audit correlation only. */
+            UUID proposalId) {
+
+        public AgentConfirmation(String kind, UUID targetId, String label, String detail, String endpoint,
+                LearningCreationCommand learningPlan, java.util.List<UUID> targetIds) {
+            this(kind, targetId, label, detail, endpoint, learningPlan, targetIds, null);
+        }
 
         public static AgentConfirmation from(PendingConfirmation pending) {
             return new AgentConfirmation(pending.kind(), pending.targetId(),
-                    pending.label(), pending.detail(), pending.endpoint(), pending.learningPlan(), pending.targetIds());
+                    pending.label(), pending.detail(), pending.endpoint(), pending.learningPlan(),
+                    pending.targetIds(), pending.proposalId());
         }
     }
 

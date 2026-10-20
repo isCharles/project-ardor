@@ -46,6 +46,13 @@ public class ConversationMessage {
     @Column(name = "proposal_resolutions", nullable = false, columnDefinition = "jsonb")
     private java.util.Map<String, String> proposalResolutions = new java.util.HashMap<>();
 
+    /** Durable run/request identity. Null for legacy synchronous chat and unparseable history. */
+    @Column(name = "request_id")
+    private UUID requestId;
+
+    @Column(name = "run_id")
+    private UUID runId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -91,6 +98,13 @@ public class ConversationMessage {
         updatedAt = now;
     }
 
+    /** Links an already saved exchange to the durable run that produced it. */
+    public void linkRun(UUID requestId, UUID runId) {
+        this.requestId = requestId;
+        this.runId = runId;
+        this.updatedAt = Instant.now();
+    }
+
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public UUID getConversationId() { return conversationId; }
@@ -99,5 +113,7 @@ public class ConversationMessage {
     public List<AgentContextReference> getContextReferences() { return List.copyOf(contextReferences); }
     public String getRunTrace() { return runTrace; }
     public java.util.Map<String, String> getProposalResolutions() { return java.util.Map.copyOf(proposalResolutions); }
+    public UUID getRequestId() { return requestId; }
+    public UUID getRunId() { return runId; }
     public Instant getCreatedAt() { return createdAt; }
 }
