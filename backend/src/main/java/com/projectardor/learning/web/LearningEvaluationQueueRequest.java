@@ -7,4 +7,8 @@ import com.projectardor.usage.QuotaRequestId;
 
 public record LearningEvaluationQueueRequest(@NotNull UUID requestId,
         @NotNull @Min(0) Integer expectedAttemptCount,
-        @NotEmpty @Size(max = 8) List<@NotBlank @Size(max = 12000) String> answers) implements QuotaRequestId {}
+        @NotEmpty @Size(max = 8) List<@NotBlank @Size(max = 12000) String> answers) implements QuotaRequestId {
+    public com.projectardor.learning.service.LearningEvaluationCommand command() {
+        return new com.projectardor.learning.service.LearningEvaluationCommand(requestId,expectedAttemptCount,answers);
+    }
+}

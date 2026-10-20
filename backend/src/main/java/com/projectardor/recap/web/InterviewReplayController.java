@@ -34,7 +34,7 @@ public class InterviewReplayController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public AiJobResponse queue(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID questionId,
             @Valid @RequestBody InterviewReplaySubmitRequest request) {
-        return jobs.evaluateReplay(principal.userId(), questionId, request);
+        return jobs.evaluateReplay(principal.userId(), questionId, request.command());
     }
 
     @GetMapping

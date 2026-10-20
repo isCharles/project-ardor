@@ -3,7 +3,7 @@ package com.projectardor.agent.web;
 import java.util.UUID;
 
 import com.projectardor.agent.tools.CareerAgentTools.PendingConfirmation;
-import com.projectardor.learning.web.LearningPlanCreateRequest;
+import com.projectardor.learning.service.LearningCreationCommand;
 
 public record AgentStreamEvent(
         String type,
@@ -29,7 +29,7 @@ public record AgentStreamEvent(
     /** What the confirmation button says, and the authenticated action it offers. */
     public record AgentConfirmation(
             String kind, UUID targetId, String label, String detail, String endpoint,
-            LearningPlanCreateRequest learningPlan, java.util.List<UUID> targetIds) {
+            LearningCreationCommand learningPlan, java.util.List<UUID> targetIds) {
 
         public static AgentConfirmation from(PendingConfirmation pending) {
             return new AgentConfirmation(pending.kind(), pending.targetId(),
