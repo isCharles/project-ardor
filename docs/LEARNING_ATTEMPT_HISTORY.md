@@ -81,7 +81,7 @@
 
 ## 3. 读取合同
 
-`GET /api/learning-plans/{id}/attempts`（只读，属主校验，跨用户 404）按 `attemptNo` 升序返回全量历史：
+`GET /api/learning-plans/{id}/attempts`（只读，属主校验，跨用户 404）按 `attemptNo` 升序返回全量历史。异常历史（回填后 `attemptNo` 可能 > `attemptCount`）不会被重排、隐藏或重新编号；新提交继续追加在已存最大序号之后，因此响应中的 `attemptNo` 可能不连续，客户端应以 `attemptNo` 而非数组下标作为稳定标识。返回结构示例：
 
 ```json
 [
