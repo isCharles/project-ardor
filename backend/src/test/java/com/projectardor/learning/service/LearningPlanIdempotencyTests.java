@@ -156,6 +156,30 @@ class LearningPlanIdempotencyTests {
         verify(llm, never()).completeJson(any(), any(), any());
     }
 
+    @Test
+    void canonicalRetryRejectsConflictingLegacyFieldsBeforeReturningExistingResult() {
+        UUID owner = UUID.randomUUID(), request = UUID.randomUUID(), source = UUID.randomUUID();
+        LearningPlanCreationStore store = mock(LearningPlanCreationStore.class);
+        when(store.existing(eq(owner), eq(request), anyString())).thenReturn(plan(owner, request, "saved"));
+        LlmGateway llm = mock(LlmGateway.class);
+        LearningContextResolver contexts = mock(LearningContextResolver.class);
+        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
+                mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
+                mock(ProfileService.class), contexts, store, mock(LearningPlanGenerationGate.class),
+                mock(LearningPlanAgentSlots.class), mock(org.springframework.transaction.PlatformTransactionManager.class));
+        var context = new LearningContextInput(com.projectardor.learning.domain.LearningOriginKind.INTERVIEW_QUESTION,
+                source, null, null);
+        assertThatThrownBy(() -> service.create(owner, request, "JVM", null,
+                LearningSourceType.RESUME, source, DUE, context)).hasMessageContaining("来源类型不一致");
+        assertThatThrownBy(() -> service.create(owner, request, "JVM", null,
+                LearningSourceType.RECAP, UUID.randomUUID(), DUE, context)).hasMessageContaining("来源 ID 不一致");
+        org.mockito.Mockito.verifyNoInteractions(store, llm, contexts);
+        // A valid retry still returns the committed result even if its original source no longer exists.
+        assertThat(service.create(owner, request, "JVM", null,
+                LearningSourceType.RECAP, source, DUE, context)).isNotNull();
+        org.mockito.Mockito.verifyNoInteractions(llm, contexts);
+    }
+
     private LearningPlan plan(UUID userId, UUID requestId, String hash) {
         return LearningPlan.create(userId, requestId, hash, "JVM", "面试薄弱点", LearningSourceType.MANUAL,
                 null, Map.of("summary", "JVM"), List.of(Map.of("question", "介绍 JVM")), DUE, "test-model");

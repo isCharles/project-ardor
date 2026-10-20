@@ -15,6 +15,15 @@ export type PlanContext = {
 
 export function LearningContext({ plan, sourceName }: { plan: PlanContext; sourceName?: string }) {
   const { t } = useLocale();
+  const [source, setSource] = useState<{ resourceId: string; recordId: string | null } | null>(null);
+  const questionId=plan.originKind === "INTERVIEW_QUESTION" && !plan.originRecordId ? plan.originResourceId : null;
+  useEffect(() => {
+    if (!questionId) return;
+    let alive=true;
+    void api<NonNullable<typeof source>>(`/api/learning-plans/origins/INTERVIEW_QUESTION/${encodeURIComponent(questionId)}`)
+      .then(value => { if (alive) setSource(value); }).catch(() => { /* A missing or foreign source must not become a guessed report link. */ });
+    return () => { alive=false; };
+  },[questionId]);
   const [target, setTarget] = useState<{ id: string; company: string; targetRole: string | null; rounds?: { id: string; roundNumber: number }[] } | null>(null);
   const targetId=plan.targetInterviewId;
   useEffect(() => {
@@ -24,8 +33,12 @@ export function LearningContext({ plan, sourceName }: { plan: PlanContext; sourc
       .then(value => { if(alive) setTarget(value); }).catch(() => { /* Keep the persisted target link without inventing details. */ });
     return () => { alive=false; };
   },[targetId]);
-  const recordId=plan.originRecordId ?? (plan.originKind === "INTERVIEW_RECORD" ? plan.originResourceId : null);
+  const recordId=plan.originRecordId ?? (plan.originKind === "INTERVIEW_RECORD" ? plan.originResourceId
+    : source && source.resourceId === questionId ? source.recordId : null);
+  const resourceId=plan.originResourceId ?? plan.sourceId;
   const sourceHref=recordId ? `/app/job-search/notes?selected=${encodeURIComponent(recordId)}`
+    : (plan.originKind ?? plan.sourceType) === "RESUME" && resourceId ? `/app/resumes?selected=${encodeURIComponent(resourceId)}`
+    : (plan.originKind ?? plan.sourceType) === "KNOWLEDGE" && resourceId ? `/app/knowledge?document=${encodeURIComponent(resourceId)}`
     : !plan.originKind && plan.sourceType === "RECAP" && plan.sourceId ? `/app/recaps?source=${encodeURIComponent(plan.sourceId)}` : null;
   const labels={
     MANUAL:t("Added by you","自己添加"),AGENT:t("Suggested by Ardor","Ardor 建议"),RESUME:t("From a resume","来自简历"),

@@ -94,6 +94,7 @@ public class LearningPlanService {
 
     private LearningPlan createInternal(UUID userId, UUID requestId, String rawConcept, String rawReason,
             LearningSourceType sourceType, UUID sourceId, Instant scheduledAt, boolean agentRetry, LearningContextInput context) {
+        LearningContextResolver.validateAgreement(sourceType, sourceId, context);
         String concept = required(rawConcept, "学习概念不能为空", 160);
         String reason = optional(rawReason, 4000);
         LearningSourceType source = context != null && context.originKind() != null ? context.originKind().legacyType()

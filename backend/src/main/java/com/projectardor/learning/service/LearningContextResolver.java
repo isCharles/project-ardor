@@ -21,13 +21,9 @@ public class LearningContextResolver {
     }
 
     public Resolved resolve(UUID owner, LearningSourceType legacyType, UUID legacyId, LearningContextInput input) {
+        validateAgreement(legacyType, legacyId, input);
         LearningOriginKind kind = input == null ? null : input.originKind();
         UUID id = input != null && input.originResourceId() != null ? input.originResourceId() : legacyId;
-        if (input != null && input.originResourceId() != null && legacyId != null && !input.originResourceId().equals(legacyId))
-            throw new IllegalArgumentException("来源 ID 不一致");
-        if (kind == LearningOriginKind.LEGACY_RECAP) throw new IllegalArgumentException("历史未知来源不能用于新建计划");
-        if (kind != null && legacyType != null && kind.legacyType() != legacyType)
-            throw new IllegalArgumentException("来源类型不一致");
         UUID recordId = null;
         if (kind == null && legacyType == LearningSourceType.RECAP) {
             var source = records.requireLegacy(owner, id);
@@ -49,6 +45,21 @@ public class LearningContextResolver {
         UUID round = input == null ? null : input.targetRoundId();
         if (target != null || round != null) interviews.require(owner,target,round);
         return new Resolved(kind,id,recordId,target,round);
+    }
+
+    /** Pure request checks precede idempotent lookup; retries need not re-read a deleted source. */
+    public static void validateAgreement(LearningSourceType legacyType, UUID legacyId, LearningContextInput input) {
+        if (input == null) return;
+        if (input.originResourceId() != null && legacyId != null && !input.originResourceId().equals(legacyId))
+            throw new IllegalArgumentException("来源 ID 不一致");
+        LearningOriginKind kind = input.originKind();
+        if (kind == LearningOriginKind.LEGACY_RECAP) throw new IllegalArgumentException("历史未知来源不能用于新建计划");
+        if (kind != null && legacyType != null && kind.legacyType() != legacyType)
+            throw new IllegalArgumentException("来源类型不一致");
+        if ((kind == LearningOriginKind.MANUAL || kind == LearningOriginKind.AGENT) && input.originResourceId() != null)
+            throw new IllegalArgumentException("自主学习来源不接受资源 ID");
+        if (input.targetRoundId() != null && input.targetInterviewId() == null)
+            throw new IllegalArgumentException("准备目标轮次需要所属面试");
     }
     public record Resolved(LearningOriginKind kind, UUID resourceId, UUID recordId, UUID targetInterviewId, UUID targetRoundId) {}
 }
