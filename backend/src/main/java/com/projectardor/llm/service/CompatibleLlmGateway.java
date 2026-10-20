@@ -4,36 +4,31 @@ import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import javax.net.ssl.SSLException;
 
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.ResourceAccessException;
 
-import com.projectardor.llm.domain.LlmProvider;
-
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
 public class CompatibleLlmGateway implements LlmGateway {
 
     private final LlmConfigService configService;
-    private final ObjectMapper objectMapper;
-    private final RestClient.Builder restClientBuilder;
+    private final ModelProtocols<JsonModelProtocol> protocols;
 
-    public CompatibleLlmGateway(
-            LlmConfigService configService,
-            ObjectMapper objectMapper,
-            RestClient.Builder restClientBuilder) {
-        this.configService = configService;
-        this.objectMapper = objectMapper;
-        this.restClientBuilder = restClientBuilder;
+    @org.springframework.beans.factory.annotation.Autowired
+    public CompatibleLlmGateway(LlmConfigService configService,List<JsonModelProtocol> protocols) {
+        this.configService=configService;this.protocols=new ModelProtocols<>(protocols);
+    }
+
+    /** Compatibility for callers constructing the default transports outside Spring. */
+    public CompatibleLlmGateway(LlmConfigService configService,ObjectMapper mapper,RestClient.Builder clients) {
+        this(configService,List.of(new OpenAiJsonModelProtocol(mapper,clients),new AnthropicJsonModelProtocol(mapper,clients)));
     }
 
     @Override
@@ -46,10 +41,7 @@ public class CompatibleLlmGateway implements LlmGateway {
             String systemPrompt,
             String userPrompt) {
         try {
-            return switch (config.provider()) {
-                case OPENAI_COMPATIBLE -> callOpenAi(config, systemPrompt, userPrompt);
-                case ANTHROPIC_COMPATIBLE -> callAnthropic(config, systemPrompt, userPrompt);
-            };
+            return protocols.require(config.provider()).complete(config,systemPrompt,userPrompt);
         } catch (RestClientResponseException exception) {
             throw httpFailure(exception);
         } catch (ResourceAccessException exception) {
@@ -63,72 +55,6 @@ public class CompatibleLlmGateway implements LlmGateway {
                     false,
                     exception);
         }
-    }
-
-    private LlmResult callOpenAi(
-            LlmConfigService.LlmRuntimeConfig config,
-            String systemPrompt,
-            String userPrompt) throws Exception {
-        RestClient client = client(config, "Authorization", "Bearer " + config.apiKey());
-        Map<String, Object> body = Map.of(
-                "model", config.model(),
-                "temperature", 0.2,
-                "messages", List.of(
-                        Map.of("role", "system", "content", systemPrompt),
-                        Map.of("role", "user", "content", userPrompt)));
-        JsonNode root = objectMapper.readTree(client.post()
-                .uri(config.baseUrl() + "/chat/completions")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
-                .body(String.class));
-        String content = root.path("choices").path(0).path("message").path("content").asText();
-        if ("length".equals(root.path("choices").path(0).path("finish_reason").asText()))
-            throw new LlmCallException("LLM_OUTPUT_TRUNCATED","模型输出达到长度上限，未保存不完整结果",false,null);
-        return result(content, root.path("model").asText(config.model()));
-    }
-
-    private LlmResult callAnthropic(
-            LlmConfigService.LlmRuntimeConfig config,
-            String systemPrompt,
-            String userPrompt) throws Exception {
-        RestClient client = restClientBuilder.clone()
-                .defaultHeader("x-api-key", config.apiKey())
-                .defaultHeader("anthropic-version", "2023-06-01")
-                .build();
-        Map<String, Object> body = Map.of(
-                "model", config.model(),
-                "max_tokens", 4096,
-                "temperature", 0.2,
-                "system", systemPrompt,
-                "messages", List.of(Map.of("role", "user", "content", userPrompt)));
-        JsonNode root = objectMapper.readTree(client.post()
-                .uri(config.baseUrl() + "/v1/messages")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
-                .body(String.class));
-        String content = root.path("content").path(0).path("text").asText();
-        if ("max_tokens".equals(root.path("stop_reason").asText()))
-            throw new LlmCallException("LLM_OUTPUT_TRUNCATED","模型输出达到长度上限，未保存不完整结果",false,null);
-        return result(content, root.path("model").asText(config.model()));
-    }
-
-    private RestClient client(
-            LlmConfigService.LlmRuntimeConfig config,
-            String headerName,
-            String headerValue) {
-        return restClientBuilder.clone()
-                .defaultHeader(headerName, headerValue)
-                .build();
-    }
-
-    private LlmResult result(String content, String model) {
-        if (content == null || content.isBlank()) {
-            throw new LlmCallException(
-                    "LLM_EMPTY_RESPONSE", "LLM 返回中没有可用内容", false, null);
-        }
-        return new LlmResult(content, model);
     }
 
     private LlmCallException httpFailure(RestClientResponseException exception) {
