@@ -107,6 +107,13 @@ jobs:
           test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor_fresh_probe -Atc "SELECT COUNT(*) FROM agent_message_queue")" = "0"
           stop_probe
 
+      # Keep migration probes before the API run: its final request deliberately
+      # waits in the model provider and must be interrupted immediately afterward.
+      - name: Verify populated V49 interview record upgrade
+        run: bash backend/src/test/resources/interview-round-upgrade.sh
+      - name: Verify populated V50 learning origin upgrade
+        run: bash backend/src/test/resources/interview-round-upgrade.sh learning
+
       - name: Run end-to-end Golden Path
         shell: bash
         run: |
@@ -126,11 +133,6 @@ jobs:
           done
           echo "Backend did not become healthy"
           exit 1
-
-      - name: Verify populated V49 interview record upgrade
-        run: bash backend/src/test/resources/interview-round-upgrade.sh
-      - name: Verify populated V50 learning origin upgrade
-        run: bash backend/src/test/resources/interview-round-upgrade.sh learning
 
       - name: Restart backend to verify persisted task and read state
         shell: bash
