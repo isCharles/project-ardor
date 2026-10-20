@@ -74,8 +74,9 @@ public class AgentController {
         }
         return queue.enqueueAndReplace(principal.userId(), request, reserved -> {
             if (request.interruptedRunId() != null) {
-                var original = agentService.run(principal.userId(), request.interruptedRunId());
-                if ("RUNNING".equals(original.status())) agentService.cancelRun(principal.userId(), original.id());
+                // The queue transaction has already committed; stopping the replaced run now cannot
+                // roll its persisted acceptance back into RUNNING without an executor.
+                agentService.cancelRun(principal.userId(), request.interruptedRunId());
             }
         });
     }
@@ -91,12 +92,15 @@ public class AgentController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void steerQueued(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID id,
             @RequestBody SteerRequest request) {
-        queue.steer(principal.userId(), id, queued -> {
+        // Validate the cross-conversation rule before creating priority state; the queued row's
+        // conversation is immutable, so this check cannot be invalidated before the stop runs.
         if (request.interruptRunId() != null) {
+            var queued = queue.get(principal.userId(), id);
             var active = agentService.run(principal.userId(), request.interruptRunId());
             if (!active.conversationId().equals(queued.request().conversationId())) throw new IllegalArgumentException("不能打断其他会话");
-            if ("RUNNING".equals(active.status())) agentService.cancelRun(principal.userId(), active.id());
         }
+        queue.steer(principal.userId(), id, queued -> {
+            if (request.interruptRunId() != null) agentService.cancelRun(principal.userId(), request.interruptRunId());
         });
     }
 
@@ -158,9 +162,11 @@ public class AgentController {
     }
 
     @PostMapping("/runs/{requestId}/cancel")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void cancelRun(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID requestId) {
-        agentService.cancelRun(principal.userId(), requestId);
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AgentRunResponse cancelRun(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable java.util.UUID requestId) {
+        // Old clients only checked for a 2xx; the body now carries the truthful run state, which may
+        // still be RUNNING while a concurrent completion lands, or INTERRUPTED when no local executor existed.
+        return agentService.cancelRun(principal.userId(), requestId);
     }
 
     @GetMapping("/runs/{requestId}/approvals")

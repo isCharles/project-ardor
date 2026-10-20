@@ -308,25 +308,13 @@ public class CareerAgentService {
             Conversation conversation = conversationId == null ? store.create(userId) : store.requireActive(userId, conversationId);
             UUID logicalActionId = requestId == null ? null : runStore.logicalActionId(userId, requestId,
                     conversation.getId(), message, contextType, contextId, requestedReferences, depth);
-            if (requestId != null) {
-                if (!runStore.begin(userId, requestId, conversation.getId(), message,
-                        contextType, contextId, requestedReferences, logicalActionId, depth, references)) {
-                    sink.send(AgentStreamEvent.error("RUN_ALREADY_STARTED",
-                            "请求已被接收，请读取已有执行状态", false, elapsedMs(startedAt)));
-                    sink.complete();
-                    lock.release();
-                    return;
-                }
-                persistedRun.set(requestId);
-            }
-            MessageWindowChatMemory memory = conversationMemory(userId, conversation.getId());
-            ConcurrentHashMap<String, Long> toolStarts = new ConcurrentHashMap<>();
-            streamProgress.begin(userId, progressId);
-            toolApprovals.begin(userId, requestId);
+            // Register the in-process stream before the persisted row becomes RUNNING. Otherwise a
+            // cancel/steer in the begin -> activeStreams window would find no executor and could only
+            // fail (500) or overwrite a RUNNING row whose owner is about to start.
             AgentStreamLease lease = new AgentStreamLease();
             leaseRef.set(lease);
-            java.util.function.Consumer<String> terminate = reason -> {
-                if (!finished.compareAndSet(false, true)) return;
+            java.util.function.Predicate<String> terminate = reason -> {
+                if (!finished.compareAndSet(false, true)) return false;
                 lease.fence();
                 toolApprovals.close(userId, requestId);
                 streamProgress.finish(progressId, true);
@@ -337,9 +325,45 @@ public class CareerAgentService {
                                     : "上游长时间没有新输出，本轮已停止；这不能证明模型一直在思考，也不一定是断网。不会自动重试，已开始的操作请核验结果。",
                             false, null), startedAt, userId, persistedRun.get());
                 } finally { lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
+                return true;
             };
-            activeStreams.put(progressId, new ActiveStream(userId, lease, () -> terminate.accept(lease.totalExpired(totalTimeout) ? "TOTAL" : "SILENCE"), () -> terminate.accept("USER"),
+            activeStreams.put(progressId, new ActiveStream(userId, lease,
+                    () -> terminate.test(lease.totalExpired(totalTimeout) ? "TOTAL" : "SILENCE"),
+                    () -> terminate.test("USER"),
                     () -> sink.send(AgentStreamEvent.status("上游暂未返回新数据，仍在等待；这不代表模型正在思考", elapsedMs(startedAt)))));
+            if (requestId != null) {
+                if (finished.get()) return;
+                if (!runStore.begin(userId, requestId, conversation.getId(), message,
+                        contextType, contextId, requestedReferences, logicalActionId, depth, references)) {
+                    if (!finished.get()) {
+                        sink.send(AgentStreamEvent.error("RUN_ALREADY_STARTED",
+                                "请求已被接收，请读取已有执行状态", false, elapsedMs(startedAt)));
+                        sink.complete();
+                    }
+                    lease.stop(() -> { activeStreams.remove(progressId); lock.release(); });
+                    return;
+                }
+                persistedRun.set(requestId);
+                if (finished.get()) {
+                    // The cancel won while begin() was inserting; keep the fresh row terminal.
+                    runStore.fail(userId, requestId, "AGENT_RUN_CANCELLED",
+                            "已停止本轮，后续工具不会执行。已经开始的操作可能仍在完成，请检查结果。", false);
+                    streamProgress.finish(progressId, true);
+                    toolApprovals.close(userId, requestId);
+                    return;
+                }
+            } else if (finished.get()) {
+                return;
+            }
+            MessageWindowChatMemory memory = conversationMemory(userId, conversation.getId());
+            ConcurrentHashMap<String, Long> toolStarts = new ConcurrentHashMap<>();
+            streamProgress.begin(userId, progressId);
+            toolApprovals.begin(userId, requestId);
+            if (finished.get()) {
+                streamProgress.finish(progressId, true);
+                toolApprovals.close(userId, requestId);
+                return;
+            }
             List<RunStep> persistedSteps = new CopyOnWriteArrayList<>();
             AgentToolTimings toolTimings = new AgentToolTimings();
             AtomicInteger partialChunks = new AtomicInteger();
@@ -357,6 +381,11 @@ public class CareerAgentService {
                     .systemMessage(systemPrompt(userId, message) + depth.guidance()).chatMemory(memory)
                     .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings, sink::waitingForApproval, message, permissionGrants))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
+            if (finished.get()) {
+                streamProgress.finish(progressId, true);
+                toolApprovals.close(userId, requestId);
+                return;
+            }
             sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)
                     .beforeToolExecution(before -> {
@@ -535,17 +564,35 @@ public class CareerAgentService {
     @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 1000)
     public void watchStreams() {
         activeStreams.values().forEach(active -> {
-            if (active.lease().expired(silenceTimeout, totalTimeout)) active.timeout().run();
+            if (active.lease().expired(silenceTimeout, totalTimeout)) active.timeout().getAsBoolean();
             else if (active.lease().warnSilence()) active.warning().run();
         });
     }
-    public void cancelRun(UUID userId, UUID requestId) {
-        runStore.get(userId, requestId);
+
+    /**
+     * Explicit cancellation endpoint contract. Terminal runs are returned unchanged (idempotent),
+     * a locally owned stream is fenced through the existing terminate path, and a RUNNING run
+     * without a local executor becomes INTERRUPTED because this process cannot confirm that the
+     * remote model or already-started tools stopped. The response always carries the run state;
+     * the old endpoint no longer answers 500 for a run it cannot stop locally.
+     */
+    public AgentRunResponse cancelRun(UUID userId, UUID requestId) {
+        AgentRunStore.AgentRun run = runStore.get(userId, requestId);
+        if (!"RUNNING".equals(run.status())) return AgentRunResponse.from(run);
         ActiveStream active = activeStreams.get(requestId);
-        if (active == null || !active.userId().equals(userId)) throw new IllegalStateException("执行已结束或当前进程没有可停止的运行，请刷新查看状态");
-        active.cancel().run();
+        if (active != null && active.userId().equals(userId)) {
+            if (!active.cancel().getAsBoolean()) {
+                // A completion/error handler already owns the terminal write; report that state
+                // instead of racing it with an INTERRUPTED write.
+                return AgentRunResponse.from(runStore.get(userId, requestId));
+            }
+            AgentRunStore.AgentRun stopped = runStore.get(userId, requestId);
+            if (!"RUNNING".equals(stopped.status())) return AgentRunResponse.from(stopped);
+        }
+        return AgentRunResponse.from(runStore.cancel(userId, requestId, false));
     }
-    private record ActiveStream(UUID userId, AgentStreamLease lease, Runnable timeout, Runnable cancel, Runnable warning) {}
+    private record ActiveStream(UUID userId, AgentStreamLease lease, java.util.function.BooleanSupplier timeout,
+            java.util.function.BooleanSupplier cancel, Runnable warning) {}
     private Runnable cancellation(dev.langchain4j.model.chat.response.StreamingHandle handle) {
         return handle == null ? () -> {} : handle::cancel;
     }
