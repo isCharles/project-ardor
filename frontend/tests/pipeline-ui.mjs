@@ -67,6 +67,8 @@ try {
   await page.goto(`${origin}/app/opportunities?selected=process-one`);
   const cardsLink = page.getByRole("link", { name: "Flashcards 2", exact: true });
   await cardsLink.waitFor();
+  assert.equal(await page.getByRole("link",{name:"View learning progress from this interview",exact:true}).getAttribute("href"),
+    "/app/learning/progress?sourceInterviewId=process-one","Interview progress is scoped by provenance, not preparation target");
   const sourcePlan=page.locator('a[href="/app/learning?id=plan-one"]');
   assert.match(await sourcePlan.innerText(),/Learning from here/i);
   assert.doesNotMatch(await sourcePlan.innerText(),/Preparation/i);
