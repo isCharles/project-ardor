@@ -12,6 +12,10 @@
 
 ## 迁移、历史与回退
 
+真实面试的应用输入为 `InterviewProcessCommands.Create/Update/Round`，输出为不可变 `InterviewProcessView`。`OpportunityService` 不依赖 HTTP 请求或响应 DTO；HTTP 控制器将旧 `Opportunity*Request/Response` 映射到应用合同，Agent 直接使用同一合同。所有者仍单独来自认证上下文或已绑定的可信用户，不在命令中传入。外部 `/api/opportunities`、工具名称、JSON 字段、状态字符串及资源 UUID 保留，不把模拟面试混入真实轮次。
+
+更新命令保留旧语义：`null` 为未指定，显式空字符串可清空可选文本；轮次修改仍验证所属流程，不能改轮次编号，Agent 的未指定字段保留适配不变。此批不移动表或实体包，不新增状态机，也不扩大写入或删除权限。`InterviewApplicationContractTests` 核对 JSON 兼容、映射、空值语义、不可变列表与应用边界；服务与工具原有归属测试继续适用。
+
 - V50 只新增可空关联、复合唯一键、复合外键和用户前缀索引；不改写原文、UUID、确认快照或既有 Flyway 文件。
 - 旧记录全部保留 `interview_round_id IS NULL`。即使历史流程只有一轮，也不推断归属。待核对项可按用户及流程统计；核实前保持未指定，而不是伪造轮次。
 - 外键同时约束轮次、流程和用户；业务入口再做同一校验。删除轮次只清空轮次关联；删除流程保留来源任务和报告，沿用原有置空语义，不新增级联删除。

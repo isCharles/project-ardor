@@ -19,4 +19,9 @@ public record OpportunityCreateRequest(
         @Size(max = 32) String stage,
         Instant scheduledAt,
         Integer durationMinutes,
-        @Size(max = 2000) String note) {}
+        @Size(max = 2000) String note) {
+    public com.projectardor.opportunity.service.InterviewProcessCommands.Create command() {
+        return new com.projectardor.opportunity.service.InterviewProcessCommands.Create(company,targetRole,platform,
+                jdContent,inviteContent,stage,scheduledAt,durationMinutes,note);
+    }
+}

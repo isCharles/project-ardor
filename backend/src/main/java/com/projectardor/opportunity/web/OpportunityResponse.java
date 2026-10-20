@@ -29,18 +29,13 @@ public record OpportunityResponse(
     }
 
     public static OpportunityResponse from(JobOpportunity opportunity, List<OpportunityRound> rounds) {
-        int currentRound = rounds.stream().mapToInt(OpportunityRound::getRoundNumber).max().orElse(0);
-        return new OpportunityResponse(
-                opportunity.getId(),
-                opportunity.getCompany(),
-                opportunity.getTargetRole(),
-                opportunity.getPlatform(),
-                opportunity.getStatus().name(),
-                opportunity.getJdContent(),
-                opportunity.getInviteContent(),
-                currentRound,
-                rounds.stream().map(Round::from).toList(),
-                opportunity.getCreatedAt(),
-                opportunity.getUpdatedAt());
+        return from(com.projectardor.opportunity.service.InterviewProcessView.from(opportunity,rounds));
+    }
+
+    public static OpportunityResponse from(com.projectardor.opportunity.service.InterviewProcessView view) {
+        return new OpportunityResponse(view.id(),view.company(),view.targetRole(),view.platform(),view.status(),
+                view.jdContent(),view.inviteContent(),view.currentRound(),view.rounds().stream().map(round ->
+                    new Round(round.id(),round.roundNumber(),round.stage(),round.scheduledAt(),round.occurredAt(),
+                            round.durationMinutes(),round.note())).toList(),view.createdAt(),view.updatedAt());
     }
 }

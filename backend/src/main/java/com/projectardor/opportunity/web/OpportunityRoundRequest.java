@@ -11,4 +11,8 @@ public record OpportunityRoundRequest(
         Instant scheduledAt,
         Instant occurredAt,
         Integer durationMinutes,
-        @Size(max = 2000) String note) {}
+        @Size(max = 2000) String note) {
+    public com.projectardor.opportunity.service.InterviewProcessCommands.Round command() {
+        return new com.projectardor.opportunity.service.InterviewProcessCommands.Round(roundNumber,stage,scheduledAt,occurredAt,durationMinutes,note);
+    }
+}

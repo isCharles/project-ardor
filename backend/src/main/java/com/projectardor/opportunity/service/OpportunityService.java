@@ -17,10 +17,6 @@ import com.projectardor.opportunity.domain.OpportunityStatus;
 import com.projectardor.opportunity.domain.RoundStage;
 import com.projectardor.opportunity.repository.JobOpportunityRepository;
 import com.projectardor.opportunity.repository.OpportunityRoundRepository;
-import com.projectardor.opportunity.web.OpportunityCreateRequest;
-import com.projectardor.opportunity.web.OpportunityResponse;
-import com.projectardor.opportunity.web.OpportunityRoundRequest;
-import com.projectardor.opportunity.web.OpportunityUpdateRequest;
 
 /**
  * The only write entry point for interview processes. Every lookup is scoped to
@@ -37,7 +33,7 @@ public class OpportunityService {
     }
 
     @Transactional(readOnly = true)
-    public List<OpportunityResponse> list(UUID userId) {
+    public List<InterviewProcessView> list(UUID userId) {
         List<JobOpportunity> owned = opportunities.findAllByUserIdOrderByUpdatedAtDesc(userId);
         if (owned.isEmpty()) return List.of();
         Collection<UUID> ids = owned.stream().map(JobOpportunity::getId).toList();
@@ -46,17 +42,17 @@ public class OpportunityService {
                 .stream()
                 .collect(Collectors.groupingBy(OpportunityRound::getOpportunityId));
         return owned.stream()
-                .map(item -> OpportunityResponse.from(item, byOpportunity.getOrDefault(item.getId(), List.of())))
+                .map(item -> InterviewProcessView.from(item, byOpportunity.getOrDefault(item.getId(), List.of())))
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public OpportunityResponse detail(UUID userId, UUID opportunityId) {
+    public InterviewProcessView detail(UUID userId, UUID opportunityId) {
         return response(userId, require(userId, opportunityId));
     }
 
     @Transactional
-    public OpportunityResponse create(UUID userId, OpportunityCreateRequest request) {
+    public InterviewProcessView create(UUID userId, InterviewProcessCommands.Create request) {
         JobOpportunity opportunity = opportunities.save(JobOpportunity.create(
                 userId,
                 request.company(),
@@ -75,7 +71,7 @@ public class OpportunityService {
     }
 
     @Transactional
-    public OpportunityResponse update(UUID userId, UUID opportunityId, OpportunityUpdateRequest request) {
+    public InterviewProcessView update(UUID userId, UUID opportunityId, InterviewProcessCommands.Update request) {
         JobOpportunity opportunity = require(userId, opportunityId);
         opportunity.updateDetails(
                 request.company(),
@@ -90,7 +86,7 @@ public class OpportunityService {
     }
 
     @Transactional
-    public OpportunityResponse addRound(UUID userId, UUID opportunityId, OpportunityRoundRequest request) {
+    public InterviewProcessView addRound(UUID userId, UUID opportunityId, InterviewProcessCommands.Round request) {
         JobOpportunity opportunity = require(userId, opportunityId);
         List<OpportunityRound> existing =
                 rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(userId, opportunityId);
@@ -115,8 +111,8 @@ public class OpportunityService {
     }
 
     @Transactional
-    public OpportunityResponse updateRound(UUID userId, UUID opportunityId, UUID roundId,
-            OpportunityRoundRequest request) {
+    public InterviewProcessView updateRound(UUID userId, UUID opportunityId, UUID roundId,
+            InterviewProcessCommands.Round request) {
         require(userId, opportunityId);
         OpportunityRound round = rounds.findByIdAndUserId(roundId, userId)
                 .filter(item -> item.getOpportunityId().equals(opportunityId))
@@ -131,7 +127,7 @@ public class OpportunityService {
     }
 
     @Transactional
-    public OpportunityResponse deleteRound(UUID userId, UUID opportunityId, UUID roundId) {
+    public InterviewProcessView deleteRound(UUID userId, UUID opportunityId, UUID roundId) {
         require(userId, opportunityId);
         OpportunityRound round = rounds.findByIdAndUserId(roundId, userId)
                 .filter(item -> item.getOpportunityId().equals(opportunityId))
@@ -150,8 +146,8 @@ public class OpportunityService {
                 .orElseThrow(() -> new ResourceNotFoundException("面试流程不存在"));
     }
 
-    private OpportunityResponse response(UUID userId, JobOpportunity opportunity) {
-        return OpportunityResponse.from(opportunity,
+    private InterviewProcessView response(UUID userId, JobOpportunity opportunity) {
+        return InterviewProcessView.from(opportunity,
                 rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(userId, opportunity.getId()));
     }
 
