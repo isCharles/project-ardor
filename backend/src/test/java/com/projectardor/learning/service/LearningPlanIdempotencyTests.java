@@ -116,7 +116,8 @@ class LearningPlanIdempotencyTests {
         LearningPlanCreationStore store = mock(LearningPlanCreationStore.class);
         when(store.existing(eq(userId), eq(requestId), anyString())).thenReturn(previous);
         LlmGateway llm = mock(LlmGateway.class);
-        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
+        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class),
+                mock(com.projectardor.learning.repository.LearningAttemptRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
                 mock(ProfileService.class), mock(LearningContextResolver.class),
                 store, mock(LearningPlanGenerationGate.class),
@@ -140,7 +141,8 @@ class LearningPlanIdempotencyTests {
         when(slots.resolve(eq(userId), eq(requestId), eq(runId), eq("JVM"), anyString(),
                 eq(LearningSourceType.RECAP), eq(null), any(Instant.class))).thenReturn(requestId);
         LlmGateway llm = mock(LlmGateway.class);
-        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
+        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class),
+                mock(com.projectardor.learning.repository.LearningAttemptRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
                 mock(ProfileService.class), mock(LearningContextResolver.class),
                 store, mock(LearningPlanGenerationGate.class), slots,
@@ -163,7 +165,8 @@ class LearningPlanIdempotencyTests {
         when(store.existing(eq(owner), eq(request), anyString())).thenReturn(plan(owner, request, "saved"));
         LlmGateway llm = mock(LlmGateway.class);
         LearningContextResolver contexts = mock(LearningContextResolver.class);
-        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class), llm,
+        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class),
+                mock(com.projectardor.learning.repository.LearningAttemptRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
                 mock(ProfileService.class), contexts, store, mock(LearningPlanGenerationGate.class),
                 mock(LearningPlanAgentSlots.class), mock(org.springframework.transaction.PlatformTransactionManager.class));

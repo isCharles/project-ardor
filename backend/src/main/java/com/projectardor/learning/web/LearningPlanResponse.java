@@ -28,11 +28,15 @@ public record LearningPlanResponse(
         Instant createdAt,
         Instant updatedAt,
         com.projectardor.learning.domain.LearningOriginKind originKind,
-        UUID originResourceId, UUID originRecordId, UUID targetInterviewId, UUID targetRoundId) {
+        UUID originResourceId, UUID originRecordId, UUID targetInterviewId, UUID targetRoundId,
+        int contentVersion,
+        int exercisesVersion) {
 
     public static LearningPlanResponse from(LearningPlan plan) {
         List<ExerciseResponse> exercises = plan.getExercises().stream()
-                .map(item -> new ExerciseResponse(String.valueOf(item.get("question")),
+                .map(item -> new ExerciseResponse(
+                        item.get("exerciseId") == null ? null : String.valueOf(item.get("exerciseId")),
+                        String.valueOf(item.get("question")),
                         String.valueOf(item.getOrDefault("type", "SHORT_ANSWER")),
                         item.get("options") instanceof List<?> options
                                 ? options.stream().map(String::valueOf).toList() : List.of()))
@@ -44,8 +48,9 @@ public record LearningPlanResponse(
                 plan.getCreatedAt(), plan.getUpdatedAt(), plan.getOriginKind() != null ? plan.getOriginKind()
                     : plan.getSourceType() == LearningSourceType.RECAP ? com.projectardor.learning.domain.LearningOriginKind.LEGACY_RECAP
                     : com.projectardor.learning.domain.LearningOriginKind.valueOf(plan.getSourceType().name()),
-                plan.getOriginResourceId(),plan.getOriginRecordId(),plan.getTargetInterviewId(),plan.getTargetRoundId());
+                plan.getOriginResourceId(),plan.getOriginRecordId(),plan.getTargetInterviewId(),plan.getTargetRoundId(),
+                plan.getContentVersion(), plan.getExercisesVersion());
     }
 
-    public record ExerciseResponse(String question, String type, List<String> options) {}
+    public record ExerciseResponse(String exerciseId, String question, String type, List<String> options) {}
 }

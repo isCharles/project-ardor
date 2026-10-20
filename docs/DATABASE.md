@@ -32,7 +32,8 @@
 | `interview_replay_attempts` | `user_id` | 真实问题的历次重新作答及 AI 比较 | 关联同用户面经问题；`(user_id, request_id)` 防重复提交；复测时记录实际回答的变式题目 |
 | `tasks` | `user_id` | 后续行动及状态 | 可追溯来源面试；重复安排的每一次也是这里的一行；复测任务通过复合外键关联同用户的面经问题和回放尝试，同一问题最多一项待完成复测 |
 | `task_series` | `user_id` | 重复日程的规则（按天、按周、按月） | 每条规则提前展开约 120 天的 `tasks`；`(series_id, occurrence_date)` 唯一 |
-| `learning_plans` | `user_id` | 学习主题、讲解、练习、评分与巩固状态 | 每个计划最多关联一条 `LEARNING` 日历任务；未掌握时更新原任务日期 |
+| `learning_plans` | `user_id` | 学习主题、讲解、练习、评分与巩固状态 | 每个计划最多关联一条 `LEARNING` 日历任务；未掌握时更新原任务日期；`content_version`/`exercises_version` 标记讲解与题目集版本 |
+| `learning_attempts` | `user_id` | 每次学习提交与评分的不可变历史事实 | 复合外键关联同用户学习计划并随计划级联删除；`(user_id, plan_id, attempt_no)` 唯一；`request_id` 非空时按 `(user_id, request_id)` 部分唯一；`legacy` 行由旧投影回填、不伪造评分元数据 |
 | `events` | `user_id` | 有明确时间段的计划 | 结束时间必须晚于开始时间 |
 
 ## JSONB 结构契约
@@ -63,7 +64,25 @@
 }
 ```
 
-JSONB 仍需在应用层映射为有类型的 DTO，并记录 `prompt_version` 与 `model_name`，以便回放和升级。
+`learning_attempts.evaluation` 保存当轮评价（旧 `last_evaluation` 只保留最近 20 轮兼容投影，完整历史在本表）：
+
+```json
+{
+  "feedback": "...",
+  "strengths": [],
+  "gaps": [],
+  "nextFocus": "...",
+  "questionFeedback": [{"question": "...", "feedback": "..."}],
+  "score": 65,
+  "contentVersion": 1,
+  "exercisesVersion": 1,
+  "choices": [{"exerciseId": "...", "selected": "...", "correctOption": "...", "correct": true}]
+}
+```
+
+`exercise_snapshot` 是本次实际作答的题目数组（question/type/options/rubric/correctOption/exerciseId），`answers` 是按题目顺序的字符串数组。回填行缺少旧投影未保存的 rubric/model/prompt 时保持 NULL 并标 `legacy = true`。
+
+JSONB 仍需在应用层映射为有类型的 DTO，并记录 `prompt_version` 与 `model_name`，以便回放和升级。学习尝试合同见 [学习尝试历史与内容版本合同](LEARNING_ATTEMPT_HISTORY.md)。
 
 ## 隔离示例
 
