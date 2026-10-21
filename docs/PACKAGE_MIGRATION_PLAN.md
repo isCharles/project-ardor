@@ -142,7 +142,7 @@ com.projectardor
 ├─ common/ · config/ · admin/
 ```
 
-与计划的差异：`auth` 落在 `platform.identity.auth`（避免与 `profile` 目录冲突）；Agent 模型适配器留在 `assistant.execution.service`（依赖 execution 内部的 stream lease / leased HTTP client，移到 platform 会扩大可见性）；`ArdorJsonCodecFactory` 留在 `assistant.json`。数据库表/列、Flyway、HTTP API/URL、工具名与 scope、响应 JSON、桌面协议均未改动。
+与计划的差异：`auth` 落在 `platform.identity.auth`（避免与 `profile` 目录冲突）；Agent 模型适配器留在 `assistant.execution.service`（依赖 execution 内部的 stream lease / leased HTTP client，移到 platform 会扩大可见性）；`ArdorJsonCodecFactory` 留在 `assistant.json`；目标地图中的 `platform.storage` 未单独建立——当前唯一文件存储归属 `materials.resume.storage`（简历材料域），没有跨域共享存储实现，若将来出现跨域存储需求再提升到 `platform.storage`。数据库表/列、Flyway、HTTP API/URL、工具名与 scope、响应 JSON、桌面协议均未改动。
 
 ### 迁移后部署核验（2026-10-21）
 
