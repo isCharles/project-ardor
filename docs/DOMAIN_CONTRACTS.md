@@ -65,7 +65,7 @@ E2 的 V53 只新增可空列、新表和索引：`messages.request_id/run_id` �
 
 ## 5. 分阶段交付与未完成项
 
-截至 2026-10-20，A–E 的主要批次已合并（PR #134–#147）；本文件记录已核验的合同，完整证据与未验证项见 [领域重构收尾状态](REFACTOR_STATUS.md)。本文件不预先声称整体重构完成：普通导航整理、Handler 注册或单个领域包移动都不能替代数据迁移、恢复演练、部署验收与旧客户端兼容核验。
+截至 2026-10-21，A–F 的主要批次已合并（PR #134–#157）；后端包结构迁移（B1–B8，PR #149–#157）已完成，`main` 顶层包为 `jobsearch/learning/materials/assistant/scheduling/platform` 与基础设施包，并已通过本机 Docker 重建部署核验。本文件记录已核验的合同，完整证据与未验证项见 [领域重构收尾状态](REFACTOR_STATUS.md)。包移动本身不替代数据迁移、恢复演练、部署验收与旧客户端兼容核验。
 
 本地回归入口：后端 `SidebarPreferencesServiceTests` / `SidebarPreferencesControllerTests` 覆盖旧 URL 映射、双投影原子保存、版本冲突与账户切换拒绝；前端 `navigation-catalog.mjs` 核对两份目录与真实页面，`domain-navigation-ui.mjs` 验证新旧路径、真实/模拟区分、训练参数、纪要编辑及 ID 偏好保存；`workspace-ui.mjs` 保留旧后端协议与账户隔离回归。新增检查接入 CI。它们不替代后续数据迁移、恢复演练和完整主线验收。
 
@@ -73,4 +73,4 @@ E2 的 V53 只新增可空列、新表和索引：`messages.request_id/run_id` �
 
 D 的任务边界批次通过领域 Handler 注册执行与重试，应用命令不再复用 Web DTO，详见 [领域任务边界](DOMAIN_JOB_HANDLERS.md)。旧任务类型、payload 和结果链接保持兼容；未知类型拒绝，不回落到其他领域。此处仅约束该批实际列出的边界。
 
-当前仍待完成（不属于已核验合同）：E3 的 Agent 聊天错误码统一到 `llm` 结构化分类；观测（requestId/runId/toolCallId/jobId 串联）、备份与恢复演练；多副本限制（取消不跨实例传播、complete 的 TOCTOU 仅在单实例假设下安全）；目标包结构（`jobsearch`/`materials`/`assistant`/`platform`）只作长期方向，尚未整体搬迁。已完成的 C/D/E 批次与实测证据见 [领域重构收尾状态](REFACTOR_STATUS.md)。
+当前仍待完成（不属于已核验合同）：E3 的 Agent 聊天错误码统一到 `llm` 结构化分类；观测（requestId/runId/toolCallId/jobId 串联）、备份与恢复演练；多副本限制（取消不跨实例传播、complete 的 TOCTOU 仅在单实例假设下安全）。目标包结构（`jobsearch`/`materials`/`assistant`/`platform` 等）已于 2026-10-21 完成（PR #149–#157），本机 Docker 重建部署与旧路由/API 抽查通过；已完成的 C/D/E/F 批次与实测证据见 [领域重构收尾状态](REFACTOR_STATUS.md)。

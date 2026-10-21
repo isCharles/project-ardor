@@ -64,9 +64,22 @@ CareerAgentService ─> LangChain4j AI Services + Chat Memory + Tools
 
 ## 当前模块与目标归属
 
-现有生产包包含 `opportunity`、`applications`、`recap`、`interview`、`learning`、`resume`、`knowledge`、`calendar`、`agent`、`aijobs`、`background`、`llm`、`speech`、`usage`、`profile`、`auth`、`admin`、`integrations`、`websearch` 与基础配置。`interview` 目前仍实现模拟面试，真实面试由 `opportunity` 实现；`recap` 仍保留记录与重答，卡片与复习历史已由 `learning.review` 管理，见 [学习复习合同](FLASHCARD_REVIEW.md)。
+2026-10-21 已完成后端包结构迁移（PR #149–#157，逐领域分批，行为零变化）。当前生产包顶层为：
 
-目标归属为求职、学习、资料、助手、日程和平台的逻辑边界，并非一次性移动全部目录。普通业务服务不得继续扩大跨域 Repository 访问；现存耦合按阶段替换。导航收拢不代表这些内部边界已经完成，具体迁移合同见上方文档。
+```text
+com.projectardor
+├─ jobsearch/       applicationactivity · interview（真实面试流程）· record（面试记录与纪要）
+├─ learning/        plan · practice/{exercises,mockinterview,question} · review · progress
+├─ materials/       resume · knowledge
+├─ assistant/       conversation · execution · tools · proposal · memory · json
+├─ scheduling/      日历任务与系列
+├─ platform/        identity · model · jobs · health · usage · notification
+├─ common/          共享 web/security/json 基础设施
+├─ config/          Spring 装配
+└─ admin/           管理端支撑入口
+```
+
+`interview`（模拟面试）与 `opportunity`（真实面试）已分别明确为 `learning.practice.mockinterview` 与 `jobsearch.interview`；`recap` 已拆分为 `jobsearch.record`、`learning.practice.question` 与 `learning.review`。包名迁移只改变代码组织，不改数据库、API、工具名、scope 或桌面协议；剩余未验证项见 [领域重构收尾状态](REFACTOR_STATUS.md)。迁移映射与逐批证据见 [包结构迁移计划](PACKAGE_MIGRATION_PLAN.md)。
 
 模型连接使用按协议注册的 JSON 与 Agent 适配器；业务只依赖应用级网关，不承担供应商请求结构。启动校验注册完整性；配置与外部地址校验、错误分类及取消租约保持独立。具体路径、扩展方式、验证与限制见 [模型协议适配边界](MODEL_PROTOCOLS.md)。
 
