@@ -11,6 +11,7 @@ import com.projectardor.scheduling.domain.CalendarTaskSource;
 import com.projectardor.scheduling.domain.RecurrenceFrequency;
 import com.projectardor.scheduling.domain.TaskSeries;
 import com.projectardor.scheduling.domain.TaskSeriesStatus;
+import com.projectardor.scheduling.service.TaskSeriesView;
 
 public record TaskSeriesResponse(
         UUID id,
@@ -35,27 +36,14 @@ public record TaskSeriesResponse(
         Instant createdAt) {
 
     public static TaskSeriesResponse from(TaskSeries series, List<LocalDate> upcoming) {
+        return from(TaskSeriesView.from(series, upcoming));
+    }
+
+    public static TaskSeriesResponse from(TaskSeriesView series) {
         return new TaskSeriesResponse(
-                series.getId(),
-                series.getTitle(),
-                series.getDescription(),
-                series.summary(),
-                series.getPriority(),
-                series.getSource(),
-                series.getTimezone(),
-                series.getFrequency(),
-                series.getIntervalValue(),
-                series.getFrequency() == RecurrenceFrequency.WEEKLY
-                        ? series.weekdays().stream().sorted().map(Enum::name).toList()
-                        : List.of(),
-                series.getByMonthDay(),
-                series.getTimeOfDay(),
-                series.getStartDate(),
-                series.getUntilDate(),
-                series.getOccurrenceLimit(),
-                series.getStatus(),
-                series.getMaterializedThrough(),
-                upcoming == null ? List.of() : upcoming,
-                series.getCreatedAt());
+                series.id(), series.title(), series.description(), series.summary(), series.priority(),
+                series.source(), series.timezone(), series.frequency(), series.interval(), series.weekdays(),
+                series.monthDay(), series.timeOfDay(), series.startDate(), series.untilDate(), series.occurrenceLimit(),
+                series.status(), series.materializedThrough(), series.upcoming(), series.createdAt());
     }
 }

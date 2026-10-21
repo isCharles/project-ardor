@@ -58,6 +58,37 @@ public class TaskSeriesService {
 
     public record SeriesCreation(TaskSeries series, List<LocalDate> created) {}
     public record SeriesUpdate(TaskSeries series, int updatedOccurrences, int preservedOccurrences) {}
+    public record SeriesUpdateView(TaskSeriesView series, int updatedOccurrences, int preservedOccurrences) {}
+
+    @Transactional(readOnly = true)
+    public List<TaskSeriesView> listViews(UUID userId, int upcomingLimit) {
+        return list(userId).stream()
+                .map(series -> TaskSeriesView.from(series, upcoming(userId, series.getId(), upcomingLimit))).toList();
+    }
+
+    @Transactional
+    public TaskSeriesView createView(UUID userId, String title, String description,
+            CalendarTaskPriority priority, CalendarTaskSource source, RecurrenceFrequency frequency,
+            Integer interval, Set<DayOfWeek> weekdays, Integer monthDay, LocalTime timeOfDay,
+            LocalDate startDate, LocalDate untilDate, Integer occurrenceLimit, int upcomingLimit) {
+        TaskSeries series = create(userId, title, description, priority, source, frequency, interval,
+                weekdays, monthDay, timeOfDay, startDate, untilDate, occurrenceLimit).series();
+        return flushedView(userId, series, upcomingLimit);
+    }
+
+    @Transactional
+    public SeriesUpdateView updateDetailsView(UUID userId, UUID seriesId, String title, String description,
+            CalendarTaskPriority priority, LocalTime timeOfDay, int upcomingLimit) {
+        SeriesUpdate result = updateDetails(userId, seriesId, title, description, priority, timeOfDay);
+        return new SeriesUpdateView(flushedView(userId, result.series(), upcomingLimit),
+                result.updatedOccurrences(), result.preservedOccurrences());
+    }
+
+    private TaskSeriesView flushedView(UUID userId, TaskSeries series, int upcomingLimit) {
+        seriesRepository.flush();
+        taskRepository.flush();
+        return TaskSeriesView.from(series, upcoming(userId, series.getId(), upcomingLimit));
+    }
 
     @Transactional
     public SeriesUpdate updateDetails(UUID userId, UUID seriesId, String title, String description,

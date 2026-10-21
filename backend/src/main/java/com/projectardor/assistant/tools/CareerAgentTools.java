@@ -29,7 +29,7 @@ import com.projectardor.scheduling.domain.TaskSeries;
 import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.scheduling.service.TaskSeriesService;
 import com.projectardor.scheduling.service.CalendarTaskView;
-import com.projectardor.scheduling.web.TaskSeriesResponse;
+import com.projectardor.scheduling.service.TaskSeriesView;
 import com.projectardor.assistant.memory.service.AgentMemoryService;
 import com.projectardor.assistant.memory.web.AgentMemoryResponse;
 import com.projectardor.assistant.memory.web.AgentMemoryItemResponse;
@@ -544,11 +544,8 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "list_recurring_tasks", value = "读取当前用户的重复安排（每天、每周、每月循环的日程规则）及其接下来几次的日期。用户问“我有哪些固定安排”，或需要修改、取消某条重复安排前定位对象时使用")
-        public List<TaskSeriesResponse> listRecurringTasks() {
-            return taskSeriesService.list(userId).stream()
-                    .map(series -> TaskSeriesResponse.from(
-                            series, taskSeriesService.upcoming(userId, series.getId(), 4)))
-                    .toList();
+        public List<TaskSeriesView> listRecurringTasks() {
+            return taskSeriesService.listViews(userId, 4);
         }
 
         @Tool(name = "update_recurring_task", value = "修改当前用户重复安排的时间、标题、说明或优先级，保留规则和实例 UUID。先读取规则，只更新未被用户单独修改且尚未完成的未来实例；返回更新和保留数量，不会新建第二套规则。此工具不修改重复频率、日期范围或时区")
@@ -557,9 +554,9 @@ public class CareerAgentTools {
                 @P(value = "新说明，不修改传 null，清空传空字符串", required = false) String description,
                 @P(value = "LOW、MEDIUM 或 HIGH，不修改传 null", required = false) String priority,
                 @P(value = "新本地时间 HH:mm，不修改传 null", required = false) String timeOfDay) {
-            var result = taskSeriesService.updateDetails(userId, uuid(seriesId, "重复规则 ID"), title, description,
-                    priority == null ? null : parsePriority(priority), timeOfDay == null ? null : LocalTime.parse(timeOfDay));
-            return Map.of("series", TaskSeriesResponse.from(result.series(), taskSeriesService.upcoming(userId, result.series().getId(), 4)),
+            var result = taskSeriesService.updateDetailsView(userId, uuid(seriesId, "重复规则 ID"), title, description,
+                    priority == null ? null : parsePriority(priority), timeOfDay == null ? null : LocalTime.parse(timeOfDay), 4);
+            return Map.of("series", result.series(),
                     "updatedOccurrences", result.updatedOccurrences(), "preservedOccurrences", result.preservedOccurrences());
         }
 
@@ -568,7 +565,7 @@ public class CareerAgentTools {
                 用户说“每周四晚上组会”“每天早上读书半小时”“每月 15 号复盘”这类固定安排时使用，不要改用 create_calendar_task 逐条创建。
                 只发生一次的事情必须用 create_calendar_task。频率、星期几或时间不明确时先追问，不得猜测。
                 """)
-        public TaskSeriesResponse createRecurringTask(
+        public TaskSeriesView createRecurringTask(
                 @P("日历格中的极短标题，通常 2 到 8 个中文字符，例如‘组会’‘读书’‘周报’；完整说明写进 description") String title,
                 @P(value = "完整说明：地点、会议方式、要准备什么。没有时传空字符串", required = false) String description,
                 @P("重复频率：DAILY 表示按天，WEEKLY 表示按周，MONTHLY 表示按月") String frequency,
@@ -580,7 +577,7 @@ public class CareerAgentTools {
                 @P(value = "重复到哪一天为止，格式 YYYY-MM-DD；长期有效时传空字符串", required = false) String untilDate,
                 @P(value = "总共重复多少次；与结束日期只能二选一，长期有效时传空", required = false) Integer occurrenceLimit,
                 @P(value = "优先级：LOW、MEDIUM 或 HIGH", required = false) String priority) {
-            var creation = taskSeriesService.create(
+            return taskSeriesService.createView(
                     userId,
                     title,
                     blankToNull(description),
@@ -593,9 +590,7 @@ public class CareerAgentTools {
                     parseLocalTime(timeOfDay),
                     parseLocalDate(startDate, "开始日期"),
                     parseLocalDate(untilDate, "结束日期"),
-                    occurrenceLimit);
-            return TaskSeriesResponse.from(
-                    creation.series(), taskSeriesService.upcoming(userId, creation.series().getId(), 4));
+                    occurrenceLimit, 4);
         }
 
         @Tool(name = "delete_recurring_task", value = "停止一条重复安排，并撤回它尚未开始、也没被用户动过的后续日程；已经发生或已完成的记录会保留。必须先调用 list_recurring_tasks 获取真实 UUID；只有用户明确要求取消该固定安排时使用，目标不唯一时必须先追问")

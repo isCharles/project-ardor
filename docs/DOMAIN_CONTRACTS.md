@@ -19,9 +19,9 @@
 | 补强进度 | 学习查询 | LearningProgressService 通过具名跨域接口分页聚合问题、学习、重答与卡片复习；旧 evidence 路径兼容 | 不新建 Evidence CRUD；分数/次数不是能力证明；来源不等于准备目标，见 [查询合同](LEARNING_PROGRESS.md) |
 | 简历与知识资料 | 资料 | 现有 resume、knowledge、解析/索引 | 报告是派生结果，不能覆盖源版本 |
 | 日程与重复事项 | 日程 | calendar；关联其他领域安排 | 日历完成不能替代学习评分或面试结果 |
-
-普通日程的 HTTP 与 Agent 读写共享日程应用层 `CalendarTaskView`，不以 Web DTO 作为工具输出合同；沿用原有用户限定查询、GENERAL 修改限制及删除提案确认。写操作在实体生命周期回调刷新后生成不可变快照，保留旧字段、时间戳与 actionPath。实体接口继续为现有领域安排维护方提供兼容入口；重复规则的 `TaskSeriesResponse` 尚未迁移，不把此批次宣称为整个日程边界完成。
 | 对话与运行 | 助手 | conversation/message/run/tool/proposal 等既有边界；V53 起工具调用与提案有结构化事实表 | 模型回复、通知与业务写入不是同一事实 |
+
+普通日程与重复规则的 HTTP、Agent 读写共享日程应用层 `CalendarTaskView` / `TaskSeriesView`，不以 Web DTO 作为工具输出合同；沿用原有用户限定查询、GENERAL 修改限制及删除提案确认。写操作在实体生命周期回调刷新后生成不可变快照，保留旧字段、时间戳与 actionPath；重复规则保留更新/保留实例计数，以及按用户和规则查出的实际实例日期，不另生成虚拟日程。实体接口继续为现有领域安排维护方提供兼容入口。
 
 ## 2. 路径兼容，不改变身份
 
