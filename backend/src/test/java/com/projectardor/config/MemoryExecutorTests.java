@@ -7,8 +7,8 @@ import org.junit.jupiter.api.Test;
 
 class MemoryExecutorTests {
     @Test void callerBackpressureCannotJoinAnAlreadyCommittedEventTransaction() throws Exception {
-        var annotation = com.projectardor.agent.service.MemoryConsolidationService.class
-                .getMethod("consolidate", com.projectardor.agent.service.MemoryConsolidationRequested.class)
+        var annotation = com.projectardor.assistant.memory.service.MemoryConsolidationService.class
+                .getMethod("consolidate", com.projectardor.assistant.memory.service.MemoryConsolidationRequested.class)
                 .getAnnotation(org.springframework.transaction.annotation.Transactional.class);
         assertThat(annotation.propagation()).isEqualTo(org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED);
     }

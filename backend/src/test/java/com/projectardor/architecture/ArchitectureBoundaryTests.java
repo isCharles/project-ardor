@@ -73,6 +73,28 @@ class ArchitectureBoundaryTests {
         assertTrue(violations.isEmpty(), () -> "aijobs must not import business web DTOs: " + violations);
     }
 
+    @Test
+    void targetPackageStructureExistsAndLegacyBusinessPackagesAreGone() {
+        for (String target : List.of(
+                "jobsearch/applicationactivity", "jobsearch/interview", "jobsearch/record",
+                "learning/plan", "learning/practice/exercises", "learning/practice/mockinterview",
+                "learning/practice/question", "learning/review", "learning/progress",
+                "materials/resume", "materials/knowledge", "assistant/conversation",
+                "assistant/execution", "assistant/tools", "assistant/proposal", "assistant/memory",
+                "scheduling", "platform/identity", "platform/model", "platform/jobs",
+                "platform/usage", "platform/notification")) {
+            Path packageDir = SOURCE_ROOT.resolve(target.replace('/', java.io.File.separatorChar));
+            assertTrue(Files.isDirectory(packageDir), () -> "Missing target package: " + packageDir);
+        }
+        for (String legacy : List.of(
+                "agent", "applications", "auth", "calendar", "interview", "knowledge",
+                "opportunity", "profile", "recap", "resume", "system", "llm", "speech",
+                "websearch", "integrations", "aijobs", "background", "usage")) {
+            Path packageDir = SOURCE_ROOT.resolve(legacy);
+            assertTrue(!Files.exists(packageDir), () -> "Legacy business package still exists: " + packageDir);
+        }
+    }
+
     private static Path resolveSourceRoot() {
         Path fromBackend = Path.of("src", "main", "java", "com", "projectardor");
         if (Files.isDirectory(fromBackend)) {
