@@ -20,7 +20,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 import com.projectardor.assistant.ReasoningDepth;
 import com.projectardor.assistant.conversation.domain.ConversationMessage;
-import com.projectardor.assistant.memory.web.AgentMemoryItemResponse;
+import com.projectardor.assistant.memory.service.AgentMemoryItemView;
 import com.projectardor.common.json.LlmJsonParser;
 
 import dev.langchain4j.data.message.SystemMessage;
@@ -80,7 +80,7 @@ public class MemoryConsolidationService {
             if (userTexts.isEmpty() || userTexts.stream().noneMatch(text -> SIGNAL.matcher(text).find())) return;
             lastRuns.put(event.userId(), now);
             var existing = memoryService.listItems(event.userId()).stream()
-                    .filter(AgentMemoryItemResponse::valid).limit(50).toList();
+                    .filter(AgentMemoryItemView::valid).limit(50).toList();
             String output = models.create(event.userId(), ReasoningDepth.QUICK)
                     .chat(SystemMessage.from(SYSTEM), UserMessage.from(prompt(userTexts, existing)))
                     .aiMessage().text();
@@ -134,7 +134,7 @@ public class MemoryConsolidationService {
         return result;
     }
 
-    private void apply(UUID userId, JsonNode node, List<String> userTexts, List<AgentMemoryItemResponse> existing) {
+    private void apply(UUID userId, JsonNode node, List<String> userTexts, List<AgentMemoryItemView> existing) {
         Set<UUID> existingIds = new LinkedHashSet<>();
         existing.forEach(item -> existingIds.add(item.id()));
         for (Candidate candidate : candidates(node, userTexts, existingIds)) {
@@ -146,7 +146,7 @@ public class MemoryConsolidationService {
         }
     }
 
-    private static String prompt(List<String> userTexts, List<AgentMemoryItemResponse> existing) {
+    private static String prompt(List<String> userTexts, List<AgentMemoryItemView> existing) {
         StringBuilder input = new StringBuilder("用户最近发言：\n");
         for (String text : userTexts) input.append("- ").append(text).append('\n');
         input.append("\n已有记忆：\n");
