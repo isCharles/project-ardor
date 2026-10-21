@@ -11,7 +11,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 
-import com.projectardor.agent.web.AgentMessageRequest;
+import com.projectardor.assistant.conversation.web.AgentMessageRequest;
 import com.projectardor.platform.identity.auth.domain.UserRole;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.learning.plan.web.LearningPlanCreateRequest;

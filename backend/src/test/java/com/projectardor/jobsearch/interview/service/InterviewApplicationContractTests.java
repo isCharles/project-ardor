@@ -64,7 +64,7 @@ class InterviewApplicationContractTests {
         for(String name:List.of("OpportunityService.java","InterviewProcessCommands.java","InterviewProcessView.java")) {
             assertThat(Files.readString(root.resolve(name),StandardCharsets.UTF_8)).doesNotContain("com.projectardor.jobsearch.interview.web");
         }
-        String tools=Files.readString(Path.of("src/main/java/com/projectardor/agent/tools/CareerAgentTools.java"),StandardCharsets.UTF_8);
+        String tools=Files.readString(Path.of("src/main/java/com/projectardor/assistant/tools/CareerAgentTools.java"),StandardCharsets.UTF_8);
         assertThat(tools).doesNotContain("com.projectardor.jobsearch.interview.web");
     }
 }

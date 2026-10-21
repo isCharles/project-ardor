@@ -100,7 +100,7 @@ class InterviewRecordApplicationContractTests {
             assertThat(Files.readString(recordRoot.resolve(name),StandardCharsets.UTF_8)).doesNotContain("com.projectardor.jobsearch.record.web", "com.projectardor.learning.practice.question.web");
         for(String name:List.of("QuestionPracticeView.java","InterviewReplayService.java"))
             assertThat(Files.readString(practiceRoot.resolve(name),StandardCharsets.UTF_8)).doesNotContain("com.projectardor.jobsearch.record.web", "com.projectardor.learning.practice.question.web");
-        assertThat(Files.readString(Path.of("src/main/java/com/projectardor/agent/tools/CareerAgentTools.java"),StandardCharsets.UTF_8))
+        assertThat(Files.readString(Path.of("src/main/java/com/projectardor/assistant/tools/CareerAgentTools.java"),StandardCharsets.UTF_8))
                 .doesNotContain("com.projectardor.jobsearch.record.web.InterviewRecapResponse");
     }
     private ArdorPrincipal principal() {

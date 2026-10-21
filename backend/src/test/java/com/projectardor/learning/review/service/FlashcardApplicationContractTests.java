@@ -40,7 +40,7 @@ class FlashcardApplicationContractTests {
         assertThat(record).doesNotContain("MemoryCard","Flashcard","CalendarTaskService","ProfileService");
         var review=Files.readString(root.resolve("learning/review/service/FlashcardService.java"),StandardCharsets.UTF_8);
         assertThat(review).doesNotContain("recap.repository","recap.web","agent.web");
-        var tools=Files.readString(root.resolve("agent/tools/CareerAgentTools.java"),StandardCharsets.UTF_8);
+        var tools=Files.readString(root.resolve("assistant/tools/CareerAgentTools.java"),StandardCharsets.UTF_8);
         assertThat(tools).doesNotContain("recap.web.MemoryCardResponse","interviewRecapService.listCards","interviewRecapService.createCard");
         assertThat(Files.exists(root.resolve("recap"))).isFalse();
     }
