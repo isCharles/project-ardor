@@ -23,6 +23,12 @@ import org.junit.jupiter.api.Test;
  * edges should be added here as their contracts are completed.</p>
  */
 class ArchitectureBoundaryTests {
+    @Test
+    void learningApplicationAndAgentToolsDoNotDependOnLearningWebDtos() throws IOException {
+        assertNoImports("learning/plan/service", Pattern.compile("import com\\.projectardor\\.learning\\.plan\\.web\\..*"));
+        String tools = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
+        assertTrue(!tools.contains("com.projectardor.learning.plan.web"), "Agent learning tools must use owned application views");
+    }
 
     private static final Path SOURCE_ROOT = resolveSourceRoot();
 

@@ -268,6 +268,44 @@ class LearningPlanServiceTests {
         return choices;
     }
 
+    @Test
+    void applicationViewsReuseOwnedQueriesAndExistingMutationRules() {
+        Fixture f = new Fixture();
+        when(f.plans.findAllByUserIdOrderByScheduledAtAscCreatedAtDesc(f.userId)).thenReturn(List.of(f.plan));
+        assertThat(f.service.listViews(f.userId)).singleElement().satisfies(view -> assertThat(view.id()).isEqualTo(f.plan.getId()));
+        assertThat(f.service.detail(f.userId, f.plan.getId()).concept()).isEqualTo("JVM");
+        assertThat(f.service.beginView(f.userId, f.plan.getId()).status()).isEqualTo(LearningStatus.IN_PROGRESS);
+        f.plan.recordAttempt(62, Map.of("feedback", "keep this result"), DUE);
+        Instant future = Instant.now().plusSeconds(86400);
+        var updated = f.service.updateArrangementView(f.userId, f.plan.getId(), "new reason", future);
+        assertThat(updated.scheduledAt()).isEqualTo(future);
+        assertThat(updated.lastScore()).isEqualTo(62);
+        assertThat(updated.attemptCount()).isEqualTo(1);
+        assertThat(updated.lastEvaluation()).containsEntry("feedback", "keep this result");
+        UUID stranger = UUID.randomUUID();
+        assertThatThrownBy(() -> f.service.detail(stranger, f.plan.getId())).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> f.service.beginView(stranger, f.plan.getId())).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> f.service.updateArrangementView(stranger, f.plan.getId(), "other", future))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void mutationSnapshotIsTakenAfterPersistenceCallbacksHaveUpdatedTheTimestamp() {
+        Fixture f = new Fixture();
+        Instant first = Instant.parse("2027-01-01T00:00:00Z");
+        Instant second = first.plusSeconds(1);
+        org.mockito.Mockito.doAnswer(call -> {
+            org.springframework.test.util.ReflectionTestUtils.setField(f.plan, "updatedAt", first);
+            return null;
+        }).doAnswer(call -> {
+            org.springframework.test.util.ReflectionTestUtils.setField(f.plan, "updatedAt", second);
+            return null;
+        }).when(f.plans).flush();
+        assertThat(f.service.beginView(f.userId, f.plan.getId()).updatedAt()).isEqualTo(first);
+        assertThat(f.service.updateArrangementView(f.userId, f.plan.getId(), "updated", null).updatedAt()).isEqualTo(second);
+        verify(f.plans, times(2)).flush();
+    }
+
     private static class Fixture {
         final UUID userId = UUID.randomUUID();
         final LearningPlanRepository plans = mock(LearningPlanRepository.class);

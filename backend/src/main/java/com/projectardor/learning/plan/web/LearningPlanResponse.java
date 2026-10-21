@@ -8,6 +8,7 @@ import java.util.UUID;
 import com.projectardor.learning.plan.domain.LearningPlan;
 import com.projectardor.learning.plan.domain.LearningSourceType;
 import com.projectardor.learning.plan.domain.LearningStatus;
+import com.projectardor.learning.plan.service.LearningPlanView;
 
 public record LearningPlanResponse(
         UUID id,
@@ -33,23 +34,18 @@ public record LearningPlanResponse(
         int exercisesVersion) {
 
     public static LearningPlanResponse from(LearningPlan plan) {
-        List<ExerciseResponse> exercises = plan.getExercises().stream()
-                .map(item -> new ExerciseResponse(
-                        item.get("exerciseId") == null ? null : String.valueOf(item.get("exerciseId")),
-                        String.valueOf(item.get("question")),
-                        String.valueOf(item.getOrDefault("type", "SHORT_ANSWER")),
-                        item.get("options") instanceof List<?> options
-                                ? options.stream().map(String::valueOf).toList() : List.of()))
-                .toList();
-        return new LearningPlanResponse(plan.getId(), plan.getRequestId(), plan.getConcept(), plan.getReason(),
-                plan.getSourceType(), plan.getSourceId(), plan.getStatus(), plan.getLesson(),
-                exercises, plan.getLastEvaluation(), plan.getLastScore(), plan.getAttemptCount(),
-                plan.getScheduledAt(), plan.getNextReviewAt(), plan.getCompletedAt(),
-                plan.getCreatedAt(), plan.getUpdatedAt(), plan.getOriginKind() != null ? plan.getOriginKind()
-                    : plan.getSourceType() == LearningSourceType.RECAP ? com.projectardor.learning.plan.domain.LearningOriginKind.LEGACY_RECAP
-                    : com.projectardor.learning.plan.domain.LearningOriginKind.valueOf(plan.getSourceType().name()),
-                plan.getOriginResourceId(),plan.getOriginRecordId(),plan.getTargetInterviewId(),plan.getTargetRoundId(),
-                plan.getContentVersion(), plan.getExercisesVersion());
+        return from(LearningPlanView.from(plan));
+    }
+
+    public static LearningPlanResponse from(LearningPlanView view) {
+        List<ExerciseResponse> exercises = view.exercises() == null ? null : view.exercises().stream()
+                .map(item -> new ExerciseResponse(item.exerciseId(), item.question(), item.type(), item.options())).toList();
+        return new LearningPlanResponse(view.id(), view.requestId(), view.concept(), view.reason(),
+                view.sourceType(), view.sourceId(), view.status(), view.lesson(), exercises,
+                view.lastEvaluation(), view.lastScore(), view.attemptCount(), view.scheduledAt(),
+                view.nextReviewAt(), view.completedAt(), view.createdAt(), view.updatedAt(),
+                view.originKind(), view.originResourceId(), view.originRecordId(), view.targetInterviewId(),
+                view.targetRoundId(), view.contentVersion(), view.exercisesVersion());
     }
 
     public record ExerciseResponse(String exerciseId, String question, String type, List<String> options) {}
