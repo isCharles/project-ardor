@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import com.projectardor.learning.review.domain.*;
-import com.projectardor.recap.web.MemoryCardResponse;
+import com.projectardor.learning.review.web.MemoryCardResponse;
 import tools.jackson.databind.json.JsonMapper;
 
 class FlashcardApplicationContractTests {
@@ -36,12 +36,12 @@ class FlashcardApplicationContractTests {
     }
     @Test void reviewOwnsStorageAndRecordServiceCannotReachIt() throws Exception {
         var root=Path.of("src/main/java/com/projectardor");
-        var record=Files.readString(root.resolve("recap/service/InterviewRecapService.java"),StandardCharsets.UTF_8);
+        var record=Files.readString(root.resolve("jobsearch/record/service/InterviewRecapService.java"),StandardCharsets.UTF_8);
         assertThat(record).doesNotContain("MemoryCard","Flashcard","CalendarTaskService","ProfileService");
         var review=Files.readString(root.resolve("learning/review/service/FlashcardService.java"),StandardCharsets.UTF_8);
         assertThat(review).doesNotContain("recap.repository","recap.web","agent.web");
         var tools=Files.readString(root.resolve("agent/tools/CareerAgentTools.java"),StandardCharsets.UTF_8);
         assertThat(tools).doesNotContain("recap.web.MemoryCardResponse","interviewRecapService.listCards","interviewRecapService.createCard");
-        assertThat(Files.exists(root.resolve("recap/domain/MemoryCard.java"))).isFalse();
+        assertThat(Files.exists(root.resolve("recap"))).isFalse();
     }
 }

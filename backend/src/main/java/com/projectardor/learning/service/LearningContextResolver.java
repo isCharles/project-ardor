@@ -8,7 +8,7 @@ import java.util.EnumSet;
 import org.springframework.stereotype.Service;
 import com.projectardor.learning.domain.LearningOriginKind;
 import com.projectardor.learning.domain.LearningSourceType;
-import com.projectardor.recap.service.InterviewRecordSourceAccess;
+import com.projectardor.jobsearch.record.service.InterviewRecordSourceAccess;
 import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
 
 @Service

@@ -30,21 +30,22 @@ class ArchitectureBoundaryTests {
     void jobSearchInterviewServicesUseApplicationViewsInsteadOfOwnWebDtos() throws IOException {
         assertNoImports(
                 "jobsearch/interview/service",
-                Pattern.compile("import com\\.projectardor\\.opportunity\\.web\\..*"));
+                Pattern.compile("import com\\.projectardor\\.jobsearch\\.interview\\.web\\..*"));
     }
 
     @Test
     void learningReviewDoesNotReachIntoInterviewRecordStorage() throws IOException {
         assertNoImports(
                 "learning/review",
-                Pattern.compile("import com\\.projectardor\\.recap\\.(domain|repository)\\..*"));
+                Pattern.compile("import com\\.projectardor\\.(jobsearch\\.record|learning\\.practice\\.question)\\.(domain|repository)\\..*"));
     }
 
     @Test
     void interviewRecordTransportDoesNotReachIntoLearningReviewRepositories() throws IOException {
-        assertNoImports(
-                "recap",
-                Pattern.compile("import com\\.projectardor\\.learning\\.review\\.repository\\..*"));
+        Pattern learningReviewRepository =
+                Pattern.compile("import com\\.projectardor\\.learning\\.review\\.repository\\..*");
+        assertNoImports("jobsearch/record", learningReviewRepository);
+        assertNoImports("learning/practice/question", learningReviewRepository);
     }
 
     @Test

@@ -34,10 +34,10 @@ class LearningPayloadCompatibilityTests {
         assertThat(mapper.writeValueAsString(evaluation.command())).isEqualTo(evaluationJson);
         assertThat(mapper.readValue(evaluationJson,LearningEvaluationCommand.class)).isEqualTo(evaluation.command());
         for(UUID retest:new UUID[]{null,UUID.randomUUID()}) {
-            var replay=new com.projectardor.recap.web.InterviewReplaySubmitRequest(request,"Saved answer",retest);
+            var replay=new com.projectardor.learning.practice.question.web.InterviewReplaySubmitRequest(request,"Saved answer",retest);
             String replayJson=mapper.writeValueAsString(replay);
             assertThat(mapper.writeValueAsString(replay.command())).isEqualTo(replayJson);
-            assertThat(mapper.readValue(replayJson,com.projectardor.recap.service.ReplayEvaluationCommand.class)).isEqualTo(replay.command());
+            assertThat(mapper.readValue(replayJson,com.projectardor.learning.practice.question.service.ReplayEvaluationCommand.class)).isEqualTo(replay.command());
         }
     }
 }

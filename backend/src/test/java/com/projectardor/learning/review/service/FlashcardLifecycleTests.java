@@ -13,7 +13,7 @@ import com.projectardor.learning.review.domain.*;
 import com.projectardor.learning.review.repository.*;
 import com.projectardor.platform.identity.profile.domain.UserProfile;
 import com.projectardor.platform.identity.profile.service.ProfileService;
-import com.projectardor.recap.service.InterviewRecordSourceAccess;
+import com.projectardor.jobsearch.record.service.InterviewRecordSourceAccess;
 
 class FlashcardLifecycleTests {
     private final UUID owner=UUID.randomUUID();

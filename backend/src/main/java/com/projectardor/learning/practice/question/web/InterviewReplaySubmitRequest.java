@@ -1,0 +1,14 @@
+package com.projectardor.learning.practice.question.web;
+
+import java.util.UUID;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+public record InterviewReplaySubmitRequest(@NotNull UUID requestId,
+        @NotBlank @Size(max = 12000) String answer, UUID retestTaskId) implements com.projectardor.platform.usage.QuotaRequestId {
+    public com.projectardor.learning.practice.question.service.ReplayEvaluationCommand command() {
+        return new com.projectardor.learning.practice.question.service.ReplayEvaluationCommand(requestId,answer,retestTaskId);
+    }
+}

@@ -59,16 +59,16 @@ class BackgroundTaskServiceTests {
 
     @Test void domainRetriesPreserveTheirExistingOwnerBoundBusinessEntrypoints() {
         var resumes=mock(com.projectardor.materials.resume.service.ResumeAnalysisQueueService.class);
-        var drafts=mock(com.projectardor.recap.service.InterviewRecapQueueService.class);
-        var minutes=mock(com.projectardor.recap.service.InterviewMinutesService.class);
+        var drafts=mock(com.projectardor.jobsearch.record.service.InterviewRecapQueueService.class);
+        var minutes=mock(com.projectardor.jobsearch.record.service.InterviewMinutesService.class);
         var index=mock(com.projectardor.materials.knowledge.service.KnowledgeIndexTaskStore.class);
         var dispatcher=mock(com.projectardor.materials.knowledge.service.KnowledgeIndexDispatcher.class);
         var ai=mock(com.projectardor.platform.jobs.aijobs.AiJobStore.class);
         var task=mock(BackgroundTaskStore.Task.class);
         UUID resource=UUID.randomUUID();when(task.id()).thenReturn(id);when(task.resourceId()).thenReturn(resource);
         new com.projectardor.materials.resume.service.ResumeAnalysisRetryHandler(resumes).retry(owner,task);
-        new com.projectardor.recap.service.InterviewDraftRetryHandler(drafts).retry(owner,task);
-        new com.projectardor.recap.service.InterviewReviewRetryHandler(minutes).retry(owner,task);
+        new com.projectardor.jobsearch.record.service.InterviewDraftRetryHandler(drafts).retry(owner,task);
+        new com.projectardor.jobsearch.record.service.InterviewReviewRetryHandler(minutes).retry(owner,task);
         new com.projectardor.materials.knowledge.service.KnowledgeIndexRetryHandler(index,dispatcher).retry(owner,task);
         var aiHandler=new com.projectardor.platform.jobs.aijobs.AiJobRetryHandler(ai);
         aiHandler.retry(owner,task);

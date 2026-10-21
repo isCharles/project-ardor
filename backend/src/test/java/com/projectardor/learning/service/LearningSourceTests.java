@@ -20,8 +20,8 @@ import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.repository.LearningPlanRepository;
 import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.platform.identity.profile.service.ProfileService;
-import com.projectardor.recap.repository.InterviewRecapQuestionRepository;
-import com.projectardor.recap.repository.InterviewRecapRepository;
+import com.projectardor.jobsearch.record.repository.InterviewRecapQuestionRepository;
+import com.projectardor.jobsearch.record.repository.InterviewRecapRepository;
 import com.projectardor.materials.resume.repository.ResumeRepository;
 import com.projectardor.materials.knowledge.repository.KnowledgeDocumentRepository;
 
@@ -40,7 +40,7 @@ class LearningSourceTests {
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class),
                 mock(com.projectardor.learning.repository.LearningAttemptRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), LearningOriginTestHandlers.resolver(new com.projectardor.recap.service.InterviewRecordSourceAccess(recaps, questions),
+                mock(ProfileService.class), LearningOriginTestHandlers.resolver(new com.projectardor.jobsearch.record.service.InterviewRecordSourceAccess(recaps, questions),
                     new com.projectardor.materials.resume.service.ResumeSourceAccess(mock(ResumeRepository.class)),
                     new com.projectardor.materials.knowledge.service.KnowledgeSourceAccess(mock(KnowledgeDocumentRepository.class)),
                     mock(com.projectardor.jobsearch.interview.service.InterviewContextAccess.class)),
@@ -64,7 +64,7 @@ class LearningSourceTests {
         LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class),
                 mock(com.projectardor.learning.repository.LearningAttemptRepository.class), llm,
                 mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
-                mock(ProfileService.class), LearningOriginTestHandlers.resolver(mock(com.projectardor.recap.service.InterviewRecordSourceAccess.class),
+                mock(ProfileService.class), LearningOriginTestHandlers.resolver(mock(com.projectardor.jobsearch.record.service.InterviewRecordSourceAccess.class),
                     new com.projectardor.materials.resume.service.ResumeSourceAccess(resumes),
                     new com.projectardor.materials.knowledge.service.KnowledgeSourceAccess(knowledge),
                     mock(com.projectardor.jobsearch.interview.service.InterviewContextAccess.class)),

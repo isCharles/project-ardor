@@ -1,8 +1,8 @@
 package com.projectardor.learning.service;
 
 import java.util.List;
-import com.projectardor.recap.service.InterviewRecordSourceAccess;
-import com.projectardor.recap.service.InterviewLearningOriginHandler;
+import com.projectardor.jobsearch.record.service.InterviewRecordSourceAccess;
+import com.projectardor.learning.plan.origin.InterviewLearningOriginHandler;
 import com.projectardor.materials.resume.service.ResumeSourceAccess;
 import com.projectardor.materials.resume.service.ResumeLearningOriginHandler;
 import com.projectardor.materials.knowledge.service.KnowledgeSourceAccess;

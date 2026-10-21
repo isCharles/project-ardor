@@ -15,10 +15,10 @@ import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.domain.LearningStatus;
 import com.projectardor.learning.repository.LearningPlanRepository;
 import com.projectardor.learning.repository.LearningAttemptRepository;
-import com.projectardor.recap.service.InterviewQuestionProgressAccess;
-import com.projectardor.recap.service.QuestionPracticeProgressAccess;
+import com.projectardor.learning.practice.question.service.InterviewQuestionProgressAccess;
+import com.projectardor.learning.practice.question.service.QuestionPracticeProgressAccess;
 import com.projectardor.learning.review.service.FlashcardProgressAccess;
-import com.projectardor.recap.service.InterviewRecordSourceAccess;
+import com.projectardor.jobsearch.record.service.InterviewRecordSourceAccess;
 import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
 import com.projectardor.common.web.ResourceNotFoundException;
 
@@ -84,6 +84,6 @@ class LearningProgressServiceTests {
     }
     @Test void learningQueryCannotReachOtherDomainsRepositoriesOrTransportDtos() throws Exception {
         String code=Files.readString(Path.of("src/main/java/com/projectardor/learning/service/LearningProgressService.java"),StandardCharsets.UTF_8);
-        assertThat(code).doesNotContain("com.projectardor.recap.repository", "com.projectardor.jobsearch.interview.repository", "com.projectardor.learning.web");
+        assertThat(code).doesNotContain("com.projectardor.jobsearch.record.repository", "com.projectardor.learning.practice.question.repository", "com.projectardor.jobsearch.interview.repository", "com.projectardor.learning.web");
     }
 }

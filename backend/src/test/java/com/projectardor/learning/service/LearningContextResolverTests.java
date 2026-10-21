@@ -6,7 +6,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import com.projectardor.learning.domain.LearningOriginKind;
 import com.projectardor.learning.domain.LearningSourceType;
-import com.projectardor.recap.service.InterviewRecordSourceAccess;
+import com.projectardor.jobsearch.record.service.InterviewRecordSourceAccess;
 import com.projectardor.materials.resume.service.ResumeSourceAccess;
 import com.projectardor.materials.knowledge.service.KnowledgeSourceAccess;
 import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
