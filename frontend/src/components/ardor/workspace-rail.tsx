@@ -52,9 +52,6 @@ function readIds(userId: string): string[] {
   const legacy = legacyHrefs(userId);
   return legacy ? destinationsFromLegacy(legacy) : defaultIds;
 }
-function moduleFor(href: string): string | null {
-  return workspaces.find(item => item.href === href)?.modules[0] ?? null;
-}
 function groupLabel(domain: string | null, t: (en: string, zh: string) => string) {
   return domain === "job-search" ? t("Job search", "求职") : domain === "learning" ? t("Learning", "学习") : t("Workspace", "工作台");
 }
@@ -72,8 +69,12 @@ export function WorkspaceRail() {
   const [customizing, setCustomizing] = useState(false);
   const [customDraft, setCustomDraft] = useState<string[]>(defaultIds);
   const [customError, setCustomError] = useState("");
+  const [railContext, setRailContext] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [railSaving, setRailSaving] = useState(false);
+  const [railError, setRailError] = useState("");
+  const railMenuRef = useRef<HTMLDivElement>(null);
   const pinnedIds = preference?.userId === account?.id ? preference?.ids ?? defaultIds : defaultIds;
-  const primaryWorkspaces = workspaces.filter((item) => pinnedIds.includes(item.id));
+  const primaryWorkspaces = pinnedIds.map(id => workspaces.find(item => item.id === id)).filter((item): item is (typeof workspaces)[number] => !!item);
   const secondaryWorkspaces = workspaces.filter((item) => !pinnedIds.includes(item.id));
   const [moreOpen, setMoreOpen] = useState(false);
   const [morePinned, setMorePinned] = useState(false);
@@ -179,6 +180,65 @@ export function WorkspaceRail() {
 
   useEffect(() => () => { if (moreCloseTimer.current) clearTimeout(moreCloseTimer.current); }, []);
 
+  useEffect(() => {
+    if (!railContext) return;
+    const close = (event: Event) => {
+      if (event instanceof PointerEvent && railMenuRef.current?.contains(event.target as Node)) return;
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      setRailContext(null);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    window.addEventListener("scroll", close, true);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", close); window.removeEventListener("scroll", close, true); };
+  }, [railContext]);
+
+  useEffect(() => {
+    if (!railError) return;
+    const timer = window.setTimeout(() => setRailError(""), 4000);
+    return () => window.clearTimeout(timer);
+  }, [railError]);
+
+  function openRailContext(event: React.MouseEvent, id: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    setTooltip(null);
+    setRailContext({ id, x: Math.min(event.clientX, window.innerWidth - 220), y: Math.min(event.clientY, window.innerHeight - 140) });
+  }
+
+  async function setPinned(id: string, pinned: boolean) {
+    if (!account || !preference || preference.revision === undefined || railSaving) return;
+    const next = pinned
+      ? [pinnedIds[0] ?? "chat", id, ...pinnedIds.filter((value) => value !== id && value !== pinnedIds[0])]
+      : pinnedIds.filter((value) => value !== id);
+    const normalized = normalizeDestinationIds(next);
+    setRailContext(null);
+    setRailSaving(true);
+    setRailError("");
+    try {
+      const view = validView(await api<SidebarWire>("/api/profile/sidebar", { method: "PUT", body: JSON.stringify({
+        ...(preference.supportsIds ? { destinationIds: normalized } : { hrefs: legacyHrefsForDestinations(normalized) }),
+        expectedRevision: preference.revision,
+        expectedUserId: account.id,
+      }) }));
+      if (view.userId !== account.id) throw new Error("Account changed");
+      setPreference({ userId: account.id, ids: view.ids, revision: view.revision, supportsIds: view.supportsIds });
+      cacheView(account.id, view);
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 409) {
+        try {
+          const view = validView(await api<SidebarWire>("/api/profile/sidebar"));
+          if (view.userId === account.id) setPreference({ userId: account.id, ids: view.ids, revision: view.revision, supportsIds: view.supportsIds });
+        } catch { /* Keep the current layout; the retry message is enough. */ }
+        setRailError(t("The sidebar changed on another device. Try again.", "侧栏已在其他设备更新，请重试。"));
+      } else {
+        setRailError(t("Could not update the sidebar.", "侧栏更新失败，请重试。"));
+      }
+    } finally {
+      setRailSaving(false);
+    }
+  }
+
   function showMore() {
     if (moreCloseTimer.current) clearTimeout(moreCloseTimer.current);
     const top = moreButton.current?.getBoundingClientRect().top ?? 0;
@@ -240,8 +300,15 @@ export function WorkspaceRail() {
     return () => { cancelled = true; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibilityChange); window.removeEventListener("focus", wake); window.removeEventListener("ardor:background-refresh", wake); };
   }, [account?.id, pathname]);
 
-  // Navigation is not acknowledgment: only a specific result's read API clears its badge.
-  function acknowledgeBackground(itemModule: string | null) { void itemModule; window.dispatchEvent(new Event("ardor:background-refresh")); }
+  // Navigating into a module acknowledges its finished background results for that rail item.
+  function acknowledgeBackground(modules: string[]) {
+    const names = [...new Set(modules)].filter(Boolean);
+    if (!names.length) return;
+    setBadges(current => current ? { userId: current.userId, ready: { ...current.ready, ...Object.fromEntries(names.map(name => [name, false])) } } : current);
+    void Promise.all(names.map(name => api<void>(`/api/background-tasks/modules/${encodeURIComponent(name)}/read`, { method: "POST" })))
+      .catch(() => { /* Badges are informational; navigation must not fail with them. */ })
+      .finally(() => window.dispatchEvent(new Event("ardor:background-refresh")));
+  }
 
   async function logout() {
     setError("");
@@ -269,7 +336,6 @@ export function WorkspaceRail() {
         {primaryWorkspaces.map((item, index) => {
           const active = destinationActive(item.id, pathname);
           const label = t(item.en, item.zh);
-          const itemModule = moduleFor(item.href);
           if (item.href === "/app") return <ChatRailLink key={`${pathname}:${account?.id ?? "loading"}`} userId={account?.id ?? null} active={active}
             onOpen={() => { setTooltip(null); closeMore(); setAccountOpen(false); }}
             className={`relative mb-3 grid size-11 shrink-0 place-items-center rounded-2xl transition-colors focus-visible:outline-2 focus-visible:outline-violet-500 ${active ? "bg-violet-100 text-violet-700" : "text-stone-500 hover:bg-white hover:text-stone-900 hover:shadow-sm"}`} />;
@@ -279,7 +345,8 @@ export function WorkspaceRail() {
               href={item.href}
               aria-label={label}
               aria-current={active ? "page" : undefined}
-              onClick={() => { acknowledgeBackground(itemModule); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }}
+              onContextMenu={(event) => openRailContext(event, item.id)}
+              onClick={() => { acknowledgeBackground(item.modules); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }}
               onMouseEnter={(event) => setTooltip({ label, top: event.currentTarget.getBoundingClientRect().top + 8 })}
               onMouseLeave={() => setTooltip(null)}
               onFocus={(event) => setTooltip({ label, top: event.currentTarget.getBoundingClientRect().top + 8 })}
@@ -312,10 +379,23 @@ export function WorkspaceRail() {
 
       {tooltip && !accountOpen && !moreOpen && <div role="tooltip" className="pointer-events-none fixed left-[4.75rem] z-50 whitespace-nowrap rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-800 shadow-lg" style={{ top: tooltip.top }}>{tooltip.label}</div>}
 
+      {railContext && (() => {
+        const item = workspaces.find(candidate => candidate.id === railContext.id);
+        if (!item) return null;
+        const pinned = pinnedIds.includes(item.id);
+        return <div ref={railMenuRef} role="menu" aria-label={t(item.en, item.zh)} onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => event.stopPropagation()} className="fixed z-[60] w-52 rounded-xl border border-stone-200 bg-white p-1.5 shadow-[0_20px_60px_rgba(70,48,100,0.18)]" style={{ left: railContext.x, top: railContext.y }}>
+          <p className="truncate px-3 py-2 text-xs font-medium text-stone-400">{t(item.en, item.zh)}</p>
+          <button type="button" role="menuitem" disabled={railSaving || preference?.revision === undefined} onClick={() => void setPinned(item.id, !pinned)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-stone-700 hover:bg-violet-50 disabled:opacity-40">{pinned ? t("Remove from sidebar", "从侧栏取消置顶") : t("Pin to sidebar", "置顶到侧栏")}</button>
+          <button type="button" role="menuitem" onClick={() => { setRailContext(null); setCustomDraft(pinnedIds); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); closeMore(); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-stone-700 hover:bg-violet-50">{t("Customize sidebar", "自定义侧栏")}</button>
+        </div>;
+      })()}
+
+      {railError && <div role="status" className="fixed bottom-5 left-[5rem] z-[70] rounded-xl bg-stone-900 px-4 py-2.5 text-xs text-white shadow-lg">{railError}</div>}
+
       {moreOpen && !accountOpen && <div ref={morePanel} id="ardor-more-workspaces" className="fixed left-[4.25rem] z-50 w-56 overflow-y-auto overscroll-contain rounded-2xl border border-stone-200 bg-white p-2 shadow-[0_20px_60px_rgba(70,48,100,0.16)]" style={{ top: moreTop, maxHeight: `calc(100dvh - ${moreTop}px - 12px)` }} onMouseEnter={() => { if (moreCloseTimer.current) clearTimeout(moreCloseTimer.current); }} onMouseLeave={hideMoreSoon}>
         {secondaryGroups.map((group) => <Fragment key={group.domain ?? "workspace"}>
           <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-widest text-stone-400">{groupLabel(group.domain, t)}</p>
-          {group.items.map((item) => { const label = t(item.en, item.zh); const moduleName = moduleFor(item.href); return <Link key={item.id} href={item.href} onClick={() => { acknowledgeBackground(moduleName); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50 ${destinationActive(item.id, pathname) ? "bg-violet-50 text-violet-700" : "text-stone-700"}`}><item.icon className="size-4 shrink-0" aria-hidden="true" /><span>{label}</span>{hasReady(item.href) && <span className="ml-auto size-2 rounded-full bg-red-500" aria-hidden="true" />}</Link>; })}
+          {group.items.map((item) => { const label = t(item.en, item.zh); return <Link key={item.id} href={item.href} onContextMenu={(event) => openRailContext(event, item.id)} onClick={() => { acknowledgeBackground(item.modules); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50 ${destinationActive(item.id, pathname) ? "bg-violet-50 text-violet-700" : "text-stone-700"}`}><item.icon className="size-4 shrink-0" aria-hidden="true" /><span>{label}</span>{hasReady(item.href) && <span className="ml-auto size-2 rounded-full bg-red-500" aria-hidden="true" />}</Link>; })}
         </Fragment>)}
         <button type="button" onClick={() => { if (pathname === "/app") window.dispatchEvent(new Event("ardor:open-memory")); else { window.sessionStorage.setItem("ardor:open-memory", "1"); router.push("/app"); } closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-stone-700 hover:bg-violet-50"><Brain className="size-4 shrink-0" aria-hidden="true" />{t("Memory", "总体记忆")}</button>
         <button type="button" disabled={!account} onClick={() => { closeMore(); setCustomDraft(pinnedIds); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); }} className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-stone-100 px-3 py-2.5 text-left text-sm text-violet-700 hover:bg-violet-50"><Settings2 className="size-4" />{t("Customize sidebar", "自定义侧栏")}</button>

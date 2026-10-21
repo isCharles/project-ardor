@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BrainCircuit, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, GraduationCap, Pencil, Plus, Repeat, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowRight, BrainCircuit, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, GraduationCap, Pencil, Plus, Repeat, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -197,7 +197,7 @@ export default function CalendarPage() {
 
   return <main className="ardor-workbench min-h-screen px-5 pb-16 pt-6 text-[#1d1d1f] md:px-10">
     <div className="mx-auto max-w-7xl">
-      <div className="flex items-center justify-between"><Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 transition hover:bg-white/70 hover:text-stone-900"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link><div className="flex items-center gap-2"><button type="button" aria-label={t("Add manually", "自己填写")} title={t("Add manually", "自己填写")} onClick={() => openCreate()} className="rounded-full p-3 text-stone-500 transition hover:bg-white hover:text-stone-900"><Pencil className="size-4" /></button><Link href={agentScheduleHref} className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white transition hover:scale-[1.02] hover:bg-black"><Plus className="size-4" />{t("Add a task", "添加安排")}</Link></div></div>
+      <div className="flex items-center justify-end"><div className="flex items-center gap-2"><button type="button" aria-label={t("Add manually", "自己填写")} title={t("Add manually", "自己填写")} onClick={() => openCreate()} className="rounded-full p-3 text-stone-500 transition hover:bg-white hover:text-stone-900"><Pencil className="size-4" /></button><Link href={agentScheduleHref} className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white transition hover:scale-[1.02] hover:bg-black"><Plus className="size-4" />{t("Add a task", "添加安排")}</Link></div></div>
       <header className="pb-10 pt-12 md:pb-14 md:pt-16"><p className="text-sm font-medium text-violet-600">CALENDAR</p><h1 className="mt-3 text-5xl font-semibold tracking-[-0.055em] md:text-7xl">{t("Make today count.", "把目标，放进今天。")}</h1></header>
       {error && <div className="mb-6 rounded-2xl bg-red-50/90 px-5 py-4 text-sm text-red-700">{error}</div>}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.75fr)]">

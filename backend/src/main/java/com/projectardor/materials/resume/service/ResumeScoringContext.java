@@ -12,29 +12,38 @@ import tools.jackson.databind.ObjectMapper;
 
 /** Frozen at request time; changing a profile while a job waits cannot change its assessment. */
 public final class ResumeScoringContext {
-    public static final String PROMPT_VERSION = "resume-analysis-v4";
+    public static final String PROMPT_VERSION = "resume-analysis-v6";
     public static final int TEXT_LIMIT = 50_000;
     private ResumeScoringContext() {}
 
     public static void requireSupported(Map<String, Object> context) {
-        if (!ResumeScoringRubric.VERSION.equals(context.get("rubricVersion"))
-                || !PROMPT_VERSION.equals(context.get("promptVersion"))) {
+        if (!ResumeScoringRubricV3.VERSION.equals(context.get("rubricVersion"))
+                || !PROMPT_VERSION.equals(context.get("promptVersion"))
+                || !ResumeScoringFamilies.VERSION.equals(context.get("familyVersion"))
+                || !ResumeScoringFamilies.isKnown((String) context.get("roleFamily"))) {
             throw new IllegalStateException("评分规则已更新，请重新提交新版分析；已有报告不受影响");
         }
     }
 
     public static Map<String, Object> freeze(String role, String description) {
+        return freeze(role, description, ResumeScoringFamilies.DEFAULT_ID);
+    }
+
+    public static Map<String, Object> freeze(String role, String description, String roleFamily) {
         role = clean(role, 240);
-        description = clean(description, 20_000);
+        description = clean(description, 8_000);
+        var family = ResumeScoringFamilies.resolve(roleFamily);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("targetRole", role);
         result.put("jobDescription", description);
         result.put("mode", description.isEmpty() ? "GENERAL" : "USER_JD");
-        result.put("marketSnapshotVersion", description.isEmpty() ? "general-quality-2026-10-16" : "user-jd-v1:" + hash(description));
-        result.put("rubricVersion", ResumeScoringRubric.VERSION);
+        result.put("roleFamily", family.id());
+        result.put("familyVersion", ResumeScoringFamilies.VERSION);
+        result.put("marketSnapshotVersion", description.isEmpty() ? "general-quality-2026-10-21" : "user-jd-v1:" + hash(description));
+        result.put("rubricVersion", ResumeScoringRubricV3.VERSION);
         result.put("promptVersion", PROMPT_VERSION);
         result.put("textPolicyVersion", "nfc-lines-v1-first-50000");
-        result.put("researchDate", "2026-10-16");
+        result.put("researchDate", "2026-10-21");
         result.put("sources", List.of("https://careerservices.fas.harvard.edu/resources/create-a-strong-resume/"));
         return Map.copyOf(result);
     }

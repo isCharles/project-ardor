@@ -2,7 +2,7 @@
 
 import { useReadVisibleResult } from "@/lib/background-tasks";
 
-import { ArrowLeft, BookOpenText, FileUp, Globe2, Search, Sparkles, Trash2, TriangleAlert } from "lucide-react";
+import { BookOpenText, FileUp, Globe2, Search, Sparkles, Trash2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
@@ -175,12 +175,7 @@ export default function KnowledgePage() {
       </div>
 
       <div className={`${styles.content} mx-auto max-w-6xl px-5 pb-24 pt-6 md:px-10`}>
-        <Link
-          href="/app"
-          className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-stone-600 transition hover:bg-white/70 hover:text-stone-900"
-        >
-          <ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}
-        </Link>
+        
 
         <header className="pb-10 pt-14 md:pb-14 md:pt-20">
           <h1 className={`${styles.display} max-w-3xl`}>{t("Materials & index", "资料与索引")}</h1>

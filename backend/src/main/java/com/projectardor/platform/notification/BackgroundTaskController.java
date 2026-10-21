@@ -27,9 +27,17 @@ public class BackgroundTaskController {
     }
     @GetMapping("/{kind}/{id}") public BackgroundTaskStore.Task get(@AuthenticationPrincipal ArdorPrincipal user,
             @PathVariable String kind, @PathVariable UUID id) { return store.get(user.userId(),kind,id); }
-    @PostMapping("/{kind}/{id}/read") public void read(@AuthenticationPrincipal ArdorPrincipal user,
+    @PostMapping("/{kind}/{id}/read")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    public void read(@AuthenticationPrincipal ArdorPrincipal user,
             @PathVariable String kind, @PathVariable UUID id, @Valid @RequestBody ReadRequest input) {
         store.read(user.userId(),kind,id,input.completionToken());
+    }
+    @PostMapping("/modules/{module}/read")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    public void readModule(@AuthenticationPrincipal ArdorPrincipal user,
+            @PathVariable @Size(max=40) String module) {
+        store.readModule(user.userId(), module);
     }
     public record ReadRequest(@NotBlank @Size(max=160) String completionToken) {}
     @PostMapping("/{kind}/{id}/retry")
