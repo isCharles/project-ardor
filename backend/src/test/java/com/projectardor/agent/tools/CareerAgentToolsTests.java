@@ -33,8 +33,8 @@ import com.projectardor.jobsearch.interview.service.OpportunityService;
 import com.projectardor.jobsearch.interview.service.InterviewProcessCommands;
 import com.projectardor.jobsearch.interview.service.InterviewProcessView;
 import com.projectardor.platform.identity.profile.service.ProfileService;
-import com.projectardor.recap.service.InterviewRecapQueueService;
-import com.projectardor.recap.service.InterviewRecapService;
+import com.projectardor.jobsearch.record.service.InterviewRecapQueueService;
+import com.projectardor.jobsearch.record.service.InterviewRecapService;
 import com.projectardor.materials.resume.service.ResumeAnalysisQueueService;
 import com.projectardor.materials.resume.service.ResumeService;
 import com.projectardor.platform.model.websearch.service.TavilySearchService;
@@ -335,7 +335,7 @@ class CareerAgentToolsTests {
         UUID user=UUID.randomUUID(),opportunity=UUID.randomUUID();
         String raw="  请整理这份原始转录：[00:01] 设备测试；[09:41] 面试官介绍三种方案，候选人只选择了第二种。  ";
         when(queue.request(user,raw,opportunity,null)).thenReturn(new InterviewRecapQueueService.TaskResult(UUID.randomUUID(),null,
-                com.projectardor.recap.domain.InterviewRecapJobStatus.QUEUED,0,null,null,Instant.now(),null));
+                com.projectardor.jobsearch.record.domain.InterviewRecapJobStatus.QUEUED,0,null,null,Instant.now(),null));
         toolsFor(mock(OpportunityService.class),queue).bind(user,raw).organizeInterviewRecap("模型错误改写成候选人提出三种方案",opportunity.toString(),null);
         verify(queue).request(user,raw,opportunity,null);
     }

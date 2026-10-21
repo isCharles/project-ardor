@@ -7,7 +7,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import com.projectardor.learning.service.LearningCreationCommand;
 import com.projectardor.learning.service.LearningEvaluationCommand;
-import com.projectardor.recap.service.ReplayEvaluationCommand;
+import com.projectardor.learning.practice.question.service.ReplayEvaluationCommand;
 import tools.jackson.databind.ObjectMapper;
 
 @Service

@@ -28,8 +28,8 @@ import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.learning.repository.LearningPlanRepository;
 import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.platform.identity.profile.service.ProfileService;
-import com.projectardor.recap.repository.InterviewRecapQuestionRepository;
-import com.projectardor.recap.repository.InterviewRecapRepository;
+import com.projectardor.jobsearch.record.repository.InterviewRecapQuestionRepository;
+import com.projectardor.jobsearch.record.repository.InterviewRecapRepository;
 
 import tools.jackson.databind.ObjectMapper;
 
