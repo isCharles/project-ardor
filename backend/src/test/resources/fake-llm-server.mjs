@@ -127,7 +127,7 @@ function completionFor(payload) {
       ],
     };
   }
-  if (input.includes("简历分析器")) return analysis;
+  if (input.includes("简历分析器") || (input.includes("简历评估器") && input.includes("dimensionRatings"))) return analysis;
   if (input.includes("技术面试官")) return questions;
   if (input.includes("面试评价官")) return evaluation;
   return { ok: true };
