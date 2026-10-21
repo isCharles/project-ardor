@@ -14,7 +14,7 @@ class ResumeScoringContextTests {
         var previous = new LinkedHashMap<>(current);
         previous.put("rubricVersion", "ardor-resume-rubric-v1");
         assertThrows(IllegalStateException.class, () -> ResumeScoringContext.requireSupported(previous));
-        previous.put("rubricVersion", ResumeScoringRubric.VERSION);
+        previous.put("rubricVersion", ResumeScoringRubricV3.VERSION);
         previous.put("promptVersion", "resume-analysis-v3");
         assertThrows(IllegalStateException.class, () -> ResumeScoringContext.requireSupported(previous));
     }
@@ -27,6 +27,9 @@ class ResumeScoringContextTests {
         assertNotEquals(ResumeScoringContext.key("Built a queue", context, mapper), ResumeScoringContext.key("Built a queue", ResumeScoringContext.freeze("Frontend", "Uses Redis"), mapper));
         assertNotEquals(ResumeScoringContext.key("Built a queue", context, mapper), ResumeScoringContext.key("Built a queue", ResumeScoringContext.freeze("Java backend", "Uses MySQL"), mapper));
         assertEquals("GENERAL", ResumeScoringContext.freeze("Java", "").get("mode"));
+        assertEquals("general", ResumeScoringContext.freeze("Java", "").get("roleFamily"));
+        assertEquals("algorithm", ResumeScoringContext.freeze("Java", "JD", "algorithm").get("roleFamily"));
+        assertEquals("general", ResumeScoringContext.freeze("Java", "", "unknown-family").get("roleFamily"));
     }
     @Test void includesFullTextEvenWhenEvaluationIsTruncated() {
         String prefix = "a".repeat(ResumeScoringContext.TEXT_LIMIT);
@@ -38,6 +41,6 @@ class ResumeScoringContextTests {
     }
     @Test void rejectsOversizedConditionsInsteadOfSilentlyTruncating() {
         assertThrows(IllegalArgumentException.class, () -> ResumeScoringContext.freeze("a".repeat(241), ""));
-        assertThrows(IllegalArgumentException.class, () -> ResumeScoringContext.freeze("", "a".repeat(20001)));
+        assertThrows(IllegalArgumentException.class, () -> ResumeScoringContext.freeze("", "a".repeat(8001)));
     }
 }

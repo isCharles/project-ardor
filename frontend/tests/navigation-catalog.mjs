@@ -21,7 +21,7 @@ for (const item of catalog.destinations) {
 }
 assert.equal(destinationForPath("/app/opportunities")?.id, "job-search.interviews");
 assert.equal(destinationForPath("/app/interviews")?.id, "learning.mock-interviews");
-assert.equal(destinationForPath("/app/replay?question=fixture")?.id, "learning.question-practice");
+assert.equal(destinationForPath("/app/replay?question=fixture"), undefined);
 assert.equal(destinationForPath("/app/evidence")?.id, "learning.progress");
 const materials = catalog.destinations.find(item => item.id === "learning.materials");
 assert.equal(materials?.domain, null, "Knowledge/materials belongs to the workspace group, not the learning domain");
@@ -32,14 +32,14 @@ for (const path of ["/app/materials", "/app/knowledge", "/app/learning/materials
 }
 assert.equal(destinationForPath("/app/opportunities-unsafe"), undefined);
 assert.equal(destinationForPath("/app/admin"), undefined);
-assert.equal(destinationActive("learning.practice", "/app/replay?question=fixture"), true);
-assert.equal(destinationActive("job-search.interviews", "/app/recaps?draft=fixture"), true);
+assert.equal(destinationForPath("/app/recaps"), undefined);
+assert.equal(destinationActive("learning.mock-interviews", "/app/interviews"), true);
 assert.equal(destinationActive("job-search", "/app/interviews"), false);
 assert.equal(destinationActive("learning", "/app/interviews"), true);
 assert.deepEqual(normalizeDestinationIds(["calendar", "calendar"]), ["chat", "calendar"]);
 for (const invalid of [["admin"], ["/app"], null, [1]]) assert.throws(() => normalizeDestinationIds(invalid));
 assert.deepEqual(destinationsFromLegacy(["/app", "/app/interviews", "/app/opportunities", "/app/evidence"]),
   ["chat", "learning.mock-interviews", "job-search.interviews", "learning.progress"]);
-assert.deepEqual(legacyHrefsForDestinations(["job-search", "job-search.interviews", "learning.practice"]),
+assert.deepEqual(legacyHrefsForDestinations(["job-search", "job-search.interviews", "learning.mock-interviews"]),
   ["/app", "/app/opportunities", "/app/interviews"]);
 console.log("Navigation contract: canonical/legacy routes, real/mock meanings, stable IDs, section ancestry and build parity passed.");

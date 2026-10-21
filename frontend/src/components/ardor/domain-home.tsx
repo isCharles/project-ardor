@@ -1,9 +1,10 @@
 "use client";
 
-import { ArrowUpRight, FileText, MessageSquareText, Target } from "lucide-react";
+import { ArrowUpRight, FileText, MessageSquareText } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { ApplicationRhythmInline } from "@/components/ardor/application-rhythm-inline";
 import { api } from "@/lib/api";
 import { destinations } from "@/lib/navigation";
 import { useLocale, type Locale } from "@/lib/locale";
@@ -28,18 +29,6 @@ type Opportunity = {
   rounds: Round[];
   createdAt: string;
   updatedAt: string;
-};
-type Rhythm = {
-  today: string;
-  weekStart: string;
-  todayCount: number;
-  weeklyCount: number;
-  weeklyGoal: number;
-  reminderEnabled: boolean;
-  reminderTime: string;
-  weekdaysOnly: boolean;
-  reminderDue: boolean;
-  days: { date: string; count: number }[];
 };
 type Tip = { label: [string, string]; text: string };
 type ResumePreview = { file: string; score: number | null; tips: Tip[]; state: "ready" | "pending" | "failed" | "unanalyzed" };
@@ -149,15 +138,15 @@ function PreviewRow({ href, icon, accent, title, cta, children }: {
   return (
     <Link
       href={href}
+      aria-label={cta}
       className="group flex items-start gap-4 rounded-[2rem] border border-white/70 bg-white/65 p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_18px_50px_rgba(49,39,70,0.07)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-white/80 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_24px_60px_rgba(49,39,70,0.10)] md:p-7"
     >
       <span className={`grid size-12 shrink-0 place-items-center rounded-2xl ${accent}`}>{icon}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-4">
           <h2 className="text-base font-semibold text-stone-900">{title}</h2>
-          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-stone-400 transition-colors group-hover:text-violet-600">
-            {cta}
-            <ArrowUpRight aria-hidden="true" className="size-3.5" />
+          <span className="shrink-0 text-stone-300 transition-colors group-hover:text-violet-600">
+            <ArrowUpRight aria-hidden="true" className="size-4" />
           </span>
         </div>
         {children}
@@ -183,24 +172,19 @@ export function DomainHome({ practice = false }: { practice?: boolean }) {
   const [loading, setLoading] = useState(!practice);
   const [resume, setResume] = useState<ResumePreview | null>(null);
   const [interview, setInterview] = useState<InterviewPreview | null>(null);
-  const [rhythm, setRhythm] = useState<Rhythm | null>(null);
 
   useEffect(() => {
     if (practice) return;
     let active = true;
     (async () => {
-      const [resumesResult, opportunitiesResult, rhythmResult] = await Promise.allSettled([
+      const [resumesResult, opportunitiesResult] = await Promise.allSettled([
         api<ResumeItem[]>("/api/resumes"),
         api<Opportunity[]>("/api/opportunities"),
-        api<Rhythm>("/api/applications/rhythm"),
       ]);
       if (!active) return;
 
       if (opportunitiesResult.status === "fulfilled" && Array.isArray(opportunitiesResult.value)) {
         setInterview(latestOpportunity(opportunitiesResult.value));
-      }
-      if (rhythmResult.status === "fulfilled" && rhythmResult.value && Array.isArray(rhythmResult.value.days)) {
-        setRhythm(rhythmResult.value);
       }
 
       const resumes = resumesResult.status === "fulfilled" && Array.isArray(resumesResult.value) ? resumesResult.value : [];
@@ -285,13 +269,12 @@ export function DomainHome({ practice = false }: { practice?: boolean }) {
                     </li>
                   ))}
                 </ul>
-              ) : (
+              ) : null}
+              {(resume.state === "pending" || resume.state === "failed") && (
                 <p className="mt-2 text-sm text-stone-500">
                   {resume.state === "pending"
                     ? t("The report is being generated.", "报告正在生成中。")
-                    : resume.state === "failed"
-                      ? t("The last analysis failed — open resumes to retry.", "上次分析失败，打开简历重试。")
-                      : t("Run an analysis to see a score and concrete next fixes.", "生成分析后可看到评分和具体优化点。")}
+                    : t("The last analysis failed — open resumes to retry.", "上次分析失败，打开简历重试。")}
                 </p>
               )}
             </>
@@ -326,40 +309,7 @@ export function DomainHome({ practice = false }: { practice?: boolean }) {
           )}
         </PreviewRow>
 
-        <PreviewRow
-          href="/app/applications"
-          icon={<Target aria-hidden="true" className="size-5" />}
-          accent="bg-amber-100 text-amber-700"
-          title={t("Application rhythm", "投递情况")}
-          cta={t("Open applications", "进入投递")}
-        >
-          {rhythm ? (
-            <>
-              <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-1">
-                <span className="text-4xl font-semibold tracking-tight text-stone-900">{rhythm.todayCount}</span>
-                <span className="pb-1 text-sm text-stone-500">
-                  {t("today", "今天")} · {t(`${rhythm.weeklyCount}/${rhythm.weeklyGoal} this week`, `本周 ${rhythm.weeklyCount}/${rhythm.weeklyGoal}`)}
-                </span>
-              </div>
-              <div className="mt-3 h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-stone-200/70">
-                <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-violet-500" style={{ width: `${rhythm.weeklyGoal > 0 ? Math.min(100, Math.round((rhythm.weeklyCount / rhythm.weeklyGoal) * 100)) : 0}%` }} />
-              </div>
-              <div className="mt-3 flex items-end gap-2" aria-hidden="true">
-                {rhythm.days.slice(-7).map(day => {
-                  const max = Math.max(1, ...rhythm.days.map(item => item.count));
-                  return (
-                    <span key={day.date} className="flex flex-col items-center gap-1">
-                      <span className="text-[10px] text-stone-400">{new Date(`${day.date}T00:00:00`).toLocaleDateString(locale, { weekday: "short" }).slice(0, 1)}</span>
-                      <span className={`w-3 rounded-full ${day.count > 0 ? "bg-gradient-to-t from-amber-300 to-violet-400" : "bg-stone-200"}`} style={{ height: 6 + (day.count / max) * 26 }} />
-                    </span>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <p className="mt-2 text-sm text-stone-500">{t("Log today's applications to keep the rhythm visible.", "记录今天的投递数量，让节奏可见。")}</p>
-          )}
-        </PreviewRow>
+        <ApplicationRhythmInline />
       </div>
     )}
   </div></main>;

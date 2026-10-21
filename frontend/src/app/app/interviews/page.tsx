@@ -2,7 +2,7 @@
 
 import { useReadVisibleResult } from "@/lib/background-tasks";
 
-import { ArrowLeft, CheckCircle2, ExternalLink, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
+import { BookOpen, CheckCircle2, ExternalLink, Keyboard, MessageSquareText, Mic, Play, Send, Target, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -216,12 +216,16 @@ export default function InterviewsPage() {
 
   return (
     <main className="ardor-workbench min-h-screen px-5 py-6 md:px-10 md:py-8">
-      <Link href="/app" className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link>
+      
 
-      <header className="mx-auto max-w-6xl pb-9 pt-10">
+      <header className="mx-auto max-w-6xl pb-6 pt-10">
         <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">{t("Mock interviews", "模拟面试")}</h1>
         <p className="mt-3 text-muted-foreground">{t("Choose a role to start or continue an interview.", "选择目标岗位，开始或继续一场面试。")}</p>
       </header>
+      <div className="mx-auto mb-6 grid max-w-6xl gap-3 sm:grid-cols-2">
+        <Link href="/app/recaps" className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/70 px-5 py-4 text-sm transition hover:bg-white"><span className="flex items-center gap-2 font-medium"><BookOpen className="size-4 text-violet-600" />{t("Interview notes", "面试记录")}</span><span className="text-right text-xs text-stone-400">{t("Normalise one interview and find weak spots", "整理一份面试经过，找出薄弱点")}</span></Link>
+        <Link href="/app/applications" className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/70 px-5 py-4 text-sm transition hover:bg-white"><span className="flex items-center gap-2 font-medium"><Target className="size-4 text-violet-600" />{t("Application rhythm", "投递节奏")}</span><span className="text-right text-xs text-stone-400">{t("Record volume, don't log every application", "只记录数量，不填流水")}</span></Link>
+      </div>
 
       {error && <div className="mx-auto mb-6 max-w-6xl rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
 

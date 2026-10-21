@@ -18,6 +18,10 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
 
+import com.projectardor.assistant.automation.service.AutomationService;
+import com.projectardor.assistant.automation.web.AutomationResponse;
+import com.projectardor.scheduling.advice.service.CalendarAdviceService;
+import com.projectardor.scheduling.advice.web.CalendarAdviceResponse;
 import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
 import com.projectardor.jobsearch.applicationactivity.web.ApplicationRhythmResponse;
 import com.projectardor.learning.practice.mockinterview.service.InterviewService;
@@ -90,6 +94,8 @@ public class CareerAgentTools {
     private final LearningPlanService learningPlanService;
     private final ApplicationRhythmService applicationRhythmService;
     private final OpportunityService opportunityService;
+    private final AutomationService automationService;
+    private final CalendarAdviceService calendarAdviceService;
     private final com.projectardor.platform.jobs.aijobs.AiJobService aiJobs;
     private final com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit;
 
@@ -112,7 +118,30 @@ public class CareerAgentTools {
         this(resumeService, resumeAnalysisQueueService, interviewService, profileService, memoryService,
                 calendarTaskService, taskSeriesService, interviewRecapService, interviewRecapQueueService,
                 tavilySearchService, knowledgeService, learningPlanService, applicationRhythmService,
-                opportunityService, aiJobs, null, flashcards);
+                opportunityService, aiJobs, null, flashcards, null, null);
+    }
+
+    /** Compatibility constructor used by tests that do not wire automations. */
+    public CareerAgentTools(
+            ResumeService resumeService,
+            ResumeAnalysisQueueService resumeAnalysisQueueService,
+            InterviewService interviewService,
+            ProfileService profileService,
+            AgentMemoryService memoryService,
+            CalendarTaskService calendarTaskService,
+            TaskSeriesService taskSeriesService,
+            InterviewRecapService interviewRecapService,
+            InterviewRecapQueueService interviewRecapQueueService,
+            TavilySearchService tavilySearchService,
+            KnowledgeService knowledgeService,
+            LearningPlanService learningPlanService,
+            ApplicationRhythmService applicationRhythmService, OpportunityService opportunityService,
+            com.projectardor.platform.jobs.aijobs.AiJobService aiJobs,
+            com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit,FlashcardService flashcards) {
+        this(resumeService, resumeAnalysisQueueService, interviewService, profileService, memoryService,
+                calendarTaskService, taskSeriesService, interviewRecapService, interviewRecapQueueService,
+                tavilySearchService, knowledgeService, learningPlanService, applicationRhythmService,
+                opportunityService, aiJobs, executionAudit, flashcards, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -131,8 +160,8 @@ public class CareerAgentTools {
             LearningPlanService learningPlanService,
             ApplicationRhythmService applicationRhythmService, OpportunityService opportunityService,
             com.projectardor.platform.jobs.aijobs.AiJobService aiJobs,
-            com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit,FlashcardService flashcards) {
-        this.resumeService = resumeService;
+            com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit,FlashcardService flashcards,
+            AutomationService automationService, CalendarAdviceService calendarAdviceService) {        this.resumeService = resumeService;
         this.resumeAnalysisQueueService = resumeAnalysisQueueService;
         this.interviewService = interviewService;
         this.profileService = profileService;
@@ -146,6 +175,8 @@ public class CareerAgentTools {
         this.learningPlanService = learningPlanService;
         this.applicationRhythmService = applicationRhythmService;
         this.opportunityService = opportunityService;
+        this.automationService = automationService;
+        this.calendarAdviceService = calendarAdviceService;
         this.aiJobs = aiJobs;
         this.executionAudit = executionAudit;
         this.flashcards = java.util.Objects.requireNonNull(flashcards);
@@ -502,7 +533,84 @@ public class CareerAgentTools {
                     parseLocalTime(reminderTime), weekdaysOnly);
         }
 
-        @Tool(name = "list_calendar_tasks", value = "读取当前用户的日历待办。可按 ISO-8601 时间范围过滤；不传范围则返回全部待办")
+        @Tool(name = "list_automations", value = "读取当前用户的定时自动化任务：名称、执行时间、是否启用、上次运行状态。用户问“我有哪些自动化/定时任务”或要修改、删除前先调用")
+        public List<AutomationResponse> listAutomations() {
+            return automationService.list(userId).stream().map(AutomationResponse::from).toList();
+        }
+
+        @Tool(name = "get_automation", value = "读取一条定时自动化任务的完整配置。修改或删除前先用 list_automations 或本工具确认 UUID")
+        public AutomationResponse getAutomation(@P("自动化任务 UUID") String automationId) {
+            return AutomationResponse.from(automationService.get(userId, uuid(automationId, "自动化任务 ID")));
+        }
+
+        @Tool(name = "create_automation", value = """
+                创建一条定时自动化任务：按 cron 在后台把 prompt 发给 Ardor，像用户正常发消息一样执行，结果作为 Ardor 的回复出现；触发消息本身不显示。
+                用户说“每天/每周/每月/定期”并明确要做的事时使用。执行时间必须转成 6 段 cron（秒 分 时 日 月 周），例如每天 09:00 是 0 0 9 * * *，每周一 09:30 是 0 30 9 * * 1。
+                时间或任务不明确时先追问；不要把一次性的日程创建成自动化。prompt 写清楚每次要检查什么、输出什么，例如“检查我的面试、投递和学习进度，给出今天最值得做的三件事”。
+                """)
+        public AutomationResponse createAutomation(
+                @P("简短名称，例如“每日求职回顾”") String title,
+                @P("每次运行时发给 Ardor 的完整任务说明，最多 20000 字") String prompt,
+                @P("6 段 cron 表达式，例如 0 0 9 * * *") String cronExpression,
+                @P(value = "IANA 时区，例如 Asia/Shanghai；不确定传空字符串", required = false) String timezone) {
+            return AutomationResponse.from(automationService.create(userId, title, prompt, cronExpression, timezone));
+        }
+
+        @Tool(name = "update_automation", value = "修改当前用户的定时自动化任务；只传用户要求修改的字段，保留其余配置。修改执行时间时重新计算下一次运行")
+        public AutomationResponse updateAutomation(
+                @P("自动化任务 UUID") String automationId,
+                @P(value = "新名称；不修改传 null", required = false) String title,
+                @P(value = "新的每次运行任务说明；不修改传 null", required = false) String prompt,
+                @P(value = "新的 6 段 cron 表达式；不修改传 null", required = false) String cronExpression,
+                @P(value = "新的 IANA 时区；不修改传 null", required = false) String timezone,
+                @P(value = "是否启用；不修改传 null", required = false) Boolean enabled) {
+            return AutomationResponse.from(automationService.update(userId, uuid(automationId, "自动化任务 ID"),
+                    title, prompt, cronExpression, timezone, enabled));
+        }
+
+        @Tool(name = "delete_automation", value = "提议删除当前用户的定时自动化任务。只显示确认按钮，用户点击后才停止未来的运行；已产生的对话保留")
+        public Map<String, Object> deleteAutomation(@P("自动化任务 UUID") String automationId) {
+            UUID id = uuid(automationId, "自动化任务 ID");
+            var automation = automationService.get(userId, id);
+            return propose("automation", id, automation.getTitle(),
+                    "停止未来的所有定时运行，已产生的对话保留", "/api/automations/" + id);
+        }
+
+        @Tool(name = "get_calendar_advice", value = "读取当前用户日历右侧的 Ardor 建议卡；需要知道上次给用户的规划时先调用")
+        public CalendarAdviceResponse getCalendarAdvice() {
+            return calendarAdviceService.get(userId);
+        }
+
+        @Tool(name = "update_calendar_advice", value = """
+                把一次规划建议写入日历右侧的建议卡，让用户在日历里持续看到，而不是只在聊天里说过。
+                当用户让你“规划一下接下来几天/几周/几个月”“看看求职节奏”“给出接下来做什么的建议”，或你主动给出这类时间范围建议时，必须先调用本工具再回答。
+                只写真实基于用户日历、面试、投递、学习状态的建议；不要编造安排。
+                必须精炼：headline 是一句话结论；days/weeks/months 各最多 3 条，每条一句话，不要写大段段落或 Markdown 标题。
+                """)
+        public CalendarAdviceResponse updateCalendarAdvice(
+                @P(value = "一句话结论，最多 60 字；没有就传空字符串", required = false) String headline,
+                @P(value = "未来几天的行动，最多 3 条，每件一句话；没有就传空数组", required = false) List<String> days,
+                @P(value = "未来 2–4 周的行动，最多 3 条，每件一句话；没有就传空数组", required = false) List<String> weeks,
+                @P(value = "未来 1–3 个月的方向，最多 3 条，每件一句话；没有就传空数组", required = false) List<String> months) {
+            return calendarAdviceService.save(userId, headline, days, weeks, months);
+        }
+
+        @Tool(name = "delete_calendar_advice", value = "提议清空当前用户日历右侧的 Ardor 建议卡；只在用户明确要求清除建议时使用，需用户点击确认")
+        public Map<String, Object> deleteCalendarAdvice() {
+            return propose("calendar_advice", null, "日历建议",
+                    "清除日历右侧的 Ardor 建议卡，不影响任何日程", "/api/calendar/advice");
+        }
+
+        @Tool(name = "update_application_advice", value = """
+                把投递节奏建议写入面试页底部的“投递节奏”卡片。用户问“现在该不该继续投/投多少/投什么公司岗位”或让你判断投递强度时，必须先结合面试状态（即将面试、等结果、连续被拒）、学习计划和本周投递量，再调用本工具保存，不能只在聊天里说。
+                有即将到来的面试时不要催投递；等待结果时维持；连续被拒时提醒调整公司和岗位类型。传入空字符串可清除建议。
+                """)
+        public ApplicationRhythmResponse updateApplicationAdvice(
+                @P("给用户的投递节奏建议；清空传空字符串") String advice) {
+            return applicationRhythmService.updateAdvice(userId, advice);
+        }
+
+        @Tool(name = "list_calendar_tasks", value = "读取当前用户的日历待办。可按 ISO-8601 时间范围过滤；不传范围则返回全部待办。seriesId 不为空的是重复安排的实例（如每周组会、固定课程），属于固定承诺，不是需要补勾的逾期待办；只有 seriesId 为空的一次性待办才可能逾期")
         public List<CalendarTaskResponse> listCalendarTasks(
                 @P(value = "开始时间，ISO-8601 格式；不限制时传空字符串", required = false) String from,
                 @P(value = "结束时间，ISO-8601 格式；不限制时传空字符串", required = false) String to) {

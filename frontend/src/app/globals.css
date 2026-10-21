@@ -500,7 +500,6 @@ time,
   background-image:
     radial-gradient(circle at 8% 88%, rgba(255, 107, 177, 0.28), transparent 31rem),
     radial-gradient(circle at 88% 78%, rgba(79, 124, 255, 0.27), transparent 34rem),
-    radial-gradient(circle at 70% 7%, rgba(255, 191, 105, 0.18), transparent 25rem),
     radial-gradient(circle at 48% 105%, rgba(144, 92, 246, 0.2), transparent 32rem);
   background-attachment: fixed;
   color: #1d1d1f;
@@ -524,85 +523,6 @@ time,
   border: 1px solid rgba(255, 255, 255, 0.62);
   background: rgba(255, 255, 255, 0.58);
   backdrop-filter: blur(18px);
-}
-
-/* Liquid-glass surface: translucent tint, saturated backdrop blur, a
-   specular rim and a pointer-following highlight. Used by the in-page
-   section navigation so it reads as a layer of the page, not a top bar. */
-.ardor-liquid {
-  position: relative;
-  isolation: isolate;
-  background: linear-gradient(
-    128deg,
-    rgba(255, 255, 255, 0.34),
-    rgba(255, 255, 255, 0.1) 40%,
-    rgba(255, 255, 255, 0.16) 64%,
-    rgba(255, 255, 255, 0.28)
-  );
-  -webkit-backdrop-filter: blur(22px) saturate(200%) contrast(1.05) brightness(1.06);
-  backdrop-filter: blur(22px) saturate(200%) contrast(1.05) brightness(1.06);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    inset 1px 0 1px rgba(185, 225, 255, 0.35),
-    inset -1px 0 1px rgba(255, 190, 240, 0.28),
-    inset 0 -1px 1px rgba(255, 255, 255, 0.38),
-    inset 0 10px 24px rgba(255, 255, 255, 0.16),
-    0 2px 6px rgba(31, 25, 44, 0.1),
-    0 18px 46px rgba(31, 25, 44, 0.16);
-}
-.ardor-liquid::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    140deg,
-    rgba(255, 255, 255, 0.98),
-    rgba(180, 230, 255, 0.35) 18%,
-    rgba(255, 255, 255, 0.05) 44%,
-    rgba(255, 190, 240, 0.3) 68%,
-    rgba(255, 255, 255, 0.95)
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 2;
-}
-.ardor-liquid::after {
-  content: "";
-  position: absolute;
-  inset: 1px;
-  border-radius: inherit;
-  pointer-events: none;
-  z-index: 1;
-  background:
-    radial-gradient(
-      160px circle at var(--ardor-glass-x, 30%) var(--ardor-glass-y, 0%),
-      rgba(255, 255, 255, 0.5),
-      transparent 62%
-    ),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.04) 38%, transparent 55%);
-  mix-blend-mode: soft-light;
-  transition: opacity 200ms ease;
-}
-.ardor-liquid > * {
-  position: relative;
-  z-index: 3;
-}
-.ardor-liquid-tab {
-  transition:
-    color 200ms ease,
-    transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1),
-    background-color 250ms ease,
-    box-shadow 250ms ease;
-}
-.ardor-liquid-tab:hover {
-  transform: translateY(-1px);
-}
-.ardor-liquid-tab:active {
-  transform: scale(0.96);
 }
 
 .ardor-workbench .field {

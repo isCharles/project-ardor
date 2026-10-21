@@ -1,2 +1,5 @@
-import { DomainHome } from "@/components/ardor/domain-home";
-export default function PracticePage() { return <DomainHome practice />; }
+import { redirect } from "next/navigation";
+
+export default function PracticePage() {
+  redirect("/app/learning/practice/mock-interviews");
+}

@@ -14,6 +14,7 @@ public record ApplicationRhythmResponse(
         LocalTime reminderTime,
         boolean weekdaysOnly,
         boolean reminderDue,
-        List<DayCount> days) {
+        List<DayCount> days,
+        String advice) {
     public record DayCount(LocalDate date, int count) {}
 }

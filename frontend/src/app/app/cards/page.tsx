@@ -1,7 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, Clock3, Pencil, Plus, X } from "lucide-react";
-import Link from "next/link";
+import { ArrowRight, Check, Clock3, Pencil, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -166,8 +165,8 @@ export default function CardsPage() {
   return (
     <main className="ardor-workbench min-h-screen px-5 pb-16 pt-6 text-[#1d1d1f] md:px-10">
       <div className="mx-auto max-w-7xl">
-        <div className="flex items-center justify-between">
-          <Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70 hover:text-stone-900"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link>
+        <div className="flex items-center justify-end">
+          
           {!loading && cards.length > 0 && <button type="button" onClick={openCreate} className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/65 px-4 py-2.5 text-sm font-medium text-stone-700 shadow-sm hover:bg-white"><Plus className="size-4" />{t("New card", "新建卡片")}</button>}
         </div>
 

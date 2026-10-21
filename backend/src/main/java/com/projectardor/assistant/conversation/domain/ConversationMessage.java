@@ -53,6 +53,10 @@ public class ConversationMessage {
     @Column(name = "run_id")
     private UUID runId;
 
+    /** Automation prompts are kept for the model but omitted from the visible transcript. */
+    @Column(nullable = false)
+    private boolean hidden;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -72,6 +76,12 @@ public class ConversationMessage {
 
     public static ConversationMessage user(UUID userId, UUID conversationId, String content) {
         return new ConversationMessage(userId, conversationId, "USER", content);
+    }
+
+    public static ConversationMessage hiddenUser(UUID userId, UUID conversationId, String content) {
+        ConversationMessage message = user(userId, conversationId, content);
+        message.hidden = true;
+        return message;
     }
 
     public static ConversationMessage user(UUID userId, UUID conversationId, String content,
@@ -115,5 +125,6 @@ public class ConversationMessage {
     public java.util.Map<String, String> getProposalResolutions() { return java.util.Map.copyOf(proposalResolutions); }
     public UUID getRequestId() { return requestId; }
     public UUID getRunId() { return runId; }
+    public boolean isHidden() { return hidden; }
     public Instant getCreatedAt() { return createdAt; }
 }

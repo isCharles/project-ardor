@@ -1,4 +1,4 @@
 target/*
-!target/ardor-backend-0.6.2.jar
+!target/ardor-backend-0.7.0.jar
 .idea
 *.iml

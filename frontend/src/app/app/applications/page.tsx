@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Bell, Check, Minus, Plus, Target, X } from "lucide-react";
+import { Bell, Check, Minus, Plus, Sparkles, Target, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
@@ -20,6 +20,7 @@ type Rhythm = {
   weekdaysOnly: boolean;
   reminderDue: boolean;
   days: DayCount[];
+  advice: string | null;
 };
 
 export default function ApplicationRhythmPage() {
@@ -103,15 +104,21 @@ export default function ApplicationRhythmPage() {
 
   const progress = rhythm?.weeklyGoal ? Math.min(100, Math.round(rhythm.weeklyCount / rhythm.weeklyGoal * 100)) : 0;
   const maxDay = Math.max(1, ...(rhythm?.days.map((day) => day.count) ?? []));
+  const advicePrompt = encodeURIComponent(locale === "en"
+    ? "Review my current interview status (upcoming interviews, waiting for results, rejections), learning plans and recent application volume. Tell me whether I should increase, keep or reduce application pace, and which company/role types fit my current stage. Do not push me to apply when I have an upcoming interview; do not give generic encouragement. Save the advice to my application rhythm card."
+    : "结合我现在的面试状态（有没有即将到来的面试、是否在等结果、是否连续被拒）、学习计划和最近投递数量，判断我现在应该加大、维持还是降低投递强度，并建议适合我当前阶段的公司类型和岗位类型。不要泛泛鼓励；如果我有即将到来的面试，不要催投递。把建议保存到我的投递节奏里。");
 
   return (
     <main className="ardor-workbench min-h-screen px-5 pb-16 pt-6 text-[#1d1d1f] md:px-10">
       <div className="mx-auto max-w-5xl">
-        <Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link>
-        <header className="pb-9 pt-12 md:pt-16">
-          <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-white/80 text-violet-600 shadow-sm"><Target className="size-6" /></div>
-          <h1 className="text-4xl font-semibold tracking-[-0.055em] md:text-6xl">{t("Application rhythm", "投递节奏")}</h1>
-          <p className="mt-3 text-sm text-stone-500">{t("Track the count, not every application.", "只记数量，不填流水。")}</p>
+        
+        <header className="flex flex-wrap items-start justify-between gap-5 pb-9 pt-12 md:pt-16">
+          <div>
+            <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-white/80 text-violet-600 shadow-sm"><Target className="size-6" /></div>
+            <h1 className="text-4xl font-semibold tracking-[-0.055em] md:text-6xl">{t("Application rhythm", "投递节奏")}</h1>
+            <p className="mt-3 text-sm text-stone-500">{t("Track the count, not every application.", "只记数量，不填流水。")}</p>
+          </div>
+          <Link href={`/app?new=1&prefill=${advicePrompt}`} className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-violet-700"><Sparkles className="size-4" />{t("Ask Ardor", "让 Ardor 判断")}</Link>
         </header>
         {error && <div role="alert" className="mb-5 rounded-2xl bg-rose-50 px-5 py-4 text-sm text-rose-700">{error}</div>}
         {rhythm?.reminderDue && <div className="mb-5 flex items-center gap-3 rounded-3xl border border-violet-100 bg-white/85 px-5 py-4 text-sm shadow-sm"><Bell className="size-5 shrink-0 text-violet-500" /><span className="flex-1">{t("How many applications did you send today?", "今天还没记投递数。投了多少份？")}</span><button onClick={() => void dismiss()} aria-label={t("Dismiss today's reminder", "今天不再提醒")} className="rounded-full p-2 text-stone-400 hover:bg-stone-100"><X className="size-4" /></button></div>}
@@ -134,6 +141,12 @@ export default function ApplicationRhythmPage() {
       {settingsOpen && <form onSubmit={saveSettings} className="rounded-[2rem] border border-white/80 bg-white/85 p-6 shadow-[0_18px_70px_rgba(58,44,94,0.08)] md:p-8"><h2 className="text-lg font-semibold">{t("Goal & reminder", "目标与提醒")}</h2><label className="mt-5 block text-xs text-stone-500">{t("Weekly goal", "每周目标")}<input type="number" min="0" max="500" value={goalDraft} onChange={(event) => setGoalDraft(event.target.value)} className="mt-2 w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-800 outline-none focus:border-violet-400" /></label><label className="mt-5 flex items-center gap-3 text-sm"><input type="checkbox" checked={reminderEnabled} onChange={(event) => setReminderEnabled(event.target.checked)} className="accent-violet-600" /><Bell className="size-4 text-violet-500" />{t("In-app reminder", "工作台内提醒")}</label><div className="mt-4 flex items-center gap-3"><label className="text-xs text-stone-500">{t("Time", "时间")}<input type="time" value={reminderTime} onChange={(event) => setReminderTime(event.target.value)} className="mt-2 block rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800" /></label><label className="flex items-center gap-2 self-end pb-2 text-xs text-stone-600"><input type="checkbox" checked={weekdaysOnly} onChange={(event) => setWeekdaysOnly(event.target.checked)} className="accent-violet-600" />{t("Weekdays only", "仅周一至周五")}</label></div><p className="mt-4 text-xs leading-5 text-stone-400">{t("Shown when you open Ardor; no push notifications while closed.", "打开工作台后显示；不会在应用关闭时推送。")}</p><button disabled={busy} className="mt-5 inline-flex items-center gap-2 rounded-full bg-stone-900 px-5 py-2.5 text-sm text-white hover:bg-stone-700 disabled:opacity-40"><Check className="size-4" />{t("Save", "保存")}</button></form>}
           </div>
         </div>
+        <section className="mt-6 rounded-[2rem] border border-violet-100 bg-gradient-to-br from-violet-50/80 via-white/80 to-rose-50/60 p-6 md:p-8">
+          <div className="flex items-center gap-2"><Sparkles className="size-5 text-violet-600" /><h2 className="text-lg font-semibold">{t("Ardor's read", "Ardor 的建议")}</h2></div>
+          {rhythm?.advice
+            ? <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-700">{rhythm.advice}</p>
+            : <p className="mt-4 text-sm text-stone-500">{t("No advice yet. Ask Ardor to review your interview status and recent volume; it will save the verdict here.", "还没有建议。点“让 Ardor 判断”，它会结合面试状态和最近投递量给出判断并保存到这里。")}</p>}
+        </section>
         <p className="mt-8 flex items-center gap-1.5 text-xs text-stone-400"><Minus className="size-3" />{t("You can lower the goal or pause reminders anytime.", "面试忙的时候，目标可以随时调低或暂停提醒。")}</p>
       </div>
     </main>

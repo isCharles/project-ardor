@@ -27,4 +27,12 @@ test("only known menus and fixed actions can be requested", () => {
   assert.equal(menu[0].label, "新对话"); menu[0].click(); menu[1].click();
   assert.deepEqual(actions, ["new-chat", "settings"]);
   assert.equal(menuTemplate("edit", "en", () => {}, () => {}).some((item) => item.role === "paste"), true);
+  const viewActions = [];
+  const view = menuTemplate("view", "en", (action) => viewActions.push(action), () => {});
+  view.find((item) => item.label === "Back").click();
+  view.find((item) => item.label === "Forward").click();
+  assert.deepEqual(viewActions, ["back", "forward"]);
+  const helpActions = [];
+  menuTemplate("help", "en", (action) => helpActions.push(action), () => {}).find((item) => item.label === "Keyboard shortcuts").click();
+  assert.deepEqual(helpActions, ["shortcuts"]);
 });

@@ -38,12 +38,12 @@ public final class ToolCatalog {
 
         register(risks, ToolModule.APPLICATIONS, Capability.READ, "get_application_rhythm");
         register(risks, ToolModule.APPLICATIONS, Capability.UPDATE,
-                "record_application_count", "set_application_rhythm");
+                "record_application_count", "set_application_rhythm", "update_application_advice");
 
-        register(risks, ToolModule.CALENDAR, Capability.READ, "list_calendar_tasks", "list_recurring_tasks");
+        register(risks, ToolModule.CALENDAR, Capability.READ, "list_calendar_tasks", "list_recurring_tasks", "get_calendar_advice");
         register(risks, ToolModule.CALENDAR, Capability.CREATE, "create_calendar_task", "create_recurring_task");
-        register(risks, ToolModule.CALENDAR, Capability.UPDATE, "update_calendar_task", "update_recurring_task");
-        register(risks, ToolModule.CALENDAR, Capability.DELETE, "delete_calendar_task", "delete_recurring_task");
+        register(risks, ToolModule.CALENDAR, Capability.UPDATE, "update_calendar_task", "update_recurring_task", "update_calendar_advice");
+        register(risks, ToolModule.CALENDAR, Capability.DELETE, "delete_calendar_task", "delete_recurring_task", "delete_calendar_advice");
 
         register(risks, ToolModule.RESUMES, Capability.READ,
                 "list_resumes", "get_resume_analysis_status", "get_resume_analysis");
@@ -76,6 +76,10 @@ public final class ToolCatalog {
                 "update_job_opportunity", "update_job_opportunity_round");
         register(risks, ToolModule.OPPORTUNITIES, Capability.DELETE,
                 "delete_job_opportunity", "delete_job_opportunity_round");
+        register(risks, ToolModule.SYSTEM, Capability.READ, "list_automations", "get_automation");
+        register(risks, ToolModule.SYSTEM, Capability.CREATE, "create_automation");
+        register(risks, ToolModule.SYSTEM, Capability.UPDATE, "update_automation");
+        register(risks, ToolModule.SYSTEM, Capability.DELETE, "delete_automation");
         RISKS = Collections.unmodifiableMap(risks);
     }
 
