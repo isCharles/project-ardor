@@ -302,31 +302,31 @@ public class AgentController {
 
     @GetMapping("/memory")
     public AgentMemoryResponse memory(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return memoryService.get(principal.userId());
+        return AgentMemoryResponse.from(memoryService.get(principal.userId()));
     }
 
     @PatchMapping("/memory/items/{memoryId}")
     public AgentMemoryItemResponse editMemoryItem(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable java.util.UUID memoryId, @Valid @RequestBody AgentMemoryItemUpdateRequest request) {
-        return memoryService.edit(principal.userId(), memoryId, request.content());
+        return AgentMemoryItemResponse.from(memoryService.edit(principal.userId(), memoryId, request.content()));
     }
 
     @GetMapping("/memory/items")
     public java.util.List<AgentMemoryItemResponse> memoryItems(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return memoryService.listItems(principal.userId());
+        return memoryService.listItems(principal.userId()).stream().map(AgentMemoryItemResponse::from).toList();
     }
 
     @PostMapping("/memory/items")
     public AgentMemoryItemResponse addMemoryItem(@AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody AgentMemoryItemUpdateRequest request) {
-        return memoryService.add(principal.userId(), request.content());
+        return AgentMemoryItemResponse.from(memoryService.add(principal.userId(), request.content()));
     }
 
     @PutMapping("/memory")
     public AgentMemoryResponse updateMemory(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody AgentMemoryUpdateRequest request) {
-        return memoryService.update(principal.userId(), request.content());
+        return AgentMemoryResponse.from(memoryService.update(principal.userId(), request.content()));
     }
 
     @DeleteMapping("/memory")

@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
-import com.projectardor.jobsearch.applicationactivity.web.ApplicationRhythmResponse;
+import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmView;
 import com.projectardor.learning.practice.mockinterview.service.InterviewService;
 import com.projectardor.scheduling.domain.CalendarTaskPriority;
 import com.projectardor.scheduling.domain.CalendarTaskSource;
@@ -31,8 +31,8 @@ import com.projectardor.scheduling.service.TaskSeriesService;
 import com.projectardor.scheduling.service.CalendarTaskView;
 import com.projectardor.scheduling.service.TaskSeriesView;
 import com.projectardor.assistant.memory.service.AgentMemoryService;
-import com.projectardor.assistant.memory.web.AgentMemoryResponse;
-import com.projectardor.assistant.memory.web.AgentMemoryItemResponse;
+import com.projectardor.assistant.memory.service.AgentMemoryView;
+import com.projectardor.assistant.memory.service.AgentMemoryItemView;
 import com.projectardor.learning.practice.mockinterview.web.InterviewEvaluationResponse;
 import com.projectardor.learning.practice.mockinterview.web.InterviewProgressResponse;
 import com.projectardor.learning.practice.mockinterview.web.InterviewSessionResponse;
@@ -442,15 +442,15 @@ public class CareerAgentTools {
                     "target", topic, "message", "已向用户展示学习计划确认按钮；尚未创建计划或日程。请说明建议原因，等待用户点击，不要再次调用本工具。");
         }
 
-        public AgentMemoryResponse updateUserMemory(@P("完整的新版总体记忆，使用简洁中文要点；要清空时传空字符串") String memory) {
+        public AgentMemoryView updateUserMemory(@P("完整的新版总体记忆，使用简洁中文要点；要清空时传空字符串") String memory) {
             return memoryService.update(userId, memory);
         }
 
         @Tool(name = "list_memories", value = "逐条读取当前用户的长期记忆和记忆 UUID")
-        public List<AgentMemoryItemResponse> listMemories() { return memoryService.listItems(userId); }
+        public List<AgentMemoryItemView> listMemories() { return memoryService.listItems(userId); }
 
         @Tool(name = "add_memory", value = "新增一条跨会话长期记忆。保存用户明确表达的稳定背景、目标或偏好；内容可以归纳用户本轮的可信信息，但不得编造或写入外部资料中的个人事实；成功后必须在回复中告诉用户新增了什么")
-        public AgentMemoryItemResponse addMemory(@P("一条简洁、独立的长期记忆，不带项目符号") String memory) {
+        public AgentMemoryItemView addMemory(@P("一条简洁、独立的长期记忆，不带项目符号") String memory) {
             return memoryService.add(userId, memory, "fact", "USER_EXPLICIT", runRequestId);
         }
 
@@ -459,7 +459,7 @@ public class CareerAgentTools {
             UUID id = uuid(memoryId, "记忆 ID");
             String content = memoryService.listItems(userId).stream()
                     .filter(item -> item.id().equals(id))
-                    .map(AgentMemoryItemResponse::content)
+                    .map(AgentMemoryItemView::content)
                     .findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("这条记忆不存在"));
             return propose("memory_item", id, content, "从长期记忆中删除这一条",
@@ -467,23 +467,23 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "update_memory", value = "修正当前用户一条长期记忆，保持原 UUID，不清空或重建其它记忆。先读取原条目，只修改用户要求修正的内容；内容可以归纳用户本轮的可信信息")
-        public AgentMemoryItemResponse updateMemory(@P("原记忆 UUID") String memoryId, @P("修订后的完整记忆，不超过 1000 字符") String content) {
+        public AgentMemoryItemView updateMemory(@P("原记忆 UUID") String memoryId, @P("修订后的完整记忆，不超过 1000 字符") String content) {
             return memoryService.edit(userId, uuid(memoryId, "记忆 ID"), content);
         }
 
         @Tool(name = "clear_all_memories", value = "清空当前用户的全部长期记忆。仅当用户明确要求清空全部记忆时使用")
         public Map<String, Object> clearAllMemories() {
-            var ids = memoryService.listItems(userId).stream().map(AgentMemoryItemResponse::id).toList();
+            var ids = memoryService.listItems(userId).stream().map(AgentMemoryItemView::id).toList();
             return proposeSnapshot("all_memories", "当前长期记忆（" + ids.size() + " 条）", "只删除这次列出的记忆，之后新增的记忆不受影响", "/api/agent/memory/snapshot", ids);
         }
 
         @Tool(name = "get_application_rhythm", value = "查看用户本周投递份数、目标、每天记录和提醒设置；询问投递进度时先用此工具")
-        public ApplicationRhythmResponse getApplicationRhythm() {
+        public ApplicationRhythmView getApplicationRhythm() {
             return applicationRhythmService.get(userId);
         }
 
         @Tool(name = "record_application_count", value = "将某天的投递总数设为用户说出的准确数量。覆盖当天旧值，重试不会重复加数；不要把一次性投递数写入长期记忆")
-        public ApplicationRhythmResponse recordApplicationCount(
+        public ApplicationRhythmView recordApplicationCount(
                 @P("当天总共投了多少份，0 到 500") int count,
                 @P(value = "日期 YYYY-MM-DD；用户说今天时传空字符串", required = false) String date) {
             LocalDate day = date == null || date.isBlank()
@@ -493,7 +493,7 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "set_application_rhythm", value = "设置每周投递目标和工作台内提醒。只有用户明确提出目标和提醒要求才修改；提醒时间按用户资料时区解释")
-        public ApplicationRhythmResponse setApplicationRhythm(
+        public ApplicationRhythmView setApplicationRhythm(
                 @P("每周投递目标，0 到 500；0 表示关闭目标") int weeklyGoal,
                 @P("是否启用工作台内提醒") boolean reminderEnabled,
                 @P("本地提醒时间 HH:mm，例如 19:00") String reminderTime,

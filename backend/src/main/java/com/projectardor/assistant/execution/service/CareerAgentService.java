@@ -26,7 +26,7 @@ import com.projectardor.assistant.tools.CareerAgentTools;
 import com.projectardor.assistant.conversation.web.AgentContextReferenceRequest;
 import com.projectardor.assistant.conversation.web.AgentMessageResponse;
 import com.projectardor.assistant.conversation.web.AgentConversationResponse;
-import com.projectardor.assistant.memory.web.AgentMemoryResponse;
+import com.projectardor.assistant.memory.service.AgentMemoryView;
 import com.projectardor.assistant.conversation.web.AgentStateResponse;
 import com.projectardor.assistant.execution.web.AgentStreamEvent;
 import com.projectardor.assistant.execution.web.AgentRunResponse;
@@ -163,7 +163,7 @@ public class CareerAgentService {
         var summaries = conversations.stream().map(AgentConversationResponse::from).toList();
         var archivedSummaries = store.listArchived(userId).stream()
                 .map(AgentConversationResponse::from).toList();
-        AgentMemoryResponse memory = memoryService.get(userId);
+        AgentMemoryView memory = memoryService.get(userId);
         Conversation selected;
         if (requestedConversationId != null) {
             selected = store.requireActive(userId, requestedConversationId);

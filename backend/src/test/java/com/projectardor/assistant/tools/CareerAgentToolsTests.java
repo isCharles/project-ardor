@@ -42,6 +42,37 @@ import com.projectardor.platform.model.websearch.service.WebSearchResult;
 
 class CareerAgentToolsTests {
     @Test
+    void memoryAndApplicationToolsKeepOwnedResultsAndDeletionProposals() {
+        var memory = mock(AgentMemoryService.class);
+        var rhythm = mock(ApplicationRhythmService.class);
+        var tools = new CareerAgentTools(mock(ResumeService.class), mock(ResumeAnalysisQueueService.class),
+                mock(InterviewService.class), mock(ProfileService.class), memory, mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class), mock(KnowledgeService.class), mock(LearningPlanService.class), rhythm,
+                mock(OpportunityService.class), mock(com.projectardor.platform.jobs.aijobs.AiJobService.class),
+                mock(com.projectardor.learning.review.service.FlashcardService.class));
+        UUID user = UUID.randomUUID(), run = UUID.randomUUID();
+        var item = com.projectardor.assistant.memory.service.AgentMemoryItemView.from(
+                com.projectardor.assistant.memory.domain.AgentMemoryItem.create(user, "Fixture"));
+        when(memory.listItems(user)).thenReturn(List.of(item));
+        when(memory.add(user, "Fixture", "fact", "USER_EXPLICIT", run)).thenReturn(item);
+        when(memory.edit(user, item.id(), "Revised")).thenReturn(item);
+        var counts = new com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmView(
+                null, null, 40, 40, 100, false, null, true, false, List.of());
+        when(rhythm.get(user)).thenReturn(counts);
+        var bound = tools.bind(user, "Fixture", run);
+        assertThat(bound.listMemories()).containsExactly(item);
+        assertThat(bound.addMemory("Fixture")).isSameAs(item);
+        assertThat(bound.updateMemory(item.id().toString(), "Revised")).isSameAs(item);
+        assertThat(bound.getApplicationRhythm()).isSameAs(counts);
+        assertThat(bound.deleteMemory(item.id().toString())).containsEntry("status", "CONFIRMATION_REQUIRED");
+        verify(memory, never()).remove(any(), any());
+        verify(memory, never()).clear(any());
+        assertThat(bound.pendingConfirmations()).singleElement().satisfies(proposal ->
+                assertThat(proposal.targetId()).isEqualTo(item.id()));
+    }
+
+    @Test
     void learningReadAndWriteToolsUseOwnedViewsWithoutHttpDtoMapping() {
         LearningPlanService service = mock(LearningPlanService.class);
         CareerAgentTools tools = new CareerAgentTools(
