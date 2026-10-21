@@ -28,8 +28,8 @@ import com.projectardor.scheduling.domain.RecurrenceFrequency;
 import com.projectardor.scheduling.domain.TaskSeries;
 import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.scheduling.service.TaskSeriesService;
-import com.projectardor.scheduling.web.CalendarTaskResponse;
-import com.projectardor.scheduling.web.TaskSeriesResponse;
+import com.projectardor.scheduling.service.CalendarTaskView;
+import com.projectardor.scheduling.service.TaskSeriesView;
 import com.projectardor.assistant.memory.service.AgentMemoryService;
 import com.projectardor.assistant.memory.web.AgentMemoryResponse;
 import com.projectardor.assistant.memory.web.AgentMemoryItemResponse;
@@ -503,29 +503,27 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "list_calendar_tasks", value = "读取当前用户的日历待办。可按 ISO-8601 时间范围过滤；不传范围则返回全部待办")
-        public List<CalendarTaskResponse> listCalendarTasks(
+        public List<CalendarTaskView> listCalendarTasks(
                 @P(value = "开始时间，ISO-8601 格式；不限制时传空字符串", required = false) String from,
                 @P(value = "结束时间，ISO-8601 格式；不限制时传空字符串", required = false) String to) {
-            return calendarTaskService.list(userId, nullableInstant(from), nullableInstant(to)).stream()
-                    .map(CalendarTaskResponse::from)
-                    .toList();
+            return calendarTaskService.listViews(userId, nullableInstant(from), nullableInstant(to));
         }
 
         @Tool(name = "create_calendar_task", value = "为当前用户创建任意明确的日程或待办，不限于求职事项。用户说出自然语言安排，或粘贴含日期时间的通知时使用；日期确有歧义时必须先追问，不得猜测。若这条日程属于某场真实面试（面试时间或准备任务），传入该面试流程 UUID")
-        public CalendarTaskResponse createCalendarTask(
+        public CalendarTaskView createCalendarTask(
                 @P("日历格中的极短标题，优先使用公司或对象加事项，通常 2 到 8 个中文字符，例如‘字节面试’‘完善简历’；不得照抄冗长岗位名称") String title,
                 @P(value = "完整说明。岗位全称、业务线、会议方式、准备材料和来源摘要都放在这里，不要塞进短标题；没有时传空字符串", required = false) String description,
                 @P(value = "到期或发生时间，必须是带时区的 ISO-8601；无截止时间的普通任务可传空字符串", required = false) String dueAt,
                 @P(value = "优先级：LOW、MEDIUM 或 HIGH", required = false) String priority,
                 @P(value = "关联的真实面试流程 UUID；不关联传空字符串", required = false) String jobOpportunityId) {
-            return CalendarTaskResponse.from(calendarTaskService.create(
+            return calendarTaskService.createView(
                     userId,
                     title,
                     description,
                     nullableInstant(dueAt),
                     parsePriority(priority),
                     CalendarTaskSource.AGENT,
-                    nullableUuid(jobOpportunityId, "面试流程 ID")));
+                    nullableUuid(jobOpportunityId, "面试流程 ID"));
         }
 
         @Tool(name = "delete_calendar_task", value = "永久删除当前用户指定的一条日历待办。必须先调用 list_calendar_tasks 获取真实 UUID；只有用户明确要求删除或取消该待办时使用，目标不唯一时必须先追问")
@@ -538,19 +536,16 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "update_calendar_task", value = "修改当前用户普通日程的标题、说明、时间、优先级和状态，保留 UUID；先列表读取并保留未要求改动的字段。学习、记忆卡、复测日程请改对应业务模块，不通过此工具强行改写")
-        public CalendarTaskResponse updateCalendarTask(@P("日程 UUID") String taskId, @P("完整短标题") String title,
+        public CalendarTaskView updateCalendarTask(@P("日程 UUID") String taskId, @P("完整短标题") String title,
                 @P("完整说明，清空传空字符串") String description, @P("完整 ISO-8601 带时区时间；无截止时间传空字符串") String dueAt,
                 @P("完整优先级：LOW、MEDIUM、HIGH") String priority, @P("完整状态：TODO、IN_PROGRESS、COMPLETED、CANCELLED") String status) {
-            return CalendarTaskResponse.from(calendarTaskService.updateGeneral(userId, uuid(taskId, "日程 ID"), title, description,
-                    nullableInstant(dueAt), parsePriority(priority), enumValue(com.projectardor.scheduling.domain.CalendarTaskStatus.class, status, null)));
+            return calendarTaskService.updateGeneralView(userId, uuid(taskId, "日程 ID"), title, description,
+                    nullableInstant(dueAt), parsePriority(priority), enumValue(com.projectardor.scheduling.domain.CalendarTaskStatus.class, status, null));
         }
 
         @Tool(name = "list_recurring_tasks", value = "读取当前用户的重复安排（每天、每周、每月循环的日程规则）及其接下来几次的日期。用户问“我有哪些固定安排”，或需要修改、取消某条重复安排前定位对象时使用")
-        public List<TaskSeriesResponse> listRecurringTasks() {
-            return taskSeriesService.list(userId).stream()
-                    .map(series -> TaskSeriesResponse.from(
-                            series, taskSeriesService.upcoming(userId, series.getId(), 4)))
-                    .toList();
+        public List<TaskSeriesView> listRecurringTasks() {
+            return taskSeriesService.listViews(userId, 4);
         }
 
         @Tool(name = "update_recurring_task", value = "修改当前用户重复安排的时间、标题、说明或优先级，保留规则和实例 UUID。先读取规则，只更新未被用户单独修改且尚未完成的未来实例；返回更新和保留数量，不会新建第二套规则。此工具不修改重复频率、日期范围或时区")
@@ -559,9 +554,9 @@ public class CareerAgentTools {
                 @P(value = "新说明，不修改传 null，清空传空字符串", required = false) String description,
                 @P(value = "LOW、MEDIUM 或 HIGH，不修改传 null", required = false) String priority,
                 @P(value = "新本地时间 HH:mm，不修改传 null", required = false) String timeOfDay) {
-            var result = taskSeriesService.updateDetails(userId, uuid(seriesId, "重复规则 ID"), title, description,
-                    priority == null ? null : parsePriority(priority), timeOfDay == null ? null : LocalTime.parse(timeOfDay));
-            return Map.of("series", TaskSeriesResponse.from(result.series(), taskSeriesService.upcoming(userId, result.series().getId(), 4)),
+            var result = taskSeriesService.updateDetailsView(userId, uuid(seriesId, "重复规则 ID"), title, description,
+                    priority == null ? null : parsePriority(priority), timeOfDay == null ? null : LocalTime.parse(timeOfDay), 4);
+            return Map.of("series", result.series(),
                     "updatedOccurrences", result.updatedOccurrences(), "preservedOccurrences", result.preservedOccurrences());
         }
 
@@ -570,7 +565,7 @@ public class CareerAgentTools {
                 用户说“每周四晚上组会”“每天早上读书半小时”“每月 15 号复盘”这类固定安排时使用，不要改用 create_calendar_task 逐条创建。
                 只发生一次的事情必须用 create_calendar_task。频率、星期几或时间不明确时先追问，不得猜测。
                 """)
-        public TaskSeriesResponse createRecurringTask(
+        public TaskSeriesView createRecurringTask(
                 @P("日历格中的极短标题，通常 2 到 8 个中文字符，例如‘组会’‘读书’‘周报’；完整说明写进 description") String title,
                 @P(value = "完整说明：地点、会议方式、要准备什么。没有时传空字符串", required = false) String description,
                 @P("重复频率：DAILY 表示按天，WEEKLY 表示按周，MONTHLY 表示按月") String frequency,
@@ -582,7 +577,7 @@ public class CareerAgentTools {
                 @P(value = "重复到哪一天为止，格式 YYYY-MM-DD；长期有效时传空字符串", required = false) String untilDate,
                 @P(value = "总共重复多少次；与结束日期只能二选一，长期有效时传空", required = false) Integer occurrenceLimit,
                 @P(value = "优先级：LOW、MEDIUM 或 HIGH", required = false) String priority) {
-            var creation = taskSeriesService.create(
+            return taskSeriesService.createView(
                     userId,
                     title,
                     blankToNull(description),
@@ -595,9 +590,7 @@ public class CareerAgentTools {
                     parseLocalTime(timeOfDay),
                     parseLocalDate(startDate, "开始日期"),
                     parseLocalDate(untilDate, "结束日期"),
-                    occurrenceLimit);
-            return TaskSeriesResponse.from(
-                    creation.series(), taskSeriesService.upcoming(userId, creation.series().getId(), 4));
+                    occurrenceLimit, 4);
         }
 
         @Tool(name = "delete_recurring_task", value = "停止一条重复安排，并撤回它尚未开始、也没被用户动过的后续日程；已经发生或已完成的记录会保留。必须先调用 list_recurring_tasks 获取真实 UUID；只有用户明确要求取消该固定安排时使用，目标不唯一时必须先追问")

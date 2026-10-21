@@ -8,6 +8,7 @@ import com.projectardor.scheduling.domain.CalendarTaskPriority;
 import com.projectardor.scheduling.domain.CalendarTaskSource;
 import com.projectardor.scheduling.domain.CalendarTaskStatus;
 import com.projectardor.scheduling.domain.CalendarTaskKind;
+import com.projectardor.scheduling.service.CalendarTaskView;
 
 public record CalendarTaskResponse(
         UUID id,
@@ -28,10 +29,14 @@ public record CalendarTaskResponse(
         Instant updatedAt) {
 
     public static CalendarTaskResponse from(CalendarTask task) {
+        return from(CalendarTaskView.from(task));
+    }
+
+    public static CalendarTaskResponse from(CalendarTaskView task) {
         return new CalendarTaskResponse(
-                task.getId(), task.getTitle(), task.getDescription(), task.getStatus(),
-                task.getPriority(), task.getSource(), task.getTaskKind(), task.getActionPath(),
-                task.getSeriesId(), task.getJobOpportunityId(), task.getDueAt(), task.getCompletedAt(),
-                task.getCreatedAt(), task.getUpdatedAt());
+                task.id(), task.title(), task.description(), task.status(),
+                task.priority(), task.source(), task.taskKind(), task.actionPath(),
+                task.seriesId(), task.jobOpportunityId(), task.dueAt(), task.completedAt(),
+                task.createdAt(), task.updatedAt());
     }
 }

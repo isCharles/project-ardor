@@ -149,6 +149,48 @@ class CareerAgentToolsTests {
     }
 
     @Test
+    void ordinaryCalendarToolsUseOwnedApplicationSnapshots() {
+        var calendar = mock(CalendarTaskService.class);
+        var recurring = mock(TaskSeriesService.class);
+        var tools = new CareerAgentTools(mock(ResumeService.class), mock(ResumeAnalysisQueueService.class),
+                mock(InterviewService.class), mock(ProfileService.class), mock(AgentMemoryService.class), calendar,
+                recurring, mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class), mock(KnowledgeService.class), mock(LearningPlanService.class),
+                mock(ApplicationRhythmService.class), mock(OpportunityService.class),
+                mock(com.projectardor.platform.jobs.aijobs.AiJobService.class),
+                mock(com.projectardor.learning.review.service.FlashcardService.class));
+        UUID user = UUID.randomUUID();
+        var task = CalendarTask.create(user, "Fixture", null, null, CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT);
+        var view = com.projectardor.scheduling.service.CalendarTaskView.from(task);
+        when(calendar.listViews(user, null, null)).thenReturn(java.util.List.of(view));
+        when(calendar.createView(user, "Fixture", "", null, CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT, null)).thenReturn(view);
+        when(calendar.updateGeneralView(user, task.getId(), "Fixture", "", null, CalendarTaskPriority.MEDIUM,
+                com.projectardor.scheduling.domain.CalendarTaskStatus.TODO)).thenReturn(view);
+        var bound = tools.bind(user, "Fixture");
+        assertThat(bound.listCalendarTasks("", "")).containsExactly(view);
+        assertThat(bound.createCalendarTask("Fixture", "", "", "MEDIUM", "")).isSameAs(view);
+        assertThat(bound.updateCalendarTask(task.getId().toString(), "Fixture", "", "", "MEDIUM", "TODO")).isSameAs(view);
+        var series = com.projectardor.scheduling.domain.TaskSeries.create(user, "Meeting", null,
+                CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT, java.time.ZoneOffset.UTC,
+                com.projectardor.scheduling.domain.RecurrenceFrequency.DAILY, 1, java.util.Set.of(), null,
+                java.time.LocalTime.of(19, 0), java.time.LocalDate.of(2027, 1, 1), null, 2);
+        var seriesView = com.projectardor.scheduling.service.TaskSeriesView.from(series, List.of());
+        when(recurring.listViews(user, 4)).thenReturn(List.of(seriesView));
+        when(recurring.updateDetailsView(user, series.getId(), "Revised", null, null, null, 4))
+                .thenReturn(new TaskSeriesService.SeriesUpdateView(seriesView, 1, 2));
+        when(recurring.createView(user, "Meeting", null, CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT,
+                com.projectardor.scheduling.domain.RecurrenceFrequency.DAILY, 1, java.util.Set.of(), null,
+                java.time.LocalTime.of(19, 0), java.time.LocalDate.of(2027, 1, 1), null, 2, 4)).thenReturn(seriesView);
+        assertThat(bound.listRecurringTasks()).containsExactly(seriesView);
+        assertThat(bound.updateRecurringTask(series.getId().toString(), "Revised", null, null, null))
+                .containsEntry("series", seriesView).containsEntry("updatedOccurrences", 1).containsEntry("preservedOccurrences", 2);
+        assertThat(bound.createRecurringTask("Meeting", "", "DAILY", 1, "", null, "19:00", "2027-01-01", "", 2, "MEDIUM"))
+                .isSameAs(seriesView);
+        verify(calendar, never()).list(any(), any(), any());
+        verify(calendar, never()).delete(any(), any());
+    }
+
+    @Test
     void deletingACalendarTaskOnlyProposesItForTheUserToConfirm() {
         CalendarTaskService calendarTaskService = mock(CalendarTaskService.class);
         CareerAgentTools tools = new CareerAgentTools(

@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.scheduling.domain.CalendarTaskSource;
-import com.projectardor.scheduling.domain.TaskSeries;
 import com.projectardor.scheduling.service.TaskSeriesService;
 
 import jakarta.validation.Valid;
@@ -40,9 +39,8 @@ public class TaskSeriesController {
 
     @GetMapping
     public List<TaskSeriesResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return service.list(principal.userId()).stream()
-                .map(series -> TaskSeriesResponse.from(
-                        series, service.upcoming(principal.userId(), series.getId(), UPCOMING_SHOWN)))
+        return service.listViews(principal.userId(), UPCOMING_SHOWN).stream()
+                .map(TaskSeriesResponse::from)
                 .toList();
     }
 
@@ -51,7 +49,7 @@ public class TaskSeriesController {
     public TaskSeriesResponse create(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody TaskSeriesCreateRequest request) {
-        TaskSeries series = service.create(
+        var series = service.createView(
                 principal.userId(),
                 request.title(),
                 request.description(),
@@ -64,17 +62,16 @@ public class TaskSeriesController {
                 request.timeOfDay(),
                 request.startDate(),
                 request.untilDate(),
-                request.occurrenceLimit()).series();
-        return TaskSeriesResponse.from(
-                series, service.upcoming(principal.userId(), series.getId(), UPCOMING_SHOWN));
+                request.occurrenceLimit(), UPCOMING_SHOWN);
+        return TaskSeriesResponse.from(series);
     }
 
     /** Updates supported fields while retaining historical and individually edited occurrences. */
     @org.springframework.web.bind.annotation.PatchMapping("/{seriesId}")
     public Map<String, Object> update(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID seriesId,
             @Valid @RequestBody TaskSeriesUpdateRequest request) {
-        var result = service.updateDetails(principal.userId(), seriesId, request.title(), request.description(), request.priority(), request.timeOfDay());
-        return Map.of("series", TaskSeriesResponse.from(result.series(), service.upcoming(principal.userId(), seriesId, UPCOMING_SHOWN)),
+        var result = service.updateDetailsView(principal.userId(), seriesId, request.title(), request.description(), request.priority(), request.timeOfDay(), UPCOMING_SHOWN);
+        return Map.of("series", TaskSeriesResponse.from(result.series()),
                 "updatedOccurrences", result.updatedOccurrences(), "preservedOccurrences", result.preservedOccurrences());
     }
 
