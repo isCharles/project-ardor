@@ -40,11 +40,11 @@ import com.projectardor.materials.knowledge.service.KnowledgeService;
 import com.projectardor.materials.knowledge.web.KnowledgeDocumentResponse;
 import com.projectardor.materials.knowledge.web.KnowledgeResearchResponse;
 import com.projectardor.materials.knowledge.web.KnowledgeSearchResult;
-import com.projectardor.learning.domain.LearningPlan;
-import com.projectardor.learning.domain.LearningSourceType;
-import com.projectardor.learning.service.LearningPlanService;
-import com.projectardor.learning.service.LearningCreationCommand;
-import com.projectardor.learning.web.LearningPlanResponse;
+import com.projectardor.learning.plan.domain.LearningPlan;
+import com.projectardor.learning.plan.domain.LearningSourceType;
+import com.projectardor.learning.plan.service.LearningPlanService;
+import com.projectardor.learning.plan.service.LearningCreationCommand;
+import com.projectardor.learning.plan.web.LearningPlanResponse;
 import com.projectardor.agent.AgentContextReference;
 import com.projectardor.jobsearch.interview.service.OpportunityService;
 import com.projectardor.jobsearch.interview.service.InterviewProcessCommands;
@@ -397,14 +397,14 @@ public class CareerAgentTools {
                 @P(value = "明确来源 MANUAL/AGENT/RESUME/KNOWLEDGE/INTERVIEW_RECORD/INTERVIEW_QUESTION；旧调用可省略",required=false) String originKind,
                 @P(value = "本次准备的真实面试流程 UUID，可省略；先读取真实面试，不能从来源推断",required=false) String targetInterviewId,
                 @P(value = "准备目标的轮次 UUID，可省略；必须属于 targetInterviewId",required=false) String targetRoundId) {
-            var origin = enumValue(com.projectardor.learning.domain.LearningOriginKind.class,originKind,null);
-            if (origin == com.projectardor.learning.domain.LearningOriginKind.LEGACY_RECAP) throw new IllegalArgumentException("新建议必须明确来源类型");
+            var origin = enumValue(com.projectardor.learning.plan.domain.LearningOriginKind.class,originKind,null);
+            if (origin == com.projectardor.learning.plan.domain.LearningOriginKind.LEGACY_RECAP) throw new IllegalArgumentException("新建议必须明确来源类型");
             LearningSourceType source = enumValue(LearningSourceType.class, sourceType, origin == null ? LearningSourceType.AGENT : origin.legacyType());
             if (origin != null && origin.legacyType() != source) throw new IllegalArgumentException("来源类型不一致");
             UUID sourceUuid = nullableUuid(sourceId, "来源 ID");
             UUID target = nullableUuid(targetInterviewId,"目标面试 ID"), targetRound = nullableUuid(targetRoundId,"目标轮次 ID");
             if (targetRound != null && target == null) throw new IllegalArgumentException("指定目标轮次前需要明确目标面试");
-            var context = com.projectardor.learning.service.LearningContextInput.optional(origin,origin == null ? null : sourceUuid,target,targetRound);
+            var context = com.projectardor.learning.plan.service.LearningContextInput.optional(origin,origin == null ? null : sourceUuid,target,targetRound);
             Instant dueAt = nullableInstant(scheduledAt);
             if (concept == null || concept.isBlank() || concept.strip().length() > 160) {
                 throw new IllegalArgumentException("学习概念须在 1 到 160 字之间");

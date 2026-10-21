@@ -3,8 +3,8 @@ package com.projectardor.learning.plan.origin;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
-import com.projectardor.learning.domain.LearningOriginKind;
-import com.projectardor.learning.service.LearningOriginHandler;
+import com.projectardor.learning.plan.domain.LearningOriginKind;
+import com.projectardor.learning.plan.service.LearningOriginHandler;
 import com.projectardor.jobsearch.record.service.InterviewRecordSourceAccess;
 
 @Component

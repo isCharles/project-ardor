@@ -1,0 +1,85 @@
+package com.projectardor.learning.plan.service;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.Instant;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.junit.jupiter.api.Test;
+
+import com.projectardor.scheduling.service.CalendarTaskService;
+import com.projectardor.common.json.LlmJsonParser;
+import com.projectardor.common.web.ResourceNotFoundException;
+import com.projectardor.learning.plan.domain.LearningSourceType;
+import com.projectardor.learning.plan.repository.LearningPlanRepository;
+import com.projectardor.platform.model.llm.service.LlmGateway;
+import com.projectardor.platform.identity.profile.service.ProfileService;
+import com.projectardor.jobsearch.record.repository.InterviewRecapQuestionRepository;
+import com.projectardor.jobsearch.record.repository.InterviewRecapRepository;
+import com.projectardor.materials.resume.repository.ResumeRepository;
+import com.projectardor.materials.knowledge.repository.KnowledgeDocumentRepository;
+
+import tools.jackson.databind.ObjectMapper;
+
+class LearningSourceTests {
+    @Test
+    void foreignRecapCannotBeClaimedAsLearningEvidence() {
+        UUID userId = UUID.randomUUID();
+        UUID foreignQuestionId = UUID.randomUUID();
+        InterviewRecapRepository recaps = mock(InterviewRecapRepository.class);
+        InterviewRecapQuestionRepository questions = mock(InterviewRecapQuestionRepository.class);
+        LlmGateway llm = mock(LlmGateway.class);
+        when(recaps.findByIdAndUserId(foreignQuestionId, userId)).thenReturn(Optional.empty());
+        when(questions.findByIdAndUserId(foreignQuestionId, userId)).thenReturn(Optional.empty());
+        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class),
+                mock(com.projectardor.learning.plan.repository.LearningAttemptRepository.class), llm,
+                mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
+                mock(ProfileService.class), LearningOriginTestHandlers.resolver(new com.projectardor.jobsearch.record.service.InterviewRecordSourceAccess(recaps, questions),
+                    new com.projectardor.materials.resume.service.ResumeSourceAccess(mock(ResumeRepository.class)),
+                    new com.projectardor.materials.knowledge.service.KnowledgeSourceAccess(mock(KnowledgeDocumentRepository.class)),
+                    mock(com.projectardor.jobsearch.interview.service.InterviewContextAccess.class)),
+                mock(LearningPlanCreationStore.class),
+                mock(LearningPlanGenerationGate.class), mock(LearningPlanAgentSlots.class),
+                mock(org.springframework.transaction.PlatformTransactionManager.class));
+
+        assertThatThrownBy(() -> service.create(userId, "JVM", "面试薄弱点",
+                LearningSourceType.RECAP, foreignQuestionId, Instant.now()))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(llm, never()).completeJson(any(), any(), any());
+    }
+
+    @Test
+    void foreignResumeAndKnowledgeCannotBeClaimedAsLearningEvidence() {
+        UUID userId = UUID.randomUUID();
+        UUID foreignId = UUID.randomUUID();
+        LlmGateway llm = mock(LlmGateway.class);
+        ResumeRepository resumes = mock(ResumeRepository.class);
+        KnowledgeDocumentRepository knowledge = mock(KnowledgeDocumentRepository.class);
+        LearningPlanService service = new LearningPlanService(mock(LearningPlanRepository.class),
+                mock(com.projectardor.learning.plan.repository.LearningAttemptRepository.class), llm,
+                mock(LlmJsonParser.class), mock(ObjectMapper.class), mock(CalendarTaskService.class),
+                mock(ProfileService.class), LearningOriginTestHandlers.resolver(mock(com.projectardor.jobsearch.record.service.InterviewRecordSourceAccess.class),
+                    new com.projectardor.materials.resume.service.ResumeSourceAccess(resumes),
+                    new com.projectardor.materials.knowledge.service.KnowledgeSourceAccess(knowledge),
+                    mock(com.projectardor.jobsearch.interview.service.InterviewContextAccess.class)),
+                mock(LearningPlanCreationStore.class), mock(LearningPlanGenerationGate.class),
+                mock(LearningPlanAgentSlots.class),
+                mock(org.springframework.transaction.PlatformTransactionManager.class));
+
+        assertThatThrownBy(() -> service.create(userId, "JVM", "需要补强",
+                LearningSourceType.RESUME, foreignId, Instant.now()))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.create(userId, "JVM", "需要补强",
+                LearningSourceType.KNOWLEDGE, foreignId, Instant.now()))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(resumes).findByIdAndUserId(foreignId, userId);
+        verify(knowledge).findByIdAndUserId(foreignId, userId);
+        verify(llm, never()).completeJson(any(), any(), any());
+    }
+}

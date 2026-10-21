@@ -28,7 +28,7 @@ import com.projectardor.learning.practice.mockinterview.domain.InterviewSession;
 import com.projectardor.scheduling.service.TaskSeriesService;
 import com.projectardor.learning.practice.mockinterview.service.InterviewService;
 import com.projectardor.materials.knowledge.service.KnowledgeService;
-import com.projectardor.learning.service.LearningPlanService;
+import com.projectardor.learning.plan.service.LearningPlanService;
 import com.projectardor.jobsearch.interview.service.OpportunityService;
 import com.projectardor.jobsearch.interview.service.InterviewProcessCommands;
 import com.projectardor.jobsearch.interview.service.InterviewProcessView;
@@ -69,7 +69,7 @@ class CareerAgentToolsTests {
                 mock(ApplicationRhythmService.class), mock(OpportunityService.class), mock(com.projectardor.platform.jobs.aijobs.AiJobService.class), mock(com.projectardor.learning.review.service.FlashcardService.class));
         UUID userId = UUID.randomUUID();
         UUID planId = UUID.randomUUID();
-        var plan = mock(com.projectardor.learning.domain.LearningPlan.class);
+        var plan = mock(com.projectardor.learning.plan.domain.LearningPlan.class);
         when(plan.getConcept()).thenReturn("JVM");
         when(service.get(userId, planId)).thenReturn(plan);
         var bound = tools.bind(userId, "删除 JVM 学习");
@@ -320,8 +320,8 @@ class CareerAgentToolsTests {
         var bound=tools.bind(user,"请建议学习计划",run);
         bound.createLearningPlan("JVM","Synthetic gap",null,null,question.toString(),"INTERVIEW_QUESTION",target.toString(),round.toString());
         var input=bound.pendingConfirmations().getFirst().learningPlan();
-        assertThat(input.originKind()).isEqualTo(com.projectardor.learning.domain.LearningOriginKind.INTERVIEW_QUESTION);
-        assertThat(input.sourceType()).isEqualTo(com.projectardor.learning.domain.LearningSourceType.RECAP);
+        assertThat(input.originKind()).isEqualTo(com.projectardor.learning.plan.domain.LearningOriginKind.INTERVIEW_QUESTION);
+        assertThat(input.sourceType()).isEqualTo(com.projectardor.learning.plan.domain.LearningSourceType.RECAP);
         assertThat(input.originResourceId()).isEqualTo(question);
         assertThat(input.targetInterviewId()).isEqualTo(target);
         assertThat(input.targetRoundId()).isEqualTo(round);

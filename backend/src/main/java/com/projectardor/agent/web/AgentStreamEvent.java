@@ -3,7 +3,7 @@ package com.projectardor.agent.web;
 import java.util.UUID;
 
 import com.projectardor.agent.tools.CareerAgentTools.PendingConfirmation;
-import com.projectardor.learning.service.LearningCreationCommand;
+import com.projectardor.learning.plan.service.LearningCreationCommand;
 
 public record AgentStreamEvent(
         String type,

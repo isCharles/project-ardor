@@ -19,7 +19,7 @@ import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.scheduling.service.TaskSeriesService;
 import com.projectardor.learning.practice.mockinterview.service.InterviewService;
 import com.projectardor.materials.knowledge.service.KnowledgeService;
-import com.projectardor.learning.service.LearningPlanService;
+import com.projectardor.learning.plan.service.LearningPlanService;
 import com.projectardor.jobsearch.interview.service.OpportunityService;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.jobsearch.record.service.InterviewRecapQueueService;
@@ -74,7 +74,7 @@ class AgentProposalAuditTests {
         UUID run = UUID.randomUUID();
         UUID conversation = UUID.randomUUID();
         UUID planId = UUID.randomUUID();
-        var plan = mock(com.projectardor.learning.domain.LearningPlan.class);
+        var plan = mock(com.projectardor.learning.plan.domain.LearningPlan.class);
         when(plan.getConcept()).thenReturn("JVM");
         when(plans.get(user, planId)).thenReturn(plan);
 
