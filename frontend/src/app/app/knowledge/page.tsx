@@ -175,7 +175,7 @@ export default function KnowledgePage() {
       </div>
 
       <div className={`${styles.content} mx-auto max-w-6xl px-5 pb-24 pt-6 md:px-10`}>
-        
+
 
         <header className="pb-10 pt-14 md:pb-14 md:pt-20">
           <h1 className={`${styles.display} max-w-3xl`}>{t("Materials & index", "资料与索引")}</h1>

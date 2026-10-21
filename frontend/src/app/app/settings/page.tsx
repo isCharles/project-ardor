@@ -349,7 +349,7 @@ export default function SettingsPage() {
 
   return (
     <main className="ardor-workbench min-h-screen px-5 py-6 md:px-10 md:py-8">
-      
+
       <header className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-6 pb-9 pt-10">
         <div><h1 className="text-4xl font-semibold tracking-tight md:text-5xl">{t("Settings", "设置")}</h1><p className="mt-3 text-muted-foreground">{user.email} · {t("Stay signed in for 30 days", "登录状态保留 30 天")}</p></div>
         <Button variant="outline" onClick={logout}><LogOut className="mr-2 size-4" />{t("Log out", "退出登录")}</Button>

@@ -310,7 +310,7 @@ export default function LearningPage() {
     <main className="ardor-workbench min-h-screen px-5 pb-16 pt-6 text-[#1d1d1f] md:px-10">
       <div className="mx-auto max-w-7xl">
         <div className="flex items-center justify-end">
-          
+
           <div className="flex items-center gap-2">
             {selected && <details className="relative">
               <summary aria-label={t("More actions", "更多操作")} className="grid size-11 cursor-pointer list-none place-items-center rounded-full border border-white/80 bg-white/65 text-stone-500 shadow-sm transition hover:bg-white hover:text-stone-800 [&::-webkit-details-marker]:hidden"><Ellipsis className="size-4" /></summary>

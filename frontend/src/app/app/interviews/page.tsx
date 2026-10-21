@@ -216,7 +216,7 @@ export default function InterviewsPage() {
 
   return (
     <main className="ardor-workbench min-h-screen px-5 py-6 md:px-10 md:py-8">
-      
+
 
       <header className="mx-auto max-w-6xl pb-9 pt-10">
         <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">{t("Mock interviews", "模拟面试")}</h1>

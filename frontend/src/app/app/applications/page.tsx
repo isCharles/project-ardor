@@ -106,7 +106,7 @@ export default function ApplicationRhythmPage() {
   return (
     <main className="ardor-workbench min-h-screen px-5 pb-16 pt-6 text-[#1d1d1f] md:px-10">
       <div className="mx-auto max-w-5xl">
-        
+
         <header className="pb-9 pt-12 md:pt-16">
           <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-white/80 text-violet-600 shadow-sm"><Target className="size-6" /></div>
           <h1 className="text-4xl font-semibold tracking-[-0.055em] md:text-6xl">{t("Application rhythm", "投递节奏")}</h1>
