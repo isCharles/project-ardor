@@ -101,6 +101,10 @@ try {
   assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
   await page.getByRole("button", { name: "More workspaces", exact: true }).click();
   const morePanel = page.locator("#ardor-more-workspaces");
+  const groupLabels = (await morePanel.locator("p").allTextContents()).map(label => label.trim()).filter(Boolean);
+  for (const label of ["Job search", "Learning", "Workspace"]) {
+    assert.ok(groupLabels.filter(item => item === label).length <= 1, `${label} group header must appear once: ${groupLabels.join(", ")}`);
+  }
   const fitViewport = async (label) => {
     const viewport = page.viewportSize(), box = await morePanel.boundingBox();
     assert.ok(box && viewport && box.y >= 0 && box.y + box.height <= viewport.height + 1,

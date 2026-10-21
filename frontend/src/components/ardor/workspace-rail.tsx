@@ -254,6 +254,15 @@ export function WorkspaceRail() {
     }
   }
 
+  const secondaryGroups: { domain: string | null; items: typeof secondaryWorkspaces }[] = [];
+  for (const item of secondaryWorkspaces) {
+    const group = secondaryGroups.find(candidate => candidate.domain === item.domain);
+    if (group) group.items.push(item);
+    else secondaryGroups.push({ domain: item.domain, items: [item] });
+  }
+  const domainRank = (domain: string | null) => domain === "job-search" ? 0 : domain === "learning" ? 1 : 2;
+  secondaryGroups.sort((left, right) => domainRank(left.domain) - domainRank(right.domain));
+
   return (
     <aside className="relative z-30 flex h-full w-16 shrink-0 flex-col items-center border-r border-stone-200/70 bg-gradient-to-b from-white via-[#faf8ff] to-[#fff8f6] py-3 md:w-[4.25rem]" aria-label={t("Main navigation", "主导航")}>
       <nav className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto px-2" aria-label={t("Workspaces", "工作区")} onScroll={() => setTooltip(null)}>
@@ -304,7 +313,10 @@ export function WorkspaceRail() {
       {tooltip && !accountOpen && !moreOpen && <div role="tooltip" className="pointer-events-none fixed left-[4.75rem] z-50 whitespace-nowrap rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-800 shadow-lg" style={{ top: tooltip.top }}>{tooltip.label}</div>}
 
       {moreOpen && !accountOpen && <div ref={morePanel} id="ardor-more-workspaces" className="fixed left-[4.25rem] z-50 w-56 overflow-y-auto overscroll-contain rounded-2xl border border-stone-200 bg-white p-2 shadow-[0_20px_60px_rgba(70,48,100,0.16)]" style={{ top: moreTop, maxHeight: `calc(100dvh - ${moreTop}px - 12px)` }} onMouseEnter={() => { if (moreCloseTimer.current) clearTimeout(moreCloseTimer.current); }} onMouseLeave={hideMoreSoon}>
-        {secondaryWorkspaces.map((item, index) => { const label = t(item.en, item.zh); const moduleName = moduleFor(item.href); return <Fragment key={item.id}>{(index === 0 || secondaryWorkspaces[index - 1].domain !== item.domain) && <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-widest text-stone-400">{groupLabel(item.domain, t)}</p>}<Link href={item.href} onClick={() => { acknowledgeBackground(moduleName); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50 ${destinationActive(item.id, pathname) ? "bg-violet-50 text-violet-700" : "text-stone-700"}`}><item.icon className="size-4 shrink-0" aria-hidden="true" /><span>{label}</span>{hasReady(item.href) && <span className="ml-auto size-2 rounded-full bg-red-500" aria-hidden="true" />}</Link></Fragment>; })}
+        {secondaryGroups.map((group) => <Fragment key={group.domain ?? "workspace"}>
+          <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-widest text-stone-400">{groupLabel(group.domain, t)}</p>
+          {group.items.map((item) => { const label = t(item.en, item.zh); const moduleName = moduleFor(item.href); return <Link key={item.id} href={item.href} onClick={() => { acknowledgeBackground(moduleName); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50 ${destinationActive(item.id, pathname) ? "bg-violet-50 text-violet-700" : "text-stone-700"}`}><item.icon className="size-4 shrink-0" aria-hidden="true" /><span>{label}</span>{hasReady(item.href) && <span className="ml-auto size-2 rounded-full bg-red-500" aria-hidden="true" />}</Link>; })}
+        </Fragment>)}
         <button type="button" onClick={() => { if (pathname === "/app") window.dispatchEvent(new Event("ardor:open-memory")); else { window.sessionStorage.setItem("ardor:open-memory", "1"); router.push("/app"); } closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-stone-700 hover:bg-violet-50"><Brain className="size-4 shrink-0" aria-hidden="true" />{t("Memory", "总体记忆")}</button>
         <button type="button" disabled={!account} onClick={() => { closeMore(); setCustomDraft(pinnedIds); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); }} className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-stone-100 px-3 py-2.5 text-left text-sm text-violet-700 hover:bg-violet-50"><Settings2 className="size-4" />{t("Customize sidebar", "自定义侧栏")}</button>
       </div>}
