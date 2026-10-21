@@ -24,6 +24,7 @@ class LegacySessionRuntimeTests {
         var context = new SecurityContextImpl(UsernamePasswordAuthenticationToken.authenticated(old, null, old.getAuthorities()));
         try {
             put(key, "creationTime", serializer.serialize(System.currentTimeMillis()));
+            redis(null, "EXPIRE", key, "60");
             put(key, "lastAccessedTime", serializer.serialize(System.currentTimeMillis()));
             put(key, "maxInactiveInterval", serializer.serialize(60));
             put(key, "sessionAttr:SPRING_SECURITY_CONTEXT", serializer.serialize(context));
@@ -47,7 +48,8 @@ class LegacySessionRuntimeTests {
     }
 
     private void redis(byte[] input, String... arguments) throws Exception {
-        var command = new java.util.ArrayList<>(java.util.List.of("docker", "exec", "-i", "project-ardor-redis-1", "redis-cli"));
+        String container = System.getenv().getOrDefault("ARDOR_SESSION_COMPAT_REDIS_CONTAINER", "project-ardor-redis-1");
+        var command = new java.util.ArrayList<>(java.util.List.of("docker", "exec", "-i", container, "redis-cli"));
         command.addAll(java.util.List.of(arguments));
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
         try (var output = process.getOutputStream()) { if (input != null) output.write(input); }
