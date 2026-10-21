@@ -24,6 +24,37 @@ import tools.jackson.databind.json.JsonMapper;
 
 class AgentModelProtocolTests {
     private final Duration connect=Duration.ofSeconds(2),read=Duration.ofSeconds(5);
+    @Test void actualSdkHttpFailuresUseSharedSafeClassificationForBothProtocols() throws Exception {
+        for (var provider : LlmProvider.values()) for (int status : new int[] {400, 401, 403, 404, 429, 503}) {
+            var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/", exchange -> {
+                exchange.getRequestBody().readAllBytes();
+                byte[] bytes = "{\"error\":{\"message\":\"secret-provider-body\",\"type\":\"fixture_error\"}}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(status, bytes.length);
+                exchange.getResponseBody().write(bytes);
+                exchange.close();
+            });
+            server.start();
+            try {
+                var config = new LlmConfigService.LlmRuntimeConfig(provider, "http://127.0.0.1:" + server.getAddress().getPort(), "fixture-model", "fake-only");
+                var factory = new LangChainModelFactory(mock(LlmConfigService.class), "", 0, connect, read,
+                        List.of(new OpenAiAgentModelProtocol(), new AnthropicAgentModelProtocol()));
+                Throwable failure = catchThrowable(() -> factory.create(config).chat(UserMessage.from("synthetic")));
+                assertThat(failure).isNotNull();
+                var classified = (com.projectardor.platform.model.llm.service.LlmCallException) CareerAgentService.classifyStreamFailure(failure);
+                String code = switch (status) {
+                    case 400 -> "LLM_BAD_REQUEST";
+                    case 401, 403 -> "LLM_AUTH_FAILED";
+                    case 404 -> "LLM_NOT_FOUND";
+                    case 429 -> "LLM_BUSY";
+                    default -> "LLM_HTTP_ERROR";
+                };
+                assertThat(classified.getCode()).as("%s HTTP %s", provider, status).isEqualTo(code);
+                assertThat(classified.getMessage()).doesNotContain("secret-provider-body", "fake-only");
+            } finally { server.stop(0); }
+        }
+    }
     @Test void registeredAdapterOwnsReasoningAndReceivesTimeoutTransportAndZeroHiddenRetries() {
         var configs=mock(LlmConfigService.class);var protocol=mock(AgentModelProtocol.class);var other=mock(AgentModelProtocol.class);
         when(protocol.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);when(other.provider()).thenReturn(LlmProvider.ANTHROPIC_COMPATIBLE);
@@ -160,6 +191,43 @@ class AgentModelProtocolTests {
             } finally {server.stop(0);}
         }
     }
+    @Test void streamingSdkErrorsHaveTheSameSafeClassification() throws Exception {
+        for (var provider : LlmProvider.values()) {
+            var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/", exchange -> {
+                exchange.getRequestBody().readAllBytes();
+                byte[] bytes = "{\"error\":{\"message\":\"secret-provider-body\",\"type\":\"fixture_error\"}}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(401, bytes.length);
+                exchange.getResponseBody().write(bytes);
+                exchange.close();
+            });
+            server.start();
+            var lease = new AgentStreamLease();
+            try {
+                UUID owner = UUID.randomUUID();
+                var configs = mock(LlmConfigService.class);
+                when(configs.getRuntimeConfig(owner)).thenReturn(new LlmConfigService.LlmRuntimeConfig(provider,
+                        "http://127.0.0.1:" + server.getAddress().getPort(), "fixture-model", "fake-only"));
+                var factory = new LangChainModelFactory(configs, "", 0, connect, read, List.of(new OpenAiAgentModelProtocol(), new AnthropicAgentModelProtocol()));
+                var error = new java.util.concurrent.CompletableFuture<Throwable>();
+                factory.createStreaming(owner, ReasoningDepth.AUTO, lease).chat("synthetic",
+                        new dev.langchain4j.model.chat.response.StreamingChatResponseHandler() {
+                    @Override public void onPartialResponse(String value) {}
+                    @Override public void onCompleteResponse(dev.langchain4j.model.chat.response.ChatResponse response) {
+                        error.completeExceptionally(new AssertionError("Expected upstream rejection"));
+                    }
+                    @Override public void onError(Throwable failure) { error.complete(failure); }
+                });
+                var classified = (com.projectardor.platform.model.llm.service.LlmCallException)
+                        CareerAgentService.classifyStreamFailure(error.get(8, java.util.concurrent.TimeUnit.SECONDS));
+                assertThat(classified.getCode()).isEqualTo("LLM_AUTH_FAILED");
+                assertThat(classified.isRetryable()).isFalse();
+                assertThat(classified.getMessage()).doesNotContain("secret-provider-body", "fake-only");
+            } finally { lease.stop(() -> {}); server.stop(0); }
+        }
+    }
+
     private String events(LlmProvider provider) {
         if(provider==LlmProvider.OPENAI_COMPATIBLE) return """
                 data: {"id":"fixture","model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"fixture-ok"},"finish_reason":null}]}
