@@ -26,8 +26,11 @@ type SidebarView = { userId: string; ids: string[]; revision: number; configured
 function validView(value: SidebarWire): SidebarView {
   if (!Array.isArray(value?.hrefs) || typeof value.userId !== "string" || !Number.isSafeInteger(value.revision) || value.revision < 0 || typeof value.configured !== "boolean") throw new Error("Invalid sidebar preferences response");
   const supportsIds = value.destinationIds !== undefined;
-  const ids = supportsIds ? normalizeDestinationIds(value.destinationIds) : value.configured ? destinationsFromLegacy(value.hrefs) : defaultIds;
+  const ids = supportsIds ? normalizeDestinationIds(knownIds(value.destinationIds ?? [])) : value.configured ? destinationsFromLegacy(value.hrefs) : defaultIds;
   return { userId: value.userId, ids, revision: value.revision, configured: value.configured, supportsIds };
+}
+function knownIds(value: unknown[]): string[] {
+  return value.filter((id): id is string => typeof id === "string" && destinations.some(item => item.id === id));
 }
 function cacheView(owner: string, view: SidebarView) {
   try {
@@ -45,7 +48,7 @@ function legacyHrefs(userId: string): string[] | null {
 function readIds(userId: string): string[] {
   try {
     const saved = JSON.parse(window.localStorage.getItem(cacheKey(userId)) ?? "null");
-    if (saved?.userId === userId) return normalizeDestinationIds(saved.ids);
+    if (saved?.userId === userId) return normalizeDestinationIds(knownIds(saved.ids ?? []));
     const previous = JSON.parse(window.localStorage.getItem(`ardor:workspace-rail:v2:${userId}`) ?? "null");
     if (previous?.userId === userId) return destinationsFromLegacy(previous.hrefs);
   } catch { /* Preserve local legacy choices without treating them as authorization. */ }
@@ -74,8 +77,10 @@ export function WorkspaceRail() {
   const [railError, setRailError] = useState("");
   const railMenuRef = useRef<HTMLDivElement>(null);
   const pinnedIds = preference?.userId === account?.id ? preference?.ids ?? defaultIds : defaultIds;
-  const primaryWorkspaces = pinnedIds.map(id => workspaces.find(item => item.id === id)).filter((item): item is (typeof workspaces)[number] => !!item);
-  const secondaryWorkspaces = workspaces.filter((item) => !pinnedIds.includes(item.id));
+  const fixedIds = defaultIds;
+  const primaryWorkspaces = fixedIds.map(id => workspaces.find(item => item.id === id)).filter((item): item is (typeof workspaces)[number] => !!item);
+  const pinnedExtras = pinnedIds.filter(id => !fixedIds.includes(id)).map(id => workspaces.find(item => item.id === id)).filter((item): item is (typeof workspaces)[number] => !!item);
+  const secondaryWorkspaces = workspaces.filter((item) => !fixedIds.includes(item.id) && !pinnedIds.includes(item.id));
   const [moreOpen, setMoreOpen] = useState(false);
   const [morePinned, setMorePinned] = useState(false);
   const [moreTop, setMoreTop] = useState(0);
@@ -345,7 +350,6 @@ export function WorkspaceRail() {
               href={item.href}
               aria-label={label}
               aria-current={active ? "page" : undefined}
-              onContextMenu={(event) => openRailContext(event, item.id)}
               onClick={() => { acknowledgeBackground(item.modules); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }}
               onMouseEnter={(event) => setTooltip({ label, top: event.currentTarget.getBoundingClientRect().top + 8 })}
               onMouseLeave={() => setTooltip(null)}
@@ -359,6 +363,23 @@ export function WorkspaceRail() {
           );
         })}
         <button ref={moreButton} type="button" aria-label={t("More workspaces", "更多工作区")} aria-expanded={moreOpen} aria-controls="ardor-more-workspaces" onMouseEnter={showMore} onMouseLeave={hideMoreSoon} onFocus={showMore} onClick={() => { showMore(); setMorePinned((value) => !value); }} className={`relative grid size-11 shrink-0 place-items-center rounded-2xl transition-colors focus-visible:outline-2 focus-visible:outline-violet-500 ${moreOpen || secondaryWorkspaces.some((item) => destinationActive(item.id, pathname)) ? "bg-violet-100 text-violet-700" : "text-stone-500 hover:bg-white hover:text-stone-900 hover:shadow-sm"}`}><Ellipsis className="size-5" aria-hidden="true" />{secondaryWorkspaces.some(item => hasReady(item.href)) && <span className="absolute right-1 top-1 size-2 rounded-full bg-red-500 ring-2 ring-white" aria-hidden="true" />}</button>
+        {pinnedExtras.length > 0 && <div className="mt-2 flex w-full flex-col items-center gap-1 border-t border-stone-200/60 pt-2">
+          {pinnedExtras.map((item) => {
+            const active = destinationActive(item.id, pathname);
+            const label = t(item.en, item.zh);
+            return <Link key={item.id} href={item.href} aria-label={label} aria-current={active ? "page" : undefined}
+              onContextMenu={(event) => openRailContext(event, item.id)}
+              onClick={() => { acknowledgeBackground(item.modules); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }}
+              onMouseEnter={(event) => setTooltip({ label, top: event.currentTarget.getBoundingClientRect().top + 8 })}
+              onMouseLeave={() => setTooltip(null)}
+              onFocus={(event) => setTooltip({ label, top: event.currentTarget.getBoundingClientRect().top + 8 })}
+              onBlur={() => setTooltip(null)}
+              className={`relative grid size-11 shrink-0 place-items-center rounded-2xl transition-colors focus-visible:outline-2 focus-visible:outline-violet-500 ${active ? "bg-violet-100 text-violet-700" : "text-stone-500 hover:bg-white hover:text-stone-900 hover:shadow-sm"}`}>
+              <item.icon className="size-5" aria-hidden="true" />
+              {hasReady(item.href) && <span className="absolute right-1 top-1 size-2 rounded-full bg-red-500 ring-2 ring-white" aria-hidden="true" />}
+            </Link>;
+          })}
+        </div>}
       </nav>
 
       <div className="mt-2 flex w-full shrink-0 flex-col items-center border-t border-stone-200/70 px-2 pt-3">
@@ -383,10 +404,8 @@ export function WorkspaceRail() {
         const item = workspaces.find(candidate => candidate.id === railContext.id);
         if (!item) return null;
         const pinned = pinnedIds.includes(item.id);
-        return <div ref={railMenuRef} role="menu" aria-label={t(item.en, item.zh)} onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => event.stopPropagation()} className="fixed z-[60] w-52 rounded-xl border border-stone-200 bg-white p-1.5 shadow-[0_20px_60px_rgba(70,48,100,0.18)]" style={{ left: railContext.x, top: railContext.y }}>
-          <p className="truncate px-3 py-2 text-xs font-medium text-stone-400">{t(item.en, item.zh)}</p>
-          <button type="button" role="menuitem" disabled={railSaving || preference?.revision === undefined} onClick={() => void setPinned(item.id, !pinned)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-stone-700 hover:bg-violet-50 disabled:opacity-40">{pinned ? t("Remove from sidebar", "从侧栏取消置顶") : t("Pin to sidebar", "置顶到侧栏")}</button>
-          <button type="button" role="menuitem" onClick={() => { setRailContext(null); setCustomDraft(pinnedIds); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); closeMore(); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-stone-700 hover:bg-violet-50">{t("Customize sidebar", "自定义侧栏")}</button>
+        return <div ref={railMenuRef} role="menu" aria-label={t(item.en, item.zh)} onContextMenu={(event) => event.preventDefault()} onPointerDown={(event) => event.stopPropagation()} className="fixed z-[60] w-40 rounded-xl border border-stone-200 bg-white p-1.5 shadow-[0_20px_60px_rgba(70,48,100,0.18)]" style={{ left: railContext.x, top: railContext.y }}>
+          <button type="button" role="menuitem" disabled={railSaving || preference?.revision === undefined} onClick={() => void setPinned(item.id, !pinned)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-stone-700 hover:bg-violet-50 disabled:opacity-40">{pinned ? t("Unpin", "取消置顶") : t("Pin", "置顶")}</button>
         </div>;
       })()}
 
@@ -404,7 +423,7 @@ export function WorkspaceRail() {
       {customizing && <AppDialog title={t("Customize sidebar", "自定义侧栏")} onClose={() => setCustomizing(false)}>
         <p className="mb-4 text-sm text-stone-500">{t("Selected modules stay in the sidebar. Others go in More. Synced to your account across browser and desktop.", "选中项显示在侧栏，其余收进更多。按账户在浏览器与桌面端同步。")}</p>
         {preference?.revision === undefined && <p role="status" className="mb-3 text-xs text-stone-500">{t("Waiting to read account settings. Your choices will not be overwritten.", "正在读取账户设置，不会覆盖你的选择。")} <button type="button" className="text-violet-700 underline" onClick={() => window.dispatchEvent(new Event("ardor:sidebar-refresh"))}>{t("Retry sync", "重试同步")}</button></p>}
-        <div className="space-y-1">{workspaces.map((item, index) => <Fragment key={item.id}>{(index === 0 || workspaces[index - 1].domain !== item.domain) && <p className="px-3 pb-1 pt-3 text-xs font-semibold text-stone-500">{groupLabel(item.domain, t)}</p>}<label className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 hover:bg-violet-50"><item.icon className="size-4 text-stone-500" /><span className="flex-1 text-sm">{t(item.en, item.zh)}</span><input type="checkbox" checked={customDraft.includes(item.id)} disabled={item.href === "/app" || customSaving} onChange={(event) => setCustomDraft((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} className="size-4 accent-violet-600" /></label></Fragment>)}</div>
+        <div className="space-y-1">{workspaces.map((item, index) => <Fragment key={item.id}>{(index === 0 || workspaces[index - 1].domain !== item.domain) && <p className="px-3 pb-1 pt-3 text-xs font-semibold text-stone-500">{groupLabel(item.domain, t)}</p>}<label className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 hover:bg-violet-50"><item.icon className="size-4 text-stone-500" /><span className="flex-1 text-sm">{t(item.en, item.zh)}</span><input type="checkbox" checked={customDraft.includes(item.id)} disabled={fixedIds.includes(item.id) || customSaving} onChange={(event) => setCustomDraft((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} className="size-4 accent-violet-600" /></label></Fragment>)}</div>
         {customError && <p role="alert" className="mt-3 text-sm text-red-600">{customError}</p>}
         {account && legacyHrefs(account.id) && <button type="button" disabled={customSaving} onClick={() => setCustomDraft(destinationsFromLegacy(legacyHrefs(account.id)))} className="mt-3 text-xs text-violet-700 underline">{t("Load this device's previous layout", "载入此设备的旧布局")}</button>}
         <div className="mt-5 flex justify-between gap-2"><Button variant="outline" disabled={customSaving} onClick={() => setCustomDraft(defaultIds)}>{t("Reset defaults", "恢复默认")}</Button><Button disabled={customSaving || preference?.revision === undefined} onClick={() => void saveSidebar()}>{customSaving ? t("Syncing…", "正在同步…") : t("Save", "保存")}</Button></div>

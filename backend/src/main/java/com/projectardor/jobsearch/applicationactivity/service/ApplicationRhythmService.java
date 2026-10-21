@@ -20,7 +20,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-
 import com.projectardor.platform.identity.profile.service.ProfileService;
 
 @Service
@@ -46,11 +45,11 @@ public class ApplicationRhythmService {
         LocalDate today = now.toLocalDate();
         LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         Settings settings = jdbc.query("""
-                SELECT weekly_goal, reminder_enabled, reminder_time, weekdays_only, reminder_dismissed_on
+                SELECT weekly_goal, reminder_enabled, reminder_time, weekdays_only, reminder_dismissed_on, advice
                 FROM application_rhythm_settings WHERE user_id = ?
                 """, (rs, row) -> new Settings(rs.getInt(1), rs.getBoolean(2), rs.getTime(3).toLocalTime(),
-                rs.getBoolean(4), rs.getDate(5) == null ? null : rs.getDate(5).toLocalDate()), userId)
-                .stream().findFirst().orElse(new Settings(0, false, LocalTime.of(19, 0), true, null));
+                rs.getBoolean(4), rs.getDate(5) == null ? null : rs.getDate(5).toLocalDate(), rs.getString(6)), userId)
+                .stream().findFirst().orElse(new Settings(0, false, LocalTime.of(19, 0), true, null, null));
 
         Map<LocalDate, Integer> counts = new HashMap<>();
         jdbc.query("""
@@ -67,7 +66,7 @@ public class ApplicationRhythmService {
         return new ApplicationRhythmView(today, weekStart, counts.getOrDefault(today, 0), weeklyCount,
                 settings.weeklyGoal(), settings.reminderEnabled(), settings.reminderTime(),
                 settings.weekdaysOnly(), reminderDue(settings, now, weeklyCount, counts.containsKey(today)),
-                List.copyOf(days));
+                List.copyOf(days), settings.advice());
     }
 
     @Transactional
@@ -86,6 +85,20 @@ public class ApplicationRhythmService {
                     weekdays_only = EXCLUDED.weekdays_only,
                     updated_at = CURRENT_TIMESTAMP
                 """, userId, weeklyGoal, reminderEnabled, Time.valueOf(reminderTime), weekdaysOnly);
+        return get(userId);
+    }
+
+    @Transactional
+    public ApplicationRhythmView updateAdvice(UUID userId, String advice) {
+        String clean = advice == null ? "" : advice.strip();
+        if (clean.length() > 8000) throw new IllegalArgumentException("投递建议不能超过 8000 字");
+        jdbc.update("""
+                INSERT INTO application_rhythm_settings (user_id, advice)
+                VALUES (?, ?)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    advice = EXCLUDED.advice,
+                    updated_at = CURRENT_TIMESTAMP
+                """, userId, clean.isBlank() ? null : clean);
         return get(userId);
     }
 
@@ -150,5 +163,5 @@ public class ApplicationRhythmService {
     }
 
     record Settings(int weeklyGoal, boolean reminderEnabled, LocalTime reminderTime,
-            boolean weekdaysOnly, LocalDate reminderDismissedOn) {}
+            boolean weekdaysOnly, LocalDate reminderDismissedOn, String advice) {}
 }

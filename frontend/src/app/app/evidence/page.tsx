@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, BookOpen, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowRight, RotateCcw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -21,25 +21,12 @@ type Progress = {
   accountSummary: { learningPlans: number; recordedLearningAttempts: number; flashcards: number; replayAttempts: number };
 };
 
-function agentHref(recap: Recap, question: Question, locale: string) {
+function customPlanHref(recap: Recap, question: Question, observation: string | null, locale: string) {
   const params = new URLSearchParams({
     new: "1",
     prefill: locale === "en"
-      ? `Based on how I answered “${question.questionText}” in this interview, create a flashcard that tests my understanding. Use sourceType INTERVIEW and recapQuestionId ${question.id}. Identify the underlying concept instead of copying the original question.`
-      : `根据这份面经中「${question.questionText}」的实际表现，帮我创建一张能检验理解的记忆卡，sourceType 用 INTERVIEW，recapQuestionId 用 ${question.id}。不要直接照抄原题；先想清楚要考察什么。`,
-    contextType: "RECAP",
-    contextId: recap.id,
-    contextLabel: recap.title,
-  });
-  return `/app?${params.toString()}`;
-}
-
-function learningHref(recap: Recap, question: Question, locale: string) {
-  const params = new URLSearchParams({
-    new: "1",
-    prefill: locale === "en"
-      ? `Create a learning plan for the weakness exposed by “${question.questionText}” in this interview. Use originKind INTERVIEW_QUESTION and sourceId ${question.id}. Check the original notes before identifying the weakness; do not invent one. Do not infer a preparation target from this source.`
-      : `针对这份面试记录里「${question.questionText}」暴露的薄弱点，帮我安排一个学习计划。originKind 用 INTERVIEW_QUESTION，sourceId 用问题 ID ${question.id}。先根据原文确认薄弱点，不要凭空猜测；不要把来源面试自动当成准备目标。`,
+      ? `In interview “${recap.title}” I answered “${question.questionText}”. The weakness I want to fix: ${observation || "not assessed yet"}. Decide what will help me most: a learning course, flashcards, or both. Use originKind INTERVIEW_QUESTION and sourceId ${question.id}. Do not copy the original question; check the source before choosing.`
+      : `我在面经「${recap.title}」里回答「${question.questionText}」时暴露的薄弱点是：${observation || "材料不足，暂未判断"}。请先判断最合适的补强方式：生成一门学习课、准备记忆卡，或两者结合。originKind 用 INTERVIEW_QUESTION，sourceId 用问题 ID ${question.id}。不要照抄原题，先核对来源再决定。`,
     contextType: "RECAP",
     contextId: recap.id,
     contextLabel: recap.title,
@@ -100,17 +87,6 @@ function ProgressContent({ source }: { source: string | null }) {
     } finally { if (ticket?.active) setBusy(false); }
   }
 
-  function planList(plans: Plan[], interviewId: string | null) {
-    return <ul className="mt-3 space-y-3">{plans.map(plan => <li key={plan.id} className="min-w-0">
-      <Link href={"/app/learning?id=" + plan.id} className="block break-words text-sm font-medium text-violet-700 hover:underline">{plan.concept}</Link>
-      <p className="mt-1 text-xs text-stone-500">{t("Practice attempts", "练习次数")} {plan.attemptCount}{plan.lastScore !== null && <> · {t("Latest score", "最近评分")} {plan.lastScore}</>}{plan.status === "COMPLETED" && <> · {t("Completed", "已完成")}</>}</p>
-      {plan.targetInterviewId && <Link href={"/app/job-search/interviews?selected=" + plan.targetInterviewId} className="mt-1 block text-xs text-stone-600 underline">
-        {plan.targetInterviewId === interviewId ? t("Preparing for this interview", "准备本场面试") : t("Preparing for another interview", "准备另一场面试")}
-        {plan.targetRoundId && <> · {t("Specific round", "已指定轮次")}</>}
-      </Link>}
-    </li>)}</ul>;
-  }
-
   const verdicts: Record<string, string> = {
     CLEARER: t("Clearer", "比原来更清楚"), SIMILAR: t("Similar", "与原来相近"),
     NEEDS_WORK: t("Needs work", "仍需练习"), UNKNOWN: t("Not enough evidence", "证据不足"),
@@ -163,26 +139,22 @@ function ProgressContent({ source }: { source: string | null }) {
             </div>
             <h2 className="mt-4 break-words text-xl font-semibold">{q.questionText}</h2>
             <p className="mt-3 line-clamp-4 break-words text-sm leading-6 text-stone-600">{q.observation || t("Source material is insufficient to assess the gap.", "材料不足，暂不能判断具体原因。")}</p>
-            <div className="mt-6 grid gap-6 md:grid-cols-3">
-              <section className="min-w-0">
-                <h3 className="flex items-center gap-2 text-sm font-medium"><BookOpen className="size-4" />{t("Learning for this question", "针对这道题的学习")}</h3>
-                {track.learningPlans.length ? planList(track.learningPlans, q.interviewId) : <Link href={learningHref(recap, q, locale)} className="mt-3 block text-sm text-violet-700">{t("Ask Ardor for a learning plan", "让 Ardor 制定学习计划")}</Link>}
-                {track.interviewLearningPlans.length > 0 && <details className="mt-4"><summary className="text-xs text-stone-500">{t("Interview-wide plans", "整场面试的学习计划")} · {track.interviewLearningPlans.length}</summary>{planList(track.interviewLearningPlans, q.interviewId)}</details>}
-              </section>
-              <section className="min-w-0">
-                <h3 className="text-sm font-medium">{t("Question practice", "重答训练")}</h3>
-                <p className="mt-3 text-sm text-stone-600">{t("Attempts", "尝试次数")} · {track.replay?.attemptCount ?? 0}</p>
-                {track.replay?.latestVerdict && <p className="mt-1 break-words text-xs text-stone-500">{t("Latest result", "最近结果")} · {verdicts[track.replay.latestVerdict] ?? t("Not enough evidence", "证据不足")}</p>}
-                {track.replay?.latestAt && <p className="mt-1 text-xs text-stone-500">{new Date(track.replay.latestAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN")}</p>}
-                <Link href={"/app/learning/practice/questions?question=" + q.id} className="mt-3 block text-sm text-violet-700">{t("Try again", "重新回答")}</Link>
-              </section>
-              <section className="min-w-0">
-                <h3 className="text-sm font-medium">{t("Flashcard review", "记忆卡复习")}</h3>
-                {track.cards.length ? <ul className="mt-3 space-y-3">{track.cards.map((card, index) => <li key={card.id}>
-                  <Link href={"/app/cards?card=" + card.id} className="text-sm text-violet-700">{t("Open card", "打开卡片")} {index + 1}</Link>
-                  <p className="mt-1 text-xs text-stone-500">{t("Self-rated reviews", "自评复习")} · {card.repetitions}{card.status === "SUSPENDED" && <> · {t("Paused", "已暂停")}</>}</p>
-                </li>)}</ul> : <Link href={agentHref(recap, q, locale)} className="mt-3 inline-flex items-center gap-1 text-sm text-violet-700"><Sparkles className="size-3.5" />{t("Ask Ardor to design a card", "让 Ardor 设计记忆卡")}</Link>}
-              </section>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 pt-4">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+                {track.learningPlans.length > 0 && <Link href={"/app/learning?id=" + track.learningPlans[0].id} className="font-medium text-violet-700">{t(`Learning plan (${track.learningPlans.length})`, `学习计划（${track.learningPlans.length}）`)}</Link>}
+                {track.interviewLearningPlans.length > 0 && <span>{t(`Interview-wide plans ${track.interviewLearningPlans.length}`, `整场学习计划 ${track.interviewLearningPlans.length}`)}</span>}
+                {track.cards.length > 0 && <Link href={"/app/cards?card=" + track.cards[0].id} className="font-medium text-violet-700">{t(`Flashcards (${track.cards.length})`, `记忆卡（${track.cards.length}）`)}</Link>}
+                {track.replay?.attemptCount ? <span>{t(`Retried ${track.replay.attemptCount}×`, `重答 ${track.replay.attemptCount} 次`)}{track.replay.latestVerdict && ` · ${verdicts[track.replay.latestVerdict] ?? ""}`}</span> : null}
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Link href={"/app/learning/practice/questions?question=" + q.id} className="rounded-full border border-stone-200 bg-white/80 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-white">{t("Try again", "重新回答")}</Link>
+                <div className="group relative">
+                  <button type="button" aria-label={t("Ask Ardor for a tailored plan", "让 Ardor 定制补强计划")} aria-haspopup="menu" className="grid size-9 place-items-center rounded-full bg-violet-50 text-violet-700 transition hover:bg-violet-100"><Sparkles className="size-4" /></button>
+                  <div role="menu" className="invisible absolute right-0 top-full z-20 mt-1 w-48 rounded-xl border border-stone-200 bg-white p-1.5 opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                    <Link href={customPlanHref(recap, q, q.observation, locale)} className="block rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-violet-50">{t("Build a tailored plan", "帮我定制补强计划")}</Link>
+                  </div>
+                </div>
+              </div>
             </div>
           </article>;
         })}</div>

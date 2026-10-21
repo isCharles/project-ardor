@@ -1,193 +1,188 @@
 "use client";
 
-import { ArrowRight, Plus, Sparkles, Trash2, X } from "lucide-react";
-import Link from "next/link";
+import { ArrowLeft, ArrowRight, Plus, Trash2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
-import { ApiError, api } from "@/lib/api";
-import { agentCreationHref } from "@/lib/agent-features";
-import { useReadVisibleResult } from "@/lib/background-tasks";
-import { useLocale, type Locale } from "@/lib/locale";
-import styles from "./recaps.module.css";
-import { MinutesWorkspace } from "./minutes-workspace";
-import { InterviewContextFields, InterviewRecordContext, type InterviewReference } from "./interview-context-fields";
+
+import { AppDialog } from "@/components/ui/app-dialog";
+import { api, ApiError } from "@/lib/api";
+import { useLocale } from "@/lib/locale";
 
 type Performance = "STRONG" | "MIXED" | "WEAK" | "UNKNOWN";
 type Question = { id: string; sequenceNumber: number; questionText: string; candidateAnswer: string | null; followUps: string[]; assessment: string; performance: Performance; weaknessReason: string | null; betterAnswer: string | null; tags: string[] };
-type Recap = { id: string; title: string; overview: string; strengths: string[]; weaknesses: string[]; createdAt: string; jobOpportunityId: string | null; interviewRoundId?: string | null; questions: Question[] };
-type RecapTask = { jobId: string | null; recapId: string | null; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"; attempts?: number; errorCode?: string | null; errorMessage?: string | null; createdAt?: string | null; finishedAt?: string | null };
-type OpportunityRef = InterviewReference;
-const performanceStyle: Record<Performance, string> = { STRONG: "bg-emerald-100 text-emerald-700", MIXED: "bg-amber-100 text-amber-700", WEAK: "bg-rose-100 text-rose-700", UNKNOWN: "bg-stone-100 text-stone-500" };
+type Recap = { id: string; title: string; overview: string; strengths: string[]; weaknesses: string[]; createdAt: string; questions: Question[] };
+type Opportunity = { id: string; company: string; targetRole: string | null };
+type Task = { jobId: string | null; recapId: string | null; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"; errorMessage?: string | null };
 
-function localizedError(reason: unknown, locale: Locale, english: string, chinese: string) {
-  if (locale === "zh-CN") return reason instanceof Error ? reason.message : chinese;
-  if (reason instanceof ApiError) {
-    const messages: Record<string, string> = {
-      NOT_FOUND: "These interview notes or this task could not be found.",
-      INVALID_REQUEST: "Please check the interview content or details and try again.",
-      INVALID_STATE: "This task can no longer be changed.",
-      VALIDATION_ERROR: "Please check the information and try again.",
-      QUOTA_EXCEEDED: "You have reached your current usage limit.",
-      EXTERNAL_DNS_TEMPORARY: "The model provider is temporarily unreachable. Please try again.",
-    };
-    return reason.body.code && messages[reason.body.code] ? messages[reason.body.code] : english;
-  }
-  return reason instanceof Error && !/[\u3400-\u9fff]/u.test(reason.message) ? reason.message : english;
-}
-
-/* The recap is a document under an interview, so its only date is when it was filed. */
-function formatFiledDate(recap: Recap, locale: "en" | "zh-CN") {
-  return new Date(recap.createdAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN",
-    { year: "numeric", month: "long", day: "numeric" });
-}
+const performanceStyle: Record<Performance, string> = {
+  STRONG: "bg-emerald-100 text-emerald-700",
+  MIXED: "bg-amber-100 text-amber-700",
+  WEAK: "bg-rose-100 text-rose-700",
+  UNKNOWN: "bg-stone-100 text-stone-500",
+};
 
 export default function RecapsPage() {
-  return <Suspense><RecapsContent /></Suspense>;
+  return <Suspense fallback={<div role="status" className="p-8 text-sm text-stone-500">…</div>}><RecapsContent /></Suspense>;
 }
 
 function RecapsContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const search = useSearchParams();
   const { locale, t } = useLocale();
   const [recaps, setRecaps] = useState<Recap[]>([]);
-  const [jobs, setJobs] = useState<RecapTask[]>([]);
-  const [opportunities, setOpportunities] = useState<OpportunityRef[]>([]);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(search.get("selected"));
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [pendingBaseline, setPendingBaseline] = useState<Set<string>>(new Set());
   const [error, setError] = useState("");
+
   const load = useCallback(async () => {
     try {
-      // Read completion first, then its committed result; parallel reads can
-      // otherwise observe COMPLETED alongside a list fetched just before commit.
-      const tasks = await api<RecapTask[]>("/api/interview-recaps/jobs");
-      const [items, projects] = await Promise.all([
-        api<Recap[]>("/api/interview-recaps"),
-        api<OpportunityRef[]>("/api/opportunities"),
-      ]);
-      setRecaps(items); setJobs(tasks); setOpportunities(projects);
+      const [items, projects] = await Promise.all([api<Recap[]>("/api/interview-recaps"), api<Opportunity[]>("/api/opportunities")]);
+      setRecaps(items);
+      setOpportunities(projects);
+      return items;
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
-      else setError(localizedError(reason, locale, "Could not load interview notes", "无法加载面经"));
+      else setError(reason instanceof Error ? reason.message : t("Could not load interview notes", "无法加载面试记录"));
+      return [];
     }
-  }, [router, locale]);
-  useEffect(() => { const first = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(first); }, [load, searchParams]);
-  const requested = searchParams.get("selected");
-  const source = searchParams.get("source");
-  const selected = recaps.find((item) => item.id === requested)
-    ?? (source ? recaps.find((item) => item.id === source || item.questions.some((question) => question.id === source)) : null)
-    ?? null;
-  useReadVisibleResult("RECAP_ORGANIZE",selected?.id,!!selected);
-  useReadVisibleResult("RECAP_REVIEW",selected?.id,!!selected);
-  const activeJobs = jobs.filter((job) => job.status === "QUEUED" || job.status === "RUNNING");
-  const failedJobs = jobs.filter((job) => job.status === "FAILED");
+  }, [router, t]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void load(); }, [load]);
+
   useEffect(() => {
-    if (activeJobs.length === 0) return;
-    const timer = window.setInterval(() => void load(), 4000);
+    if (!pending) return;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      void load().then(items => {
+        const fresh = items.find(item => !pendingBaseline.has(item.id));
+        if (fresh) {
+          setSelectedId(fresh.id);
+          setPending(false);
+        } else if (attempts >= 30) {
+          setPending(false);
+          setError(t("Ardor is taking longer than expected. Check background tasks later.", "整理时间较长，可以稍后在后台任务里查看。"));
+        }
+      });
+    }, 4000);
     return () => window.clearInterval(timer);
-  }, [activeJobs.length, load]);
+  }, [pending, pendingBaseline, load, t]);
+
   async function organize(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError("");
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const content = String(data.get("content") ?? "").trim();
+    const jobOpportunityId = String(data.get("jobOpportunityId") ?? "");
+    if (!jobOpportunityId) { setError(t("Choose the interview this record belongs to", "请选择这份记录所属的面试")); return; }
+    setBusy(true);
+    setError("");
     try {
-      const task = await api<RecapTask>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content: data.get("content"), jobOpportunityId: data.get("jobOpportunityId"), interviewRoundId: data.get("interviewRoundId") || null }) });
+      setPendingBaseline(new Set(recaps.map(item => item.id)));
+      const task = await api<Task>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content, jobOpportunityId }) });
       setShowForm(false);
-      if (task.jobId) router.push(`/app/recaps?draft=${task.jobId}`);
-      else if (task.recapId) router.push(`/app/recaps?selected=${task.recapId}`);
-    } catch (reason) { setError(localizedError(reason, locale, "Could not submit interview notes", "提交失败")); }
-    finally { setBusy(false); }
-  }
-  async function remove(recap: Recap) { if (!window.confirm(t(`Delete “${recap.title}”?`, `删除“${recap.title}”？`))) return; try { await api<void>(`/api/interview-recaps/${recap.id}`, { method: "DELETE" }); await load(); } catch (reason) { setError(localizedError(reason, locale, "Could not delete interview notes", "删除失败")); } }
-
-  async function retryJob(jobId: string) {
-    setBusy(true); setError("");
-    try { await api<RecapTask>(`/api/interview-recaps/jobs/${jobId}/retry`, { method: "POST" }); await load(); }
-    catch (reason) { setError(localizedError(reason, locale, "Retry failed", "重试失败")); }
-    finally { setBusy(false); }
+      if (task.recapId) setSelectedId(task.recapId);
+      else setPending(true);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("Could not organize these notes", "整理失败"));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function dismissJob(jobId: string) {
-    setBusy(true); setError("");
-    try { await api<void>(`/api/interview-recaps/jobs/${jobId}`, { method: "DELETE" }); await load(); }
-    catch (reason) { setError(localizedError(reason, locale, "Could not dismiss this task", "无法忽略该任务")); }
-    finally { setBusy(false); }
-  }
-
-  return <main className={styles.shell}>
-    <div className={styles.ambient} aria-hidden="true"><div className={styles.grain} /></div>
-    <div className={`${styles.content} mx-auto max-w-7xl px-5 pb-20 pt-6 md:px-10`}>
-      <div className="flex items-center justify-end">
-
-        <div className="flex items-center gap-3"><button onClick={() => setShowForm(true)} className="text-sm text-slate-500 hover:text-slate-900">{t("Paste directly", "直接粘贴")}</button><Link href={agentCreationHref("RECAPS", locale)} className={`${styles.buttonPrimary} inline-flex items-center gap-2 px-5 py-2.5 text-sm`}><Plus className="size-4" />{t("Add interview notes", "整理面经")}</Link></div>
-      </div>
-
-      {!searchParams.get("draft") && <header className="pb-8 pt-12 text-center md:pt-16">
-        <p className={`${styles.label} text-slate-500`}>{t("Interview notes", "面试复盘")}</p>
-        <h1 className={`${styles.display} mt-3`}>{t("See how you grow.", "看清每一次进步。")}</h1>
-        <p className="mx-auto mt-4 max-w-md text-sm leading-6 text-slate-600/85">{t("Review each interview question by question, then turn weak spots into a practice plan.", "逐题复盘每场面试，再将薄弱点转为练习计划。")}</p>
-      </header>}
-
-      {error && <div className={`${styles.panel} mb-5 px-5 py-4 text-sm text-[#a33a32]`} role="status" aria-live="polite">{error}</div>}
-
-      {(activeJobs.length > 0 || failedJobs.length > 0) && <div className="mx-auto mb-6 max-w-2xl space-y-2">
-        {activeJobs.map((job) => <div key={job.jobId} className={`${styles.panel} flex items-center gap-3 px-5 py-4`}><span className="size-2 animate-pulse rounded-full bg-[#ED7B46]" /><span className="text-sm text-slate-600">{t("Organizing in the background…", "正在后台整理…")}</span></div>)}
-        {failedJobs.map((job) => <div key={job.jobId} className={`${styles.panel} flex flex-wrap items-center gap-3 px-5 py-4 text-sm`}>
-          <span className="min-w-0 flex-1 text-[#a33a32]">{t("Could not organize: ", "整理失败：")}{locale === "en" ? `Please retry. If it keeps failing, check your model settings.${job.errorCode ? ` (${job.errorCode})` : ""}` : job.errorMessage ?? "请重新提交"}</span>
-          {(job.finishedAt ?? job.createdAt) && <span className="font-mono text-[11px] text-slate-400">{new Date((job.finishedAt ?? job.createdAt) as string).toLocaleString(locale === "en" ? "en-US" : "zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}{job.attempts ? t(` · ${job.attempts} attempts`, ` · 已试 ${job.attempts} 次`) : ""}</span>}
-          <span className="flex shrink-0 gap-2">
-            <button type="button" disabled={busy || !job.jobId} onClick={() => job.jobId && void retryJob(job.jobId)} className={`${styles.buttonPrimary} px-4 py-1.5 text-xs`}>{t("Retry", "重试")}</button>
-            <button type="button" disabled={busy || !job.jobId} onClick={() => job.jobId && void dismissJob(job.jobId)} className={`${styles.buttonQuiet} px-4 py-1.5 text-xs`}>{t("Dismiss", "忽略")}</button>
-          </span>
-        </div>)}
-      </div>}
-
-      <MinutesWorkspace />
-      {searchParams.get("draft") ? null : recaps.length === 0 ? (
-        activeJobs.length === 0 && <Link href={agentCreationHref("RECAPS", locale)} className={`${styles.panel} mx-auto block w-full max-w-md border-dashed px-5 py-16 text-center text-sm text-slate-400 transition hover:text-slate-600`}>{t("Organize your first interview with Ardor", "让 Ardor 整理第一次面试")}</Link>
-      ) : selected ? (
-        <section className={`${styles.panel} mt-8 p-6 md:p-9`}>
-          <InterviewRecordContext processId={selected.jobOpportunityId} roundId={selected.interviewRoundId} opportunities={opportunities} />
-          <Report recap={selected} opportunities={opportunities} onDelete={() => remove(selected)} />
-        </section>
-      ) : (
-        <div className="mx-auto mt-6 max-w-2xl">
-          <p className="mb-3 text-sm text-slate-500">{t("Open an interview from the pipeline, or pick a note below.", "从面试流程进入，或从下面选择一篇面经。")}</p>
-          <ul className={`${styles.panel} divide-y divide-stone-200/70`}>
-            {recaps.map((recap) => (
-              <li key={recap.id}>
-                <Link href={`/app/recaps?selected=${recap.id}`} className="flex items-center justify-between gap-4 px-5 py-4 text-sm hover:bg-white/60">
-                  <span className="min-w-0 truncate font-medium">{recap.title}</span>
-                  <span className="shrink-0 text-xs text-slate-400">{formatFiledDate(recap, locale)}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-  </div>{showForm && <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 backdrop-blur-sm"><section className="ardor-panel max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] p-6 md:p-8"><div className="mb-6 flex items-center justify-between"><h2 className="text-2xl font-semibold">{t("Organize an interview", "整理一场面试")}</h2><button aria-label={t("Close", "关闭")} onClick={() => setShowForm(false)} className="rounded-full p-2 text-stone-400 hover:bg-white"><X className="size-5" /></button></div><form onSubmit={organize} className="space-y-4">{opportunities.length === 0 ? <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Create an interview in the pipeline first — notes belong to an interview.", "请先在面试流程里创建一场面试：面经必须属于某场面试。")}</p> : <InterviewContextFields opportunities={opportunities} />}<textarea name="content" required minLength={30} maxLength={50000} rows={16} className="field resize-y" placeholder={t("Paste a transcript, your recollection, or polished notes…", "粘贴转录、回忆或整理过的内容…")} /><button disabled={busy || opportunities.length === 0} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-50">{busy ? t("Organizing questions…", "正在逐题整理…") : t("Create interview notes", "生成面经")}</button></form></section></div>}</main>;
-}
-
-function Report({ recap, onDelete, opportunities }: { recap: Recap; onDelete: () => void; opportunities: OpportunityRef[] }) {
-  const { t }=useLocale();
-  const router=useRouter();
-  const [busy,setBusy]=useState(false),[error,setError]=useState("");
-  const [opportunity,setOpportunity]=useState("");
-  async function openMinutes() {
-    setBusy(true);setError("");
+  async function remove(recap: Recap) {
+    if (!window.confirm(t(`Delete “${recap.title}”?`, `删除“${recap.title}”？`))) return;
     try {
-      const result=await api<{draftId:string}>(`/api/interview-recaps/drafts/from-report/${recap.id}`,{method:"POST",body:JSON.stringify({jobOpportunityId:opportunity || null})});
-      router.push(`/app/recaps?draft=${result.draftId}`);
-    } catch(e) {setError(e instanceof Error ? e.message : t("Could not open minutes","无法打开纪要"));}
-    finally {setBusy(false);}
+      await api<void>(`/api/interview-recaps/${recap.id}`, { method: "DELETE" });
+      if (selectedId === recap.id) setSelectedId(null);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("Could not delete", "删除失败"));
+    }
   }
-  return <><div className="mb-5 space-y-3 border-b border-stone-200 pb-4">{!recap.jobOpportunityId && <label className="block text-sm text-stone-600">{t("Choose an interview for these legacy notes first", "这份旧记录未关联面试，请先选择归属")}<select className="field mt-2 max-w-full" value={opportunity} onChange={e=>setOpportunity(e.target.value)}><option value="">{t("Select interview…", "选择所属面试…")}</option>{opportunities.map(o=><option key={o.id} value={o.id}>{o.company}{o.targetRole ? ` · ${o.targetRole}` : ""}</option>)}</select></label>}<button disabled={busy || (!recap.jobOpportunityId && !opportunity)} onClick={() => void openMinutes()} className="text-sm text-stone-600 underline disabled:opacity-40">{t("Correct source minutes · keep this report", "校正原始纪要 · 保留这份报告")}</button>{error && <p role="alert" className="mt-2 text-sm text-rose-700">{error}</p>}</div><CompleteReport recap={recap} onDelete={onDelete} /></>;
+
+  const selected = recaps.find(item => item.id === selectedId) ?? null;
+
+  return <main className="ardor-workbench min-h-screen px-5 pb-20 pt-6 text-[#1d1d1f] md:px-10">
+    <div className="mx-auto max-w-4xl">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">INTERVIEW NOTES</p>
+        <button type="button" onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white hover:bg-black"><Plus className="size-4" />{t("Organize a recap", "整理面试经过")}</button>
+      </div>
+      <header className="pb-8 pt-6">
+        <h1 className="text-3xl font-semibold tracking-tight md:text-5xl">{t("Interview notes", "面试记录")}</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">{t("Paste the interview you already organized. Ardor normalizes it, marks weak spots and keeps it under the interview.", "把你已经整理好的面试经过贴进来，Ardor 只做规范化和薄弱点标注，并存到对应面试下。")}</p>
+      </header>
+      {error && <div role="alert" className="mb-5 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+      {pending && <div className="mb-5 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Ardor is normalizing the recap…", "Ardor 正在整理这份面试记录…")}</div>}
+
+      {selected ? <RecapReport recap={selected} onBack={() => setSelectedId(null)} onDelete={() => void remove(selected)} /> : (
+        <section className="overflow-hidden rounded-[2rem] border border-white/80 bg-white/70">
+          {recaps.length === 0 ? <div className="px-6 py-16 text-center">
+            <p className="text-sm text-stone-500">{t("No interview notes yet.", "还没有面试记录。")}</p>
+            <button type="button" onClick={() => setShowForm(true)} className="mt-5 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white">{t("Organize the first one", "整理第一份")}</button>
+          </div> : recaps.map(recap => <button key={recap.id} type="button" onClick={() => setSelectedId(recap.id)} className="flex w-full items-center justify-between gap-3 border-b border-stone-100 px-5 py-4 text-left last:border-b-0 hover:bg-violet-50/40">
+            <span className="min-w-0 truncate text-sm font-medium">{recap.title}</span>
+            <span className="shrink-0 text-xs text-stone-400">{new Date(recap.createdAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "short", day: "numeric" })}</span>
+            <ArrowRight className="size-4 shrink-0 text-stone-300" />
+          </button>)}
+        </section>
+      )}
+
+      {showForm && <AppDialog title={t("Organize an interview", "整理一份面试记录")} onClose={() => setShowForm(false)}>
+        <form onSubmit={organize} className="space-y-4">
+          <label className="block text-sm">{t("Which interview is this from?", "这份记录属于哪场面试？")}
+            <select name="jobOpportunityId" required defaultValue={opportunities[0]?.id ?? ""} className="field mt-2">
+              {opportunities.length === 0 && <option value="">{t("No interview yet — add one first", "还没有面试，请先在面试里添加")}</option>}
+              {opportunities.map(item => <option key={item.id} value={item.id}>{item.company}{item.targetRole ? ` · ${item.targetRole}` : ""}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm">{t("Your organized interview recap", "你整理好的面试经过")}
+            <textarea name="content" required minLength={30} maxLength={50000} rows={14} className="field mt-2 resize-y" placeholder={t("Paste the questions, your answers and what you remember. Ardor will only normalize and mark weak spots; it will not invent details.", "粘贴问题、你的回答和记得的细节。Ardor 只做规范化和薄弱点标注，不编造内容。")} />
+          </label>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setShowForm(false)} className="rounded-full px-4 py-2 text-sm text-stone-500 hover:bg-stone-100">{t("Cancel", "取消")}</button>
+            <button disabled={busy || opportunities.length === 0} className="rounded-full bg-[#1d1d1f] px-5 py-2 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Submitting…", "提交中…") : t("Organize", "整理")}</button>
+          </div>
+        </form>
+      </AppDialog>}
+    </div>
+  </main>;
 }
 
-function CompleteReport({ recap, onDelete }: { recap: Recap; onDelete: () => void }) {
-  const { locale, t } = useLocale();
-  const performanceLabel: Record<Performance, string> = { STRONG: t("Strong", "稳"), MIXED: t("Developing", "需巩固"), WEAK: t("Weak", "薄弱"), UNKNOWN: t("Unrated", "待确认") };
-  // A plain question, not a preset command: the agent decides whether this recap
-  // needs flashcards, a learning plan, practice questions or nothing at all.
-  const optimizeHref = `${agentCreationHref("RECAPS", locale, t("Take a look at this interview recap and tell me what I should improve.", "看看这份面经，我需要做什么优化呢？"))}&contextType=RECAP&contextId=${recap.id}&contextLabel=${encodeURIComponent(recap.title)}`;
-  return <div><div className="flex items-start justify-between gap-4"><div><h2 className="mt-4 text-3xl font-semibold tracking-tight">{recap.title}</h2><p className="mt-4 text-sm leading-7 text-stone-600">{recap.overview}</p><Link href={optimizeHref} className="mt-5 inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white hover:bg-black">{t("Improve my plan", "优化计划")}<ArrowRight className="size-4" /></Link>{recap.jobOpportunityId && <Link href={`/app/opportunities?selected=${recap.jobOpportunityId}`} className="ml-3 mt-5 inline-flex items-center gap-2 rounded-full border border-stone-300 px-5 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-100">{t("Open pipeline record", "所属面试流程")}</Link>}</div><button aria-label={t("Delete interview notes", "删除面经")} onClick={onDelete} className="rounded-full p-2 text-stone-300 hover:bg-rose-50 hover:text-rose-500"><Trash2 className="size-4" /></button></div>{(recap.strengths.length > 0 || recap.weaknesses.length > 0) && <div className="mt-8 grid gap-3 md:grid-cols-2">{recap.strengths.length > 0 && <Summary title={t("What went well", "做得不错")} items={recap.strengths} tone="emerald" />}{recap.weaknesses.length > 0 && <Summary title={t("Focus next", "优先补强")} items={recap.weaknesses} tone="rose" />}</div>}<div className="mt-10 space-y-5">{recap.questions.map((q) => <article key={q.id} className="rounded-[1.75rem] bg-white/65 p-5 md:p-7"><div className="flex items-start gap-3"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-stone-950 text-xs text-white">{q.sequenceNumber}</span><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><h3 className="text-lg font-semibold leading-7">{q.questionText}</h3><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${performanceStyle[q.performance]}`}>{performanceLabel[q.performance]}</span></div>{q.tags.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{q.tags.map((tag) => <span key={tag} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] text-stone-500">{tag}</span>)}</div>}</div></div><div className="mt-5 space-y-5 text-sm leading-7 md:pl-11">{q.candidateAnswer && <Section title={t("Your answer", "当时回答")} text={q.candidateAnswer} />}{q.followUps.length > 0 && <section><h4 className="text-xs font-semibold uppercase tracking-wider text-stone-400">{t("Follow-ups", "追问")}</h4><ul className="mt-1 space-y-1 text-stone-600">{q.followUps.map((x) => <li key={x}>· {x}</li>)}</ul></section>}<Section title={t("Review", "复盘")} text={q.assessment} />{q.weaknessReason && <Section title={t("Weak spot", "薄弱点")} text={q.weaknessReason} danger />}{q.betterAnswer && <section className="rounded-2xl bg-violet-50/80 p-4"><h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-violet-500"><Sparkles className="size-3.5" />{t("A stronger answer", "更好的回答思路")}</h4><p className="mt-2 whitespace-pre-wrap text-violet-950/75">{q.betterAnswer}</p></section>}</div></article>)}</div></div>;
+function RecapReport({ recap, onBack, onDelete }: { recap: Recap; onBack: () => void; onDelete: () => void }) {
+  const { t } = useLocale();
+  return <div>
+    <div className="mb-5 flex items-center justify-between gap-3">
+      <button type="button" onClick={onBack} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("All interview notes", "所有面试记录")}</button>
+      <button type="button" onClick={onDelete} aria-label={t("Delete recap", "删除面试记录")} className="rounded-full p-2 text-stone-300 hover:bg-rose-50 hover:text-rose-500"><Trash2 className="size-4" /></button>
+    </div>
+    <section className="rounded-[2rem] border border-white/80 bg-white/75 p-6 shadow-[0_16px_50px_rgba(49,39,70,0.05)] md:p-8">
+      <h2 className="text-2xl font-semibold tracking-tight">{recap.title}</h2>
+      <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-600">{recap.overview}</p>
+      {(recap.strengths.length > 0 || recap.weaknesses.length > 0) && <div className="mt-6 grid gap-3 md:grid-cols-2">
+        {recap.strengths.length > 0 && <div className="rounded-2xl bg-emerald-50/70 p-4"><h3 className="text-sm font-semibold text-emerald-800">{t("What worked", "做得不错")}</h3><ul className="mt-2 space-y-1 text-sm leading-6 text-emerald-950/80">{recap.strengths.map(item => <li key={item}>· {item}</li>)}</ul></div>}
+        {recap.weaknesses.length > 0 && <div className="rounded-2xl bg-rose-50/70 p-4"><h3 className="text-sm font-semibold text-rose-800">{t("Weak spots", "薄弱点")}</h3><ul className="mt-2 space-y-1 text-sm leading-6 text-rose-950/80">{recap.weaknesses.map(item => <li key={item}>· {item}</li>)}</ul></div>}
+      </div>}
+    </section>
+    <div className="mt-5 space-y-4">{recap.questions.map(question => <article key={question.id} className="rounded-[1.6rem] border border-white/80 bg-white/70 p-5 md:p-6">
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-base font-semibold leading-6">{question.questionText}</h3>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] ${performanceStyle[question.performance]}`}>{question.performance}</span>
+      </div>
+      {question.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{question.tags.map(tag => <span key={tag} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] text-stone-500">{tag}</span>)}</div>}
+      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-stone-600">{question.assessment}</p>
+      {question.weaknessReason && <p className="mt-2 rounded-xl bg-rose-50/70 px-3 py-2 text-sm leading-6 text-rose-800"><strong className="font-semibold">{t("Weak spot", "薄弱点")}：</strong>{question.weaknessReason}</p>}
+      {(question.candidateAnswer || question.betterAnswer) && <details className="mt-3 text-sm">
+        <summary className="cursor-pointer text-xs font-medium text-violet-700">{t("Original answer and stronger direction", "原始回答与更好思路")}</summary>
+        {question.candidateAnswer && <p className="mt-2 whitespace-pre-wrap text-stone-500">{question.candidateAnswer}</p>}
+        {question.betterAnswer && <p className="mt-2 whitespace-pre-wrap rounded-xl bg-violet-50/70 p-3 text-violet-950/80">{question.betterAnswer}</p>}
+      </details>}
+    </article>)}</div>
+  </div>;
 }
-function Summary({ title, items, tone }: { title: string; items: string[]; tone: "emerald" | "rose" }) { return <div className={`rounded-2xl p-5 ${tone === "emerald" ? "bg-emerald-50/70" : "bg-rose-50/70"}`}><h3 className="text-sm font-semibold">{title}</h3><ul className="mt-3 space-y-2 text-sm leading-6 opacity-75">{items.map((x) => <li key={x}>· {x}</li>)}</ul></div>; }
-function Section({ title, text, danger = false }: { title: string; text: string; danger?: boolean }) { return <section><h4 className={`text-xs font-semibold uppercase tracking-wider ${danger ? "text-rose-400" : "text-stone-400"}`}>{title}</h4><p className={`mt-1 whitespace-pre-wrap ${danger ? "text-rose-700/80" : "text-stone-600"}`}>{text}</p></section>; }

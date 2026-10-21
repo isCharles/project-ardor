@@ -36,7 +36,7 @@ try {
       { severity: "B", dimensionId: "technicalDepth", category: "技术深度", problem: "技术栈罗列，没有使用深度", why: "无法判断技术深度", action: "每个核心技术写一个具体问题和一个限制" },
       { severity: "C", dimensionId: "clarity", category: "细节润色", problem: "单位和日期格式不一致", why: "降低对数字的信任", action: "统一单位和日期格式" },
     ],
-    scoringContext: { targetRole: "Algorithm engineer", jobDescription: "Build recommendation models", mode: "USER_JD", roleFamily: "algorithm", familyVersion: "ardor-resume-families-v1", rubricVersion: "ardor-resume-rubric-v3", promptVersion: "resume-analysis-v6" },
+    scoringContext: { targetRole: "Algorithm engineer", jobDescription: "Build recommendation models", mode: "USER_JD", roleFamily: "algorithm", familyVersion: "ardor-resume-families-v1", rubricVersion: "ardor-resume-rubric-v3", promptVersion: "resume-analysis-v5" },
   } };
   let complete = false, submitted;
   await context.route("**/api/**", async route => {
@@ -83,7 +83,7 @@ try {
 
   await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });
   await page.getByText("A 区 · 最该改", { exact: true }).waitFor();
-  await page.getByText("简历诊断", { exact: true }).waitFor();
+  await page.getByText("市场现实", { exact: true }).waitFor();
   await page.getByText("算法 · Algorithm engineer", { exact: true }).waitFor();
   await page.getByText("专业深度", { exact: true }).waitFor();
   await page.screenshot({ path: ".next/resume-v3-report.png", fullPage: true });

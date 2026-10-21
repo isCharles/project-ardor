@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpDown, ChevronDown, FileSearch, FileText, GraduationCap, Layers, Mail, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowUpDown, ChevronDown, FileSearch, FileText, GraduationCap, Layers, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, Fragment, useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { FormEvent, Fragment, useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 import { AppDialog } from "@/components/ui/app-dialog";
+import { useDismiss } from "@/components/ardor/overlay";
 import type { PlanContext } from "@/components/ardor/learning-context";
 
 type Round = {
@@ -37,6 +38,7 @@ type Opportunity = {
 type RecapRef = { id: string; title: string; jobOpportunityId: string | null; questions: { id: string }[] };
 type MemoryCardRef = { id: string; recapQuestionId: string | null; status: string };
 type LearningPlanRef = PlanContext & { id: string; concept: string; status: string };
+type RelatedPlan = LearningPlanRef & { relation: "TARGET" | "SOURCE" };
 
 const STATUSES = ["SCHEDULED", "AWAITING_RESULT", "NEXT_ROUND", "REJECTED"];
 
@@ -74,8 +76,11 @@ export default function OpportunitiesPage() {
   const [busy, setBusy] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [preview, setPreview] = useState<{ title: string; body: string } | null>(null);
+  const [planPicker, setPlanPicker] = useState<RelatedPlan[] | null>(null);
   const [editing, setEditing] = useState<Opportunity | null>(null);
+  const newMenuRef = useDismiss<HTMLDivElement>(newMenuOpen, () => setNewMenuOpen(false));
   const [sortAscending, setSortAscending] = useState(false);
 
   function fail(reason: unknown, fallbackEn: string, fallbackZh: string) {
@@ -103,8 +108,6 @@ export default function OpportunitiesPage() {
         setRecaps(recapResult);
         setCards(cardResult);
         setPlans(planResult);
-        const requested = new URLSearchParams(window.location.search).get("selected");
-        if (requested && result.some((item) => item.id === requested)) setExpanded(requested);
       })
       .catch((reason) => {
         if (!active) return;
@@ -243,9 +246,6 @@ export default function OpportunitiesPage() {
         <header className="flex flex-wrap items-end justify-between gap-4 pb-8">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{t("Interviews", "面试")}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {t("Every real interview, one row each — result, date, round, company, platform.", "每条真实面试一行：结果、时间、轮次、公司、平台。")}
-            </p>
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setSortAscending((value) => !value)}
@@ -253,17 +253,30 @@ export default function OpportunitiesPage() {
               <ArrowUpDown className="size-4" />
               {sortAscending ? t("Date: oldest first", "日期：正序") : t("Date: newest first", "日期：倒序")}
             </button>
-            <button type="button" onClick={() => setFormOpen((open) => !open)}
-              className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white hover:bg-stone-800">
-              <Plus className="size-4" />{t("New record", "新建记录")}
-            </button>
+            <div ref={newMenuRef} className="relative" onMouseEnter={() => setNewMenuOpen(true)} onMouseLeave={() => setNewMenuOpen(false)}>
+              <button type="button" aria-haspopup="menu" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen(true)}
+                className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white hover:bg-stone-800">
+                <Plus className="size-4" />{t("New record", "新建记录")}<ChevronDown className={`size-3.5 transition ${newMenuOpen ? "rotate-180" : ""}`} />
+              </button>
+              {newMenuOpen && <div role="menu" className="absolute right-0 top-full z-30 w-56 rounded-2xl border border-stone-200 bg-white p-1.5 pt-2 shadow-[0_18px_50px_rgba(49,39,70,0.16)]">
+                <Link href={`/app?new=1&prefill=${encodeURIComponent(locale === "en" ? "I may send you a JD, interview invite or other role information. Help me record this interview." : "我现在可能发你 JD、约面邮件等岗位信息，你帮我记录一下这个面试。")}`} onClick={() => setNewMenuOpen(false)} className="flex items-start gap-2.5 rounded-xl px-3 py-2.5 hover:bg-violet-50">
+                  <Sparkles className="mt-0.5 size-4 shrink-0 text-violet-600" />
+                  <span><span className="block text-sm font-medium text-stone-800">{t("Let Ardor fill it", "让 Ardor 帮我记")}</span><span className="mt-0.5 block text-[11px] leading-4 text-stone-400">{t("Describe the interview in chat", "在对话里描述这次面试")}</span></span>
+                </Link>
+                <button type="button" onClick={() => { setNewMenuOpen(false); setFormOpen(true); }} className="flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-left hover:bg-stone-50">
+                  <Pencil className="mt-0.5 size-4 shrink-0 text-stone-500" />
+                  <span><span className="block text-sm font-medium text-stone-800">{t("Fill it myself", "自己填写")}</span><span className="mt-0.5 block text-[11px] leading-4 text-stone-400">{t("Company, role, time, JD", "公司、岗位、时间、JD")}</span></span>
+                </button>
+              </div>}
+            </div>
           </div>
         </header>
 
         {error && <div role="alert" className="mb-5 rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
 
         {formOpen && (
-          <form onSubmit={create} className="ardor-panel mb-6 grid gap-4 rounded-[2rem] p-6 md:grid-cols-3">
+          <form onSubmit={create} className="ardor-panel relative mb-6 grid gap-4 rounded-[2rem] p-6 md:grid-cols-3">
+            <button type="button" aria-label={t("Close", "关闭")} onClick={() => setFormOpen(false)} className="absolute right-5 top-5 rounded-full p-1.5 text-stone-400 hover:bg-stone-100"><X className="size-4" /></button>
             <label className="text-sm font-medium">{t("Company", "公司")}
               <input name="company" required maxLength={160} className="field mt-2" placeholder={t("e.g. ByteDance", "例如：字节跳动")} />
             </label>
@@ -370,9 +383,14 @@ export default function OpportunitiesPage() {
                       <tr key={`${item.id}-detail`} className="border-b border-stone-100 bg-stone-50/60">
                         <td colSpan={8} className="px-6 py-5">
                           <div className="min-w-0 space-y-2">
-                            <Link href={"/app/learning/progress?sourceInterviewId=" + item.id} className="inline-flex items-center gap-2 py-2 text-sm text-violet-700 hover:underline">
-                              <GraduationCap className="size-4" />{t("View learning progress from this interview", "查看这场面试的补强进度")}
-                            </Link>
+                            {(recapsFor(item).length > 0 || plansFor(item).length > 0) && (
+                              <Link href={"/app/learning/progress?sourceInterviewId=" + item.id}
+                                className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-violet-50 px-4 py-2.5 text-sm text-violet-900 transition hover:bg-violet-100">
+                                <GraduationCap className="size-4 shrink-0 text-violet-600" />
+                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-violet-600">{t("Improve", "补强")}</span>
+                                <span className="min-w-0 flex-1 truncate">{t("View learning progress from this interview", "查看这场面试的补强进度")}</span>
+                              </Link>
+                            )}
                             {recapsFor(item).map((recap) => (
                               <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`}
                                 className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-violet-50 px-4 py-2.5 text-sm text-violet-900 transition hover:bg-violet-100">
@@ -389,33 +407,29 @@ export default function OpportunitiesPage() {
                                 <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">{cardsFor(item).length}</span>
                               </Link>
                             )}
-                            {plansFor(item).map((plan) => (
-                              <Link key={plan.id} href={`/app/learning?id=${plan.id}`}
-                                className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-amber-50 px-4 py-2.5 text-sm text-amber-900 transition hover:bg-amber-100">
+                            {plansFor(item).length > 0 && (
+                              <button type="button" onClick={() => setPlanPicker(plansFor(item))}
+                                className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-amber-50 px-4 py-2.5 text-left text-sm text-amber-900 transition hover:bg-amber-100">
                                 <GraduationCap className="size-4 shrink-0 text-amber-600" />
-                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-amber-600">{plan.relation === "TARGET" ? t("Preparation", "面试准备") : t("Learning from here", "来源于此")}</span>
-                                <span className="min-w-0 flex-1 truncate" title={plan.concept}>{plan.concept}</span>
-                                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{plan.status}</span>
-                              </Link>
-                            ))}
-                            {item.jdContent && (
-                              <button type="button"
-                                onClick={() => setPreview({ title: t("Job description", "JD"), body: item.jdContent ?? "" })}
-                                className="flex w-full items-center gap-3 rounded-2xl bg-sky-50 px-4 py-2.5 text-left text-sm text-sky-900 transition hover:bg-sky-100">
-                                <FileSearch className="size-4 shrink-0 text-sky-600" />
-                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-sky-600">JD</span>
-                                <span className="min-w-0 flex-1" />
-                                <span className="shrink-0 text-xs text-sky-700">{t("Open", "查看")}</span>
+                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-amber-600">{t("Courses", "课程")}</span>
+                                <span className="min-w-0 flex-1 truncate">{t(`${plansFor(item).length} related course${plansFor(item).length > 1 ? "s" : ""}`, `${plansFor(item).length} 门相关课程`)}</span>
+                                <span className="shrink-0 text-xs text-amber-700">{t("Choose", "选择")}</span>
                               </button>
                             )}
-                            {item.inviteContent && (
+                            {(item.jdContent || item.inviteContent) && (
                               <button type="button"
-                                onClick={() => setPreview({ title: t("Invite email", "约面邮件"), body: item.inviteContent ?? "" })}
-                                className="flex w-full items-center gap-3 rounded-2xl bg-rose-50 px-4 py-2.5 text-left text-sm text-rose-900 transition hover:bg-rose-100">
-                                <Mail className="size-4 shrink-0 text-rose-500" />
-                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-rose-500">{t("Invite", "约面邮件")}</span>
-                                <span className="min-w-0 flex-1" />
-                                <span className="shrink-0 text-xs text-rose-700">{t("Open", "查看")}</span>
+                                onClick={() => setPreview({
+                                  title: t("Other", "其他"),
+                                  body: [
+                                    item.jdContent ? `${t("Job description", "JD")}\n${item.jdContent}` : "",
+                                    item.inviteContent ? `${t("Invite email", "约面邮件")}\n${item.inviteContent}` : "",
+                                  ].filter(Boolean).join("\n\n---\n\n"),
+                                })}
+                                className="flex w-full items-center gap-3 rounded-2xl bg-stone-100 px-4 py-2.5 text-left text-sm text-stone-800 transition hover:bg-stone-200">
+                                <FileSearch className="size-4 shrink-0 text-stone-500" />
+                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t("Other", "其他")}</span>
+                                <span className="min-w-0 flex-1">{t("JD, invite email", "JD、约面邮件")}</span>
+                                <span className="shrink-0 text-xs text-stone-600">{t("Open", "查看")}</span>
                               </button>
                             )}
                             {recapsFor(item).length === 0 && cardsFor(item).length === 0 && plansFor(item).length === 0
@@ -433,6 +447,19 @@ export default function OpportunitiesPage() {
           </table>
         </div>
       </div>
+      {planPicker && (
+        <AppDialog title={t("Courses", "课程")} onClose={() => setPlanPicker(null)}>
+          <div className="space-y-2">{planPicker.map((plan) => (
+            <Link key={plan.id} href={`/app/learning?id=${plan.id}`} onClick={() => setPlanPicker(null)}
+              className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900 transition hover:bg-amber-100">
+              <GraduationCap className="size-4 shrink-0 text-amber-600" />
+              <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-amber-600">{plan.relation === "TARGET" ? t("Preparation", "面试准备") : t("Learning from here", "来源于此")}</span>
+              <span className="min-w-0 flex-1 truncate" title={plan.concept}>{plan.concept}</span>
+              <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{plan.status}</span>
+            </Link>
+          ))}</div>
+        </AppDialog>
+      )}
       {preview && (
         <AppDialog title={preview.title} wide onClose={() => setPreview(null)}>
           <pre className="max-h-[60dvh] overflow-auto whitespace-pre-wrap rounded-2xl bg-stone-50 p-4 text-sm leading-6 text-stone-700">{preview.body}</pre>

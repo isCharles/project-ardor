@@ -220,6 +220,7 @@ public class ResumeService {
             background = ResumeReportV3.background(parsed);
             strengths = ResumeReportV3.strengths(parsed.get("strengths"));
         } catch (IllegalArgumentException failure) {
+            dumpModelOutput(parsed);
             throw failure;
         }
         Map<String, Object> analysis = new LinkedHashMap<>();
@@ -240,6 +241,16 @@ public class ResumeService {
         analysis.put("evaluationKey", key);
         analysis.put("textTruncated", ResumeScoringContext.isTruncated(resume.getParsedText()));
         return scoringStore.publish(userId, resumeId, key, analysis, result.model());
+    }
+
+    private void dumpModelOutput(JsonNode parsed) {
+        try {
+            java.nio.file.Files.createDirectories(java.nio.file.Path.of("target"));
+            java.nio.file.Files.writeString(java.nio.file.Path.of("target", "resume-v3-last-output.json"),
+                    parsed.toString(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+            // Diagnostics must never replace the original validation failure.
+        }
     }
 
     @Transactional(readOnly = true)

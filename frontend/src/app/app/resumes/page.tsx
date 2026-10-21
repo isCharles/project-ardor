@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, FileText, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, FileText, Plus, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
 
@@ -8,7 +8,7 @@ import { ApiError, api } from "@/lib/api";
 import { markBackgroundPending } from "@/lib/background-notifications";
 import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
-import { ResumeReportV3, type IssueSeverity, type RadarGrade, type ResumeReportV3Data } from "@/components/ardor/resume-report-v3";
+import { ResumeReportV3, Radar, type IssueSeverity, type RadarGrade, type ResumeReportV3Data } from "@/components/ardor/resume-report-v3";
 import { ResumePreviewPanel } from "@/components/ardor/resume-preview-drawer";
 import { AppDialog } from "@/components/ui/app-dialog";
 
@@ -92,6 +92,7 @@ export default function ResumesPage() {
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [currentReport, setCurrentReport] = useState<ResumeReportV3Data | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [reanalyzeOpen, setReanalyzeOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -139,6 +140,21 @@ export default function ResumesPage() {
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("Could not load report", "无法载入报告")); });
     return () => { active = false; };
   }, [selected?.id, selected?.analysisId, t]);
+
+  useEffect(() => {
+    const current = [...resumes].sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""))[0];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!current?.analysisId) { setCurrentReport(null); return; }
+    let active = true;
+    api<Analysis>(`/api/resumes/${current.id}/analysis`)
+      .then((result) => {
+        if (!active) return;
+        const data = result.analysis;
+        setCurrentReport(data?.rubricVersion === "ardor-resume-rubric-v3" ? buildReport(current, data, t) : null);
+      })
+      .catch(() => { if (active) setCurrentReport(null); });
+    return () => { active = false; };
+  }, [resumes, t]);
 
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget;
@@ -221,30 +237,75 @@ export default function ResumesPage() {
   const resumeDate = (value: string) => new Intl.DateTimeFormat(locale === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "short", day: "numeric" }).format(new Date(value));
   const resumeCard = (resume: ResumeItem, primary: boolean) => {
     const status = statusMeta(resume, t);
+    const content = <>
+      <span className={primary ? "grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 text-violet-600" : "grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 text-violet-600"}><FileText className={primary ? "size-6" : "size-5"} /></span>
+      <div className={primary ? "min-w-0 flex-1" : "mt-6"}>
+        <div className="flex items-start justify-between gap-3">
+          <h3 className={primary ? "line-clamp-2 text-2xl font-semibold leading-8 tracking-tight" : "line-clamp-2 text-lg font-semibold leading-6 tracking-tight"}>{resume.originalFilename}</h3>
+          <div className="flex shrink-0 items-center gap-2">
+            {!(primary && currentReport) && (typeof resume.overallScore === "number"
+              ? <span className="rounded-full bg-[#1d1d1f] px-3 py-1 text-[11px] font-semibold tabular-nums text-white">{resume.overallScore}</span>
+              : <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${status.className}`}>{status.label}</span>)}
+          </div>
+        </div>
+        <p className="mt-2 text-sm text-stone-400">{resumeDate(resume.createdAt)} · {(resume.sizeBytes / 1024).toFixed(0)} KB</p>
+      </div>
+    </>;
     return (
       <div key={resume.id} className="group relative">
-        <button onClick={() => openResume(resume)} className={primary ? "flex w-full flex-col gap-5 rounded-[2rem] bg-white p-7 text-left shadow-[0_18px_60px_rgba(49,39,70,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_70px_rgba(49,39,70,0.10)] md:flex-row md:items-center" : "rounded-[2rem] bg-white p-6 text-left shadow-[0_12px_50px_rgba(0,0,0,0.045)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_22px_70px_rgba(0,0,0,0.09)]"}>
-          <span className={primary ? "grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 text-violet-600" : "grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 text-violet-600"}><FileText className={primary ? "size-6" : "size-5"} /></span>
-          <div className={primary ? "min-w-0 flex-1" : "mt-6"}>
-            <div className="flex items-start justify-between gap-3">
-              <h3 className={primary ? "truncate text-2xl font-semibold tracking-tight" : "line-clamp-2 text-lg font-semibold leading-6 tracking-tight"}>{resume.originalFilename}</h3>
-              <div className="flex shrink-0 items-center gap-2">
-                {typeof resume.overallScore === "number"
-                  ? <span className="rounded-full bg-[#1d1d1f] px-3 py-1 text-[11px] font-semibold tabular-nums text-white">{resume.overallScore}</span>
-                  : <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${status.className}`}>{status.label}</span>}
+        <button onClick={() => openResume(resume)} className={primary ? "w-full rounded-[2rem] bg-white p-7 text-left shadow-[0_18px_60px_rgba(49,39,70,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_70px_rgba(49,39,70,0.10)]" : "rounded-[2rem] bg-white p-6 text-left shadow-[0_12px_50px_rgba(0,0,0,0.045)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_22px_70px_rgba(0,0,0,0.09)]"}>
+          {primary ? (currentReport ? (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div className="flex min-w-0 flex-col">
+                <div className="flex items-start gap-4 pr-8">
+                  <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 text-violet-600"><FileText className="size-6" /></span>
+                  <div className="min-w-0">
+                    <h3 className="line-clamp-2 text-2xl font-semibold leading-8 tracking-tight">{resume.originalFilename}</h3>
+                    <p className="mt-2 text-sm text-stone-400">{resumeDate(resume.createdAt)} · {(resume.sizeBytes / 1024).toFixed(0)} KB</p>
+                  </div>
+                </div>
+                <div className="mt-5 border-t border-stone-100 pt-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-600">{t("Competitiveness", "当前竞争力")}</p>
+                  <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
+                    <span className="text-5xl font-semibold leading-none tracking-[-0.05em]">{currentReport.score}</span>
+                    <span className="pb-1 text-xs text-stone-400">/ 100</span>
+                    <span className="mb-1 rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-800">{currentReport.band}</span>
+                  </div>
+                  <p className="mt-2 text-xs text-stone-400">{currentReport.condition}</p>
+                  <div className="mt-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-600">{t("Diagnosis", "简历诊断")}</p>
+                    <p className="mt-1.5 line-clamp-3 text-sm leading-6 text-stone-600">{currentReport.summary.replace(/\*\*/g, "").replace(/`/g, "")}</p>
+                    {currentReport.background && <p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-500">{currentReport.background.replace(/\*\*/g, "").replace(/`/g, "")}</p>}
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 text-[10px]">
+                    {(["A", "B", "C"] as const).map(severity => {
+                      const count = currentReport.issues.filter(issue => issue.severity === severity).length;
+                      return <span key={severity} className={`rounded-full px-2 py-0.5 font-medium ${severity === "A" ? "bg-rose-50 text-rose-700" : severity === "B" ? "bg-amber-50 text-amber-700" : "bg-sky-50 text-sky-700"}`}>{severity} · {count}</span>;
+                    })}
+                  </div>
+                </div>
+                <div className="mt-auto flex flex-wrap gap-3 pt-5 text-[10px] text-stone-400">
+                  <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-violet-600" />{t("You", "你")}</span>
+                  <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full border border-stone-400 bg-stone-200" />{t("Market requirement", "市场要求")}</span>
+                </div>
+              </div>
+              <div className="relative flex min-h-[320px] flex-col justify-center">
+                <p className="absolute left-0 top-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-600">{t("Capability radar", "能力雷达")}</p>
+                <div className="flex flex-1 items-center justify-center pt-5"><Radar dimensions={currentReport.dimensions} /></div>
               </div>
             </div>
-            <p className="mt-2 text-sm text-stone-400">{resumeDate(resume.createdAt)} · {(resume.sizeBytes / 1024).toFixed(0)} KB</p>
-          </div>
-          {primary && <span className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-violet-700">{resume.analysisId ? t("View report", "查看报告") : t("Analyze", "分析简历")}<ArrowRight className="size-4" /></span>}
+          ) : <div className="flex flex-col gap-5 pr-8 md:flex-row md:items-start">{content}</div>) : content}
         </button>
+        {primary && <span aria-hidden="true" className="pointer-events-none absolute right-5 top-5 text-violet-500"><ArrowUpRight className="size-5" /></span>}
         <button type="button" onClick={() => { setDeleteTarget(resume); setDeleteError(""); }} aria-label={t("Delete resume", "删除简历")} title={t("Delete resume", "删除简历")} className="absolute bottom-5 right-5 grid size-8 place-items-center rounded-full text-stone-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100"><Trash2 className="size-4" /></button>
       </div>
     );
   };
   return <main className="ardor-workbench min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-6xl px-5 pb-24 pt-6 md:px-10">
-    <div className="flex items-center justify-end"><button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white transition hover:scale-[1.02] hover:bg-black"><Plus className="size-4" />{t("Upload resume", "上传新简历")}</button></div>
-    <header className="pb-12 pt-14 md:pb-16 md:pt-20"><p className="text-sm font-medium text-violet-600">RESUME</p><h1 className="mt-4 text-5xl font-semibold tracking-[-0.055em] md:text-6xl">{t("One resume, iterated well.", "把一份简历打磨好。")}</h1></header>
+    <header className="flex flex-wrap items-end justify-between gap-5 pb-10 pt-10 md:pb-12 md:pt-14">
+      <div><p className="text-sm font-medium text-violet-600">RESUME</p><h1 className="mt-3 text-5xl font-semibold tracking-[-0.055em] md:text-6xl">{t("One resume, iterated well.", "把一份简历打磨好。")}</h1></div>
+      <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white transition hover:scale-[1.02] hover:bg-black"><Plus className="size-4" />{t("Upload resume", "上传新简历")}</button>
+    </header>
     {(error || notice) && <div className={`mb-8 rounded-2xl px-5 py-4 text-sm ${error ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{error || notice}</div>}
     {showUpload && <section className="mb-10 rounded-[2rem] bg-white p-6 shadow-[0_18px_70px_rgba(0,0,0,0.07)] md:p-8"><div className="flex items-center justify-between"><h2 className="text-2xl font-semibold">{t("Upload resume", "上传简历")}</h2><button onClick={() => setShowUpload(false)} aria-label={t("Close", "关闭")} className="rounded-full p-2 text-stone-400 hover:bg-stone-100"><X className="size-5" /></button></div><form onSubmit={upload} className="mt-6 flex flex-col gap-3 sm:flex-row"><label className="flex min-h-14 flex-1 cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-stone-300 bg-[#fafafa] px-5 text-sm text-stone-500 transition hover:border-violet-400 hover:bg-violet-50/40"><Upload className="size-5 text-violet-500" /><span className="truncate">{fileName || t("PDF or DOCX · up to 10 MB", "PDF 或 DOCX · 10 MB 内")}</span><input type="file" name="file" className="hidden" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required onChange={chooseFile} /></label><button disabled={busy === "upload"} className="min-h-14 rounded-2xl bg-violet-600 px-7 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">{busy === "upload" ? t("Parsing…", "解析中…") : t("Upload", "上传")}</button></form></section>}
     {resumes.length === 0 ? (

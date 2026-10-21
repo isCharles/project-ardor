@@ -46,8 +46,8 @@ class SidebarPreferencesServiceTests {
 
     @Test void savesOwnedIdsAndLegacyProjectionAtomicallyAtExpectedVersion() {
         successfulWrite(3);
-        var view = service.saveDestinations(owner, List.of("job-search", "learning.practice", "learning.practice"), 3);
-        assertThat(view.destinationIds()).containsExactly("chat", "job-search", "learning.practice");
+        var view = service.saveDestinations(owner, List.of("job-search", "learning.mock-interviews", "learning.mock-interviews"), 3);
+        assertThat(view.destinationIds()).containsExactly("chat", "job-search", "learning.mock-interviews");
         assertThat(view.hrefs()).containsExactly("/app", "/app/opportunities", "/app/interviews");
         assertThat(view.revision()).isEqualTo(4);
         verify(jdbc).update(anyString(), argThat((String json) -> json.contains("hrefs") && !json.contains("destinationIds")),
@@ -57,11 +57,11 @@ class SidebarPreferencesServiceTests {
     @Test void oldClientSavePreservesExistingDomainSelectionsWithSameCompatibilityUrl() {
         saved("""
                 {"sidebar":{"hrefs":["/app","/app/opportunities","/app/interviews"],"revision":4},
-                 "navigation":{"destinationIds":["chat","job-search","learning.practice"],"revision":4}}
+                 "navigation":{"destinationIds":["chat","job-search","learning.mock-interviews"],"revision":4}}
                 """);
         successfulWrite(4);
         assertThat(service.save(owner, List.of("/app", "/app/opportunities", "/app/interviews"), 4).destinationIds())
-                .containsExactly("chat", "job-search", "learning.practice");
+                .containsExactly("chat", "job-search", "learning.mock-interviews");
     }
 
     @Test void staleIdProjectionIsIgnoredAfterAnOlderServerWritesTheSidebar() {
