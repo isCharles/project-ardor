@@ -44,7 +44,7 @@ import com.projectardor.learning.plan.domain.LearningPlan;
 import com.projectardor.learning.plan.domain.LearningSourceType;
 import com.projectardor.learning.plan.service.LearningPlanService;
 import com.projectardor.learning.plan.service.LearningCreationCommand;
-import com.projectardor.learning.plan.web.LearningPlanResponse;
+import com.projectardor.learning.plan.service.LearningPlanView;
 import com.projectardor.assistant.conversation.AgentContextReference;
 import com.projectardor.jobsearch.interview.service.OpportunityService;
 import com.projectardor.jobsearch.interview.service.InterviewProcessCommands;
@@ -354,13 +354,13 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "list_learning_plans", value = "列出当前用户的学习计划、状态、日期和 UUID")
-        public List<LearningPlanResponse> listLearningPlans() {
-            return learningPlanService.list(userId).stream().map(LearningPlanResponse::from).toList();
+        public List<LearningPlanView> listLearningPlans() {
+            return learningPlanService.listViews(userId);
         }
 
         @Tool(name = "get_learning_plan", value = "读取指定学习计划的讲解、练习和最近一次评估")
-        public LearningPlanResponse getLearningPlan(@P("学习计划 UUID") String planId) {
-            return LearningPlanResponse.from(learningPlanService.get(userId, uuid(planId, "学习计划 ID")));
+        public LearningPlanView getLearningPlan(@P("学习计划 UUID") String planId) {
+            return learningPlanService.detail(userId, uuid(planId, "学习计划 ID"));
         }
 
         @Tool(name = "delete_learning_plan", value = "提议删除当前用户指定的学习计划、练习记录及关联日历任务。先调用 list_learning_plans 定位真实 UUID；只显示确认按钮，用户点击后才删除")
@@ -372,15 +372,15 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "update_learning_plan", value = "修改当前用户学习计划的说明或改期，同步日历；保留讲解、练习和评分。先读取真实计划；不能用改名替换学习主题，换主题应另建计划")
-        public LearningPlanResponse updateLearningPlan(@P("学习计划 UUID") String planId,
+        public LearningPlanView updateLearningPlan(@P("学习计划 UUID") String planId,
                 @P(value = "新的说明；不修改传 null，清空传空字符串", required = false) String reason,
                 @P(value = "新的未来安排时间，带时区的 ISO-8601；不修改传 null", required = false) String scheduledAt) {
-            return LearningPlanResponse.from(learningPlanService.updateArrangement(userId, uuid(planId, "学习计划 ID"), reason, nullableInstant(scheduledAt)));
+            return learningPlanService.updateArrangementView(userId, uuid(planId, "学习计划 ID"), reason, nullableInstant(scheduledAt));
         }
 
         @Tool(name = "begin_learning_plan", value = "将当前用户的学习计划标记为开始学习，不生成新内容、不伪造完成或评分")
-        public LearningPlanResponse beginLearningPlan(@P("学习计划 UUID") String planId) {
-            return LearningPlanResponse.from(learningPlanService.begin(userId, uuid(planId, "学习计划 ID")));
+        public LearningPlanView beginLearningPlan(@P("学习计划 UUID") String planId) {
+            return learningPlanService.beginView(userId, uuid(planId, "学习计划 ID"));
         }
 
         public Map<String, Object> createLearningPlan(String concept, String reason, String scheduledAt, String sourceType, String sourceId) {

@@ -38,7 +38,7 @@ public class LearningPlanController {
 
     @GetMapping
     public List<LearningPlanResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return service.list(principal.userId()).stream().map(LearningPlanResponse::from).toList();
+        return service.listViews(principal.userId()).stream().map(LearningPlanResponse::from).toList();
     }
 
     @GetMapping("/request-status")
@@ -50,7 +50,7 @@ public class LearningPlanController {
 
     @GetMapping("/{id}")
     public LearningPlanResponse get(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) {
-        return LearningPlanResponse.from(service.get(principal.userId(), id));
+        return LearningPlanResponse.from(service.detail(principal.userId(), id));
     }
 
     @PostMapping
@@ -80,7 +80,7 @@ public class LearningPlanController {
 
     @PostMapping("/{id}/begin")
     public LearningPlanResponse begin(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) {
-        return LearningPlanResponse.from(service.begin(principal.userId(), id));
+        return LearningPlanResponse.from(service.beginView(principal.userId(), id));
     }
 
     @PostMapping("/{id}/attempts")
@@ -106,6 +106,6 @@ public class LearningPlanController {
     @org.springframework.web.bind.annotation.PatchMapping("/{id}/arrangement")
     public LearningPlanResponse updateArrangement(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id,
             @Valid @RequestBody LearningArrangementRequest request) {
-        return LearningPlanResponse.from(service.updateArrangement(principal.userId(), id, request.reason(), request.scheduledAt()));
+        return LearningPlanResponse.from(service.updateArrangementView(principal.userId(), id, request.reason(), request.scheduledAt()));
     }
 }

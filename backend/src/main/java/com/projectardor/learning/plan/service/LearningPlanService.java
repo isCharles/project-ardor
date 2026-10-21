@@ -141,6 +141,30 @@ public class LearningPlanService {
     }
 
     @Transactional(readOnly = true)
+    public List<LearningPlanView> listViews(UUID userId) {
+        return list(userId).stream().map(LearningPlanView::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public LearningPlanView detail(UUID userId, UUID planId) {
+        return LearningPlanView.from(get(userId, planId));
+    }
+
+    @Transactional
+    public LearningPlanView beginView(UUID userId, UUID planId) {
+        LearningPlan plan = begin(userId, planId);
+        repository.flush();
+        return LearningPlanView.from(plan);
+    }
+
+    @Transactional
+    public LearningPlanView updateArrangementView(UUID userId, UUID planId, String reason, Instant scheduledAt) {
+        LearningPlan plan = updateArrangement(userId, planId, reason, scheduledAt);
+        repository.flush();
+        return LearningPlanView.from(plan);
+    }
+
+    @Transactional(readOnly = true)
     public List<LearningPlanCreationStore.RequestStatus> requestStatuses(UUID userId, List<UUID> requestIds) {
         if (requestIds == null || requestIds.isEmpty() || requestIds.size() > 50) {
             throw new IllegalArgumentException("一次可查询 1 到 50 个学习请求");

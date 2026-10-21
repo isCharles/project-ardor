@@ -11,7 +11,7 @@
 | 面试记录与问题 | 求职 | `recap.InterviewRecap` 关联流程与可空轮次；问题通过报告继承 | 不推测历史轮次，不重复要求填写父对象拥有的信息 |
 | 原始转录、确认纪要与复盘版本 | 求职 | 原始任务保留原文；`interview_minutes` 可编辑；`interview_minutes_reviews` 保存不可变确认快照与异步结果 | Agent 不能代替用户确认；报告不是原文；新增轮次关联必须覆盖整条来源链 |
 | 投递活动 | 求职 | 日计数、目标与提醒 | 日计数不等于逐份投递记录 |
-| 学习计划 | 学习 | SCHEDULED、IN_PROGRESS、NEEDS_REVIEW、COMPLETED | 来源与目标面试是关联，不是全部学习都必须有面试父对象 |
+| 学习计划 | 学习 | SCHEDULED、IN_PROGRESS、NEEDS_REVIEW、COMPLETED；LearningPlanView 为 HTTP/Agent 共用的领域应用快照，见 [快照合同](LEARNING_ATTEMPT_HISTORY.md#学习计划应用快照) | 来源与目标面试是关联，不是全部学习都必须有面试父对象 |
 | 学习尝试与内容版本 | 学习 | V52 新增 `learning_attempts`（每轮提交一行不可变事实）与 `learning_plans.content_version`/`exercises_version`；旧 `last_evaluation.attempts` 仅作兼容投影 | 尝试历史不是最后分数缓存；版本号不是资源 UUID；回填的 LEGACY 行不伪造评分模型 |
 | 模拟面试 | 学习训练 | `interview` 包与既有 session 状态 | 名称必须明确 Mock Interview；真实面试保留 Interview |
 | 重答与复测 | 学习训练 | `InterviewReplayAttempt` 等现有实现 | 不是录音播放，不与模拟会话共用万能状态表 |

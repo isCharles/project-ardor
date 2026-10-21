@@ -219,6 +219,14 @@ bash backend/src/test/resources/interview-round-upgrade.sh attempts
 
 ## 6. 兼容与回退
 
+### 学习计划应用快照
+
+学习计划的对外读取由 learning.plan.service.LearningPlanView 拥有。HTTP 的 LearningPlanResponse 是薄适配；Agent 的 list/get/begin/update 学习工具直接消费应用快照，不再依赖 learning.plan.web。LearningPlanService 的 listViews/detail/beginView/updateArrangementView 复用既有归属查询、事务及状态规则，不建立第二套业务写入。旧实体入口仍为既有创建/评估等内部调用保留。
+
+快照保留原 24 个 JSON 字段与顺序、sourceType/sourceId 兼容投影、明确来源/准备目标和内容/题目版本。练习仅投影 exerciseId/question/type/options，不因快照而暴露 correctOption 或 rubric；既有空值与默认题型保持。讲解与最近评价递归复制并只读，调用者不能借嵌套 Map/List 修改实体状态。写入入口在构造快照前 flush，确保返回的 updatedAt 已经过持久化回调；flush/提交失败仍不得返回成功。
+
+本批不更改 schema、URL、工具名/参数/scope、删除确认或生成/评估流程。LearningPlanViewTests 比较独立构造的旧 HTTP JSON，覆盖历史来源、独立目标、版本与嵌套只读；服务测试覆盖跨用户拒绝、改期保留评分及时间回调顺序；架构守卫只保护已迁移的学习边界，不宣称其余 Agent Web DTO 耦合已全部清除。
+
 - 旧字段、旧 JSONB 投影、旧 API 响应字段全部保留；新列与新表是增量。
 - 未删除学习计划时数据保留；一旦删除学习计划，其尝试历史随复合外键**不可逆级联删除**（历史行为扩大点，部署需先备份）。
 - 回退旧应用可以忽略 `content_version`、`exercises_version` 与 `learning_attempts`，继续读写旧投影；不需要降级数据库、删除历史或改写已执行迁移。

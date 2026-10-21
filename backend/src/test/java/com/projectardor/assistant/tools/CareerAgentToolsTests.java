@@ -41,6 +41,35 @@ import com.projectardor.platform.model.websearch.service.TavilySearchService;
 import com.projectardor.platform.model.websearch.service.WebSearchResult;
 
 class CareerAgentToolsTests {
+    @Test
+    void learningReadAndWriteToolsUseOwnedViewsWithoutHttpDtoMapping() {
+        LearningPlanService service = mock(LearningPlanService.class);
+        CareerAgentTools tools = new CareerAgentTools(
+                mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
+                mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class), mock(KnowledgeService.class), service,
+                mock(ApplicationRhythmService.class), mock(OpportunityService.class),
+                mock(com.projectardor.platform.jobs.aijobs.AiJobService.class), mock(com.projectardor.learning.review.service.FlashcardService.class));
+        UUID owner = UUID.randomUUID();
+        var entity = com.projectardor.learning.plan.domain.LearningPlan.create(owner, "JVM", "fixture",
+                com.projectardor.learning.plan.domain.LearningSourceType.MANUAL, null, Map.of(), List.of(), Instant.now().plusSeconds(86400), "fixture");
+        var view = com.projectardor.learning.plan.service.LearningPlanView.from(entity);
+        when(service.listViews(owner)).thenReturn(List.of(view));
+        when(service.detail(owner, entity.getId())).thenReturn(view);
+        when(service.beginView(owner, entity.getId())).thenReturn(view);
+        when(service.updateArrangementView(owner, entity.getId(), "updated", null)).thenReturn(view);
+        var bound = tools.bind(owner, "读取学习计划并修改说明", UUID.randomUUID());
+        assertThat(bound.listLearningPlans()).containsExactly(view);
+        assertThat(bound.getLearningPlan(entity.getId().toString())).isSameAs(view);
+        assertThat(bound.beginLearningPlan(entity.getId().toString())).isSameAs(view);
+        assertThat(bound.updateLearningPlan(entity.getId().toString(), "updated", null)).isSameAs(view);
+        verify(service).listViews(owner);
+        verify(service).detail(owner, entity.getId());
+        verify(service).beginView(owner, entity.getId());
+        verify(service).updateArrangementView(owner, entity.getId(), "updated", null);
+        verify(service, never()).delete(any(), any());
+    }
 
     @Test void conversationalAnswerUsesTrustedInterviewContextButNeverExternalAnswerText() {
         var interviews = mock(InterviewService.class);
