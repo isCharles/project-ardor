@@ -25,6 +25,10 @@ Anthropic 的存储 Base URL 沿用普通分析网关的服务根地址合同：
 
 SDK 内部同步重试仍为零，流式取消仍经 AgentStreamLease。这不承诺远端生成已停止、所有供应商异常均被识别或已发生的工具写入可以回滚。真实供应商质量、计费和长时流式行为不由合成协议测试证明。
 
+失败分类的两个特殊边界：Jackson 2 的 JsonProcessingException 虽继承 IOException，但属于不可重试的 LLM_INVALID_RESPONSE，不是网络断开；Jackson 3 同类解析异常采用相同合同。SDK 的 UnresolvedModelServerException（即使不带 cause）以及 JDK UnresolvedAddressException 映射为 LLM_DNS_FAILED，不回落为不可重试的未知模型错误。包装的领域 LlmCallException 仍优先保持原合同。
+
+真实 SDK 验收还复现 Anthropic 流式解析回调异常被 SSE parser 忽略：上层既收不到最终结果，也收不到错误。LeasedHttpClientBuilder 在既有传输边界包装回调，先将 RuntimeException 交给 onError 并关闭本次响应体，再让解析器继续其清理；同一失败只转交一次，之后的事件/关闭不能伪造成功。不增加自动重试，也不声称关闭本地响应体会撤销远端请求或业务操作。实际坏 SSE JSON 探针同时覆盖两个协议，已有正常文本/工具回合/取消合同继续运行。
+
 ## 验证与演进边界
 
 - CompatibleLlmGatewayTests 保留两种 JSON 协议的请求与截断合同。

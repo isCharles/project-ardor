@@ -53,4 +53,26 @@ class AgentStreamFailureTests {
         assertThat(classified.getCode()).isEqualTo(code);
         assertThat(classified.getMessage()).doesNotContain("secret");
     }
+
+    @Test void actualCodecParseFailureIsNotRetryableNetworkFailure() {
+        Throwable parse = org.assertj.core.api.Assertions.catchThrowable(() ->
+                new com.projectardor.assistant.json.ArdorJsonCodecFactory().create().fromJson("{secret-invalid-json", java.util.Map.class));
+        assertThat(parse).isInstanceOf(IllegalArgumentException.class);
+        var classified = (LlmCallException) CareerAgentService.classifyStreamFailure(parse);
+        assertThat(classified.getCode()).isEqualTo("LLM_INVALID_RESPONSE");
+        assertThat(classified.isRetryable()).isFalse();
+        assertThat(classified.getMessage()).doesNotContain("secret-invalid-json");
+        assertThat(com.projectardor.platform.model.llm.service.LlmFailureClassifier.transport(new java.io.IOException(parse))).isNull();
+    }
+
+    @Test void sdkDnsFailureAndUnresolvedAddressRetainDistinctRetryableClassification() {
+        for (Throwable cause : java.util.List.of(new java.nio.channels.UnresolvedAddressException(),
+                new dev.langchain4j.exception.UnresolvedModelServerException("secret"),
+                new dev.langchain4j.exception.UnresolvedModelServerException(new java.nio.channels.UnresolvedAddressException()))) {
+            var classified = (LlmCallException) CareerAgentService.classifyStreamFailure(new RuntimeException(cause));
+            assertThat(classified.getCode()).isEqualTo("LLM_DNS_FAILED");
+            assertThat(classified.isRetryable()).isTrue();
+            assertThat(classified.getMessage()).doesNotContain("secret");
+        }
+    }
 }

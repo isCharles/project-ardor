@@ -28,11 +28,13 @@ public final class LlmFailureClassifier {
 
     /** Null means no transport evidence; do not guess from exception text. */
     public static LlmCallException transport(Throwable cause) {
+        if (payload(cause) != null) return null;
         Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         LlmCallException network = null;
         for (Throwable current = cause; current != null && seen.add(current); current = current.getCause()) {
-            if (current instanceof UnknownHostException || current instanceof ExternalHostResolutionException)
-                return failure("LLM_DNS_FAILED", "无法解析 LLM 域名，请检查 Docker DNS 或代理设置", true, cause);
+            if (current instanceof UnknownHostException || current instanceof ExternalHostResolutionException
+                    || current instanceof java.nio.channels.UnresolvedAddressException)
+                return dns(cause);
             if (current instanceof SocketTimeoutException || current instanceof HttpTimeoutException || current instanceof TimeoutException)
                 return failure("LLM_TIMEOUT", "连接 LLM 超时，请检查网络、代理或服务状态", true, cause);
             if (current instanceof SSLException)
@@ -43,6 +45,21 @@ public final class LlmFailureClassifier {
                 network = failure("LLM_NETWORK_FAILED", "LLM 网络请求失败，请检查网络或代理设置", true, cause);
         }
         return network;
+    }
+
+    public static LlmCallException dns(Throwable cause) {
+        return failure("LLM_DNS_FAILED", "无法解析 LLM 域名，请检查 Docker DNS 或代理设置", true, cause);
+    }
+
+    /** Jackson 2 parsing errors are IOExceptions, but replay cannot repair an invalid payload. */
+    public static LlmCallException payload(Throwable cause) {
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable current = cause; current != null && seen.add(current); current = current.getCause()) {
+            if (current instanceof com.fasterxml.jackson.core.JsonProcessingException
+                    || current instanceof tools.jackson.core.JacksonException)
+                return failure("LLM_INVALID_RESPONSE", "LLM 返回格式无法解析，请检查所选协议是否与 Base URL 匹配", false, cause);
+        }
+        return null;
     }
 
     private static LlmCallException failure(String code, String message, boolean retryable, Throwable cause) {

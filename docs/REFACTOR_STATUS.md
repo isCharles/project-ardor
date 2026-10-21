@@ -60,6 +60,15 @@
 
 ## 3. 兼容与回退
 
+### 2026-10-21 本机补充验收
+
+- 候选后端连接独立 internal Docker 网络中的临时 PostgreSQL/Redis/fake LLM；固定上游的本机测试入口用于访问，不挂载日常数据卷、不调用真实模型。空库迁移及 JPA validate 启动成功，最新迁移为 53。
+- interview-minutes-acceptance 与 learning-context-acceptance 本机通过：原始转录保存、确认快照、后台复盘、双用户隔离、明确来源/独立目标、卡片复习与批量删除范围。仅在合成库调高验收额度，未更改日常额度。
+- 当前 main 前端重新 build 后，本机 Edge 跑通 learning-progress-live：实际认证 API/数据库的两轮面试、确认复盘、学习、重答、卡片复习及进度展示，无 API 响应 mock。domain-navigation-ui 也通过；该导航测试使用合成响应，不能替代前一条真实后端验证。首轮因本机旧 .next 产物未命中入口，重建后通过，未将旧构建失败归咎于新代码。
+- 停止合成后端后导出数据库并恢复到另一份全新 PostgreSQL：50 张 public 表、148 行的汇总摘要均为 36cfed59122c749e6317ec7a8f478490。备份 SHA256 为 9B8C9E01D5F2A1FCEA7546EC7B415BF01F9D96C368A9F6276F9D483A9DAFCF9C。恢复库由候选 JAR 成功启动，53 条迁移校验成功，健康端点 200。
+- 上述恢复仅证明本次合成数据库与应用映射：上传目录为 0 文件，不证明真实上传文件恢复；只使用合成密钥，不证明日常密钥托管、真实供应商配置或生产规模恢复。此前列出的相关未验证项不能因此整体划掉。
+- 当前桌面端 17 项自动回归全部通过（服务器根地址、受信任导航、原生菜单、语言、连接探测和更新错误等），版本检查一致为 0.6.2；它不等于安装包人工回归，也不要求仅因后端内部修改重新发安装包。
+
 - 未改写任何已执行 Flyway 迁移；V40–V53 均为增量迁移，旧列、旧 API、旧 URL、工具名、scope、资源 UUID、桌面协议保持。
 - B1–B8 领域包迁移（含 `recap` 拆分、`agent` → `assistant`）不改变表名/列名/JSON 字段；回退应用版本即可，schema 与数据保留。
 - `/app/evidence`、`/app/cards`、`/app/opportunities`、`/app/recaps`、`/api/memory-cards`、`/api/interview-recaps`、`/api/opportunities` 继续保留；新入口复用同一实现。
@@ -67,8 +76,8 @@
 
 ## 4. 未验证项（不得视为已完成）
 
-1. `learning-context-acceptance.mjs` 在本机隔离环境的独立重复运行（本地 429 限流；CI 已覆盖同一脚本）。
-2. 浏览器端 `golden-path-ui.mjs` / `domain-navigation-ui.mjs` 的本机人工运行（CI 有对应作业，但本次未在本机跑浏览器）。
+1. 本机完整 `golden-path-ui.mjs` 与桌面人工回归仍待做；learning-context、learning-progress-live 与 domain-navigation-ui 已补本机验证，范围和限制见本机补充验收。
+2. 备份恢复后的完整客户端操作与实际上传文件恢复仍待验证；本次只做合成全表摘要与恢复库启动校验。
 3. 真实模型供应商的质量、语音、计费与长时流式行为；测试只使用 fake LLM 与合成数据。
 4. 多副本/跨实例行为：取消不跨实例传播，`complete()` 的 TOCTOU 只在单实例假设下安全（文档已声明）。
 5. 备份/恢复演练、生产规模回填耗时与锁影响、桌面安装包手工回归。

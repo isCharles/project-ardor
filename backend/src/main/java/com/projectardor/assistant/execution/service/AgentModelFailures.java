@@ -22,9 +22,12 @@ final class AgentModelFailures {
             if (current instanceof ModelNotFoundException) return LlmFailureClassifier.http(404, failure);
             if (current instanceof RateLimitException) return LlmFailureClassifier.http(429, failure);
             if (current instanceof InternalServerException) return LlmFailureClassifier.http(500, failure);
+            if (current instanceof UnresolvedModelServerException) return LlmFailureClassifier.dns(failure);
             if (current instanceof dev.langchain4j.exception.TimeoutException)
                 return upstreamTimeout(failure);
         }
+        LlmCallException payload = LlmFailureClassifier.payload(failure);
+        if (payload != null) return payload;
         LlmCallException transport = LlmFailureClassifier.transport(failure);
         if (transport == null) return failure;
         if ("LLM_TIMEOUT".equals(transport.getCode()))
