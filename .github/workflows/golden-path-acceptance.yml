@@ -176,6 +176,13 @@ jobs:
           echo "Frontend did not become healthy"
           exit 1
 
+      - name: Verify pre-migration login session through frontend proxy
+        working-directory: backend
+        env:
+          ARDOR_SESSION_COMPAT_RUNTIME: "true"
+          ARDOR_SESSION_COMPAT_REDIS_CONTAINER: ardor-acceptance-redis
+        run: mvn -B -q -Dtest=LegacySessionRuntimeTests test
+
       - name: Verify explicit learning origins and independent preparation targets
         shell: bash
         run: |
