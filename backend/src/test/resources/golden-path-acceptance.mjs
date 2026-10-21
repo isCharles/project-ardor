@@ -909,7 +909,7 @@ async function main() {
   await stranger.request(failedTaskPath,{ expected:404 });
   await stranger.request(`${failedTaskPath}/read`,{ method:"POST",expected:404,body:{completionToken:failedTask.completionToken} });
   await stranger.request(`${failedTaskPath}/retry`,{ method:"POST",expected:404,body:{completionToken:failedTask.completionToken} });
-  await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",body:{completionToken:failedTask.completionToken} });
+  await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",expected:204,body:{completionToken:failedTask.completionToken} });
   assert.equal((await asyncOwner.request(failedTaskPath)).unread,false);
   assert.equal(failedAssessment.attempts, 1);
   assert.equal((await asyncOwner.request(`/api/learning-plans/${asyncPlanId}`)).attemptCount, 0);
@@ -919,8 +919,8 @@ async function main() {
   const gradedTask = await asyncOwner.request(failedTaskPath);
   assert.equal(gradedTask.unread,true,"A newly completed retry must have its own unread result");
   await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",expected:409,body:{completionToken:failedTask.completionToken} });
-  await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",body:{completionToken:gradedTask.completionToken} });
-  await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",body:{completionToken:gradedTask.completionToken} });
+  await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",expected:204,body:{completionToken:gradedTask.completionToken} });
+  await asyncOwner.request(`${failedTaskPath}/read`,{ method:"POST",expected:204,body:{completionToken:gradedTask.completionToken} });
   await asyncOwner.request("/api/auth/logout",{ method:"POST",expected:204 });
   await asyncOwner.request("/api/auth/login",{ method:"POST",body:{email:`golden-async-${suffix}@ardor.invalid`,password} });
   assert.equal((await asyncOwner.request(failedTaskPath)).unread,false,"Read status must survive a new login session");
@@ -1039,14 +1039,19 @@ async function main() {
   assert.equal(resumeTask.unread,true);
   assert.equal(resumeTask.resultPath,`/app/resumes?selected=${resume.id}`);
   await stranger.request(`/api/background-tasks/RESUME_ANALYSIS/${resumeJob.jobId}`,{expected:404});
+  await stranger.request("/api/background-tasks/modules/resumes/read",{method:"POST",expected:204});
+  assert.equal((await asyncOwner.request(`/api/background-tasks/RESUME_ANALYSIS/${resumeJob.jobId}`)).unread,true,
+    "Another owner's module read must not consume this owner's notification");
+  await asyncOwner.request("/api/background-tasks/modules/resumes/read",{method:"POST",expected:204});
+  assert.equal((await asyncOwner.request(`/api/background-tasks/RESUME_ANALYSIS/${resumeJob.jobId}`)).unread,false);
   const firstScore = await asyncOwner.request(`/api/resumes/${resume.id}/analysis`);
-  assert.equal(firstScore.promptVersion,"resume-analysis-v4");
-  assert.equal(firstScore.analysis.rubricVersion,"ardor-resume-rubric-v2");
-  assert.deepEqual(firstScore.analysis.criterionRatings[0].checks,[false,false,false,false]);
-  assert.equal(firstScore.analysis.rubricCriteria[0].conditions.length,4);
+  assert.equal(firstScore.promptVersion,"resume-analysis-v6");
+  assert.equal(firstScore.analysis.rubricVersion,"ardor-resume-rubric-v3");
+  assert.ok(firstScore.analysis.dimensionRatings.every(item=>item.level===0));
+  assert.equal(firstScore.analysis.rubricDimensions.length,6);
   assert.equal(firstScore.analysis.overallScore,0,"The server must ignore the fixture model's arbitrary overallScore=82");
-  assert.equal(firstScore.analysis.criterionRatings.length,12);
-  assert.equal(firstScore.analysis.recommendations[0].priority,"P1");
+  assert.equal(firstScore.analysis.dimensionRatings.length,6);
+  assert.equal(firstScore.analysis.issues[0].severity,"B");
   const duplicateUpload = new FormData();
   duplicateUpload.set("file",new Blob([syntheticResumePdf()],{type:"application/pdf"}),"different-filename-same-text.pdf");
   const duplicateResume = await asyncOwner.request("/api/resumes",{method:"POST",expected:201,body:duplicateUpload});

@@ -2,7 +2,7 @@
 
 import { useReadVisibleResult } from "@/lib/background-tasks";
 
-import { ArrowLeft, CheckCircle2, ExternalLink, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
+import { CheckCircle2, ExternalLink, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -216,7 +216,7 @@ export default function InterviewsPage() {
 
   return (
     <main className="ardor-workbench min-h-screen px-5 py-6 md:px-10 md:py-8">
-      <Link href="/app" className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link>
+
 
       <header className="mx-auto max-w-6xl pb-9 pt-10">
         <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">{t("Mock interviews", "模拟面试")}</h1>

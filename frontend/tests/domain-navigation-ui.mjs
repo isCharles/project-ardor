@@ -57,48 +57,24 @@ try {
   await page.goto(`${origin}/app/job-search`);
   await page.getByRole("heading", { name: "Job search", exact: true }).waitFor();
   await page.screenshot({ path: ".next/domain-job-search.png", fullPage: true });
-  const navigation = page.getByRole("navigation", { name: "Section navigation" });
-  await navigation.waitFor();
-  await page.getByText("Latest resume score", { exact: true }).waitFor();
-  assert.ok(await page.getByText("82", { exact: true }).isVisible(), "The overview must show the latest resume score");
-  assert.ok(await page.getByText("fixture-resume.pdf", { exact: true }).isVisible(), "The overview must name the scored resume");
-  assert.ok(await page.getByText("Kuaishou", { exact: true }).isVisible(), "The overview must show the latest interview company");
-  assert.ok(await page.getByText("Round 2", { exact: true }).isVisible(), "The overview must show the current interview round");
-  assert.ok(await page.getByText("Application rhythm", { exact: true }).isVisible(), "The overview must preview the application rhythm");
-  const placement = await page.evaluate(() => {
-    const nav = document.querySelector('nav[aria-label="Section navigation"]');
-    const main = nav?.closest("main");
-    if (!nav || !main) return null;
-    const header = main.querySelector("header");
-    return {
-      insideMain: main.contains(nav),
-      afterHeader: header ? !!(header.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING) : true,
-      position: nav.parentElement ? getComputedStyle(nav.parentElement).position : "",
-    };
-  });
-  assert.ok(placement?.insideMain, "Section navigation must be rendered inside the page main");
-  assert.ok(placement?.afterHeader, "Section navigation must follow the page header");
-  assert.ok(placement?.position !== "sticky" && placement?.position !== "fixed", "Section navigation must scroll with the page");
-  await navigation.getByRole("link", { name: "Interviews", exact: true }).click();
-  await page.waitForURL("**/app/job-search/interviews");
-  assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
-  await page.goto(`${origin}/app/opportunities?selected=fixture`);
-  assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
-  assert.ok(page.url().endsWith("?selected=fixture"));
+  assert.equal(await page.getByRole("navigation", {name:"Section navigation"}).count(), 0,
+    "Removed duplicate domain navigation must not reappear");
+  for (const path of ["/app/job-search/interviews", "/app/opportunities"]) {
+    await page.goto(`${origin}${path}?selected=fixture`);
+    assert.ok(page.url().endsWith("?selected=fixture"), "Legacy route keeps resource query");
+    await page.getByRole("button", {name:"More workspaces", exact:true}).waitFor();
+  }
   for (const path of ["/app/interviews", "/app/learning/practice/mock-interviews"]) {
     await page.goto(`${origin}${path}`);
-    assert.equal(await navigation.getByRole("link", { name: "Practice", exact: true }).getAttribute("aria-current"), "page");
-    assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).count(), 0);
+    await page.getByRole("heading", {name:"Mock interviews", exact:true}).waitFor();
   }
   for (const path of ["/app/replay", "/app/learning/practice/questions"]) {
     await page.goto(`${origin}${path}?question=question-fixture&retest=retest-fixture`);
-    await page.getByText("Fixture practice question", { exact: true }).waitFor();
+    await page.getByText("Fixture practice question", {exact:true}).waitFor();
     assert.ok(page.url().includes("retest=retest-fixture"));
-    assert.equal(await navigation.getByRole("link", { name: "Practice", exact: true }).getAttribute("aria-current"), "page");
   }
   await page.goto(`${origin}/app/job-search/notes?draft=missing-fixture`);
   await page.getByRole("textbox").first().waitFor();
-  assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
   await page.getByRole("button", { name: "More workspaces", exact: true }).click();
   const morePanel = page.locator("#ardor-more-workspaces");
   const groupLabels = (await morePanel.locator("p").allTextContents()).map(label => label.trim()).filter(Boolean);

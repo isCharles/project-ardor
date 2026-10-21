@@ -1,7 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, CheckCircle2, CircleAlert, Ellipsis, Plus, Sparkles, Trash2, X } from "lucide-react";
-import Link from "next/link";
+import { ArrowRight, BookOpen, CheckCircle2, CircleAlert, Ellipsis, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
@@ -310,10 +309,8 @@ export default function LearningPage() {
   return (
     <main className="ardor-workbench min-h-screen px-5 pb-16 pt-6 text-[#1d1d1f] md:px-10">
       <div className="mx-auto max-w-7xl">
-        <div className="flex items-center justify-between">
-          <Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-white/70 hover:text-stone-900">
-            <ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}
-          </Link>
+        <div className="flex items-center justify-end">
+
           <div className="flex items-center gap-2">
             {selected && <details className="relative">
               <summary aria-label={t("More actions", "更多操作")} className="grid size-11 cursor-pointer list-none place-items-center rounded-full border border-white/80 bg-white/65 text-stone-500 shadow-sm transition hover:bg-white hover:text-stone-800 [&::-webkit-details-marker]:hidden"><Ellipsis className="size-4" /></summary>
@@ -427,7 +424,7 @@ export default function LearningPage() {
         )}
       </div>
 
-      {showCreate && <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCreate(false); }}><section role="dialog" aria-modal="true" aria-labelledby="create-learning-title" className="ardor-panel w-full max-w-lg rounded-[2rem] p-7"><div className="flex items-center justify-between"><h2 id="create-learning-title" className="text-2xl font-semibold">{t("What would you like to learn?", "学什么？")}</h2><button type="button" aria-label={t("Close", "关闭")} onClick={() => setShowCreate(false)} className="rounded-full p-2 text-stone-500 hover:bg-white"><X className="size-5" /></button></div><form onSubmit={create} className="mt-6 space-y-4"><input name="concept" required maxLength={160} className="field" placeholder={t("For example, JVM or database indexes", "例如 JVM、数据库索引")} autoFocus /><textarea name="reason" maxLength={4000} rows={3} className="field resize-y" placeholder={t("Why this topic? (optional)", "为什么想学（可选）")} />{error && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}<button disabled={busy} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Generating…", "正在生成…") : t("Create learning plan", "生成学习计划")}</button></form></section></div>}
+      {showCreate && <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCreate(false); }}><section role="dialog" aria-modal="true" aria-labelledby="create-learning-title" className="ardor-panel w-full max-w-lg rounded-[2rem] p-7"><div className="flex items-center justify-end"><h2 id="create-learning-title" className="text-2xl font-semibold">{t("What would you like to learn?", "学什么？")}</h2><button type="button" aria-label={t("Close", "关闭")} onClick={() => setShowCreate(false)} className="rounded-full p-2 text-stone-500 hover:bg-white"><X className="size-5" /></button></div><form onSubmit={create} className="mt-6 space-y-4"><input name="concept" required maxLength={160} className="field" placeholder={t("For example, JVM or database indexes", "例如 JVM、数据库索引")} autoFocus /><textarea name="reason" maxLength={4000} rows={3} className="field resize-y" placeholder={t("Why this topic? (optional)", "为什么想学（可选）")} />{error && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}<button disabled={busy} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Generating…", "正在生成…") : t("Create learning plan", "生成学习计划")}</button></form></section></div>}
       {deleteTarget && <AppDialog title={t("Delete learning plan?", "删除学习计划？")} onClose={() => { if (!deleting) setDeleteTarget(null); }}>
         <p className="break-words font-medium">{deleteTarget.concept}</p>
         <p className="mt-3 text-sm leading-6 text-stone-500">{t("This permanently removes the lesson, practice history and its calendar task. Interview notes and other plans stay unchanged.", "将永久删除讲解、练习记录及关联日程，不影响来源面经或其他学习计划。")}</p>

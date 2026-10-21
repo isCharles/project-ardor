@@ -46,17 +46,22 @@ public class ResumeAnalysisQueueService {
 
     @Transactional
     public TaskResult request(UUID userId, UUID resumeId) {
-        return request(userId, resumeId, "", "");
+        return request(userId, resumeId, "", "", ResumeScoringFamilies.DEFAULT_ID);
     }
 
     @Transactional
     public TaskResult request(UUID userId, UUID resumeId, String role, String jobDescription) {
+        return request(userId, resumeId, role, jobDescription, ResumeScoringFamilies.DEFAULT_ID);
+    }
+
+    @Transactional
+    public TaskResult request(UUID userId, UUID resumeId, String role, String jobDescription, String roleFamily) {
         Resume resume = ownedResume(userId, resumeId);
         if (resume.getParseStatus() != ResumeParseStatus.PARSED || resume.getParsedText() == null) {
             throw new IllegalStateException("简历文本解析未成功，无法进行 AI 分析");
         }
         jobRepository.lockRequestSlot(userId, resumeId);
-        var context = ResumeScoringContext.freeze(role, jobDescription);
+        var context = ResumeScoringContext.freeze(role, jobDescription, roleFamily);
         String key = ResumeScoringContext.key(resume.getParsedText(), context, mapper);
         Optional<ResumeAnalysis> analysis = analysisRepository.findByResumeIdAndUserIdAndEvaluationKey(resumeId, userId, key);
         Optional<ResumeAnalysisJob> active = jobRepository

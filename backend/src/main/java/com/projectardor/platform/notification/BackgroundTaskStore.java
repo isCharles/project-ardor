@@ -71,6 +71,14 @@ public class BackgroundTaskStore {
             throw new IllegalStateException("任务状态已更新，请刷新后查看");
         }
     }
+    public void readModule(UUID userId, String module) {
+        jdbc.update("""
+                INSERT INTO background_task_reads(user_id,kind,task_id,completion_token)
+                SELECT user_id,kind,id,completion_token FROM background_task_catalog
+                WHERE user_id=? AND module=? AND status IN ('COMPLETED','FAILED')
+                ON CONFLICT(user_id,kind,task_id,completion_token) DO NOTHING
+                """, userId, module);
+    }
     public record Summary(Map<String, Long> unreadByModule, long activeCount) {}
     public record Task(UUID id, String kind, String module, String title, String status, int attempts,
             Instant createdAt, Instant startedAt, Instant finishedAt, String errorCode, String resultPath,

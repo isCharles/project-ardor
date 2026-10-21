@@ -23,10 +23,10 @@ export function ExecutionTrace({ title, elapsed, thinking, steps, children, acti
   const thinkingRef = useRef<HTMLDetailsElement>(null);
   const hasThinking = Boolean(thinking);
   useEffect(() => {
-    if (detailsRef.current) detailsRef.current.open = active;
+    if (detailsRef.current) { if (active) detailsRef.current.setAttribute("open", ""); else detailsRef.current.removeAttribute("open"); }
     // The thinking disclosure mounts only when its first text arrives, after this
     // effect already ran, so it must be re-opened when it appears mid-run.
-    if (thinkingRef.current) thinkingRef.current.open = active;
+    if (thinkingRef.current) { if (active) thinkingRef.current.setAttribute("open", ""); else thinkingRef.current.removeAttribute("open"); }
   }, [active, hasThinking]);
   return <div data-execution-trace className="mb-4 min-w-0 text-xs text-stone-500">
     <div className="flex items-start gap-3">

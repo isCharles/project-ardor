@@ -57,8 +57,14 @@ jobs:
               docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 \
                 < .github/tests/conversation-title-before.sql
             fi
+            if [[ "$(basename "$migration")" == "V54__detach_interview_sessions_on_resume_analysis_delete.sql" ]]; then
+              docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 < .github/tests/resume-detach-before.sql
+            fi
             docker exec -i ardor-migration-check \
               psql -U postgres -d ardor -v ON_ERROR_STOP=1 < "$migration"
+            if [[ "$(basename "$migration")" == "V54__detach_interview_sessions_on_resume_analysis_delete.sql" ]]; then
+              docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 < .github/tests/resume-detach-after.sql
+            fi
             if [[ "$(basename "$migration")" == "V43__strip_recap_metadata.sql" ]]; then
               docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 < .github/tests/recap-metadata-after.sql
             fi

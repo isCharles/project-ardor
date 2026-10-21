@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowRight, Plus, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
@@ -114,8 +114,8 @@ function RecapsContent() {
   return <main className={styles.shell}>
     <div className={styles.ambient} aria-hidden="true"><div className={styles.grain} /></div>
     <div className={`${styles.content} mx-auto max-w-7xl px-5 pb-20 pt-6 md:px-10`}>
-      <div className="flex items-center justify-between">
-        <Link href="/app" className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-500 transition hover:bg-white/70 hover:text-slate-900"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link>
+      <div className="flex items-center justify-end">
+
         <div className="flex items-center gap-3"><button onClick={() => setShowForm(true)} className="text-sm text-slate-500 hover:text-slate-900">{t("Paste directly", "直接粘贴")}</button><Link href={agentCreationHref("RECAPS", locale)} className={`${styles.buttonPrimary} inline-flex items-center gap-2 px-5 py-2.5 text-sm`}><Plus className="size-4" />{t("Add interview notes", "整理面经")}</Link></div>
       </div>
 

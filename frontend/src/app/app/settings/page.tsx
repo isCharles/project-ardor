@@ -1,7 +1,6 @@
 "use client";
 
-import { Activity, ArrowLeft, Bot, CheckCircle2, CircleAlert, Database, Globe2, KeyRound, LoaderCircle, LogOut, Mic, RotateCcw, Save, UserRound, Volume2, Wifi } from "lucide-react";
-import Link from "next/link";
+import { Activity, Bot, CheckCircle2, CircleAlert, Database, Globe2, KeyRound, LoaderCircle, LogOut, Mic, RotateCcw, Save, UserRound, Volume2, Wifi } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, MouseEvent, useEffect, useState } from "react";
 
@@ -350,7 +349,7 @@ export default function SettingsPage() {
 
   return (
     <main className="ardor-workbench min-h-screen px-5 py-6 md:px-10 md:py-8">
-      <Link href="/app" className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link>
+
       <header className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-6 pb-9 pt-10">
         <div><h1 className="text-4xl font-semibold tracking-tight md:text-5xl">{t("Settings", "设置")}</h1><p className="mt-3 text-muted-foreground">{user.email} · {t("Stay signed in for 30 days", "登录状态保留 30 天")}</p></div>
         <Button variant="outline" onClick={logout}><LogOut className="mr-2 size-4" />{t("Log out", "退出登录")}</Button>
