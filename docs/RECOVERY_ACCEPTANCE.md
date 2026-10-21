@@ -9,7 +9,9 @@
 - API 只接受独立本机 HTTP 端口，拒绝日常 3000/8080 及默认 HTTP/HTTPS 端口。这不能自动证明该端口是测试库，运行者仍须先核对容器连接与数据卷。
 - seed 的 ARDOR_ACCEPTANCE_LLM_BASE 必须为专用假模型容器 ardor-recovery-model 的 8090 端口，不接受真实供应商地址。该容器运行仓库 fake-llm-server.mjs。
 - manifest 是带固定合成标识的测试夹具，含本次随机合成账号凭据及资源 ID；只放在被忽略的 backend/target 内，不提交、不打印、不替换成真实账号。文件必须不存在，避免覆盖之前的验收证据。
-- verify 需要 ARDOR_RECOVERY_UPLOAD_ROOT，递归检查复制出的合成上传目录，必须找到与上传 checksum 一致的实际 PDF 字节，不只相信数据库中的 checksum 字段。
+- v2 探针要求 ARDOR_RECOVERY_DB_CONTAINER：seed 为 ardor-recovery-db，verify 为 ardor-recovery-restored。只查询本次合成用户及简历 ID 对应的 storage_key，不扫描日常数据库。
+- verify 需要 ARDOR_RECOVERY_UPLOAD_ROOT，按数据库中的准确 storage_key 检查恢复目录；同时在 ardor-recovery-backend 容器中检查 ARDOR_RESUME_STORAGE=/app/data/resumes 下相同键的实际文件摘要。仅在其他路径找到相同字节不能通过。
+- 假模型容器必须设置 ARDOR_FAKE_EXPECTED_API_KEY=fake-only，拒绝错误凭据。恢复后不重新提供密钥，必须保留 PERSONAL 来源、personalOverride、provider、baseUrl、model、keyHint，再通过一次不命中缓存的模型调用。不能用继承的管理员配置替代个人配置。
 
 ## 执行顺序
 
@@ -26,14 +28,18 @@ $env:ARDOR_ACCEPTANCE_DISPOSABLE_DB = 'true'
 $env:ARDOR_ACCEPTANCE_API_BASE = 'http://127.0.0.1:18083'
 $env:ARDOR_ACCEPTANCE_LLM_BASE = 'http://ardor-recovery-model:8090'
 $env:ARDOR_RECOVERY_MANIFEST = '<本次 backend/target 夹具目录>/manifest.json'
+$env:ARDOR_RECOVERY_DB_CONTAINER = 'ardor-recovery-db'
 node backend/src/test/resources/recovery-acceptance.mjs seed
 
 # 完成上述冻结、备份、恢复、独立目录与空 Redis 启动后再执行，不能直接跳过恢复。
 $env:ARDOR_RECOVERY_UPLOAD_ROOT = '<本次 backend/target 夹具目录>/restored-uploads'
+$env:ARDOR_RECOVERY_DB_CONTAINER = 'ardor-recovery-restored'
 node backend/src/test/resources/recovery-acceptance.mjs verify
 ```
 
 ## 2026-10-21 实测
+
+以下记录属于旧 v1 探针：证明数据库复制、文件字节存在及功能可用，但没有严格证明文件存储键关联和个人配置凭据恢复。v2 已收紧这些断言，拒绝旧 manifest；完整 v2 恢复演练尚未重跑，不能沿用下列摘要宣称 v2 通过。
 
 - 应用基线 main a7e75d0（含旧会话兼容、流式错误修复），隔离服务使用与日常服务相同的应用镜像，但独立数据库/文件/Redis及合成密钥。
 - 源/目标数据库均为 50 张 public 表、77 行，全表汇总摘要 a86e11dfcf9d3e10b5db19837013ba73 一致；导出 SHA256 为 CB42D3B9E0815DA205D2A008A2890A8A0D660D8205CCFC192B5EAB4C06D96204。

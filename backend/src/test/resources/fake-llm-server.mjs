@@ -1,5 +1,9 @@
 import http from "node:http";
 
+// Opt-in recovery fixture guard. Never supply real credentials to this server.
+const expectedApiKey = process.env.ARDOR_FAKE_EXPECTED_API_KEY;
+if (expectedApiKey && expectedApiKey !== "fake-only") throw new Error("Only the synthetic recovery key is supported");
+
 const analysis = {
   overallScore: 82,
   categoryScores: { content: 84, impact: 76, clarity: 85, roleFit: 83 },
@@ -127,6 +131,11 @@ function completionFor(payload) {
 }
 
 http.createServer((request, response) => {
+  if (expectedApiKey && request.headers.authorization !== `Bearer ${expectedApiKey}` && request.headers["x-api-key"] !== expectedApiKey) {
+    response.writeHead(401, {"content-type": "application/json"});
+    response.end(JSON.stringify({error: {message: "Synthetic credential rejected"}}));
+    return;
+  }
   if (request.url === "/__probe/restart-started") {
     response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
     response.end(JSON.stringify({count:restartRequests}));
