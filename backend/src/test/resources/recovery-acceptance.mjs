@@ -11,6 +11,7 @@ assert.ok(base, "Explicit disposable API required");
 const url = new URL(base);
 assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(url.hostname));
 assert.ok(url.protocol === "http:" && !["", "80", "443", "3000", "8080"].includes(url.port), "Use a separate local fixture port");
+assert.ok(url.pathname === "/" && !url.search && !url.hash && !url.username && !url.password, "Fixture API must be a plain server root");
 const mode = process.argv[2];
 assert.ok(["seed", "verify"].includes(mode), "Expected seed or verify");
 const manifestPath = process.env.ARDOR_RECOVERY_MANIFEST;
