@@ -77,6 +77,14 @@
 
 ## 5. 后续建议
 
+### 包迁移后发现的登录兼容故障
+
+2026-10-21 运行日志与合成旧会话探针复现：匿名健康检查与页面返回 200，但持有迁移前登录 cookie 的请求返回 500。Redis 的 JDK 会话载荷仍引用旧 ArdorPrincipal 和 UserRole 全限定类名，B1 的 package 搬迁使旧载荷无法反序列化。因此“未改 HTTP API / 数据库表”不足以证明已有登录会话兼容。
+
+修复由 SessionSerializationConfig 提供 Spring Session 专用序列化器：只将上述两个已知旧类型描述符映射到字段及 serialVersionUID 校验一致的新类型，新写入使用新包名。不保留旧生产业务包、不清空 Redis、不取消密码变更后的会话失效检查。损坏载荷仍失败关闭；不将此兼容映射当成任意类型迁移机制。测试使用合成用户与角色，不读取真实会话或账号。
+
+验证入口：SessionSerializationConfigTests（普通/管理员旧 SecurityContext、身份/角色/凭据快照、当前格式与损坏载荷）以及显式开启 ARDOR_SESSION_COMPAT_RUNTIME=true 的 LegacySessionRuntimeTests（只创建带 TTL 的随机合成会话键，请求本机前端代理并删除自身键；不存在的测试用户应返回 SESSION_EXPIRED 401，而不是反序列化 500）。运行中的旧版本已由后一探针复现 500；修复后部署验证单独记录，不将单元测试等同于部署成功。
+
 1. 完成 E3 的聊天错误码统一（使用 `llm` 错误分类，保留旧错误码兼容层）。
 2. 补备份/恢复演练与最小观测验证（requestId/runId/toolCallId/jobId 串联）。
 3. 新增一种训练/来源/服务商时按 [面向扩展的具体合同](ARCHITECTURE_EVOLUTION.md#13-面向扩展的具体合同) 验证「无需改中央分支」。
