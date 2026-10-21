@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.web;
+package com.projectardor.jobsearch.interview.web;
 
 import java.util.List;
 import java.util.UUID;
@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
-import com.projectardor.opportunity.service.OpportunityService;
+import com.projectardor.jobsearch.interview.service.OpportunityService;
 
 import jakarta.validation.Valid;
 

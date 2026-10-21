@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.service;
+package com.projectardor.jobsearch.interview.service;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -12,11 +12,11 @@ import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import com.projectardor.platform.identity.auth.domain.UserRole;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
-import com.projectardor.opportunity.web.OpportunityController;
-import com.projectardor.opportunity.web.OpportunityCreateRequest;
-import com.projectardor.opportunity.web.OpportunityResponse;
-import com.projectardor.opportunity.web.OpportunityRoundRequest;
-import com.projectardor.opportunity.web.OpportunityUpdateRequest;
+import com.projectardor.jobsearch.interview.web.OpportunityController;
+import com.projectardor.jobsearch.interview.web.OpportunityCreateRequest;
+import com.projectardor.jobsearch.interview.web.OpportunityResponse;
+import com.projectardor.jobsearch.interview.web.OpportunityRoundRequest;
+import com.projectardor.jobsearch.interview.web.OpportunityUpdateRequest;
 import tools.jackson.databind.json.JsonMapper;
 
 class InterviewApplicationContractTests {
@@ -60,11 +60,11 @@ class InterviewApplicationContractTests {
         assertThatThrownBy(() -> view.rounds().clear()).isInstanceOf(UnsupportedOperationException.class);
     }
     @Test void realInterviewApplicationBoundaryDoesNotDependOnItsHttpTransport() throws Exception {
-        Path root=Path.of("src/main/java/com/projectardor/opportunity/service");
+        Path root=Path.of("src/main/java/com/projectardor/jobsearch/interview/service");
         for(String name:List.of("OpportunityService.java","InterviewProcessCommands.java","InterviewProcessView.java")) {
-            assertThat(Files.readString(root.resolve(name),StandardCharsets.UTF_8)).doesNotContain("com.projectardor.opportunity.web");
+            assertThat(Files.readString(root.resolve(name),StandardCharsets.UTF_8)).doesNotContain("com.projectardor.jobsearch.interview.web");
         }
         String tools=Files.readString(Path.of("src/main/java/com/projectardor/agent/tools/CareerAgentTools.java"),StandardCharsets.UTF_8);
-        assertThat(tools).doesNotContain("com.projectardor.opportunity.web");
+        assertThat(tools).doesNotContain("com.projectardor.jobsearch.interview.web");
     }
 }

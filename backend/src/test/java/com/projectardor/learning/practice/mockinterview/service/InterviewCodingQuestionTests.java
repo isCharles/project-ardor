@@ -42,7 +42,7 @@ class InterviewCodingQuestionTests {
     private final LlmGateway llm = mock(LlmGateway.class);
     private final LeetCodeHot100 hot100 = mock(LeetCodeHot100.class);
     private final ObjectMapper mapper = new ObjectMapper();
-    private final com.projectardor.opportunity.service.OpportunityService opportunities = mock(com.projectardor.opportunity.service.OpportunityService.class);
+    private final com.projectardor.jobsearch.interview.service.OpportunityService opportunities = mock(com.projectardor.jobsearch.interview.service.OpportunityService.class);
     private final InterviewService service = new InterviewService(sessions, questions,
             mock(InterviewAnswerRepository.class), mock(InterviewEvaluationRepository.class), profiles,
             mock(ResumeService.class), llm, new LlmJsonParser(mapper), mapper,

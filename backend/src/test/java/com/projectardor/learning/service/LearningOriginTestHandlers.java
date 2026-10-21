@@ -7,7 +7,7 @@ import com.projectardor.materials.resume.service.ResumeSourceAccess;
 import com.projectardor.materials.resume.service.ResumeLearningOriginHandler;
 import com.projectardor.materials.knowledge.service.KnowledgeSourceAccess;
 import com.projectardor.materials.knowledge.service.KnowledgeLearningOriginHandler;
-import com.projectardor.opportunity.service.InterviewContextAccess;
+import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
 
 final class LearningOriginTestHandlers {
     private LearningOriginTestHandlers() {}

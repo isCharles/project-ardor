@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 import com.projectardor.learning.domain.LearningOriginKind;
 import com.projectardor.learning.domain.LearningSourceType;
 import com.projectardor.recap.service.InterviewRecordSourceAccess;
-import com.projectardor.opportunity.service.InterviewContextAccess;
+import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
 
 @Service
 public class LearningContextResolver {

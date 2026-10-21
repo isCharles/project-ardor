@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.web;
+package com.projectardor.jobsearch.interview.web;
 
 import java.time.Instant;
 
@@ -20,8 +20,8 @@ public record OpportunityCreateRequest(
         Instant scheduledAt,
         Integer durationMinutes,
         @Size(max = 2000) String note) {
-    public com.projectardor.opportunity.service.InterviewProcessCommands.Create command() {
-        return new com.projectardor.opportunity.service.InterviewProcessCommands.Create(company,targetRole,platform,
+    public com.projectardor.jobsearch.interview.service.InterviewProcessCommands.Create command() {
+        return new com.projectardor.jobsearch.interview.service.InterviewProcessCommands.Create(company,targetRole,platform,
                 jdContent,inviteContent,stage,scheduledAt,durationMinutes,note);
     }
 }

@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.domain;
+package com.projectardor.jobsearch.interview.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

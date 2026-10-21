@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.domain;
+package com.projectardor.jobsearch.interview.domain;
 
 /** Which kind of interview a round is. Deliberately coarse. */
 public enum RoundStage {

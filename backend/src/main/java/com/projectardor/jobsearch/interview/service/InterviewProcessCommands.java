@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.service;
+package com.projectardor.jobsearch.interview.service;
 
 import java.time.Instant;
 

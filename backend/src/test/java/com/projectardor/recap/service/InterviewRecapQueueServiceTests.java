@@ -14,10 +14,10 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.opportunity.domain.JobOpportunity;
-import com.projectardor.opportunity.repository.JobOpportunityRepository;
-import com.projectardor.opportunity.repository.OpportunityRoundRepository;
-import com.projectardor.opportunity.service.InterviewContextAccess;
+import com.projectardor.jobsearch.interview.domain.JobOpportunity;
+import com.projectardor.jobsearch.interview.repository.JobOpportunityRepository;
+import com.projectardor.jobsearch.interview.repository.OpportunityRoundRepository;
+import com.projectardor.jobsearch.interview.service.InterviewContextAccess;
 import com.projectardor.recap.repository.InterviewRecapJobRepository;
 import com.projectardor.recap.repository.InterviewRecapRepository;
 

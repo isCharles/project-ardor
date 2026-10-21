@@ -158,9 +158,9 @@ public class InterviewMinutesService {
         });
     }
 
-    public com.projectardor.opportunity.service.InterviewContextAccess.Context context(ReviewWork work) {
+    public com.projectardor.jobsearch.interview.service.InterviewContextAccess.Context context(ReviewWork work) {
         return jdbc.queryForObject("SELECT job_opportunity_id,interview_round_id FROM interview_recap_jobs WHERE id=? AND user_id=?",
-                (r,n) -> new com.projectardor.opportunity.service.InterviewContextAccess.Context(
+                (r,n) -> new com.projectardor.jobsearch.interview.service.InterviewContextAccess.Context(
                     r.getObject("job_opportunity_id",UUID.class), r.getObject("interview_round_id",UUID.class)),work.draftId(),work.userId());
     }
 

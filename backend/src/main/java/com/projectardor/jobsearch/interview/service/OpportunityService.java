@@ -1,4 +1,4 @@
-package com.projectardor.opportunity.service;
+package com.projectardor.jobsearch.interview.service;
 
 import java.util.Collection;
 import java.util.List;
@@ -11,12 +11,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.projectardor.common.web.ResourceNotFoundException;
-import com.projectardor.opportunity.domain.JobOpportunity;
-import com.projectardor.opportunity.domain.OpportunityRound;
-import com.projectardor.opportunity.domain.OpportunityStatus;
-import com.projectardor.opportunity.domain.RoundStage;
-import com.projectardor.opportunity.repository.JobOpportunityRepository;
-import com.projectardor.opportunity.repository.OpportunityRoundRepository;
+import com.projectardor.jobsearch.interview.domain.JobOpportunity;
+import com.projectardor.jobsearch.interview.domain.OpportunityRound;
+import com.projectardor.jobsearch.interview.domain.OpportunityStatus;
+import com.projectardor.jobsearch.interview.domain.RoundStage;
+import com.projectardor.jobsearch.interview.repository.JobOpportunityRepository;
+import com.projectardor.jobsearch.interview.repository.OpportunityRoundRepository;
 
 /**
  * The only write entry point for interview processes. Every lookup is scoped to
