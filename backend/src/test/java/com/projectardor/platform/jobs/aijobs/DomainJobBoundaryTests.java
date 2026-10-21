@@ -12,7 +12,7 @@ class DomainJobBoundaryTests {
     private static final Path ROOT=Path.of("src/main/java/com/projectardor");
     @Test void dispatchersDoNotImportTransportDtosOrReachDomainRepositories() throws Exception {
         for (String path:List.of("platform/jobs/aijobs/AiJobService.java", "platform/notification/BackgroundTaskService.java",
-                "learning/service/LearningCreationJobHandler.java", "learning/service/LearningEvaluationJobHandler.java",
+                "learning/plan/service/LearningCreationJobHandler.java", "learning/practice/exercises/service/LearningEvaluationJobHandler.java",
                 "learning/practice/question/service/ReplayEvaluationJobHandler.java", "learning/practice/mockinterview/service/MockInterviewEvaluationJobHandler.java")) {
             String source=Files.readString(ROOT.resolve(path),StandardCharsets.UTF_8);
             assertThat(source).as(path).doesNotContain(".web.",".repository.");

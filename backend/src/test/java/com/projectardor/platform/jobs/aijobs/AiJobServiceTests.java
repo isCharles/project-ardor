@@ -8,9 +8,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import com.projectardor.learning.domain.LearningPlan;
-import com.projectardor.learning.service.LearningPlanService;
-import com.projectardor.learning.service.LearningEvaluationJobHandler;
+import com.projectardor.learning.plan.domain.LearningPlan;
+import com.projectardor.learning.plan.service.LearningPlanService;
+import com.projectardor.learning.practice.exercises.service.LearningEvaluationJobHandler;
 import tools.jackson.databind.ObjectMapper;
 
 class AiJobServiceTests {
