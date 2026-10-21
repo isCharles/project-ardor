@@ -71,6 +71,27 @@ try {
   await page.getByRole("textbox").first().waitFor();
   assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
   await page.getByRole("button", { name: "More workspaces", exact: true }).click();
+  const morePanel = page.locator("#ardor-more-workspaces");
+  const fitViewport = async (label) => {
+    const viewport = page.viewportSize(), box = await morePanel.boundingBox();
+    assert.ok(box && viewport && box.y >= 0 && box.y + box.height <= viewport.height + 1,
+      `${label}: More workspaces panel must stay inside the viewport: ${JSON.stringify(box)} vs ${JSON.stringify(viewport)}`);
+    return viewport;
+  };
+  await fitViewport("default window");
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1280, height: 560 });
+  await page.getByRole("button", { name: "More workspaces", exact: true }).click();
+  const shortViewport = await fitViewport("short window");
+  const shortMetrics = await morePanel.evaluate(element => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, overflowY: getComputedStyle(element).overflowY }));
+  assert.ok(shortMetrics.scrollHeight > shortMetrics.clientHeight, "A short window must make the More panel scrollable");
+  assert.notEqual(shortMetrics.overflowY, "visible", "A clipped More panel must scroll instead of overflowing the window");
+  await morePanel.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  const customizeAtBottom = await page.getByRole("button", { name: "Customize sidebar", exact: true }).boundingBox();
+  assert.ok(customizeAtBottom && customizeAtBottom.y + customizeAtBottom.height <= shortViewport.height + 1, "Customize entry must be reachable inside a short window after scrolling");
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "More workspaces", exact: true }).click();
   await page.getByRole("button", { name: "Customize sidebar", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("checkbox", { name: "Flashcards", exact: true }).check();
