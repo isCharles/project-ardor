@@ -35,8 +35,10 @@
 | learning.mock-interviews | `/app/learning/practice/mock-interviews` | `/app/interviews`、`/api/interviews` 继续且只表示模拟面试 |
 | learning.question-practice | `/app/learning/practice/questions` | `/app/replay?question=…&retest=…`：单题训练与复测 |
 | learning.flashcards | `/app/learning/review` | `/app/cards`、`/api/memory-cards`：复习 |
-| learning.materials | `/app/learning/materials` | `/app/knowledge`：资料 |
+| learning.materials | `/app/materials` | `/app/knowledge`、`/app/learning/materials`：Ardor 的资料与索引（RAG 来源与检索测试），不是学习动作；ID 沿用旧值以兼容侧栏偏好 |
 | learning.progress | `/app/learning/progress` | `/app/evidence`：只读补强视图 |
+
+`learning.materials` 只在 ID 上保留 `learning.` 前缀（侧栏偏好兼容）；目录里它的 `domain` 为 `null`，因此归入侧栏“工作台”，不再出现在学习域导航中。资料与索引是页面级入口，不建立前端“资料域”；简历仍作为求职流程中的一个页面，旧版本折叠在历史里。
 
 日程 actionPath、任务 resultPath、旧聊天链接、浏览器收藏和桌面原生桥仍可能持有旧 URL，不能删除兼容页。AgentFeature.INTERVIEWS 仍是原有模拟意图，ToolModule.INTERVIEWS 仍是原有授权范围；新导航层不会重新解释它们。
 

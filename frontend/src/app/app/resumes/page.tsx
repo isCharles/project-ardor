@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BrainCircuit, Check, ChevronRight, FileText, Plus, Sparkles, Target, TrendingUp, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BrainCircuit, Check, FileText, Plus, Sparkles, Target, TrendingUp, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
@@ -168,12 +168,57 @@ export default function ResumesPage() {
     </div></main>;
   }
 
+  const sortedResumes = [...resumes].sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""));
+  const resumeDate = (value: string) => new Intl.DateTimeFormat(locale === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "short", day: "numeric" }).format(new Date(value));
+  const resumeCard = (resume: ResumeItem, primary: boolean) => {
+    const status = statusMeta(resume, t);
+    return (
+      <button key={resume.id} onClick={() => openResume(resume)} className={primary ? "group flex w-full flex-col gap-5 rounded-[2rem] bg-white p-7 text-left shadow-[0_18px_60px_rgba(49,39,70,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_70px_rgba(49,39,70,0.10)] md:flex-row md:items-center" : "group rounded-[2rem] bg-white p-6 text-left shadow-[0_12px_50px_rgba(0,0,0,0.045)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_22px_70px_rgba(0,0,0,0.09)]"}>
+        <span className={primary ? "grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 text-violet-600" : "grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 text-violet-600"}><FileText className={primary ? "size-6" : "size-5"} /></span>
+        <div className={primary ? "min-w-0 flex-1" : "mt-6"}>
+          <div className="flex items-start justify-between gap-3">
+            <h3 className={primary ? "truncate text-2xl font-semibold tracking-tight" : "line-clamp-2 text-lg font-semibold leading-6 tracking-tight"}>{resume.originalFilename}</h3>
+            <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-medium ${status.className}`}>{status.label}</span>
+          </div>
+          <p className="mt-2 text-sm text-stone-400">{resumeDate(resume.createdAt)} · {(resume.sizeBytes / 1024).toFixed(0)} KB</p>
+          {!primary && <p className="mt-4 border-t border-stone-100 pt-4 text-sm font-medium text-stone-600">{resume.analysisId ? t("View report", "查看报告") : t("Analyze", "去分析")} <span aria-hidden="true">→</span></p>}
+        </div>
+        {primary && <span className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-violet-700">{resume.analysisId ? t("View report", "查看报告") : t("Analyze", "分析简历")}<ArrowRight className="size-4" /></span>}
+      </button>
+    );
+  };
   return <main className="ardor-workbench min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-6xl px-5 pb-24 pt-6 md:px-10">
     <div className="flex items-center justify-between"><Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 transition hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("Back to Ardor", "返回 Ardor")}</Link><button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white transition hover:scale-[1.02] hover:bg-black"><Plus className="size-4" />{t("Upload resume", "上传新简历")}</button></div>
-    <header className="pb-14 pt-16 md:pb-20 md:pt-24"><p className="text-sm font-medium text-violet-600">RESUME LIBRARY</p><h1 className="mt-4 text-5xl font-semibold tracking-[-0.055em] md:text-7xl">{t("Make your experience count.", "让经历，更有说服力。")}</h1></header>
+    <header className="pb-12 pt-14 md:pb-16 md:pt-20"><p className="text-sm font-medium text-violet-600">RESUME</p><h1 className="mt-4 text-5xl font-semibold tracking-[-0.055em] md:text-6xl">{t("One resume, iterated well.", "把一份简历打磨好。")}</h1><p className="mt-5 max-w-2xl text-sm leading-6 text-stone-500">{t("The latest version is your primary resume. Older versions stay out of the way until you need to compare them.", "最新版本是你的主简历；旧版本收在历史里，需要对比时再展开。")}</p></header>
     {(error || notice) && <div className={`mb-8 rounded-2xl px-5 py-4 text-sm ${error ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{error || notice}</div>}
     {showUpload && <section className="mb-10 rounded-[2rem] bg-white p-6 shadow-[0_18px_70px_rgba(0,0,0,0.07)] md:p-8"><div className="flex items-center justify-between"><h2 className="text-2xl font-semibold">{t("Upload resume", "上传简历")}</h2><button onClick={() => setShowUpload(false)} aria-label={t("Close", "关闭")} className="rounded-full p-2 text-stone-400 hover:bg-stone-100"><X className="size-5" /></button></div><form onSubmit={upload} className="mt-6 flex flex-col gap-3 sm:flex-row"><label className="flex min-h-14 flex-1 cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-stone-300 bg-[#fafafa] px-5 text-sm text-stone-500 transition hover:border-violet-400 hover:bg-violet-50/40"><Upload className="size-5 text-violet-500" /><span className="truncate">{fileName || t("PDF or DOCX · up to 10 MB", "PDF 或 DOCX · 10 MB 内")}</span><input type="file" name="file" className="hidden" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required onChange={chooseFile} /></label><button disabled={busy === "upload"} className="min-h-14 rounded-2xl bg-violet-600 px-7 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">{busy === "upload" ? t("Parsing…", "解析中…") : t("Upload", "上传")}</button></form></section>}
-    {resumes.length === 0 ? <section className="rounded-[2.5rem] bg-white px-6 py-20 text-center shadow-[0_20px_80px_rgba(0,0,0,0.05)]"><span className="mx-auto grid size-16 place-items-center rounded-2xl bg-stone-100 text-stone-500"><FileText className="size-7" /></span><h2 className="mt-6 text-2xl font-semibold">{t("No resumes yet", "还没有简历")}</h2><button onClick={() => setShowUpload(true)} className="mt-7 rounded-full bg-[#1d1d1f] px-6 py-3 text-sm font-medium text-white">{t("Upload", "上传")}</button></section> : <section><div className="mb-6 flex items-end justify-between"><div><h2 className="text-2xl font-semibold">{t("My resumes", "我的简历")}</h2><p className="mt-1 text-sm text-stone-500">{t(`${resumes.length} resumes`, `${resumes.length} 份`)}</p></div></div><div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{resumes.map((resume) => { const status = statusMeta(resume, t); return <button key={resume.id} onClick={() => openResume(resume)} className="group min-h-72 rounded-[2rem] bg-white p-6 text-left shadow-[0_12px_50px_rgba(0,0,0,0.045)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_22px_70px_rgba(0,0,0,0.09)]"><div className="flex items-start justify-between"><span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 text-violet-600"><FileText className="size-5" /></span><span className={`rounded-full px-3 py-1 text-[11px] font-medium ${status.className}`}>{status.label}</span></div><h3 className="mt-8 line-clamp-2 text-xl font-semibold leading-7 tracking-tight">{resume.originalFilename}</h3><p className="mt-3 text-sm text-stone-400">{new Intl.DateTimeFormat(locale === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "short", day: "numeric" }).format(new Date(resume.createdAt))} · {(resume.sizeBytes / 1024).toFixed(0)} KB</p><div className="mt-10 flex items-center justify-between border-t border-stone-100 pt-5 text-sm font-medium text-stone-600"><span>{resume.analysisId ? t("View report", "查看报告") : t("Open", "打开")}</span><ChevronRight className="size-4 transition group-hover:translate-x-1" /></div></button>; })}</div></section>}
+    {resumes.length === 0 ? (
+      <section className="rounded-[2.5rem] bg-white px-6 py-20 text-center shadow-[0_20px_80px_rgba(0,0,0,0.05)]"><span className="mx-auto grid size-16 place-items-center rounded-2xl bg-stone-100 text-stone-500"><FileText className="size-7" /></span><h2 className="mt-6 text-2xl font-semibold">{t("No resumes yet", "还没有简历")}</h2><button onClick={() => setShowUpload(true)} className="mt-7 rounded-full bg-[#1d1d1f] px-6 py-3 text-sm font-medium text-white">{t("Upload", "上传")}</button></section>
+    ) : (
+      <section>
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold">{t("Current resume", "当前简历")}</h2>
+            <p className="mt-1 text-sm text-stone-500">
+              {sortedResumes.length > 1
+                ? t(`Main resume with ${sortedResumes.length - 1} previous version${sortedResumes.length - 1 === 1 ? "" : "s"} kept for comparison`, `主简历，另有 ${sortedResumes.length - 1} 个历史版本可供对比`)
+                : t("This is the resume used for analysis and interview practice.", "用于分析和面试练习的简历。")}
+            </p>
+          </div>
+          <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-medium text-violet-700">{t("Primary", "主简历")}</span>
+        </div>
+        {resumeCard(sortedResumes[0], true)}
+        {sortedResumes.length > 1 && (
+          <details className="group mt-8">
+            <summary className="flex cursor-pointer list-none items-center justify-between rounded-2xl border border-white/70 bg-white/60 px-5 py-4 text-sm font-medium text-stone-600 shadow-[0_10px_30px_rgba(49,39,70,0.05)] backdrop-blur-xl transition hover:bg-white/80">
+              {t(`Previous versions (${sortedResumes.length - 1})`, `历史版本（${sortedResumes.length - 1}）`)}
+              <span aria-hidden="true" className="text-stone-400 transition group-open:rotate-180">⌄</span>
+            </summary>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">{sortedResumes.slice(1).map(resume => resumeCard(resume, false))}</div>
+          </details>
+        )}
+      </section>
+    )}
   </div></main>;
 }
 
