@@ -6,14 +6,14 @@
 
 | 对象 | 所有者 | 当前实现与状态 | 不得混同 |
 |---|---|---|---|
-| 真实面试流程 / InterviewProcess | 求职 | `opportunity.JobOpportunity`；SCHEDULED、AWAITING_RESULT、NEXT_ROUND、REJECTED | 不是模拟会话，也不是完整投递漏斗 |
+| 真实面试流程 / InterviewProcess | 求职 | `jobsearch.interview.domain.JobOpportunity`；SCHEDULED、AWAITING_RESULT、NEXT_ROUND、REJECTED | 不是模拟会话，也不是完整投递漏斗 |
 | 面试轮次 / InterviewRound | 求职 | `OpportunityRound`，轮次号、环节、时间和时长 | 学习任务不是面试轮次 |
-| 面试记录与问题 | 求职 | `recap.InterviewRecap` 关联流程与可空轮次；问题通过报告继承 | 不推测历史轮次，不重复要求填写父对象拥有的信息 |
+| 面试记录与问题 | 求职 | `jobsearch.record.domain.InterviewRecap` 关联流程与可空轮次；问题通过报告继承 | 不推测历史轮次，不重复要求填写父对象拥有的信息 |
 | 原始转录、确认纪要与复盘版本 | 求职 | 原始任务保留原文；`interview_minutes` 可编辑；`interview_minutes_reviews` 保存不可变确认快照与异步结果 | Agent 不能代替用户确认；报告不是原文；新增轮次关联必须覆盖整条来源链 |
 | 投递活动 | 求职 | 日计数、目标与提醒 | 日计数不等于逐份投递记录 |
 | 学习计划 | 学习 | SCHEDULED、IN_PROGRESS、NEEDS_REVIEW、COMPLETED；LearningPlanView 为 HTTP/Agent 共用的领域应用快照，见 [快照合同](LEARNING_ATTEMPT_HISTORY.md#学习计划应用快照) | 来源与目标面试是关联，不是全部学习都必须有面试父对象 |
 | 学习尝试与内容版本 | 学习 | V52 新增 `learning_attempts`（每轮提交一行不可变事实）与 `learning_plans.content_version`/`exercises_version`；旧 `last_evaluation.attempts` 仅作兼容投影 | 尝试历史不是最后分数缓存；版本号不是资源 UUID；回填的 LEGACY 行不伪造评分模型 |
-| 模拟面试 | 学习训练 | `interview` 包与既有 session 状态 | 名称必须明确 Mock Interview；真实面试保留 Interview |
+| 模拟面试 | 学习训练 | `learning.practice.mockinterview` 与既有 session 状态 | 名称必须明确 Mock Interview；真实面试保留 Interview |
 | 重答与复测 | 学习训练 | `InterviewReplayAttempt` 等现有实现 | 不是录音播放，不与模拟会话共用万能状态表 |
 | 记忆卡 | 学习复习 | learning.review 拥有实体、仓储、FlashcardService 和复习历史；旧接口为传输适配，见 [复习合同](FLASHCARD_REVIEW.md) | 不属于面经才能存在，不与 Agent 长期记忆混同 |
 | 补强进度 | 学习查询 | LearningProgressService 通过具名跨域接口分页聚合问题、学习、重答与卡片复习；旧 evidence 路径兼容 | 不新建 Evidence CRUD；分数/次数不是能力证明；来源不等于准备目标，见 [查询合同](LEARNING_PROGRESS.md) |
@@ -77,4 +77,4 @@ E2 的 V53 只新增可空列、新表和索引：`messages.request_id/run_id` �
 
 D 的任务边界批次通过领域 Handler 注册执行与重试，应用命令不再复用 Web DTO，详见 [领域任务边界](DOMAIN_JOB_HANDLERS.md)。旧任务类型、payload 和结果链接保持兼容；未知类型拒绝，不回落到其他领域。此处仅约束该批实际列出的边界。
 
-当前仍待完成（不属于已核验合同）：E3 的 Agent 聊天错误码统一到 `llm` 结构化分类；观测（requestId/runId/toolCallId/jobId 串联）、备份与恢复演练；多副本限制（取消不跨实例传播、complete 的 TOCTOU 仅在单实例假设下安全）。目标包结构（`jobsearch`/`materials`/`assistant`/`platform` 等）已于 2026-10-21 完成（PR #149–#157），本机 Docker 重建部署与旧路由/API 抽查通过；已完成的 C/D/E/F 批次与实测证据见 [领域重构收尾状态](REFACTOR_STATUS.md)。
+E3 已通过 #161/#162 补已知 HTTP、网络及解析故障的共享分类与流终止；#163 已补严格合成数据库/文件/个人模型配置恢复。未知异常仍保留旧粗分类兜底。当前仍待完成：剩余应用/Web DTO 边界、完整客户端恢复及最新版本部署验收；多副本限制不变（取消不跨实例传播、complete 的 TOCTOU 仅在单实例假设下安全）。目标包结构已于 2026-10-21 完成（PR #149–#157）；历史部署与当前代码的证据必须按提交区分，详见 [领域重构收尾状态](REFACTOR_STATUS.md) 第 6 节。
