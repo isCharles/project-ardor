@@ -24,6 +24,14 @@ import org.junit.jupiter.api.Test;
  */
 class ArchitectureBoundaryTests {
     @Test
+    void ordinaryCalendarApplicationDoesNotDependOnWebDtos() throws IOException {
+        assertNoImports("scheduling/service", Pattern.compile("import com\\.projectardor\\.scheduling\\.web\\..*"));
+        String tools = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
+        assertTrue(!tools.contains("com.projectardor.scheduling.web.CalendarTaskResponse"),
+                "Ordinary calendar tools must use scheduling application views");
+    }
+
+    @Test
     void learningApplicationAndAgentToolsDoNotDependOnLearningWebDtos() throws IOException {
         assertNoImports("learning/plan/service", Pattern.compile("import com\\.projectardor\\.learning\\.plan\\.web\\..*"));
         String tools = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);

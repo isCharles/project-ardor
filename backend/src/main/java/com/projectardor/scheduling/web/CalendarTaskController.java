@@ -37,7 +37,7 @@ public class CalendarTaskController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to) {
-        return service.list(principal.userId(), from, to).stream()
+        return service.listViews(principal.userId(), from, to).stream()
                 .map(CalendarTaskResponse::from)
                 .toList();
     }
@@ -47,7 +47,7 @@ public class CalendarTaskController {
     public CalendarTaskResponse create(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody CalendarTaskCreateRequest request) {
-        return CalendarTaskResponse.from(service.create(
+        return CalendarTaskResponse.from(service.createView(
                 principal.userId(), request.title(), request.description(), request.dueAt(),
                 request.priority(), CalendarTaskSource.MANUAL, request.jobOpportunityId()));
     }
@@ -57,7 +57,7 @@ public class CalendarTaskController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID taskId,
             @Valid @RequestBody CalendarTaskUpdateRequest request) {
-        return CalendarTaskResponse.from(service.update(
+        return CalendarTaskResponse.from(service.updateView(
                 principal.userId(), taskId, request.title(), request.description(), request.dueAt(),
                 request.priority(), request.status()));
     }

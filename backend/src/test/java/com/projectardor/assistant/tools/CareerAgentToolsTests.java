@@ -149,6 +149,31 @@ class CareerAgentToolsTests {
     }
 
     @Test
+    void ordinaryCalendarToolsUseOwnedApplicationSnapshots() {
+        var calendar = mock(CalendarTaskService.class);
+        var tools = new CareerAgentTools(mock(ResumeService.class), mock(ResumeAnalysisQueueService.class),
+                mock(InterviewService.class), mock(ProfileService.class), mock(AgentMemoryService.class), calendar,
+                mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class), mock(KnowledgeService.class), mock(LearningPlanService.class),
+                mock(ApplicationRhythmService.class), mock(OpportunityService.class),
+                mock(com.projectardor.platform.jobs.aijobs.AiJobService.class),
+                mock(com.projectardor.learning.review.service.FlashcardService.class));
+        UUID user = UUID.randomUUID();
+        var task = CalendarTask.create(user, "Fixture", null, null, CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT);
+        var view = com.projectardor.scheduling.service.CalendarTaskView.from(task);
+        when(calendar.listViews(user, null, null)).thenReturn(java.util.List.of(view));
+        when(calendar.createView(user, "Fixture", "", null, CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT, null)).thenReturn(view);
+        when(calendar.updateGeneralView(user, task.getId(), "Fixture", "", null, CalendarTaskPriority.MEDIUM,
+                com.projectardor.scheduling.domain.CalendarTaskStatus.TODO)).thenReturn(view);
+        var bound = tools.bind(user, "Fixture");
+        assertThat(bound.listCalendarTasks("", "")).containsExactly(view);
+        assertThat(bound.createCalendarTask("Fixture", "", "", "MEDIUM", "")).isSameAs(view);
+        assertThat(bound.updateCalendarTask(task.getId().toString(), "Fixture", "", "", "MEDIUM", "TODO")).isSameAs(view);
+        verify(calendar, never()).list(any(), any(), any());
+        verify(calendar, never()).delete(any(), any());
+    }
+
+    @Test
     void deletingACalendarTaskOnlyProposesItForTheUserToConfirm() {
         CalendarTaskService calendarTaskService = mock(CalendarTaskService.class);
         CareerAgentTools tools = new CareerAgentTools(

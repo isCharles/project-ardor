@@ -28,7 +28,7 @@ import com.projectardor.scheduling.domain.RecurrenceFrequency;
 import com.projectardor.scheduling.domain.TaskSeries;
 import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.scheduling.service.TaskSeriesService;
-import com.projectardor.scheduling.web.CalendarTaskResponse;
+import com.projectardor.scheduling.service.CalendarTaskView;
 import com.projectardor.scheduling.web.TaskSeriesResponse;
 import com.projectardor.assistant.memory.service.AgentMemoryService;
 import com.projectardor.assistant.memory.web.AgentMemoryResponse;
@@ -503,29 +503,27 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "list_calendar_tasks", value = "读取当前用户的日历待办。可按 ISO-8601 时间范围过滤；不传范围则返回全部待办")
-        public List<CalendarTaskResponse> listCalendarTasks(
+        public List<CalendarTaskView> listCalendarTasks(
                 @P(value = "开始时间，ISO-8601 格式；不限制时传空字符串", required = false) String from,
                 @P(value = "结束时间，ISO-8601 格式；不限制时传空字符串", required = false) String to) {
-            return calendarTaskService.list(userId, nullableInstant(from), nullableInstant(to)).stream()
-                    .map(CalendarTaskResponse::from)
-                    .toList();
+            return calendarTaskService.listViews(userId, nullableInstant(from), nullableInstant(to));
         }
 
         @Tool(name = "create_calendar_task", value = "为当前用户创建任意明确的日程或待办，不限于求职事项。用户说出自然语言安排，或粘贴含日期时间的通知时使用；日期确有歧义时必须先追问，不得猜测。若这条日程属于某场真实面试（面试时间或准备任务），传入该面试流程 UUID")
-        public CalendarTaskResponse createCalendarTask(
+        public CalendarTaskView createCalendarTask(
                 @P("日历格中的极短标题，优先使用公司或对象加事项，通常 2 到 8 个中文字符，例如‘字节面试’‘完善简历’；不得照抄冗长岗位名称") String title,
                 @P(value = "完整说明。岗位全称、业务线、会议方式、准备材料和来源摘要都放在这里，不要塞进短标题；没有时传空字符串", required = false) String description,
                 @P(value = "到期或发生时间，必须是带时区的 ISO-8601；无截止时间的普通任务可传空字符串", required = false) String dueAt,
                 @P(value = "优先级：LOW、MEDIUM 或 HIGH", required = false) String priority,
                 @P(value = "关联的真实面试流程 UUID；不关联传空字符串", required = false) String jobOpportunityId) {
-            return CalendarTaskResponse.from(calendarTaskService.create(
+            return calendarTaskService.createView(
                     userId,
                     title,
                     description,
                     nullableInstant(dueAt),
                     parsePriority(priority),
                     CalendarTaskSource.AGENT,
-                    nullableUuid(jobOpportunityId, "面试流程 ID")));
+                    nullableUuid(jobOpportunityId, "面试流程 ID"));
         }
 
         @Tool(name = "delete_calendar_task", value = "永久删除当前用户指定的一条日历待办。必须先调用 list_calendar_tasks 获取真实 UUID；只有用户明确要求删除或取消该待办时使用，目标不唯一时必须先追问")
@@ -538,11 +536,11 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "update_calendar_task", value = "修改当前用户普通日程的标题、说明、时间、优先级和状态，保留 UUID；先列表读取并保留未要求改动的字段。学习、记忆卡、复测日程请改对应业务模块，不通过此工具强行改写")
-        public CalendarTaskResponse updateCalendarTask(@P("日程 UUID") String taskId, @P("完整短标题") String title,
+        public CalendarTaskView updateCalendarTask(@P("日程 UUID") String taskId, @P("完整短标题") String title,
                 @P("完整说明，清空传空字符串") String description, @P("完整 ISO-8601 带时区时间；无截止时间传空字符串") String dueAt,
                 @P("完整优先级：LOW、MEDIUM、HIGH") String priority, @P("完整状态：TODO、IN_PROGRESS、COMPLETED、CANCELLED") String status) {
-            return CalendarTaskResponse.from(calendarTaskService.updateGeneral(userId, uuid(taskId, "日程 ID"), title, description,
-                    nullableInstant(dueAt), parsePriority(priority), enumValue(com.projectardor.scheduling.domain.CalendarTaskStatus.class, status, null)));
+            return calendarTaskService.updateGeneralView(userId, uuid(taskId, "日程 ID"), title, description,
+                    nullableInstant(dueAt), parsePriority(priority), enumValue(com.projectardor.scheduling.domain.CalendarTaskStatus.class, status, null));
         }
 
         @Tool(name = "list_recurring_tasks", value = "读取当前用户的重复安排（每天、每周、每月循环的日程规则）及其接下来几次的日期。用户问“我有哪些固定安排”，或需要修改、取消某条重复安排前定位对象时使用")

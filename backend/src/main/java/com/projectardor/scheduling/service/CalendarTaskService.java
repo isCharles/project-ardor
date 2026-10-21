@@ -25,6 +25,35 @@ public class CalendarTaskService {
     }
 
     @Transactional(readOnly = true)
+    public List<CalendarTaskView> listViews(UUID userId, Instant from, Instant to) {
+        return list(userId, from, to).stream().map(CalendarTaskView::from).toList();
+    }
+
+    @Transactional
+    public CalendarTaskView createView(UUID userId, String title, String description, Instant dueAt,
+            CalendarTaskPriority priority, CalendarTaskSource source, UUID jobOpportunityId) {
+        return flushedView(create(userId, title, description, dueAt, priority, source, jobOpportunityId));
+    }
+
+    @Transactional
+    public CalendarTaskView updateView(UUID userId, UUID taskId, String title, String description, Instant dueAt,
+            CalendarTaskPriority priority, CalendarTaskStatus status) {
+        return flushedView(update(userId, taskId, title, description, dueAt, priority, status));
+    }
+
+    @Transactional
+    public CalendarTaskView updateGeneralView(UUID userId, UUID taskId, String title, String description, Instant dueAt,
+            CalendarTaskPriority priority, CalendarTaskStatus status) {
+        return flushedView(updateGeneral(userId, taskId, title, description, dueAt, priority, status));
+    }
+
+    private CalendarTaskView flushedView(CalendarTask task) {
+        // Preserve lifecycle timestamps previously observed after the entity-returning transaction committed.
+        repository.flush();
+        return CalendarTaskView.from(task);
+    }
+
+    @Transactional(readOnly = true)
     public List<CalendarTask> list(UUID userId, Instant from, Instant to) {
         if (from != null && to != null && !from.isBefore(to)) {
             throw new IllegalArgumentException("开始时间必须早于结束时间");
