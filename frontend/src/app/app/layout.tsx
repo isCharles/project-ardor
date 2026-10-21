@@ -5,7 +5,7 @@ export default function AppLayout({ children }: Readonly<{ children: React.React
   return (
     <div className="flex h-full overflow-hidden bg-white">
       <WorkspaceRail />
-      <div className="min-w-0 flex-1 overflow-y-auto"><DomainNavigation />{children}</div>
+      <div data-app-scroll className="min-w-0 flex-1 overflow-y-auto"><DomainNavigation />{children}</div>
     </div>
   );
 }

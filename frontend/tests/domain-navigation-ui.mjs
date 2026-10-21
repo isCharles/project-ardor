@@ -49,27 +49,55 @@ try {
   await page.goto(`${origin}/app/job-search`);
   await page.getByRole("heading", { name: "Job search", exact: true }).waitFor();
   await page.screenshot({ path: ".next/domain-job-search.png", fullPage: true });
-  const navigation = page.getByRole("navigation", { name: "Section navigation" });
-  await navigation.getByRole("link", { name: "Interviews", exact: true }).click();
+  const trigger = page.locator("#ardor-domain-nav-trigger");
+  const sectionNavigation = page.locator("#ardor-domain-navigation");
+  const sectionLink = async (name) => {
+    if (!(await sectionNavigation.count())) await trigger.click();
+    await sectionNavigation.waitFor();
+    return sectionNavigation.getByRole("link", { name, exact: true });
+  };
+  const sectionCurrent = async (name) => (await sectionLink(name)).getAttribute("aria-current");
+  assert.equal(await trigger.getAttribute("aria-expanded"), "false");
+  await trigger.hover();
+  await sectionNavigation.waitFor();
+  await page.keyboard.press("Escape");
+  await sectionNavigation.waitFor({ state: "hidden" });
+  await (await sectionLink("Interviews")).click();
   await page.waitForURL("**/app/job-search/interviews");
-  assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
+  assert.equal(await sectionCurrent("Interviews"), "page");
   await page.goto(`${origin}/app/opportunities?selected=fixture`);
-  assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
+  assert.equal(await sectionCurrent("Interviews"), "page");
   assert.ok(page.url().endsWith("?selected=fixture"));
   for (const path of ["/app/interviews", "/app/learning/practice/mock-interviews"]) {
     await page.goto(`${origin}${path}`);
-    assert.equal(await navigation.getByRole("link", { name: "Practice", exact: true }).getAttribute("aria-current"), "page");
-    assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).count(), 0);
+    assert.equal(await sectionCurrent("Practice"), "page");
+    if (!(await sectionNavigation.count())) await trigger.click();
+    await sectionNavigation.waitFor();
+    assert.equal(await sectionNavigation.getByRole("link", { name: "Interviews", exact: true }).count(), 0);
   }
   for (const path of ["/app/replay", "/app/learning/practice/questions"]) {
     await page.goto(`${origin}${path}?question=question-fixture&retest=retest-fixture`);
     await page.getByText("Fixture practice question", { exact: true }).waitFor();
     assert.ok(page.url().includes("retest=retest-fixture"));
-    assert.equal(await navigation.getByRole("link", { name: "Practice", exact: true }).getAttribute("aria-current"), "page");
+    assert.equal(await sectionCurrent("Practice"), "page");
   }
   await page.goto(`${origin}/app/job-search/notes?draft=missing-fixture`);
   await page.getByRole("textbox").first().waitFor();
-  assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
+  assert.equal(await sectionCurrent("Interviews"), "page");
+  await page.keyboard.press("Escape");
+  const scrollRoot = page.locator("[data-app-scroll]");
+  await scrollRoot.evaluate(element => { element.scrollTop = 600; });
+  await page.waitForTimeout(260);
+  assert.equal(await trigger.evaluate(element => element.closest('[aria-hidden="true"]') !== null), true, "Scrolling down must hide the section navigation");
+  await scrollRoot.evaluate(element => { element.scrollTop = 120; });
+  await page.waitForTimeout(260);
+  assert.equal(await trigger.evaluate(element => element.closest('[aria-hidden="true"]') !== null), false, "Scrolling up must reveal the section navigation");
+  const compactBox = await trigger.boundingBox();
+  assert.ok(compactBox && compactBox.width <= 44, `Scrolled navigation must collapse to a compact icon: ${JSON.stringify(compactBox)}`);
+  await scrollRoot.evaluate(element => { element.scrollTop = 0; });
+  await page.waitForTimeout(260);
+  const expandedBox = await trigger.boundingBox();
+  assert.ok(expandedBox && expandedBox.width > 100, `At the top the navigation must show its full label: ${JSON.stringify(expandedBox)}`);
   await page.getByRole("button", { name: "More workspaces", exact: true }).click();
   const morePanel = page.locator("#ardor-more-workspaces");
   const fitViewport = async (label) => {
