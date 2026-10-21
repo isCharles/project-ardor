@@ -58,6 +58,8 @@ public class CompatibleLlmGateway implements LlmGateway {
     }
 
     private LlmCallException accessFailure(ResourceAccessException exception) {
+        LlmCallException payload = LlmFailureClassifier.payload(exception);
+        if (payload != null) return payload;
         LlmCallException classified = LlmFailureClassifier.transport(exception);
         if (classified != null) return classified;
         return new LlmCallException(

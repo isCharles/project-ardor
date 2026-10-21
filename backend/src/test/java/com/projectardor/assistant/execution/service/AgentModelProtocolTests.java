@@ -192,13 +192,14 @@ class AgentModelProtocolTests {
         }
     }
     @Test void streamingSdkErrorsHaveTheSameSafeClassification() throws Exception {
-        for (var provider : LlmProvider.values()) {
+        for (var provider : LlmProvider.values()) for (int status : new int[] {401, 200}) {
             var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             server.createContext("/", exchange -> {
                 exchange.getRequestBody().readAllBytes();
-                byte[] bytes = "{\"error\":{\"message\":\"secret-provider-body\",\"type\":\"fixture_error\"}}".getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(401, bytes.length);
+                byte[] bytes = (status == 200 ? "event: message_start\ndata: {secret-invalid-json}\n\n"
+                        : "{\"error\":{\"message\":\"secret-provider-body\",\"type\":\"fixture_error\"}}").getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", status == 200 ? "text/event-stream" : "application/json");
+                exchange.sendResponseHeaders(status, bytes.length);
                 exchange.getResponseBody().write(bytes);
                 exchange.close();
             });
@@ -221,9 +222,10 @@ class AgentModelProtocolTests {
                 });
                 var classified = (com.projectardor.platform.model.llm.service.LlmCallException)
                         CareerAgentService.classifyStreamFailure(error.get(8, java.util.concurrent.TimeUnit.SECONDS));
-                assertThat(classified.getCode()).isEqualTo("LLM_AUTH_FAILED");
+                assertThat(classified.getCode()).as("%s HTTP %s", provider, status)
+                        .isEqualTo(status == 200 ? "LLM_INVALID_RESPONSE" : "LLM_AUTH_FAILED");
                 assertThat(classified.isRetryable()).isFalse();
-                assertThat(classified.getMessage()).doesNotContain("secret-provider-body", "fake-only");
+                assertThat(classified.getMessage()).doesNotContain("secret-provider-body", "fake-only", "secret-invalid-json");
             } finally { lease.stop(() -> {}); server.stop(0); }
         }
     }
