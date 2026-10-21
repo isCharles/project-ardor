@@ -1,6 +1,6 @@
 # 后端包结构与命名迁移计划
 
-日期：2026-10-20。状态：执行中。目标结构来自 [架构演进规划](ARCHITECTURE_EVOLUTION.md) 的领域地图；本文件把「旧包 → 新包」落成可执行批次。**只移动 package/import/文件与必要的类名位置，不改变任何行为、数据、接口或协议。**
+日期：2026-10-21。状态：已完成（B1–B8 全部合并，本机 Docker 部署核验通过）。目标结构来自 [架构演进规划](ARCHITECTURE_EVOLUTION.md) 的领域地图；本文件把「旧包 → 新包」落成可执行批次。**只移动 package/import/文件与必要的类名位置，不改变任何行为、数据、接口或协议。**
 
 ## 1. 不变量（每批都必须保持）
 
@@ -93,7 +93,7 @@
 | `CareerAgentTools`、`capability.*` | `assistant.tools.*` |
 | `AgentProposal*`、proposal 相关 DTO | `assistant.proposal.*` |
 | `AgentMemory*`、`MemoryVectorStore`、`AgentMemoryService`、`MemoryConsolidation*`、`MemoryEmbedding*`、`MemoryMaintenanceService`、memory 相关 DTO | `assistant.memory.*` |
-| `AgentModelProtocol`、`Anthropic/OpenAiAgentModelProtocol`、`LangChainModelFactory`、`ModelReasoningPolicy` | `platform.model.llm.agent.*` |
+| `AgentModelProtocol`、`Anthropic/OpenAiAgentModelProtocol`、`LangChainModelFactory`、`ModelReasoningPolicy` | `assistant.execution.service.*`（实际执行：这些适配器使用 execution 内部的 stream lease / leased HTTP client，移动到 `platform.model.llm.agent` 会强制扩大可见性；平台层只保留通用网关与协议接口） |
 | 其余 agent 顶层 `AgentEngine/AgentFeature/AgentResponse/ReasoningDepth` | `assistant.*`（按职责归 conversation/execution） |
 
 ## 4. 每批交付清单
@@ -115,3 +115,42 @@
 - B1–B8 全部合并；`com.projectardor` 顶层只剩 `admin`、`common`、`config`、`jobsearch`、`learning`、`materials`、`assistant`、`scheduling`、`platform`。
 - 全量后端测试与每批 CI 通过；`ddl-auto: validate` 空库启动通过；本机 Docker 重建部署健康、Flyway 版本不变（仍为最新 V53）、旧路由/旧 API 兼容抽查通过。
 - `ArchitectureBoundaryTests` 保护新路径；文档同步完成；未验证项明列。
+
+## 7. 完成记录（2026-10-21）
+
+| 批次 | PR | 内容 | CI |
+|---|---|---|---|
+| B1 | #150 | applications/calendar/auth/profile → 目标包 | golden-path pass 7m37s |
+| B2 | #151 | resume/knowledge → `materials.*` | golden-path pass 7m31s |
+| B3 | #152 | llm/speech/websearch/integrations/aijobs/background/usage/health → `platform.*` | golden-path pass 8m04s（另有 quota job pass） |
+| B4 | #153 | interview → `learning.practice.mockinterview` | golden-path pass 8m52s |
+| B5 | #154 | opportunity → `jobsearch.interview` | golden-path pass 7m39s；首次运行卡在端到端步骤，取消重跑后通过（未改代码） |
+| B6 | #155 | recap 拆分 → `jobsearch.record`、`learning.practice.question`、`learning.review.web`、`learning.plan.origin` | golden-path pass 7m14s |
+| B7 | #156 | learning → `plan` / `progress` / `practice.exercises`；补齐 B1/B2 测试目录 | golden-path pass 7m26s |
+| B8 | #157 | agent → assistant 五个子域 + json；新增目标结构/旧包守卫 | golden-path pass 7m59s |
+
+每批本地均以 `mvn -o -q clean test` 验证（全量后端测试通过），并修复了搬迁后才暴露的源码路径断言、ServiceLoader 资源（`META-INF/services/dev.langchain4j.spi.json.JsonCodecFactory`）与跨子包可见性问题。实际结构为：
+
+```text
+com.projectardor
+├─ jobsearch/{applicationactivity,interview,record}
+├─ learning/{plan,practice/{exercises,mockinterview,question},review,progress}
+├─ materials/{resume,knowledge}
+├─ assistant/{conversation,execution,tools,proposal,memory,json}
+├─ scheduling/
+├─ platform/{identity,model,jobs,health,usage,notification}
+├─ common/ · config/ · admin/
+```
+
+与计划的差异：`auth` 落在 `platform.identity.auth`（避免与 `profile` 目录冲突）；Agent 模型适配器留在 `assistant.execution.service`（依赖 execution 内部的 stream lease / leased HTTP client，移到 platform 会扩大可见性）；`ArdorJsonCodecFactory` 留在 `assistant.json`。数据库表/列、Flyway、HTTP API/URL、工具名与 scope、响应 JSON、桌面协议均未改动。
+
+### 迁移后部署核验（2026-10-21）
+
+- `main`（`3a9febf`）执行 `start.ps1`：`mvn package` + `docker compose up -d --build` 成功；四个容器运行，backend healthy、frontend/postgres/redis 正常。
+- `/actuator/health` = `{"groups":["liveness","readiness"],"status":"UP"}`；`http://127.0.0.1:3000` = 200。
+- Flyway 仍为 **v53**（53 条迁移，未新增/改写），`ddl-auto: validate` 启动通过。
+- 导航中的 23 条旧/新路由全部 200（`/app/evidence`、`/app/cards`、`/app/opportunities`、`/app/job-search`、`/app/recaps`、`/app/replay`、`/app/learning/*` 等）。
+- 未认证旧 API 均返回 401（路由存在）：`/api/memory-cards`、`/api/opportunities`、`/api/learning-plans`、`/api/interview-recaps`、`/api/conversations`、`/api/agent/memory`。
+- 恢复 Docker 时只对两处运行时 socket 目录做了可逆改名备份（未删除、未 reset/prune、未动数据卷），Engine 29.8.2 恢复后完成上述构建。
+
+未验证项：迁移后完整浏览器/桌面人工回归、真实模型/语音/计费行为、多副本限制、备份恢复演练、E3 聊天错误码统一，见 [领域重构收尾状态](REFACTOR_STATUS.md)。
