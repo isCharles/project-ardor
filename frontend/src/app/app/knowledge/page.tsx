@@ -183,9 +183,7 @@ export default function KnowledgePage() {
         </Link>
 
         <header className="pb-10 pt-14 md:pb-14 md:pt-20">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{t("MATERIALS · RAG SOURCES", "资料 · RAG 来源")}</p>
           <h1 className={`${styles.display} max-w-3xl`}>{t("Materials & index", "资料与索引")}</h1>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-stone-600">{t("Sources Ardor retrieves from during chat, interview preparation and learning generation. Upload documents or let Ardor research the web. This is not a study task.", "这里是 Ardor 在对话、面试准备和学习生成时会自动检索的资料：可以上传文档，也可以让 Ardor 联网收录。它不是一项学习任务。")}</p>
         </header>
 
         {(error || notice) && (
