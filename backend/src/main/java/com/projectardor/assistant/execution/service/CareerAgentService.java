@@ -262,6 +262,8 @@ public class CareerAgentService {
                     exception.getClass().getName(),
                     root.getClass().getName(),
                     safeLogMessage(root.getMessage()));
+            Throwable classified = classifyStreamFailure(exception);
+            if (classified instanceof LlmCallException llmFailure) throw llmFailure;
             boolean retryable = isTransientFailure(exception);
             throw new LlmCallException(
                     retryable ? "AGENT_TEMPORARILY_UNAVAILABLE" : "AGENT_LLM_FAILED",
@@ -605,14 +607,7 @@ public class CareerAgentService {
         return handle == null ? () -> {} : handle::cancel;
     }
     static Throwable classifyStreamFailure(Throwable failure) {
-        Throwable current = failure;
-        for (int depth = 0; current != null && depth < 32; depth++, current = current.getCause()) {
-            if (current instanceof java.net.http.HttpTimeoutException || current instanceof java.net.SocketTimeoutException
-                    || current instanceof java.util.concurrent.TimeoutException) {
-                return new LlmCallException("AGENT_UPSTREAM_TIMEOUT", "上游连接或读取超时，本轮已停止；无法确认远端生成状态，不会自动重试。", false, failure);
-            }
-        }
-        return failure;
+        return AgentModelFailures.classify(failure);
     }
 
     private void sendStreamError(StreamSink sink, Throwable exception, long startedAt) {
@@ -620,6 +615,7 @@ public class CareerAgentService {
     }
 
     private void sendStreamError(StreamSink sink, Throwable exception, long startedAt, UUID userId, UUID requestId) {
+        exception = classifyStreamFailure(exception);
         AgentStreamEvent event;
         if (exception instanceof LlmCallException llmException) {
             event = AgentStreamEvent.error(

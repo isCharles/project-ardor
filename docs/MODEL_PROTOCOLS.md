@@ -19,13 +19,18 @@ Spring 生产装配使用注册的适配器列表。保留的显式构造器用�
 
 Anthropic 的存储 Base URL 沿用普通分析网关的服务根地址合同：JSON 请求追加 /v1/messages；SDK 自己追加 /messages，因此 Agent 适配器追加 /v1 前缀。修复前同一根地址会在 Agent 路径丢失 /v1；本地实际 SDK HTTP 测试复现并覆盖了此差异。自托管网关的原有路径前缀保留；不自动试探备用路径或改投另一种协议。
 
-普通分析错误继续区分请求/鉴权/不存在/繁忙/上游 HTTP、DNS、连接、超时、TLS、网络、空输出、截断及无法解析。错误提示不拼接供应商响应体或密钥；可重试标记保留。Agent 的既有错误分类与浏览器可见重试流程保持，非流式 SDK 内部重试仍为零，流式取消仍经 AgentStreamLease；这不承诺远端生成已停止或已经发生的工具写入可以回滚。
+普通分析与聊天对可确定的 HTTP/传输失败共用平台 LlmFailureClassifier。AgentModelFailures 仅在助手边界将 SDK 异常类型和状态码转换为平台分类，平台不依赖 SDK 或助手。鉴权失败为 LLM_AUTH_FAILED、接口或模型不存在为 LLM_NOT_FOUND、限流为 LLM_BUSY；网络细分 DNS、连接、TLS 和普通 IO，不把供应商正文或密钥拼入提示。既有空输出、截断、无法解析和领域异常保持原合同。
+
+聊天的连接/读取超时继续使用 AGENT_UPSTREAM_TIMEOUT 且 retryable=false，即使 SDK 外层包装为超时异常，也不能自动重放可能已执行工具的请求。其他可重试提示仍受 AgentRunStore 的 tool_started 限制：工具已开始则不自动重试。非流式与流式错误出口都应用分类；错误码和安全提示保存在运行记录中，再通过既有 SSE errorCode/content/retryable 字段返回。不增加必填响应字段，旧浏览器/桌面仍按通用错误提示工作；未知异常保留原有 AGENT_LLM_FAILED / AGENT_TEMPORARILY_UNAVAILABLE 兼容兜底，不声称它们已有精确原因。
+
+SDK 内部同步重试仍为零，流式取消仍经 AgentStreamLease。这不承诺远端生成已停止、所有供应商异常均被识别或已发生的工具写入可以回滚。真实供应商质量、计费和长时流式行为不由合成协议测试证明。
 
 ## 验证与演进边界
 
 - CompatibleLlmGatewayTests 保留两种 JSON 协议的请求与截断合同。
 - ModelProtocolContractTests 验证注册、失败不跨协议回退、两种 HTTP 协议的状态码/重试标记、网络分类、空/坏输出以及错误提示不包含供应商正文。
 - AgentModelProtocolTests 验证协议自己的 reasoning、配置与超时、零隐藏重试、流式取消 transport，以及两种实际 SDK 向本地 HTTP 服务发送同步/流式请求并解析响应；同步覆盖根路径和自托管路径前缀，流式覆盖分段文本和结束事件，并通过 AiServices 完成一次真实的工具调用—结果回传—最终回复。不是只测试一个假注册类。
+- AgentModelProtocolTests 的错误响应探针向两个实际 SDK 返回 400/401/403/404/429/503，核对共享错误码与提示不包含供应商正文；AgentStreamFailureTests 验证包装后的传输故障、SDK 类型、已分类领域异常与超时禁止自动重放。
 - 测试使用合成回复，不代表真实供应商可用性、模型质量或所有供应商流式事件格式均已验证。完整异步/流式恢复仍由 Golden Path 验收覆盖。
 
 测试运行时使用项目要求的 Java 21；本机 Java 25 曾在测试 HTTP 服务启动前报 Unable to establish loopback connection，不能把该环境故障当成协议逻辑失败，也不能因此跳过网络合同测试。
