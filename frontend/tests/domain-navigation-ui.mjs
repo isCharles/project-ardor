@@ -38,6 +38,14 @@ try {
       : path === "/api/profile/sidebar" ? preferences
       : path === "/api/background-tasks/summary" ? { activeCount: 0, unreadByModule: {} }
       : path === "/api/agent/permissions" ? { globalLevel: 0, modules: [] }
+      : path === "/api/resumes" ? [{ id: "resume-fixture", originalFilename: "fixture-resume.pdf", parseStatus: "PARSED", createdAt: "2026-10-01T00:00:00Z", analysisId: "analysis-fixture", analysisStatus: "COMPLETED", analysisError: null }]
+      : path === "/api/resumes/resume-fixture/analysis" ? { id: "analysis-fixture", resumeId: "resume-fixture", modelName: "fixture", analysis: { overallScore: 82, rubricVersion: "ardor-resume-rubric-v2", criteria: [
+        { id: "ownership", level: 2, rationale: "Add your personal contribution and the trade-off behind it." },
+        { id: "outcomes", level: 1, rationale: "Add a baseline or an acceptance criterion." },
+        { id: "timeline", level: 4, rationale: "The timeline is clear." },
+      ] } }
+      : path === "/api/opportunities" ? [{ id: "opportunity-fixture", company: "Kuaishou", targetRole: "Agent system engineer", platform: "ViewCoder", status: "AWAITING_RESULT", currentRound: 2, rounds: [{ id: "round-fixture", roundNumber: 1, stage: "TECHNICAL", scheduledAt: null, occurredAt: "2026-10-19T00:00:00Z", durationMinutes: 47, note: null }], createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-19T00:00:00Z" }]
+      : path === "/api/applications/rhythm" ? { today: "2026-10-20", weekStart: "2026-10-19", todayCount: 2, weeklyCount: 5, weeklyGoal: 10, reminderEnabled: false, reminderTime: "19:00", weekdaysOnly: true, reminderDue: false, days: [{ date: "2026-10-19", count: 1 }, { date: "2026-10-20", count: 2 }] }
       : path === "/api/interview-replays/questions/question-fixture" ? { questionId: "question-fixture", recapId: "report-fixture", recapTitle: "Confirmed notes", questionText: "Fixture practice question", attempts: [] }
       : path === "/api/interview-replays/questions/question-fixture/retest" ? { scheduled: null }
       : path === "/api/interview-recaps/drafts/missing-fixture" ? { id: "missing-fixture", rawContent: "Synthetic preserved transcript", minutes: "## Synthetic minutes\nPlease verify these facts before generating the review.", revision: 1, status: "COMPLETED", reviews: [] }
@@ -49,55 +57,48 @@ try {
   await page.goto(`${origin}/app/job-search`);
   await page.getByRole("heading", { name: "Job search", exact: true }).waitFor();
   await page.screenshot({ path: ".next/domain-job-search.png", fullPage: true });
-  const trigger = page.locator("#ardor-domain-nav-trigger");
-  const sectionNavigation = page.locator("#ardor-domain-navigation");
-  const sectionLink = async (name) => {
-    if (!(await sectionNavigation.count())) await trigger.click();
-    await sectionNavigation.waitFor();
-    return sectionNavigation.getByRole("link", { name, exact: true });
-  };
-  const sectionCurrent = async (name) => (await sectionLink(name)).getAttribute("aria-current");
-  assert.equal(await trigger.getAttribute("aria-expanded"), "false");
-  await trigger.hover();
-  await sectionNavigation.waitFor();
-  await page.keyboard.press("Escape");
-  await sectionNavigation.waitFor({ state: "hidden" });
-  await (await sectionLink("Interviews")).click();
+  const navigation = page.getByRole("navigation", { name: "Section navigation" });
+  await navigation.waitFor();
+  await page.getByText("Latest resume score", { exact: true }).waitFor();
+  assert.ok(await page.getByText("82", { exact: true }).isVisible(), "The overview must show the latest resume score");
+  assert.ok(await page.getByText("fixture-resume.pdf", { exact: true }).isVisible(), "The overview must name the scored resume");
+  assert.ok(await page.getByText("Kuaishou", { exact: true }).isVisible(), "The overview must show the latest interview company");
+  assert.ok(await page.getByText("Round 2", { exact: true }).isVisible(), "The overview must show the current interview round");
+  assert.ok(await page.getByText("Application rhythm", { exact: true }).isVisible(), "The overview must preview the application rhythm");
+  const placement = await page.evaluate(() => {
+    const nav = document.querySelector('nav[aria-label="Section navigation"]');
+    const main = nav?.closest("main");
+    if (!nav || !main) return null;
+    const header = main.querySelector("header");
+    return {
+      insideMain: main.contains(nav),
+      afterHeader: header ? !!(header.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING) : true,
+      position: nav.parentElement ? getComputedStyle(nav.parentElement).position : "",
+    };
+  });
+  assert.ok(placement?.insideMain, "Section navigation must be rendered inside the page main");
+  assert.ok(placement?.afterHeader, "Section navigation must follow the page header");
+  assert.ok(placement?.position !== "sticky" && placement?.position !== "fixed", "Section navigation must scroll with the page");
+  await navigation.getByRole("link", { name: "Interviews", exact: true }).click();
   await page.waitForURL("**/app/job-search/interviews");
-  assert.equal(await sectionCurrent("Interviews"), "page");
+  assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
   await page.goto(`${origin}/app/opportunities?selected=fixture`);
-  assert.equal(await sectionCurrent("Interviews"), "page");
+  assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
   assert.ok(page.url().endsWith("?selected=fixture"));
   for (const path of ["/app/interviews", "/app/learning/practice/mock-interviews"]) {
     await page.goto(`${origin}${path}`);
-    assert.equal(await sectionCurrent("Practice"), "page");
-    if (!(await sectionNavigation.count())) await trigger.click();
-    await sectionNavigation.waitFor();
-    assert.equal(await sectionNavigation.getByRole("link", { name: "Interviews", exact: true }).count(), 0);
+    assert.equal(await navigation.getByRole("link", { name: "Practice", exact: true }).getAttribute("aria-current"), "page");
+    assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).count(), 0);
   }
   for (const path of ["/app/replay", "/app/learning/practice/questions"]) {
     await page.goto(`${origin}${path}?question=question-fixture&retest=retest-fixture`);
     await page.getByText("Fixture practice question", { exact: true }).waitFor();
     assert.ok(page.url().includes("retest=retest-fixture"));
-    assert.equal(await sectionCurrent("Practice"), "page");
+    assert.equal(await navigation.getByRole("link", { name: "Practice", exact: true }).getAttribute("aria-current"), "page");
   }
   await page.goto(`${origin}/app/job-search/notes?draft=missing-fixture`);
   await page.getByRole("textbox").first().waitFor();
-  assert.equal(await sectionCurrent("Interviews"), "page");
-  await page.keyboard.press("Escape");
-  const scrollRoot = page.locator("[data-app-scroll]");
-  await scrollRoot.evaluate(element => { element.scrollTop = 600; });
-  await page.waitForTimeout(260);
-  assert.equal(await trigger.evaluate(element => element.closest('[aria-hidden="true"]') !== null), true, "Scrolling down must hide the section navigation");
-  await scrollRoot.evaluate(element => { element.scrollTop = 120; });
-  await page.waitForTimeout(260);
-  assert.equal(await trigger.evaluate(element => element.closest('[aria-hidden="true"]') !== null), false, "Scrolling up must reveal the section navigation");
-  const compactBox = await trigger.boundingBox();
-  assert.ok(compactBox && compactBox.width <= 44, `Scrolled navigation must collapse to a compact icon: ${JSON.stringify(compactBox)}`);
-  await scrollRoot.evaluate(element => { element.scrollTop = 0; });
-  await page.waitForTimeout(260);
-  const expandedBox = await trigger.boundingBox();
-  assert.ok(expandedBox && expandedBox.width > 100, `At the top the navigation must show its full label: ${JSON.stringify(expandedBox)}`);
+  assert.equal(await navigation.getByRole("link", { name: "Interviews", exact: true }).getAttribute("aria-current"), "page");
   await page.getByRole("button", { name: "More workspaces", exact: true }).click();
   const morePanel = page.locator("#ardor-more-workspaces");
   const fitViewport = async (label) => {
