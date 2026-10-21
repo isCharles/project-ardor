@@ -23,6 +23,13 @@ assert.equal(destinationForPath("/app/opportunities")?.id, "job-search.interview
 assert.equal(destinationForPath("/app/interviews")?.id, "learning.mock-interviews");
 assert.equal(destinationForPath("/app/replay?question=fixture")?.id, "learning.question-practice");
 assert.equal(destinationForPath("/app/evidence")?.id, "learning.progress");
+const materials = catalog.destinations.find(item => item.id === "learning.materials");
+assert.equal(materials?.domain, null, "Knowledge/materials belongs to the workspace group, not the learning domain");
+assert.equal(materials?.tab, undefined, "Materials must not appear as a learning tab");
+assert.equal(materials?.en, "Materials & index");
+for (const path of ["/app/materials", "/app/knowledge", "/app/learning/materials"]) {
+  assert.equal(destinationForPath(path)?.id, "learning.materials", path);
+}
 assert.equal(destinationForPath("/app/opportunities-unsafe"), undefined);
 assert.equal(destinationForPath("/app/admin"), undefined);
 assert.equal(destinationActive("learning.practice", "/app/replay?question=fixture"), true);

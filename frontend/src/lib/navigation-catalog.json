@@ -176,19 +176,19 @@
     },
     {
       "id": "learning.materials",
-      "domain": "learning",
-      "href": "/app/learning/materials",
+      "domain": null,
+      "href": "/app/materials",
       "legacyHref": "/app/knowledge",
-      "en": "Knowledge",
-      "zh": "知识库",
+      "en": "Materials & index",
+      "zh": "资料与索引",
       "icon": "book",
       "aliases": [
-        "/app/knowledge"
+        "/app/knowledge",
+        "/app/learning/materials"
       ],
       "modules": [
         "knowledge"
-      ],
-      "tab": true
+      ]
     },
     {
       "id": "learning.progress",
