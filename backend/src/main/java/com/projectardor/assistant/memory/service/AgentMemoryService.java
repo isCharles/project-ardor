@@ -9,8 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.projectardor.assistant.memory.domain.AgentMemoryItem;
 import com.projectardor.assistant.memory.repository.AgentMemoryRepository;
 import com.projectardor.assistant.memory.repository.AgentMemoryItemRepository;
-import com.projectardor.assistant.memory.web.AgentMemoryResponse;
-import com.projectardor.assistant.memory.web.AgentMemoryItemResponse;
+
+
 import com.projectardor.common.web.ResourceNotFoundException;
 
 @Service
@@ -27,14 +27,14 @@ public class AgentMemoryService {
     }
 
     @Transactional(readOnly = true)
-    public AgentMemoryResponse get(UUID userId) {
+    public AgentMemoryView get(UUID userId) {
         var items = validItems(userId);
         Instant updatedAt = items.stream()
                 .map(AgentMemoryItem::getUpdatedAt)
                 .filter(java.util.Objects::nonNull)
                 .max(Instant::compareTo)
                 .orElse(null);
-        return new AgentMemoryResponse(items.stream().map(AgentMemoryItem::getContent)
+        return new AgentMemoryView(items.stream().map(AgentMemoryItem::getContent)
                 .collect(java.util.stream.Collectors.joining("\n")), updatedAt);
     }
 
@@ -51,7 +51,7 @@ public class AgentMemoryService {
     }
 
     @Transactional
-    public AgentMemoryResponse update(UUID userId, String rawContent) {
+    public AgentMemoryView update(UUID userId, String rawContent) {
         itemRepository.lockOwner(userId);
         String content = normalize(rawContent);
         java.util.List<String> desired = java.util.Arrays.stream(content.split("\\R")).map(String::strip)
@@ -83,54 +83,54 @@ public class AgentMemoryService {
     }
 
     @Transactional(readOnly = true)
-    public java.util.List<AgentMemoryItemResponse> listItems(UUID userId) {
-        return itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId).stream().map(AgentMemoryItemResponse::from).toList();
+    public java.util.List<AgentMemoryItemView> listItems(UUID userId) {
+        return itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId).stream().map(AgentMemoryItemView::from).toList();
     }
 
     @Transactional
-    public AgentMemoryItemResponse add(UUID userId, String rawContent) {
+    public AgentMemoryItemView add(UUID userId, String rawContent) {
         return add(userId, rawContent, "fact", "USER_EXPLICIT", null);
     }
 
     @Transactional
-    public AgentMemoryItemResponse add(UUID userId, String rawContent, String kind, String sourceKind, UUID sourceRunId) {
+    public AgentMemoryItemView add(UUID userId, String rawContent, String kind, String sourceKind, UUID sourceRunId) {
         return add(userId, rawContent, kind, sourceKind, sourceRunId, "INFERRED".equals(sourceKind) ? 0.7f : 1.0f);
     }
 
     @Transactional
-    public AgentMemoryItemResponse add(UUID userId, String rawContent, String kind, String sourceKind, UUID sourceRunId, float confidence) {
+    public AgentMemoryItemView add(UUID userId, String rawContent, String kind, String sourceKind, UUID sourceRunId, float confidence) {
         itemRepository.lockOwner(userId);
         String content = itemContent(rawContent);
         if (itemRepository.existsByUserIdAndContentIgnoreCase(userId, content)) {
             return itemRepository.findAllByUserIdOrderByCreatedAtAsc(userId).stream()
                     .filter(item -> item.isValid() && item.getContent().equalsIgnoreCase(content)).findFirst()
-                    .map(AgentMemoryItemResponse::from)
-                    .orElseGet(() -> AgentMemoryItemResponse.from(
+                    .map(AgentMemoryItemView::from)
+                    .orElseGet(() -> AgentMemoryItemView.from(
                             itemRepository.save(AgentMemoryItem.create(userId, content, kind, sourceKind, sourceRunId, confidence))));
         }
-        return AgentMemoryItemResponse.from(
+        return AgentMemoryItemView.from(
                 itemRepository.save(AgentMemoryItem.create(userId, content, kind, sourceKind, sourceRunId, confidence)));
     }
 
     @Transactional
-    public AgentMemoryItemResponse replace(UUID userId, UUID memoryId, String rawContent, String kind, String sourceKind) {
+    public AgentMemoryItemView replace(UUID userId, UUID memoryId, String rawContent, String kind, String sourceKind) {
         return replace(userId, memoryId, rawContent, kind, sourceKind, "INFERRED".equals(sourceKind) ? 0.7f : 1.0f);
     }
 
     @Transactional
-    public AgentMemoryItemResponse replace(UUID userId, UUID memoryId, String rawContent, String kind, String sourceKind, float confidence) {
+    public AgentMemoryItemView replace(UUID userId, UUID memoryId, String rawContent, String kind, String sourceKind, float confidence) {
         itemRepository.lockOwner(userId);
         AgentMemoryItem existing = itemRepository.findByIdAndUserId(memoryId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("记忆不存在"));
         if (!existing.isValid()) throw new IllegalArgumentException("记忆已被替换，请读取当前记忆后再更新");
         String content = itemContent(rawContent);
-        if (existing.getContent().equalsIgnoreCase(content)) return AgentMemoryItemResponse.from(existing);
+        if (existing.getContent().equalsIgnoreCase(content)) return AgentMemoryItemView.from(existing);
         AgentMemoryItem replacement = itemRepository.save(AgentMemoryItem.create(userId, content,
                 kind == null ? existing.getKind() : kind, sourceKind, null, confidence));
         // The old fact stays as history with a closed validity interval.
         existing.invalidate(Instant.now(), replacement.getId());
         itemRepository.saveAndFlush(existing);
-        return AgentMemoryItemResponse.from(replacement);
+        return AgentMemoryItemView.from(replacement);
     }
 
     /** Marks one fact as superseded by another without deleting history. */
@@ -160,7 +160,7 @@ public class AgentMemoryService {
     }
 
     @Transactional
-    public AgentMemoryItemResponse edit(UUID userId, UUID memoryId, String rawContent) {
+    public AgentMemoryItemView edit(UUID userId, UUID memoryId, String rawContent) {
         itemRepository.lockOwner(userId);
         AgentMemoryItem item = itemRepository.findByIdAndUserId(memoryId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("记忆不存在"));
@@ -172,7 +172,7 @@ public class AgentMemoryService {
         item.revise(content);
         var saved = itemRepository.saveAndFlush(item);
         if (changed) itemRepository.invalidateEmbedding(userId, memoryId);
-        return AgentMemoryItemResponse.from(saved);
+        return AgentMemoryItemView.from(saved);
     }
 
     @Transactional

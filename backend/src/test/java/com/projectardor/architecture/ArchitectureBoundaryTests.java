@@ -24,6 +24,16 @@ import org.junit.jupiter.api.Test;
  */
 class ArchitectureBoundaryTests {
     @Test
+    void memoryAndApplicationActivityUseOwnedApplicationResults() throws IOException {
+        assertNoImports("assistant/memory/service", Pattern.compile("import com\\.projectardor\\.assistant\\.memory\\.web\\..*"));
+        assertNoImports("jobsearch/applicationactivity/service", Pattern.compile("import com\\.projectardor\\.jobsearch\\.applicationactivity\\.web\\..*"));
+        String tools = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
+        assertTrue(!tools.contains("com.projectardor.assistant.memory.web.")
+                        && !tools.contains("com.projectardor.jobsearch.applicationactivity.web."),
+                "Memory and application activity tools must use owned views");
+    }
+
+    @Test
     void calendarApplicationAndToolsDoNotDependOnWebDtos() throws IOException {
         assertNoImports("scheduling/service", Pattern.compile("import com\\.projectardor\\.scheduling\\.web\\..*"));
         String tools = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);

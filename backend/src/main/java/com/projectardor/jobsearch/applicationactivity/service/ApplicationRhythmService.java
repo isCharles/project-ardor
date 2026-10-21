@@ -20,7 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.projectardor.jobsearch.applicationactivity.web.ApplicationRhythmResponse;
+
 import com.projectardor.platform.identity.profile.service.ProfileService;
 
 @Service
@@ -41,7 +41,7 @@ public class ApplicationRhythmService {
     }
 
     @Transactional(readOnly = true)
-    public ApplicationRhythmResponse get(UUID userId) {
+    public ApplicationRhythmView get(UUID userId) {
         ZonedDateTime now = clock.instant().atZone(zone(userId));
         LocalDate today = now.toLocalDate();
         LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
@@ -58,20 +58,20 @@ public class ApplicationRhythmService {
                 WHERE user_id = ? AND application_date >= ? AND application_date < ?
                 """, rs -> { counts.put(rs.getDate(1).toLocalDate(), rs.getInt(2)); },
                 userId, Date.valueOf(weekStart), Date.valueOf(weekStart.plusDays(7)));
-        List<ApplicationRhythmResponse.DayCount> days = new ArrayList<>(7);
+        List<ApplicationRhythmView.DayCount> days = new ArrayList<>(7);
         for (int offset = 0; offset < 7; offset++) {
             LocalDate day = weekStart.plusDays(offset);
-            days.add(new ApplicationRhythmResponse.DayCount(day, counts.getOrDefault(day, 0)));
+            days.add(new ApplicationRhythmView.DayCount(day, counts.getOrDefault(day, 0)));
         }
         int weeklyCount = counts.values().stream().mapToInt(Integer::intValue).sum();
-        return new ApplicationRhythmResponse(today, weekStart, counts.getOrDefault(today, 0), weeklyCount,
+        return new ApplicationRhythmView(today, weekStart, counts.getOrDefault(today, 0), weeklyCount,
                 settings.weeklyGoal(), settings.reminderEnabled(), settings.reminderTime(),
                 settings.weekdaysOnly(), reminderDue(settings, now, weeklyCount, counts.containsKey(today)),
                 List.copyOf(days));
     }
 
     @Transactional
-    public ApplicationRhythmResponse configure(UUID userId, int weeklyGoal, boolean reminderEnabled,
+    public ApplicationRhythmView configure(UUID userId, int weeklyGoal, boolean reminderEnabled,
             LocalTime reminderTime, boolean weekdaysOnly) {
         if (weeklyGoal < 0 || weeklyGoal > 500) throw new IllegalArgumentException("每周目标须在 0 到 500 之间");
         if (reminderTime == null) throw new IllegalArgumentException("请设置提醒时间");
@@ -90,7 +90,7 @@ public class ApplicationRhythmService {
     }
 
     @Transactional
-    public ApplicationRhythmResponse record(UUID userId, LocalDate date, int count) {
+    public ApplicationRhythmView record(UUID userId, LocalDate date, int count) {
         validateDate(userId, date);
         if (count < 0 || count > 500) throw new IllegalArgumentException("每天的投递数须在 0 到 500 之间");
         jdbc.update("""
@@ -103,7 +103,7 @@ public class ApplicationRhythmService {
     }
 
     @Transactional
-    public ApplicationRhythmResponse incrementToday(UUID userId) {
+    public ApplicationRhythmView incrementToday(UUID userId) {
         LocalDate today = LocalDate.now(clock.withZone(zone(userId)));
         List<Integer> changed = jdbc.query("""
                 INSERT INTO application_daily_counts (user_id, application_date, count)
@@ -118,7 +118,7 @@ public class ApplicationRhythmService {
     }
 
     @Transactional
-    public ApplicationRhythmResponse dismissToday(UUID userId) {
+    public ApplicationRhythmView dismissToday(UUID userId) {
         LocalDate today = LocalDate.now(clock.withZone(zone(userId)));
         jdbc.update("""
                 INSERT INTO application_rhythm_settings (user_id, reminder_dismissed_on)

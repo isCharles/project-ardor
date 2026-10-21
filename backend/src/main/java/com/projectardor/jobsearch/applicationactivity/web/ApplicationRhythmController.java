@@ -27,15 +27,15 @@ public class ApplicationRhythmController {
 
     @GetMapping
     public ApplicationRhythmResponse get(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return service.get(principal.userId());
+        return ApplicationRhythmResponse.from(service.get(principal.userId()));
     }
 
     @PutMapping("/settings")
     public ApplicationRhythmResponse settings(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody ApplicationRhythmSettingsRequest request) {
-        return service.configure(principal.userId(), request.weeklyGoal(), request.reminderEnabled(),
-                request.reminderTime(), request.weekdaysOnly());
+        return ApplicationRhythmResponse.from(service.configure(principal.userId(), request.weeklyGoal(), request.reminderEnabled(),
+                request.reminderTime(), request.weekdaysOnly()));
     }
 
     @PutMapping("/days/{date}")
@@ -43,16 +43,16 @@ public class ApplicationRhythmController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable LocalDate date,
             @Valid @RequestBody ApplicationCountRequest request) {
-        return service.record(principal.userId(), date, request.count());
+        return ApplicationRhythmResponse.from(service.record(principal.userId(), date, request.count()));
     }
 
     @PostMapping("/today/increment")
     public ApplicationRhythmResponse increment(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return service.incrementToday(principal.userId());
+        return ApplicationRhythmResponse.from(service.incrementToday(principal.userId()));
     }
 
     @PostMapping("/reminder/dismiss")
     public ApplicationRhythmResponse dismiss(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return service.dismissToday(principal.userId());
+        return ApplicationRhythmResponse.from(service.dismissToday(principal.userId()));
     }
 }
