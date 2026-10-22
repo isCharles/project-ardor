@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowUpRight, FileText, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, FileText, Sparkles } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useLocale } from "@/lib/locale";
@@ -132,15 +132,14 @@ function IssueCard({ issue, t }: { issue: ResumeIssue; t: (en: string, zh: strin
   </article>;
 }
 
-export function ResumeReportV3({ report, onBack, onReanalyze, onViewResume }: {
+export function ResumeReportV3({ report, onBack, onViewResume }: {
   report: ResumeReportV3Data;
   onBack?: () => void;
-  onReanalyze?: () => void;
   onViewResume?: () => void;
 }) {
   const { t } = useLocale();
   const issueGroups: IssueSeverity[] = ["A", "B", "C"];
-  return <main className="ardor-workbench min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-6xl px-5 pb-20 pt-6 md:px-10">
+  return <div className="min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-6xl px-5 pb-20 pt-6 md:px-10">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <button type="button" onClick={onBack} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 transition hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("All resumes", "所有简历")}</button>
       <span className="rounded-full border border-white/80 bg-white/60 px-3 py-1.5 text-xs text-stone-500">{report.condition}</span>
@@ -153,11 +152,10 @@ export function ResumeReportV3({ report, onBack, onReanalyze, onViewResume }: {
       </div>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <button type="button" onClick={onViewResume} className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-stone-600 hover:bg-white"><FileText className="size-4" />{t("View original", "查看原简历")}</button>
-        <button type="button" onClick={onReanalyze} className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 font-medium text-white hover:bg-black">{t("Re-analyze", "重新分析")}<ArrowUpRight className="size-3.5" /></button>
       </div>
     </header>
 
-    {report.general && <p className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">{t("Generalised analysis only: without a JD this report may not reflect a specific role. Add a JD to re-analyze with role-specific evidence.", "本次为通用化分析，可能不具针对性；补充 JD 后重新分析，才能按目标岗位判断匹配度。")}</p>}
+    {report.general && <p className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">{t("Generalised analysis only: without a JD this report may not reflect a specific role. Add a JD when starting a new analysis for role-specific evidence.", "本次为通用化分析，可能不具针对性；如需岗位匹配，请在开始新分析时补充 JD。")}</p>}
 
     <section className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]">
       <div className="rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_60px_rgba(49,39,70,0.07)] backdrop-blur-xl md:p-8">
@@ -200,8 +198,6 @@ export function ResumeReportV3({ report, onBack, onReanalyze, onViewResume }: {
       <ul className="mt-3 space-y-1.5 text-sm leading-6 text-stone-700">{report.strengths.map((strength, index) => <li key={index}>· <InlineMarkdown text={strength} /></li>)}</ul>
     </section>}
 
-    <footer className="mt-6 flex justify-end">
-      <button type="button" onClick={onReanalyze} className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-sm text-violet-700 backdrop-blur-xl">{t("Re-analyze", "重新分析")}<Target className="size-4" /></button>
-    </footer>
-  </div></main>;
+    </div>
+  </div>;
 }
