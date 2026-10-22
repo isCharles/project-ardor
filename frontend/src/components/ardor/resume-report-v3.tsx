@@ -228,7 +228,7 @@ export function ResumeReportV3({ report, onBack, onViewResume }: {
         cursorY += gap;
       }
       const safeName = report.filename.replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|]+/g, "-");
-      pdf.save(`Ardor-${safeName}-analysis.pdf`);
+      pdf.save(`Ardor-${safeName}-report.pdf`);
     } catch (error) {
       console.error("Resume PDF export failed", error);
       setExportError(t("Could not export the PDF. Try again or use your browser's print dialog.", "PDF 导出失败，请重试或使用浏览器的打印功能。"));
@@ -251,7 +251,7 @@ export function ResumeReportV3({ report, onBack, onViewResume }: {
       </div>
       <div className="pdf-hidden flex flex-wrap items-center gap-2 text-sm">
         <button type="button" onClick={onViewResume} className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-stone-600 hover:bg-white"><FileText className="size-4" />{t("View original", "查看原简历")}</button>
-        <button type="button" onClick={() => void exportPdf()} disabled={exporting} className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 font-medium text-white hover:bg-black disabled:opacity-50"><Download className="size-4" />{exporting ? t("Exporting…", "导出中…") : t("Export PDF", "导出 PDF")}</button>
+        <button type="button" onClick={() => void exportPdf()} disabled={exporting} className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 font-medium text-white hover:bg-black disabled:opacity-50"><Download className="size-4" />{exporting ? t("Exporting…", "导出中…") : t("Export report", "导出报告")}</button>
       </div>
     </header>
     {exportError && <p role="alert" className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{exportError}</p>}
@@ -309,3 +309,4 @@ export function ResumeReportV3({ report, onBack, onViewResume }: {
     </div>
   </div>;
 }
+
