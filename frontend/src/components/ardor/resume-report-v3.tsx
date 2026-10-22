@@ -266,12 +266,14 @@ export function ResumeReportV3({ report, onBack, onViewResume }: {
           <span className="mb-1 rounded-full bg-violet-100 px-3 py-1 text-sm font-medium text-violet-800">{report.band}</span>
         </div>
         <div className="mt-5 border-t border-stone-100 pt-5">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Capability radar", "能力雷达")}</p>
-          <div className="flex items-center justify-center py-2"><Radar dimensions={report.dimensions} /></div>
-          <div className="mt-2 flex flex-wrap justify-center gap-4 border-t border-stone-100 pt-4 text-[11px] text-stone-400">
-            <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-600" />{t("You", "你")}</span>
-            <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full border border-stone-400 bg-stone-200" />{t("Market requirement", "市场要求")}</span>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Capability radar", "能力雷达")}</p>
+            <div className="flex flex-wrap gap-3 text-[11px] text-stone-400">
+              <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-600" />{t("You", "你")}</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full border border-stone-400 bg-stone-200" />{t("Market requirement", "市场要求")}</span>
+            </div>
           </div>
+          <div className="flex items-center justify-center py-2"><Radar dimensions={report.dimensions} /></div>
         </div>
       </div>
 
