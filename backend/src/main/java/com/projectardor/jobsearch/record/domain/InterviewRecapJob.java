@@ -23,6 +23,8 @@ public class InterviewRecapJob {
     @Column(name = "interview_round_id") private UUID interviewRoundId;
     @JdbcTypeCode(SqlTypes.CHAR) @Column(name = "input_hash", nullable = false, length = 64) private String inputHash;
     @Column(name = "raw_content", nullable = false, columnDefinition = "text") private String rawContent;
+    // Historical column name retained; in final mode this is the user's exact minutes.
+    @Column(name = "final_minutes", nullable = false) private boolean finalMinutes;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private InterviewRecapJobStatus status;
     @Column(nullable = false) private int attempts;
     @Column(name = "available_at", nullable = false) private Instant availableAt;
@@ -60,6 +62,9 @@ public class InterviewRecapJob {
         this.recapId = recapId; this.status = InterviewRecapJobStatus.COMPLETED; this.finishedAt = Instant.now();
         this.errorCode = null; this.errorMessage = null;
     }
+
+    public void useFinalMinutes() { this.finalMinutes = true; }
+    public boolean isFinalMinutes() { return finalMinutes; }
 
     public void retry(String code, String message, Instant nextAttemptAt) {
         this.status = InterviewRecapJobStatus.QUEUED; this.availableAt = nextAttemptAt; this.startedAt = null;

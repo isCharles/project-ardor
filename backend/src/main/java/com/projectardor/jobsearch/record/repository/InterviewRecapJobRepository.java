@@ -15,6 +15,7 @@ import com.projectardor.jobsearch.record.domain.InterviewRecapJob;
 import com.projectardor.jobsearch.record.domain.InterviewRecapJobStatus;
 
 public interface InterviewRecapJobRepository extends JpaRepository<InterviewRecapJob, UUID> {
+    List<InterviewRecapJob> findTop20ByUserIdAndFinalMinutesTrueOrderByCreatedAtDesc(UUID userId);
     @Query(value = "SELECT pg_advisory_xact_lock(hashtextextended(CAST(:userId AS text) || ':' || :inputHash, 0))",
             nativeQuery = true)
     void lockRequestSlot(@Param("userId") UUID userId, @Param("inputHash") String inputHash);

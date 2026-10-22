@@ -63,6 +63,7 @@ public class InterviewRecap {
     @PreUpdate void onUpdate() { updatedAt = Instant.now(); }
     public UUID getId() { return id; }
     public void markConfirmedMinutes() { this.promptVersion = "confirmed-minutes-review-v1"; }
+    public void markFinalMinutes() { this.promptVersion = "final-minutes-normalization-v1"; }
     public UUID getUserId() { return userId; }
     public String getTitle() { return title; }
     public InterviewRecapSource getSourceType() { return sourceType; }

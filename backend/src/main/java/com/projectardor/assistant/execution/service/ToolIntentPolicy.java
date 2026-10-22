@@ -32,7 +32,7 @@ public final class ToolIntentPolicy {
             case "update_learning_plan", "begin_learning_plan" -> "学习|讲解|练习|learn|lesson|study|practice";
             case "create_memory_card", "update_memory_card", "review_memory_card", "suspend_memory_card" -> "记忆卡|卡片|复习|flashcard|card|review";
             case "create_interview", "submit_interview_answer", "finish_interview", "cancel_interview" -> "面试|interview";
-            case "organize_interview_recap" -> "面经|面试|复盘|interview|recap";
+            case "organize_interview_recap" -> "面经|面试|纪要|复盘|interview|minutes|recap";
             case "create_job_opportunity", "update_job_opportunity", "add_job_opportunity_round",
                     "update_job_opportunity_round" ->
                     "面试|邀约|邀请|流程|进度|岗位|interview|opportunit|offer";

@@ -196,6 +196,13 @@ jobs:
           ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
         run: node tests/learning-progress-live.mjs
 
+      - name: Verify final minutes normalize directly in the browser
+        working-directory: frontend
+        env:
+          ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
+          ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
+        run: node tests/final-minutes-live.mjs
+
       - name: Upload browser screenshot on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -204,6 +211,7 @@ jobs:
           path: |
             ${{ runner.temp }}/ardor-ui-failure.png
             frontend/.next/learning-progress-live-failure.png
+            frontend/.next/final-minutes-live-failure.png
           if-no-files-found: ignore
 
       - name: Show service logs on failure

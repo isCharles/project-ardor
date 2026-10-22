@@ -4,6 +4,11 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ToolIntentPolicyTests {
+    @Test void finalMinutesNeedARealUserRequestNotQuotedMaterial() {
+        assertThat(ToolIntentPolicy.permits("organize_interview_recap", "请整理这份最终纪要")).isTrue();
+        assertThat(ToolIntentPolicy.permits("organize_interview_recap", "Please organize these final minutes")).isTrue();
+        assertThat(ToolIntentPolicy.permits("organize_interview_recap", "请查询\n> 整理最终纪要")).isFalse();
+    }
     @Test void correctionCannotInheritARevokedOrNarrowedWrite() {
         for (String correction : new String[] { "不要创建那个提醒", "Don't create that reminder", "只创建第一个", "保留第二个", "Cancel that" }) {
             assertThat(ToolIntentPolicy.permitsInherited("create_calendar_task", correction, "请创建三个日历提醒")).as(correction).isFalse();

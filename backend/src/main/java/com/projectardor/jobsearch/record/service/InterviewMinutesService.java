@@ -57,7 +57,7 @@ public class InterviewMinutesService {
                     o.company FROM interview_recap_jobs j
                 JOIN job_opportunities o ON o.id=j.job_opportunity_id AND o.user_id=j.user_id
                 LEFT JOIN interview_minutes m ON m.id=j.id AND m.user_id=j.user_id
-                WHERE j.user_id=? AND (m.id IS NOT NULL OR (j.recap_id IS NULL AND j.status<>'COMPLETED'))
+                WHERE j.user_id=? AND NOT j.final_minutes AND (m.id IS NOT NULL OR (j.recap_id IS NULL AND j.status<>'COMPLETED'))
                 ORDER BY j.created_at DESC LIMIT 100
                 """, (r,n) -> new DraftSummary(r.getObject("id",UUID.class),r.getString("company"),
                     r.getString("status"),r.getLong("revision")), userId);
@@ -67,7 +67,7 @@ public class InterviewMinutesService {
         var rows = jdbc.query("""
                 SELECT j.raw_content,j.status,j.error_message,m.minutes,m.revision
                 FROM interview_recap_jobs j LEFT JOIN interview_minutes m ON m.id=j.id AND m.user_id=j.user_id
-                WHERE j.id=? AND j.user_id=?
+                WHERE j.id=? AND j.user_id=? AND NOT j.final_minutes
                 """, (r,n) -> new Draft(id,r.getString("raw_content"),r.getString("minutes"),r.getLong("revision"),
                     r.getString("status"),r.getString("error_message"),List.of()), id,userId);
         if (rows.isEmpty()) throw new ResourceNotFoundException("纪要不存在");

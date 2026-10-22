@@ -831,14 +831,14 @@ public class CareerAgentTools {
             return interviewRecapQueueService.list(userId).stream().map(InterviewRecapTaskResponse::from).toList();
         }
 
-        @Tool(name = "organize_interview_recap", value = "保存用户完整原始转录并后台生成待编辑初步纪要，不直接生成复盘。收到后告知原文已保存，请用户趁记忆新鲜到 /app/recaps 校正、补充并点击确认，之后才生成详细复盘。不能替用户确认。面经必须属于一场面试，先 list_job_opportunities 定位 UUID，目标不清先追问")
-        public InterviewRecapTaskResponse organizeInterviewRecap(
-                @P(value="兼容字段，可留空；无需复述长转录，服务端保存本轮用户消息原文",required=false) String content,
+        @Tool(name = "organize_interview_recap", value = "保存用户提供的最终面试纪要并在后台规范化整理，直接生成可读结果，不需要原始转录或再次确认。不补造事实。面经必须属于一场面试，先 list_job_opportunities 定位 UUID，目标不清先追问；用户应在本轮提交最终纪要")
+        public InterviewRecapQueueService.FinalMinutesReceipt organizeInterviewRecap(
+                @P(value="兼容字段，可留空；无需复述长纪要，服务端保存本轮用户提交文本",required=false) String content,
                 @P("所属面试流程 UUID，必填；先 list_job_opportunities 定位") String opportunityId,
                 @P(value="所属轮次 UUID，可省略；必须从该面试已有轮次中选取，不根据日期或标题猜测",required=false) String interviewRoundId) {
-            if (originalUserMessage.strip().length()<30) throw new IllegalArgumentException("请把完整原始转录直接粘贴到本轮消息或面试纪要页，不能把模型改写文本当原文");
-            return InterviewRecapTaskResponse.from(interviewRecapQueueService.request(userId, originalUserMessage,
-                    uuid(opportunityId, "面试流程 ID"), nullableUuid(interviewRoundId, "面试轮次 ID")));
+            if (originalUserMessage.strip().length()<30) throw new IllegalArgumentException("请把最终纪要直接粘贴到本轮消息或纪要页，不能把模型改写文本当成用户提交");
+            return interviewRecapQueueService.requestFinalMinutes(userId, originalUserMessage,
+                    uuid(opportunityId, "面试流程 ID"), nullableUuid(interviewRoundId, "面试轮次 ID"));
         }
 
         @Tool(name = "list_interview_recaps", value = "列出当前用户已经整理的面经及问题、薄弱题数量")

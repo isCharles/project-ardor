@@ -8,6 +8,7 @@ on:
       - ".github/tests/background-tasks-*.sql"
       - ".github/tests/background-read-*.sql"
       - ".github/tests/recap-metadata-*.sql"
+      - ".github/tests/final-minutes-*.sql"
       - ".github/workflows/database-migrations.yml"
   workflow_dispatch:
 
@@ -60,8 +61,14 @@ jobs:
             if [[ "$(basename "$migration")" == "V54__detach_interview_sessions_on_resume_analysis_delete.sql" ]]; then
               docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 < .github/tests/resume-detach-before.sql
             fi
+            if [[ "$(basename "$migration")" == "V59__final_interview_minutes.sql" ]]; then
+              docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 < .github/tests/final-minutes-before.sql
+            fi
             docker exec -i ardor-migration-check \
               psql -U postgres -d ardor -v ON_ERROR_STOP=1 < "$migration"
+            if [[ "$(basename "$migration")" == "V59__final_interview_minutes.sql" ]]; then
+              docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 < .github/tests/final-minutes-after.sql
+            fi
             if [[ "$(basename "$migration")" == "V54__detach_interview_sessions_on_resume_analysis_delete.sql" ]]; then
               docker exec -i ardor-migration-check psql -U postgres -d ardor -v ON_ERROR_STOP=1 < .github/tests/resume-detach-after.sql
             fi

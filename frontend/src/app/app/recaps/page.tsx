@@ -1,17 +1,21 @@
 "use client";
 
 import { ArrowLeft, ArrowRight, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
 
 import { AppDialog } from "@/components/ui/app-dialog";
 import { api, ApiError } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
+import { useReadVisibleResult } from "@/lib/background-tasks";
+import { FinalMinutesWorkspace } from "./final-minutes-workspace";
+import { InterviewContextFields, type InterviewReference } from "./interview-context-fields";
 
 type Performance = "STRONG" | "MIXED" | "WEAK" | "UNKNOWN";
 type Question = { id: string; sequenceNumber: number; questionText: string; candidateAnswer: string | null; followUps: string[]; assessment: string; performance: Performance; weaknessReason: string | null; betterAnswer: string | null; tags: string[] };
 type Recap = { id: string; title: string; overview: string; strengths: string[]; weaknesses: string[]; createdAt: string; questions: Question[] };
-type Opportunity = { id: string; company: string; targetRole: string | null };
+type Opportunity = InterviewReference;
 type Task = { jobId: string | null; recapId: string | null; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"; errorMessage?: string | null };
 
 const performanceStyle: Record<Performance, string> = {
@@ -31,11 +35,9 @@ function RecapsContent() {
   const { locale, t } = useLocale();
   const [recaps, setRecaps] = useState<Recap[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(search.get("selected"));
+  const selectedId = search.get("selected");
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [pendingBaseline, setPendingBaseline] = useState<Set<string>>(new Set());
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -52,42 +54,20 @@ function RecapsContent() {
   }, [router, t]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void load(); }, [load]);
-
-  useEffect(() => {
-    if (!pending) return;
-    let attempts = 0;
-    const timer = window.setInterval(() => {
-      attempts += 1;
-      void load().then(items => {
-        const fresh = items.find(item => !pendingBaseline.has(item.id));
-        if (fresh) {
-          setSelectedId(fresh.id);
-          setPending(false);
-        } else if (attempts >= 30) {
-          setPending(false);
-          setError(t("Ardor is taking longer than expected. Check background tasks later.", "整理时间较长，可以稍后在后台任务里查看。"));
-        }
-      });
-    }, 4000);
-    return () => window.clearInterval(timer);
-  }, [pending, pendingBaseline, load, t]);
+  useEffect(() => { void load(); }, [load, selectedId]);
 
   async function organize(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    const content = String(data.get("content") ?? "").trim();
+    const content = String(data.get("content") ?? "");
     const jobOpportunityId = String(data.get("jobOpportunityId") ?? "");
     if (!jobOpportunityId) { setError(t("Choose the interview this record belongs to", "请选择这份记录所属的面试")); return; }
     setBusy(true);
     setError("");
     try {
-      setPendingBaseline(new Set(recaps.map(item => item.id)));
-      const task = await api<Task>("/api/interview-recaps", { method: "POST", body: JSON.stringify({ content, jobOpportunityId }) });
+      const task = await api<Task>("/api/interview-recaps/final-minutes", { method: "POST", body: JSON.stringify({ content, jobOpportunityId, interviewRoundId: data.get("interviewRoundId") || null }) });
       setShowForm(false);
-      if (task.recapId) setSelectedId(task.recapId);
-      else setPending(true);
-      await load();
+      if (task.jobId) router.push(`/app/recaps?minutes=${task.jobId}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("Could not organize these notes", "整理失败"));
     } finally {
@@ -99,7 +79,7 @@ function RecapsContent() {
     if (!window.confirm(t(`Delete “${recap.title}”?`, `删除“${recap.title}”？`))) return;
     try {
       await api<void>(`/api/interview-recaps/${recap.id}`, { method: "DELETE" });
-      if (selectedId === recap.id) setSelectedId(null);
+      if (selectedId === recap.id) router.push("/app/recaps");
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("Could not delete", "删除失败"));
@@ -107,6 +87,7 @@ function RecapsContent() {
   }
 
   const selected = recaps.find(item => item.id === selectedId) ?? null;
+  useReadVisibleResult("RECAP_ORGANIZE", selected?.id, !!selected);
 
   return <main className="ardor-workbench min-h-screen px-5 pb-20 pt-6 text-[#1d1d1f] md:px-10">
     <div className="mx-auto max-w-4xl">
@@ -116,34 +97,29 @@ function RecapsContent() {
       </div>
       <header className="pb-8 pt-6">
         <h1 className="text-3xl font-semibold tracking-tight md:text-5xl">{t("Interview notes", "面试记录")}</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">{t("Paste the interview you already organized. Ardor normalizes it, marks weak spots and keeps it under the interview.", "把你已经整理好的面试经过贴进来，Ardor 只做规范化和薄弱点标注，并存到对应面试下。")}</p>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">{t("Save your final minutes. Ardor organizes their structure and wording in the background, without inventing details.", "保存你的最终纪要，Ardor 在后台规范化结构与表达，不补造细节。")}</p>
       </header>
       {error && <div role="alert" className="mb-5 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
-      {pending && <div className="mb-5 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Ardor is normalizing the recap…", "Ardor 正在整理这份面试记录…")}</div>}
+      <FinalMinutesWorkspace key={search.get("minutes") ?? "list"} id={search.get("minutes")} />
 
-      {selected ? <RecapReport recap={selected} onBack={() => setSelectedId(null)} onDelete={() => void remove(selected)} /> : (
+      {selected ? <RecapReport recap={selected} onBack={() => router.push("/app/recaps")} onDelete={() => void remove(selected)} /> : !search.get("minutes") && (
         <section className="overflow-hidden rounded-[2rem] border border-white/80 bg-white/70">
           {recaps.length === 0 ? <div className="px-6 py-16 text-center">
             <p className="text-sm text-stone-500">{t("No interview notes yet.", "还没有面试记录。")}</p>
             <button type="button" onClick={() => setShowForm(true)} className="mt-5 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white">{t("Organize the first one", "整理第一份")}</button>
-          </div> : recaps.map(recap => <button key={recap.id} type="button" onClick={() => setSelectedId(recap.id)} className="flex w-full items-center justify-between gap-3 border-b border-stone-100 px-5 py-4 text-left last:border-b-0 hover:bg-violet-50/40">
+          </div> : recaps.map(recap => <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`} className="flex w-full items-center justify-between gap-3 border-b border-stone-100 px-5 py-4 text-left last:border-b-0 hover:bg-violet-50/40">
             <span className="min-w-0 truncate text-sm font-medium">{recap.title}</span>
             <span className="shrink-0 text-xs text-stone-400">{new Date(recap.createdAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "short", day: "numeric" })}</span>
             <ArrowRight className="size-4 shrink-0 text-stone-300" />
-          </button>)}
+          </Link>)}
         </section>
       )}
 
       {showForm && <AppDialog title={t("Organize an interview", "整理一份面试记录")} onClose={() => setShowForm(false)}>
         <form onSubmit={organize} className="space-y-4">
-          <label className="block text-sm">{t("Which interview is this from?", "这份记录属于哪场面试？")}
-            <select name="jobOpportunityId" required defaultValue={opportunities[0]?.id ?? ""} className="field mt-2">
-              {opportunities.length === 0 && <option value="">{t("No interview yet — add one first", "还没有面试，请先在面试里添加")}</option>}
-              {opportunities.map(item => <option key={item.id} value={item.id}>{item.company}{item.targetRole ? ` · ${item.targetRole}` : ""}</option>)}
-            </select>
-          </label>
-          <label className="block text-sm">{t("Your organized interview recap", "你整理好的面试经过")}
-            <textarea name="content" required minLength={30} maxLength={50000} rows={14} className="field mt-2 resize-y" placeholder={t("Paste the questions, your answers and what you remember. Ardor will only normalize and mark weak spots; it will not invent details.", "粘贴问题、你的回答和记得的细节。Ardor 只做规范化和薄弱点标注，不编造内容。")} />
+          <InterviewContextFields opportunities={opportunities} />
+          <label className="block text-sm">{t("Final interview minutes", "最终面试纪要")}
+            <textarea name="content" required minLength={30} maxLength={50000} rows={14} className="field mt-2 resize-y" placeholder={t("Paste your final questions, answers and follow-ups. Ardor only organizes what you provide; no transcript or second confirmation is needed.", "粘贴最终的问题、回答和追问纪要。Ardor 仅整理你提供的内容，无需原始转录或再次确认。")} />
           </label>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setShowForm(false)} className="rounded-full px-4 py-2 text-sm text-stone-500 hover:bg-stone-100">{t("Cancel", "取消")}</button>
