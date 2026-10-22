@@ -97,6 +97,7 @@ final class ApprovedAgentTools {
             String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
             UUID conversationId, boolean automation, AgentRunTracer tracer) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
+        Map<String, Boolean> attemptedWrites = new java.util.concurrent.ConcurrentHashMap<>();
         AgentExecutionAuditStore.ToolCallContext auditContext =
                 AgentExecutionAuditStore.ToolCallContext.of(userId, conversationId, requestId);
         for (var method : bound.getClass().getMethods()) {
@@ -111,6 +112,7 @@ final class ApprovedAgentTools {
                 boolean read = ToolIntentPolicy.isRead(tool);
                 boolean automationWrite = automation && AUTOMATION_WRITES.contains(tool);
                 boolean actualWrite = !read && !proposal;
+                String writeKey = actualWrite ? tool + "\u0000" + request.arguments() : null;
                 long requested = timings.now();
                 if (actualWrite && bound instanceof ToolIntentScope intentScope && !intentScope.permitsWrite(tool)) {
                     // The user's trusted wording is captured before model output. A write that is
@@ -151,6 +153,22 @@ final class ApprovedAgentTools {
                     finishAudit(executionAudit, auditRow, userId, "NOT_EXECUTED", null, "NOT_CONFIRMED");
                     timings.record(request.id(), requested, approved, false);
                     return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"用户未确认、已拒绝、确认已过期或执行已停止。未执行本次操作，不要重复请求或声称已完成。\"}";
+                }
+                if (actualWrite && attemptedWrites.putIfAbsent(writeKey, Boolean.TRUE) != null) {
+                    // A model retry after a write failure could duplicate a side effect that was
+                    // already partially committed. Reads may be retried; identical writes within
+                    // one run are blocked until the model verifies the current state.
+                    finishAudit(executionAudit, auditRow, userId, "NOT_EXECUTED", null,
+                            "DUPLICATE_WRITE_BLOCKED");
+                    if (tracer != null) {
+                        UUID blockedSpan = tracer.startChild("TOOL", tool,
+                                Map.of("tool", tool, "duplicateWrite", true));
+                        tracer.recordTool();
+                        if (blockedSpan != null) tracer.finishChild(blockedSpan, "NOT_EXECUTED",
+                                "DUPLICATE_WRITE_BLOCKED", null, null, null, Map.of("retryBlocked", true));
+                    }
+                    timings.record(request.id(), requested, approved, false);
+                    return "{\"status\":\"DUPLICATE_WRITE_BLOCKED\",\"retryable\":false,\"message\":\"本轮已经尝试过相同的写入。为避免重复副作用，本次没有再次执行；请先读取当前状态并向用户说明需要核验，不要声称操作成功。\"}";
                 }
                 if (auditRow == null) {
                     auditRow = startAudit(executionAudit, auditContext, request, tool, approvalSource);

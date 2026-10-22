@@ -293,7 +293,8 @@ public class CareerAgentService {
                             hiddenUserMessage, tracer))
                     .maxToolCallingRoundTrips(8)
                     .maxSequentialToolsInvocations(12)
-                    .compensateOnToolErrors(true)
+                    .toolExecutionErrorHandler(new AgentToolFailureHandler())
+                    .toolArgumentsErrorHandler(new AgentToolArgumentsErrorHandler())
                     .build();
             String answer = assistant.chat(agentInput);
             if (answer == null || answer.isBlank()) {
@@ -483,7 +484,9 @@ public class CareerAgentService {
                     .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings,
                             sink::waitingForApproval, message, permissionGrants, executionAudit,
                             conversation.getId(), false, tracer))
-                    .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
+                    .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12)
+                    .toolExecutionErrorHandler(new AgentToolFailureHandler())
+                    .toolArgumentsErrorHandler(new AgentToolArgumentsErrorHandler()).build();
             if (finished.get()) {
                 if (tracer != null) tracer.fail("AGENT_RUN_CANCELLED");
                 recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());

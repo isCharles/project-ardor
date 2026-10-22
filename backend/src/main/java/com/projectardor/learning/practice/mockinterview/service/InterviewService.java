@@ -212,7 +212,8 @@ public class InterviewService {
             UUID questionId,
             String answerText,
             Integer durationSeconds) {
-        InterviewSession session = get(userId, sessionId);
+        InterviewSession session = sessionRepository.findOwnedForUpdate(sessionId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("模拟面试不存在"));
         if (session.getStatus() != InterviewStatus.IN_PROGRESS) {
             throw new IllegalStateException("当前面试不能提交答案");
         }
@@ -230,8 +231,14 @@ public class InterviewService {
         if (durationSeconds != null && durationSeconds < 0) {
             throw new IllegalArgumentException("答题时长不能为负数");
         }
-        answerRepository.save(InterviewAnswer.create(
-                userId, sessionId, questionId, normalizedAnswer, durationSeconds));
+        try {
+            answerRepository.save(InterviewAnswer.create(
+                    userId, sessionId, questionId, normalizedAnswer, durationSeconds));
+        } catch (org.springframework.dao.DataIntegrityViolationException duplicate) {
+            // Two tabs may submit the same question concurrently; the unique constraint is the
+            // final authority, and the winner's answer must not be overwritten.
+            throw new IllegalStateException("该题已经回答");
+        }
         return getNextQuestion(userId, sessionId);
     }
 
@@ -324,21 +331,29 @@ public class InterviewService {
         JsonNode questionNodes = root.path("questions");
         if (!questionNodes.isArray()) throw new IllegalStateException("LLM 未返回面试题数组");
         List<QuestionDraft> drafts = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
         for (JsonNode node : questionNodes) {
             String text = node.path("questionText").asText().strip();
             if (text.isBlank()) continue;
+            if (text.length() > 4000) throw new IllegalStateException("LLM 返回的题目过长，请重试");
+            String dedupeKey = text.toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", " ");
+            if (!seen.add(dedupeKey)) continue;
             String type = node.path("questionType").asText("TECHNICAL").strip().toUpperCase(java.util.Locale.ROOT);
             if (!java.util.Set.of("TECHNICAL", "PROJECT", "BEHAVIORAL", "CODING").contains(type)) type = "TECHNICAL";
             List<String> criteria = new ArrayList<>();
             if (node.path("evaluationCriteria").isArray()) {
                 node.path("evaluationCriteria").forEach(item -> {
-                    if (!item.asText().isBlank()) criteria.add(item.asText().strip());
+                    String criterion = item.asText().strip();
+                    if (!criterion.isBlank() && criteria.size() < 8) criteria.add(criterion);
                 });
             }
             drafts.add(new QuestionDraft(text, type, criteria, null));
             if (drafts.size() == expectedCount) break;
         }
-        if (drafts.size() < 3) throw new IllegalStateException("LLM 返回的有效面试题少于 3 道");
+        if (drafts.size() < expectedCount) {
+            throw new IllegalStateException("LLM 返回的有效面试题数量不足（" + drafts.size() + "/"
+                    + expectedCount + "），本次未创建面试，请重试");
+        }
         return drafts;
     }
 

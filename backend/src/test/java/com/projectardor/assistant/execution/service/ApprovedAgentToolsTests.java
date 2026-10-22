@@ -137,6 +137,21 @@ class ApprovedAgentToolsTests {
     }
 
     @Test
+    void duplicateIdenticalWriteIsBlockedAfterTheFirstAttempt() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        when(permissions.autoApproves(USER, "fake_write")).thenReturn(true);
+        ScopedFakeTools tools = new ScopedFakeTools(true);
+        ToolExecutor executor = scopedExecutor(tools, approvals, permissions);
+        ToolExecutionRequest request = writeRequest();
+
+        assertThat(executor.execute(request, null)).isEqualTo("executed:hi");
+        assertThat(executor.execute(request, null)).contains("DUPLICATE_WRITE_BLOCKED");
+        assertThat(tools.calls).hasValue(1);
+    }
+
+    @Test
     void autoApprovedWritesSkipTheDialogAndAreAudited() {
         AgentToolApprovals approvals = mock(AgentToolApprovals.class);
         when(approvals.canPropose(USER, RUN)).thenReturn(true);
