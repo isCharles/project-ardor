@@ -178,7 +178,7 @@ async function main() {
   const domainSidebar = await sidebarOwner.request("/api/profile/sidebar", { method: "PUT",
     body: { destinationIds: ["job-search", "learning.mock-interviews"], expectedRevision: 2, expectedUserId: sidebarUser.id } });
   assert.deepEqual(domainSidebar.destinationIds, ["chat", "job-search", "learning.mock-interviews"]);
-  assert.deepEqual(domainSidebar.hrefs, ["/app", "/app/job-search", "/app/learning/practice/mock-interviews"]);
+  assert.deepEqual(domainSidebar.hrefs, ["/app", "/app/opportunities", "/app/interviews"]);
   assert.deepEqual(await otherDevice.request("/api/profile/sidebar"), domainSidebar, "Stable IDs must persist in the real database across login sessions");
   const legacyRoundTrip = await otherDevice.request("/api/profile/sidebar", { method: "PUT",
     body: { hrefs: domainSidebar.hrefs, expectedRevision: 3, expectedUserId: sidebarUser.id } });
