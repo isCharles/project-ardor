@@ -83,7 +83,7 @@ try {
 
   await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });
   await page.getByText("A 区 · 最该改", { exact: true }).waitFor();
-  await page.getByText("市场现实", { exact: true }).waitFor();
+  await page.getByText("简历诊断", { exact: true }).waitFor();
   await page.getByText("算法 · Algorithm engineer", { exact: true }).waitFor();
   await page.getByText("专业深度", { exact: true }).waitFor();
   await page.screenshot({ path: ".next/resume-v3-report.png", fullPage: true });
