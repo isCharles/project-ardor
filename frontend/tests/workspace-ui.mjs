@@ -179,7 +179,7 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${origin}/app`);
   const sidebar = page.getByRole("complementary", { name: "Conversations", exact: true });
-  await sidebar.getByRole("button", { name: "Notifications", exact: true }).waitFor();
+  assert.equal(await sidebar.getByRole("button", { name: "Notifications", exact: true }).count(), 0, "Background task status lives above the composer, not in the chat header");
   assert.equal(await sidebar.getByRole("button", { name: "Project Ardor", exact: true }).count(), 0);
   assert.equal(await sidebar.getByRole("button", { name: "Close conversations", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "New chat", exact: true }).count(), 1, "Only the sidebar should show the new-chat button");
@@ -246,9 +246,6 @@ try {
   await page.getByRole("textbox", { name: "Search chat titles" }).fill("missing title");
   await page.getByText("No matching chats.", { exact: true }).waitFor();
   await page.getByRole("textbox", { name: "Search chat titles" }).fill("");
-  await sidebar.getByRole("button", { name: "Notifications", exact: true }).click();
-  await page.getByRole("dialog", { name: "Notifications" }).getByRole("link", { name: /Practice assessment/ }).waitFor();
-  await page.getByRole("dialog", { name: "Notifications" }).press("Escape");
   await page.getByRole("button", { name: "Add attachments" }).click();
   await page.getByRole("region", { name: "Attachments", exact: true }).getByRole("button", { name: "Synthetic resume.pdf" }).click();
   assert.equal(await page.getByRole("region", { name: "Attachments", exact: true }).count(), 1);
