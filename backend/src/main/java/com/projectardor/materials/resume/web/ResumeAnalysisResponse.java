@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.projectardor.materials.resume.domain.ResumeAnalysis;
+import com.projectardor.materials.resume.service.ResumeAnalysisSnapshot;
 
 public record ResumeAnalysisResponse(
         UUID id,
@@ -15,8 +16,12 @@ public record ResumeAnalysisResponse(
         Instant createdAt) {
 
     public static ResumeAnalysisResponse from(ResumeAnalysis analysis) {
+        return fromSnapshot(ResumeAnalysisSnapshot.from(analysis));
+    }
+
+    public static ResumeAnalysisResponse fromSnapshot(ResumeAnalysisSnapshot analysis) {
         return new ResumeAnalysisResponse(
-                analysis.getId(), analysis.getResumeId(), analysis.getAnalysis(),
-                analysis.getModelName(), analysis.getPromptVersion(), analysis.getCreatedAt());
+                analysis.id(), analysis.resumeId(), analysis.analysis(),
+                analysis.modelName(), analysis.promptVersion(), analysis.createdAt());
     }
 }

@@ -29,7 +29,7 @@ import com.projectardor.learning.practice.mockinterview.repository.InterviewSess
 import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.platform.identity.profile.domain.UserProfile;
 import com.projectardor.platform.identity.profile.service.ProfileService;
-import com.projectardor.materials.resume.domain.ResumeAnalysis;
+import com.projectardor.materials.resume.service.ResumeAnalysisSnapshot;
 import com.projectardor.materials.resume.service.ResumeService;
 
 import tools.jackson.core.JacksonException;
@@ -164,15 +164,15 @@ public class InterviewService {
         String normalizedCompany = normalizeNullable(targetCompany);
         if (jobOpportunityId != null) opportunities.detail(userId, jobOpportunityId);
         UserProfile profile = profileService.get(userId);
-        ResumeAnalysis resumeAnalysis = resumeAnalysisId == null
+        ResumeAnalysisSnapshot resumeAnalysis = resumeAnalysisId == null
                 ? null
-                : resumeService.getAnalysisById(userId, resumeAnalysisId);
+                : resumeService.analysisContext(userId, resumeAnalysisId);
 
         String context = toJson(Map.of(
                 "profile", Map.of(
                         "headline", profile.getHeadline() == null ? "" : profile.getHeadline(),
                         "targetRoles", profile.getTargetRoles()),
-                "resumeAnalysis", resumeAnalysis == null ? Map.of() : resumeAnalysis.getAnalysis(),
+                "resumeAnalysis", resumeAnalysis == null ? Map.of() : resumeAnalysis.analysis(),
                 "targetCompany", normalizedCompany == null ? "" : normalizedCompany,
                 "targetRole", normalizedRole,
                 "questionCount", questionCount));
