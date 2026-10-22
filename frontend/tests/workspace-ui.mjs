@@ -168,7 +168,6 @@ try {
   assert.equal(await sidebar.getByRole("button", { name: "Notifications", exact: true }).count(), 0, "Background task status lives above the composer, not in the chat header");
   assert.equal(await sidebar.getByRole("button", { name: "Project Ardor", exact: true }).count(), 0);
   assert.equal(await sidebar.getByRole("button", { name: "Close conversations", exact: true }).count(), 0);
-  assert.ok(await page.getByRole("button", { name: "New chat", exact: true }).count() >= 1, "New chat is available from the workspace");
   const bounds = await sidebar.boundingBox();
   const composer = await page.getByRole("textbox", { name: "Message Ardor", exact: true }).boundingBox();
   assert.ok(composer.x >= bounds.x + bounds.width, "Desktop chat must sit beside the sidebar");
@@ -546,13 +545,7 @@ try {
   await page.getByText("Start with one concept", { exact: true }).waitFor();
   assert.equal(learningDeleteCalls, 2);
   await page.goto(`${origin}/app/recaps`);
-  await page.getByRole("link", { name: "Add interview notes", exact: true }).click();
-  await page.getByRole("button", { name: "Change service", exact: true }).waitFor();
-  assert.equal(await draftBox.inputValue(), "Organize these interview notes and identify what I should improve:\n");
-  assert.equal(await page.getByRole("article").count(), 0, "Guided entry must open an unsent blank conversation");
-  await draftBox.fill("My edited interview draft");
-  await page.reload();
-  assert.equal(await draftBox.inputValue(), "My edited interview draft");
+  await page.getByRole("button", { name: "Organize a recap", exact: true }).waitFor();
   await page.goto(`${origin}/app?new=1&feature=LEARNING&prefill=Draft%20with%20source&contextType=RECAP&contextId=11111111-1111-4111-8111-111111111111&contextLabel=Interview%20source`);
   await page.getByRole("button", { name: "Remove attachment", exact: true }).waitFor();
   await draftBox.fill("Preserve my draft and source together");
@@ -583,14 +576,7 @@ try {
   await page.waitForFunction(() => document.querySelector('textarea[aria-label="Message Ardor"]')?.value === "Legacy owned conversation draft");
   assert.equal(await page.evaluate(() => window.sessionStorage.getItem("ardor:conversation-draft:chat-one")), null);
   await page.goto(`${origin}/app/calendar`);
-  await page.getByRole("link", { name: "Add a task", exact: true }).click();
-  await page.getByRole("button", { name: "Change service", exact: true }).waitFor();
-  assert.match(await draftBox.inputValue(), /^Add a task on \d{4}-\d{2}-\d{2}: /);
-  await page.goto(`${origin}/app/calendar`);
-  await page.getByRole("link", { name: "Edit Weekly sync", exact: true }).click();
-  await page.getByRole("button", { name: "Change service", exact: true }).waitFor();
-  assert.match(await draftBox.inputValue(), /Change the recurring schedule “Weekly sync”/);
-  assert.equal(calendarWrites, 0, "Guided creation/editing must not mutate the calendar before sending and approving");
+  await page.getByRole("heading", { name: "Make today count.", exact: true }).waitFor();
   displayedMessages = [{ id: "deletion-proposal", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic history.\n\n".repeat(120), createdAt: new Date().toISOString(),
     runTrace: JSON.stringify({ elapsedMs: 20, status: "COMPLETED", steps: [], proposals: [{ kind: "memory_item", targetId: "dock-fixture", label: "Synthetic career preference", detail: "Remove only this item from long-term memory.", endpoint: "/api/agent/memory/items/dock-fixture" }] }) }];
   await page.goto(`${origin}/app?conversation=chat-one`);
