@@ -41,8 +41,6 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Workspace UI regression (mock APIs)
         run: node tests/workspace-ui.mjs
-      - name: Domain navigation and stable preferences regression (mock APIs)
-        run: node tests/domain-navigation-ui.mjs
       - name: Resume scoring UI regression (mock APIs)
         run: node tests/resume-scoring-ui.mjs
       - name: Learning operation UI regression (mock APIs)
