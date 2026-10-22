@@ -39,12 +39,12 @@ public class KnowledgeController {
     public KnowledgeDocumentResponse upload(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @RequestPart("file") MultipartFile file) {
-        return knowledgeService.upload(principal.userId(), file);
+        return KnowledgeDocumentResponse.fromView(knowledgeService.upload(principal.userId(), file));
     }
 
     @GetMapping("/documents")
     public List<KnowledgeDocumentResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return knowledgeService.list(principal.userId());
+        return knowledgeService.list(principal.userId()).stream().map(KnowledgeDocumentResponse::fromView).toList();
     }
 
     @DeleteMapping("/documents/{documentId}")
@@ -67,7 +67,7 @@ public class KnowledgeController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @RequestParam String query,
             @RequestParam(defaultValue = "5") int limit) {
-        return knowledgeService.search(principal.userId(), query, limit);
+        return knowledgeService.search(principal.userId(), query, limit).stream().map(KnowledgeSearchResult::fromView).toList();
     }
 
     @PostMapping("/research")
@@ -76,6 +76,6 @@ public class KnowledgeController {
     public KnowledgeResearchResponse research(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody KnowledgeResearchRequest request) {
-        return knowledgeService.researchFromWeb(principal.userId(), request.query());
+        return KnowledgeResearchResponse.fromView(knowledgeService.researchFromWeb(principal.userId(), request.query()));
     }
 }

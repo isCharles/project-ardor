@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import com.projectardor.materials.knowledge.domain.KnowledgeDocument;
 import com.projectardor.materials.knowledge.domain.KnowledgeSourceType;
+import com.projectardor.materials.knowledge.service.KnowledgeDocumentView;
 
 public record KnowledgeDocumentResponse(
         UUID id,
@@ -16,8 +17,12 @@ public record KnowledgeDocumentResponse(
         Instant createdAt) {
 
     public static KnowledgeDocumentResponse from(KnowledgeDocument document, long chunkCount) {
+        return fromView(KnowledgeDocumentView.from(document, chunkCount));
+    }
+
+    public static KnowledgeDocumentResponse fromView(KnowledgeDocumentView document) {
         return new KnowledgeDocumentResponse(
-                document.getId(), document.getTitle(), document.getSourceType(), document.getSourceUrl(),
-                document.getOriginalFilename(), chunkCount, document.getCreatedAt());
+                document.id(), document.title(), document.sourceType(), document.sourceUrl(),
+                document.originalFilename(), document.chunkCount(), document.createdAt());
     }
 }

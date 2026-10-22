@@ -29,6 +29,7 @@ class KnowledgeServiceTests {
     private KnowledgeEmbeddingService embeddingService;
     private KnowledgeVectorStore vectorStore;
     private KnowledgeIndexer indexer;
+    private KnowledgeIndexDispatcher dispatcher;
     private KnowledgeService service;
 
     @BeforeEach
@@ -39,13 +40,69 @@ class KnowledgeServiceTests {
         embeddingService = mock(KnowledgeEmbeddingService.class);
         vectorStore = mock(KnowledgeVectorStore.class);
         indexer = mock(KnowledgeIndexer.class);
+        dispatcher = mock(KnowledgeIndexDispatcher.class);
         var transactionManager = mock(org.springframework.transaction.PlatformTransactionManager.class);
         when(transactionManager.getTransaction(any()))
                 .thenReturn(mock(org.springframework.transaction.TransactionStatus.class));
         when(documentRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         service = new KnowledgeService(
                 documentRepository, chunkRepository, new KnowledgeTextExtractor(), tavilySearchService,
-                embeddingService, vectorStore, indexer, mock(KnowledgeIndexTaskStore.class), mock(KnowledgeIndexDispatcher.class), 0.35, transactionManager);
+                embeddingService, vectorStore, indexer, mock(KnowledgeIndexTaskStore.class), dispatcher, 0.35, transactionManager);
+    }
+
+    @Test
+    void documentReadsAndDeletesRemainOwnerScoped() {
+        UUID owner = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        var document = KnowledgeDocument.fromWeb(owner, "GC", "https://example.com", "synthetic");
+        when(documentRepository.findByIdAndUserId(document.getId(), owner)).thenReturn(Optional.of(document));
+        when(documentRepository.findByIdAndUserId(document.getId(), other)).thenReturn(Optional.empty());
+        when(chunkRepository.countByDocumentIdAndUserId(document.getId(), owner)).thenReturn(4L);
+        assertThat(service.get(owner, document.getId()).chunkCount()).isEqualTo(4);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.get(other, document.getId()))
+                .isInstanceOf(com.projectardor.common.web.ResourceNotFoundException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.delete(other, document.getId()))
+                .isInstanceOf(com.projectardor.common.web.ResourceNotFoundException.class);
+        org.mockito.Mockito.verify(documentRepository, org.mockito.Mockito.never()).delete(any());
+        org.mockito.Mockito.verify(chunkRepository, org.mockito.Mockito.never())
+                .countByDocumentIdAndUserId(document.getId(), other);
+    }
+
+    @Test
+    void applicationSnapshotDoesNotDispatchIndexingBeforeCommit() {
+        UUID owner = UUID.randomUUID();
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            var view = service.upload(owner, new MockMultipartFile("file", "gc.md", "text/markdown",
+                    "synthetic GC".getBytes(StandardCharsets.UTF_8)));
+            assertThat(view.chunkCount()).isEqualTo(1);
+            org.mockito.Mockito.verifyNoInteractions(dispatcher);
+            for (var callback : org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()) {
+                callback.afterCommit();
+            }
+            org.mockito.Mockito.verify(dispatcher).dispatch(eq(owner), any(), any());
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void embeddingFailureKeepsLexicalFallbackAndClampsLimit() {
+        UUID owner = UUID.randomUUID();
+        UUID document = UUID.randomUUID();
+        when(vectorStore.lexicalSearch(eq(owner), any(), eq(30))).thenReturn(List.of(
+                new KnowledgeVectorStore.LexicalHit(document, "GC",
+                        com.projectardor.materials.knowledge.domain.KnowledgeSourceType.WEB,
+                        "https://example.com", "one", 8.0),
+                new KnowledgeVectorStore.LexicalHit(document, "GC",
+                        com.projectardor.materials.knowledge.domain.KnowledgeSourceType.WEB,
+                        "https://example.com", "two", 4.0)));
+        when(embeddingService.embedQuery(owner, "GC")).thenThrow(new IllegalStateException("synthetic outage"));
+        var hits = service.search(owner, "GC", 0);
+        assertThat(hits).hasSize(1);
+        assertThat(hits.getFirst().content()).isEqualTo("one");
+        assertThat(hits.getFirst().score()).isEqualTo(0.01639);
+        org.mockito.Mockito.verify(vectorStore).lexicalSearch(eq(owner), any(), eq(30));
     }
 
     @Test

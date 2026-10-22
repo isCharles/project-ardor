@@ -24,6 +24,14 @@ import org.junit.jupiter.api.Test;
  */
 class ArchitectureBoundaryTests {
     @Test
+    void knowledgeApplicationAndAssistantDoNotDependOnKnowledgeWebDtos() throws IOException {
+        assertNoImports("materials/knowledge/service",
+                Pattern.compile("import com\\.projectardor\\.materials\\.knowledge\\.web\\..*"));
+        assertNoImports("assistant",
+                Pattern.compile("import com\\.projectardor\\.materials\\.knowledge\\.web\\..*"));
+    }
+
+    @Test
     void mockInterviewApplicationAndToolsDoNotDependOnWebDtos() throws IOException {
         assertNoImports("learning/practice/mockinterview/service", Pattern.compile("import com\\.projectardor\\.learning\\.practice\\.mockinterview\\.web\\..*"));
         String tools = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
