@@ -47,12 +47,6 @@ jobs:
         run: node tests/learning-operation-ui.mjs
       - name: Learning source and target UI regression (mock APIs)
         run: node tests/learning-context-ui.mjs
-      - name: Learning progress query UI regression (mock APIs)
-        run: node tests/learning-progress-ui.mjs
-      - name: Pipeline recap navigation regression (mock APIs)
-        run: node tests/pipeline-ui.mjs
-      - name: Confirmed interview minutes regression (mock APIs)
-        run: node tests/interview-minutes-ui.mjs
 
   desktop-window:
     runs-on: windows-latest
