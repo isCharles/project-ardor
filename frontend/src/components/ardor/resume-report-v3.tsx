@@ -257,7 +257,7 @@ export function ResumeReportV3({ report, onBack, onViewResume }: {
 
     {report.general && <p data-pdf-block className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">{t("Generalised analysis only: without a JD this report may not reflect a specific role. Add a JD when starting a new analysis for role-specific evidence.", "本次为通用化分析，可能不具针对性；如需岗位匹配，请在开始新分析时补充 JD。")}</p>}
 
-    <section data-pdf-block className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]">
+    <section data-pdf-block className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
       <div className="rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_60px_rgba(49,39,70,0.07)] backdrop-blur-xl md:p-8">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Competitiveness", "当前竞争力")}</p>
         <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-2">
@@ -265,19 +265,19 @@ export function ResumeReportV3({ report, onBack, onViewResume }: {
           <span className="pb-1.5 text-sm text-stone-400">/ 100</span>
           <span className="mb-1 rounded-full bg-violet-100 px-3 py-1 text-sm font-medium text-violet-800">{report.band}</span>
         </div>
-        <div className="mt-4 border-t border-stone-100 pt-4">
-          <p className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-violet-600">{t("Diagnosis", "简历诊断")}</p>
-          <MarkdownBlock text={[report.summary, report.background].filter(Boolean).join("\n\n")} />
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-stone-400">
-          <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-600" />{t("You", "你")}</span>
-          <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full border border-stone-400 bg-stone-200" />{t("Market requirement", "市场要求")}</span>
+        <div className="mt-5 border-t border-stone-100 pt-5">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Capability radar", "能力雷达")}</p>
+          <div className="flex items-center justify-center py-2"><Radar dimensions={report.dimensions} /></div>
+          <div className="mt-2 flex flex-wrap justify-center gap-4 border-t border-stone-100 pt-4 text-[11px] text-stone-400">
+            <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-600" />{t("You", "你")}</span>
+            <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full border border-stone-400 bg-stone-200" />{t("Market requirement", "市场要求")}</span>
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-col rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_60px_rgba(49,39,70,0.07)] backdrop-blur-xl md:p-8">
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Capability radar", "能力雷达")}</p>
-        <div className="flex flex-1 items-center justify-center py-2"><Radar dimensions={report.dimensions} /></div>
+      <div className="rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_60px_rgba(49,39,70,0.07)] backdrop-blur-xl md:p-8">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Diagnosis", "简历诊断")}</p>
+        <MarkdownBlock text={[report.summary, report.background].filter(Boolean).join("\n\n")} />
       </div>
     </section>
 
