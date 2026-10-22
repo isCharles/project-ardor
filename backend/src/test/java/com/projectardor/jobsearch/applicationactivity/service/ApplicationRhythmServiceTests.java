@@ -30,7 +30,7 @@ class ApplicationRhythmServiceTests {
 
     @Test
     void reminderStartsOnlyAfterConfiguredTimeAndBeforeWeeklyGoalIsMet() {
-        var settings = new ApplicationRhythmService.Settings(20, true, LocalTime.of(19, 0), true, null);
+        var settings = new ApplicationRhythmService.Settings(20, true, LocalTime.of(19, 0), true, null, null);
         var monday = ZonedDateTime.of(2026, 9, 28, 19, 5, 0, 0, zone);
 
         assertThat(ApplicationRhythmService.reminderDue(settings, monday.minusMinutes(6), 5, false)).isFalse();
@@ -42,16 +42,16 @@ class ApplicationRhythmServiceTests {
     @Test
     void reminderRespectsWeekdaysPauseAndDisabledSettings() {
         var saturday = ZonedDateTime.of(2026, 10, 3, 20, 0, 0, 0, zone);
-        var weekdays = new ApplicationRhythmService.Settings(20, true, LocalTime.of(19, 0), true, null);
+        var weekdays = new ApplicationRhythmService.Settings(20, true, LocalTime.of(19, 0), true, null, null);
         assertThat(ApplicationRhythmService.reminderDue(weekdays, saturday, 5, false)).isFalse();
         assertThat(ApplicationRhythmService.reminderDue(
-                new ApplicationRhythmService.Settings(20, true, LocalTime.of(19, 0), false, null),
+                new ApplicationRhythmService.Settings(20, true, LocalTime.of(19, 0), false, null, null),
                 saturday, 5, false)).isTrue();
         assertThat(ApplicationRhythmService.reminderDue(
                 new ApplicationRhythmService.Settings(20, true, LocalTime.of(19, 0), false,
-                        LocalDate.of(2026, 10, 3)), saturday, 5, false)).isFalse();
+                        LocalDate.of(2026, 10, 3), null), saturday, 5, false)).isFalse();
         assertThat(ApplicationRhythmService.reminderDue(
-                new ApplicationRhythmService.Settings(20, false, LocalTime.of(19, 0), false, null),
+                new ApplicationRhythmService.Settings(20, false, LocalTime.of(19, 0), false, null, null),
                 saturday, 5, false)).isFalse();
     }
 }

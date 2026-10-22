@@ -57,12 +57,12 @@ function polygonPoints(values: number[], radius: number, center: number) {
   }).join(" ");
 }
 
-function Radar({ dimensions }: { dimensions: ResumeDimension[] }) {
+export function Radar({ dimensions }: { dimensions: ResumeDimension[] }) {
   const { locale } = useLocale();
   const center = 180, radius = 100;
   const values = dimensions.map(dimension => gradeValue[dimension.grade]);
   const market = dimensions.map(dimension => gradeValue[dimension.marketGrade]);
-  return <svg viewBox="-30 -10 420 380" className="mx-auto h-auto w-full max-w-[470px]" role="img" aria-label="能力雷达">
+  return <svg viewBox="-30 -10 420 380" className="mx-auto h-auto w-full max-w-[560px]" role="img" aria-label="能力雷达">
     {[7, 6, 5, 4, 3, 2].map(level => <polygon key={level} points={polygonPoints(Array(6).fill(level), radius, center)} fill="none" stroke="rgba(49,39,70,0.10)" strokeWidth="1" />)}
     {dimensions.map((dimension, index) => {
       const angle = (-90 + index * 60) * (Math.PI / 180);

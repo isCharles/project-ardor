@@ -51,20 +51,6 @@
       "tab": true
     },
     {
-      "id": "job-search.applications",
-      "domain": "job-search",
-      "href": "/app/job-search/applications",
-      "legacyHref": "/app/applications",
-      "en": "Applications",
-      "zh": "投递",
-      "icon": "target",
-      "aliases": [
-        "/app/applications"
-      ],
-      "modules": [],
-      "tab": true
-    },
-    {
       "id": "job-search.resumes",
       "domain": "job-search",
       "href": "/app/job-search/resumes",
@@ -81,28 +67,12 @@
       "tab": true
     },
     {
-      "id": "job-search.notes",
-      "domain": "job-search",
-      "href": "/app/job-search/notes",
-      "legacyHref": "/app/recaps",
-      "en": "Interview notes",
-      "zh": "面试记录",
-      "icon": "book",
-      "aliases": [
-        "/app/recaps"
-      ],
-      "modules": [
-        "recaps"
-      ],
-      "section": "job-search.interviews"
-    },
-    {
       "id": "learning",
       "domain": "learning",
       "href": "/app/learning",
       "legacyHref": "/app/learning",
-      "en": "Learning",
-      "zh": "学习",
+      "en": "Courses",
+      "zh": "课程",
       "icon": "graduation",
       "aliases": [],
       "modules": [
@@ -110,21 +80,6 @@
         "interviews",
         "knowledge"
       ],
-      "tab": true
-    },
-    {
-      "id": "learning.practice",
-      "domain": "learning",
-      "href": "/app/learning/practice",
-      "legacyHref": "/app/interviews",
-      "en": "Practice",
-      "zh": "训练",
-      "icon": "message",
-      "aliases": [],
-      "modules": [
-        "interviews"
-      ],
-      "legacySelectable": false,
       "tab": true
     },
     {
@@ -140,25 +95,7 @@
       ],
       "modules": [
         "interviews"
-      ],
-      "section": "learning.practice"
-    },
-    {
-      "id": "learning.question-practice",
-      "domain": "learning",
-      "href": "/app/learning/practice/questions",
-      "legacyHref": "/app/interviews",
-      "en": "Question practice",
-      "zh": "单题训练",
-      "icon": "message",
-      "aliases": [
-        "/app/replay"
-      ],
-      "modules": [
-        "recaps"
-      ],
-      "legacySelectable": false,
-      "section": "learning.practice"
+      ]
     },
     {
       "id": "learning.flashcards",
@@ -219,17 +156,15 @@
       "modules": []
     },
     {
-      "id": "tasks",
+      "id": "automations",
       "domain": null,
-      "href": "/app/tasks",
-      "legacyHref": "/app/tasks",
-      "en": "Background tasks",
-      "zh": "后台任务",
+      "href": "/app/automations",
+      "legacyHref": "/app/automations",
+      "en": "Scheduled",
+      "zh": "自动化任务",
       "icon": "clock",
       "aliases": [],
-      "modules": [
-        "tasks"
-      ]
+      "modules": []
     }
   ]
 }

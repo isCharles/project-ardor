@@ -12,7 +12,7 @@ public final class ToolIntentPolicy {
             "list_recurring_tasks", "list_resumes", "get_resume_analysis_status", "get_resume_analysis", "list_interviews",
             "get_next_question", "get_ai_job", "get_interview_evaluation", "list_interview_recap_jobs", "list_interview_recaps",
             "get_interview_recap", "list_due_memory_cards", "list_memory_cards", "list_job_opportunities",
-            "get_job_opportunity");
+            "get_job_opportunity", "list_automations", "get_automation", "get_calendar_advice");
     public static boolean isRead(String tool) { return READS.contains(tool); }
     /** A narrowed/revoked instruction cannot inherit an unrestricted old capability.
      * Target-specific exemptions require a fresh positive request, not model interpretation. */
@@ -38,7 +38,11 @@ public final class ToolIntentPolicy {
                     "面试|邀约|邀请|流程|进度|岗位|interview|opportunit|offer";
             case "research_knowledge_from_web" -> "知识库|收录|资料|knowledge|material";
             case "analyze_resume" -> "简历|resume|résumé";
-            case "record_application_count", "set_application_rhythm" -> "投递|投了|已投|申请|application|applied";
+            case "record_application_count", "set_application_rhythm", "update_application_advice" -> "投递|投了|已投|申请|application|applied";
+            case "create_automation", "update_automation", "delete_automation" ->
+                    "自动化|定时|定期|每天|每周|每月|每年|以后|今后|automation|cron|schedule|daily|weekly|monthly";
+            case "update_calendar_advice", "delete_calendar_advice" ->
+                    "日历|日程|建议|规划|安排|接下来|未来|calendar|advice|plan|schedule|next";
             default -> "(?!)";
         };
         if (DATE_WRITES.contains(tool) && permitsDateCorrection(request)) {
@@ -69,6 +73,12 @@ public final class ToolIntentPolicy {
             case "analyze_resume" -> "分析|评估|analy[sz]e|evaluate|review";
             case "record_application_count" -> "记录|record|log";
             case "set_application_rhythm" -> "设置|调整|修改|设为|set|change|update";
+            case "update_application_advice" -> "保存|更新|写入|记录|建议|判断|节奏|save|update|write|record|advice|pace";
+            case "create_automation" -> "创建|新增|添加|设置|安排|建立|每天|每周|每月|定期|定时|以后|今后|create|add|set|schedule|every";
+            case "update_automation" -> "修改|调整|更新|改成|改为|暂停|恢复|启用|停用|关闭|打开|update|change|pause|resume|enable|disable";
+            case "delete_automation" -> "删除|删掉|取消|停止|移除|delete|remove|cancel|stop";
+            case "update_calendar_advice" -> "保存|更新|写入|记录|规划|建议|安排|save|update|write|record|plan|advice";
+            case "delete_calendar_advice" -> "删除|清空|清除|移除|delete|clear|remove";
             default -> "(?!)";
         };
         String imperative = "(?:^|[。！？;；\\n，,])\\s*(?:(?:请你?|麻烦|帮我|我想要?|我要|我希望你?|给我|please|can you|could you|i want you to|help me)\\s*)*(?:(?:把|将)[^。！？\\n：:]{1,100})?(?:" + action + ")";

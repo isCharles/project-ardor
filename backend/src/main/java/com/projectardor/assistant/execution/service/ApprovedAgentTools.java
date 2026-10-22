@@ -33,7 +33,7 @@ final class ApprovedAgentTools {
             "delete_knowledge_document", "delete_memory", "clear_all_memories", "delete_calendar_task",
             "delete_recurring_task", "delete_resume", "delete_interview", "delete_memory_card",
             "delete_all_memory_cards", "delete_interview_recap", "delete_job_opportunity",
-            "delete_job_opportunity_round");
+            "delete_job_opportunity_round", "delete_automation", "delete_calendar_advice");
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals) {
         return wrap(bound, userId, requestId, approvals, null, new AgentToolTimings(), waiting -> {}, null);
     }

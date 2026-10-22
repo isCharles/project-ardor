@@ -23,7 +23,7 @@ class ApplicationRhythmViewTests {
         assertThat(mapper.writeValueAsString(view)).isEqualTo(expected);
         assertThat(mapper.writeValueAsString(ApplicationRhythmResponse.from(view))).isEqualTo(expected);
         assertThat(mapper.readTree(expected).propertyNames()).containsExactly("today", "weekStart", "todayCount", "weeklyCount",
-                "weeklyGoal", "reminderEnabled", "reminderTime", "weekdaysOnly", "reminderDue", "days");
+                "weeklyGoal", "reminderEnabled", "reminderTime", "weekdaysOnly", "reminderDue", "days", "advice");
         assertThat(mapper.readTree(expected).path("days").get(0).propertyNames()).containsExactly("date", "count");
     }
 

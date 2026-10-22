@@ -13,7 +13,7 @@ import { type AiJob } from "@/lib/ai-jobs";
 
 import { Button } from "@/components/ui/button";
 import { AppDialog } from "@/components/ui/app-dialog";
-import { ChatNotifications } from "@/components/ardor/chat-notifications";
+import { ChatTaskDock } from "@/components/ardor/chat-task-dock";
 import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
 import { ReasoningControl } from "@/components/ardor/reasoning-control";
 import { ServicePicker } from "@/components/ardor/service-picker";
@@ -99,8 +99,39 @@ const typewriterExamplesZh = [
   "告诉 Ardor 我想改进什么",
 ];
 
-function conversationTitle(message: string) {
-  const normalized = message.trim().replace(/\s+/g, " ");
+function AutoResizeTextarea({ value, onChange, maxLength }: { value: string; onChange: (value: string) => void; maxLength?: number }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const resize = () => { element.style.height = "auto"; element.style.height = `${element.scrollHeight}px`; };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, [value]);
+  return <textarea ref={ref} rows={1} value={value} onChange={(event) => onChange(event.target.value)} maxLength={maxLength} className="mt-1.5 w-full resize-none overflow-hidden bg-transparent p-0 text-sm leading-6 text-stone-700 outline-none placeholder:text-stone-400" />;
+}
+
+function formatMessageTimestamp(value: string, locale: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const sameDay = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+  return date.toLocaleString(locale, sameDay
+    ? { hour: "2-digit", minute: "2-digit" }
+    : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function fullMessageTimestamp(value: string, locale: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString(locale, {
+    year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}
+
+function conversationTitle(message: string) {  const normalized = message.trim().replace(/\s+/g, " ");
   const firstThought = normalized.split(/[。！？!?；;\n]/, 1)[0]?.trim() || normalized;
   const characters = Array.from(firstThought);
   return characters.length > 24 ? `${characters.slice(0, 24).join("")}…` : firstThought;
@@ -162,6 +193,7 @@ export default function AgentHomePage() {
   const [permissionOpen, setPermissionOpen] = useState(false);
   const [nativeReasoning, setNativeReasoning] = useState(false);
   const reasoningAccount = useRef<string | null>(null);
+  const pendingDraftParams = useRef<URLSearchParams | null>(null);
   const proposalSources = useRef(new Map<string, string>());
   const draftStorageKey = useCallback((conversationId?: string | null) =>
     `ardor:conversation-draft:${reasoningAccount.current ?? "unavailable"}:${conversationId ?? "new"}`, []);
@@ -478,7 +510,14 @@ export default function AgentHomePage() {
     let cancelled = false;
     // Consume one-time draft links before any asynchronous work. Updating history
     // after loading could overwrite a module navigation the user just started.
-    const params = new URLSearchParams(window.location.search);
+    const incoming = new URLSearchParams(window.location.search);
+    const hasDraftLink = incoming.get("new") === "1"
+      && (incoming.has("prefill") || incoming.has("feature") || incoming.has("contextId"));
+    if (hasDraftLink) pendingDraftParams.current = incoming;
+    // React's development double-invoke runs this effect again after the URL has
+    // already been cleaned. Keep the one-time draft link in a ref so the second
+    // pass still receives the prefill instead of silently dropping it.
+    const params = hasDraftLink ? incoming : pendingDraftParams.current ?? incoming;
     const requested = params.get("conversation");
     if (params.get("new") === "1" && (params.has("prefill") || params.has("feature") || params.has("contextId"))) {
       window.history.replaceState(null, "", "/app?new=1");
@@ -505,6 +544,7 @@ export default function AgentHomePage() {
         }
         if (params.get("notice") === "recap-queued") setNotice("原始转录已保存。请到面试纪要中趁记忆新鲜校正初稿；你确认后才会生成详细复盘。");
         applyState(result);
+        pendingDraftParams.current = null;
       })
       .catch((reason) => {
         if (cancelled) return;
@@ -1184,7 +1224,7 @@ export default function AgentHomePage() {
         <aside aria-label={t("Conversations", "对话栏")} aria-hidden={sidebarOpen === false} inert={sidebarOpen === false} className={`fixed inset-y-0 left-16 z-40 shrink-0 flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl md:static md:z-20 md:shadow-none ${sidebarOpen === false ? "hidden" : sidebarOpen === true ? "flex" : "hidden md:flex"}`} style={{ width: "min(18rem, calc(100vw - 4rem))" }}>
           <div className="flex h-12 items-center justify-between px-2">
             <WorkspaceBrand admin={isAdmin} />
-            <div className="flex items-center"><ChatNotifications /><button aria-label={t("Search chats", "搜索对话")} onClick={() => { setSearchOpen((value) => !value); setRecentOpen(true); setChatSearch(""); }} className="rounded-lg p-2 text-stone-500 hover:bg-white"><Search className="size-4" /></button></div>
+            <div className="flex items-center"><button aria-label={t("Search chats", "搜索对话")} onClick={() => { setSearchOpen((value) => !value); setRecentOpen(true); setChatSearch(""); }} className="rounded-lg p-2 text-stone-500 hover:bg-white"><Search className="size-4" /></button></div>
           </div>
           <button data-new-chat type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium shadow-sm transition hover:border-stone-300 hover:shadow disabled:opacity-50"><Plus className="size-4" />{t("New chat", "新对话")}</button>
 
@@ -1239,7 +1279,7 @@ export default function AgentHomePage() {
           {notice && <button type="button" onClick={() => setNotice("")} className="mx-4 mt-2 rounded-2xl bg-emerald-50/90 px-4 py-3 text-left text-sm text-emerald-800 md:mx-8">{notice}</button>}
           {applicationReminder?.reminderDue && <div className="mx-4 mt-2 flex items-center gap-3 rounded-2xl border border-violet-100 bg-white/80 px-4 py-3 text-sm text-stone-700 shadow-sm md:mx-8"><Target className="size-4 shrink-0 text-violet-500" /><span className="flex-1">{t(`How many applications today? ${applicationReminder.weeklyCount}/${applicationReminder.weeklyGoal} this week`, `今天投了多少份？本周 ${applicationReminder.weeklyCount}/${applicationReminder.weeklyGoal}`)}</span><Link href="/app/applications" className="shrink-0 font-medium text-violet-700 hover:underline">{t("Log it", "记一下")}</Link><button type="button" onClick={() => void dismissApplicationReminder()} className="shrink-0 text-xs text-stone-400 hover:text-stone-700">{t("Skip today", "今天跳过")}</button></div>}
 
-          <div className="relative flex-1 overflow-y-auto">
+          <div className="relative flex-1 overflow-y-auto" style={{ maskImage: "linear-gradient(to bottom, transparent 0px, black 12px)", WebkitMaskImage: "linear-gradient(to bottom, transparent 0px, black 12px)" }}>
             {messages.length === 0 ? (
               <div className={`relative grid min-h-full place-items-center overflow-hidden px-4 pb-12 ${leavingEmptyState ? "ardor-empty-exit" : "ardor-empty-enter"}`}>
                 <div className="pointer-events-none absolute inset-x-[6%] bottom-[-28%] h-[82%] rounded-[50%] bg-[radial-gradient(circle_at_28%_45%,rgba(255,107,177,0.58),transparent_43%),radial-gradient(circle_at_72%_38%,rgba(83,125,255,0.58),transparent_47%),radial-gradient(circle_at_50%_76%,rgba(149,92,246,0.46),transparent_58%)] blur-3xl" />
@@ -1247,7 +1287,8 @@ export default function AgentHomePage() {
                   <h2 className="text-4xl font-semibold tracking-[-0.04em] text-stone-950 md:text-5xl">What should we build{state?.displayName?.trim() ? `, ${state.displayName.trim()}` : ""}?</h2>
                   {runningRun && <div role="status" className="mx-auto mt-5 max-w-2xl rounded-2xl border border-violet-100 bg-white/75 px-4 py-3 text-left text-sm text-violet-700">{t(`Ardor is working on your last message · ${runningRun.label}. It will appear when ready.`, `Ardor 正在处理上一条消息 · ${runningRun.label}。完成后会自动显示。`)}</div>}
                   {(visibleError || retryFailures.length > 0) && <div className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{retryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
-                  <form onSubmit={submit} className="mx-auto mt-10 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
+                  <div className="mx-auto mt-8 max-w-2xl text-left"><ChatTaskDock /></div>
+                  <form onSubmit={submit} className="mx-auto mt-8 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
                     {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
                     <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
@@ -1260,12 +1301,12 @@ export default function AgentHomePage() {
                 {messages.map((message) => (
                   <article key={message.id} className={`flex gap-3 ${message.role === "USER" ? "justify-end" : "justify-start"}`}>
                     {message.role === "USER" ? (
-                      <div className="max-w-[86%] rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7">{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" />{context.type === "SERVICE" ? <Link href={featureHref(features.find((feature) => feature.id === context.id)?.key)} className="truncate text-violet-700 underline underline-offset-2">{locale === "en" ? features.find((feature) => feature.id === context.id)?.englishLabel ?? context.label : context.label}</Link> : <span className="truncate">{context.label}</span>}</span>)}</div>}<div className="whitespace-pre-wrap">{message.content}</div></div>
+                      <div className="flex max-w-[86%] flex-col items-end"><div className="rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7">{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" />{context.type === "SERVICE" ? <Link href={featureHref(features.find((feature) => feature.id === context.id)?.key)} className="truncate text-violet-700 underline underline-offset-2">{locale === "en" ? features.find((feature) => feature.id === context.id)?.englishLabel ?? context.label : context.label}</Link> : <span className="truncate">{context.label}</span>}</span>)}</div>}<div className="whitespace-pre-wrap">{message.content}</div></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 px-1 text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time></div>
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         {message === liveAssistant && liveTrace}
                         {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTrace>; })()}
-                        <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
+                        <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 block text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time>
                       </div>
                     )}
                   </article>
@@ -1279,6 +1320,7 @@ export default function AgentHomePage() {
             )}
           </div>
 
+          <ChatTaskDock />
           {messages.length > 0 && <div className="ardor-composer-enter relative z-10 shrink-0 px-4 pb-5 md:px-8">
             {feedbackBanner}
             <div className="mx-auto max-h-[45dvh] max-w-3xl overflow-y-auto">
@@ -1313,37 +1355,51 @@ export default function AgentHomePage() {
 
       {memoryOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setMemoryOpen(false); }}>
-          <section className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-stone-200 bg-[#fffefa] p-5 shadow-2xl md:p-6">
+          <section className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-[1.75rem] border border-stone-200 bg-[#fffefa] p-5 shadow-2xl md:p-6">
             <div className="flex items-start justify-between gap-4">
-              <div><div className="flex items-center gap-2 text-lg font-semibold"><Brain className="size-5 text-violet-500" />长期记忆</div><p className="mt-1 text-sm leading-6 text-stone-500">跨所有对话共享。可以归纳你的信息，不必逐字复述；每条都能单独修改或删除。</p></div>
-              <button aria-label="关闭" onClick={() => setMemoryOpen(false)} className="rounded-xl p-2 text-stone-400 hover:bg-stone-100"><X className="size-5" /></button>
-            </div>
-            {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-            {!memoryItems ? <p className="mt-6 text-sm text-stone-400">加载中…</p> : <div className="mt-4 space-y-3">
-              {memoryItems.filter((item) => item.valid || showStaleMemory).length === 0 && <p className="rounded-2xl border border-dashed border-stone-200 px-4 py-6 text-center text-sm text-stone-400">还没有长期记忆。</p>}
-              {memoryItems.filter((item) => item.valid || showStaleMemory).map((item) => item.valid ? <div key={item.id} className="rounded-2xl border border-stone-200 bg-white p-3">
-                <div className="flex items-center gap-2 text-[11px] text-stone-400"><span className="rounded-full bg-stone-100 px-2 py-0.5">{item.sourceKind === "INFERRED" ? "推断" : "你说过"}</span><span>{item.kind === "preference" ? "偏好" : item.kind === "goal" ? "目标" : item.kind === "profile" ? "背景" : item.kind === "constraint" ? "约束" : "事实"}</span>{item.confidence < 1 && <span>可信度 {Math.round(item.confidence * 100)}%</span>}</div>
-                <textarea value={memoryEdits[item.id] ?? item.content} onChange={(event) => setMemoryEdits((current) => ({ ...current, [item.id]: event.target.value }))} rows={2} maxLength={1000} className="mt-2 w-full resize-y rounded-xl border border-stone-200 bg-white p-2 text-sm leading-6 outline-none focus:border-violet-300" />
-                <div className="mt-2 flex items-center justify-between">
-                  <button type="button" disabled={memorySaving !== null} onClick={() => void deleteMemoryItem(item.id)} className="text-xs text-rose-600 hover:underline disabled:opacity-40">删除</button>
-                  <button type="button" disabled={memorySaving !== null || (memoryEdits[item.id] ?? "").trim() === item.content} onClick={() => void saveMemoryItem(item.id)} className="rounded-full bg-stone-950 px-4 py-1.5 text-xs font-medium text-white disabled:opacity-40">{memorySaving === item.id ? "保存中…" : "保存"}</button>
-                </div>
-              </div> : <div key={item.id} className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-3 text-stone-400">
-                <div className="flex flex-wrap items-center gap-2 text-[11px]"><span className="rounded-full bg-stone-200 px-2 py-0.5 text-stone-600">已过时</span><span>{item.sourceKind === "INFERRED" ? "推断" : "你说过"}</span>{item.validUntil && <span>失效于 {new Date(item.validUntil).toLocaleDateString()}</span>}</div>
-                <p className="mt-2 text-sm leading-6 line-through">{item.content}</p>
-                <div className="mt-2 flex justify-end"><button type="button" disabled={memorySaving !== null} onClick={() => void restoreMemoryItem(item.content)} className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs text-stone-600 disabled:opacity-40">恢复为当前记忆</button></div>
-              </div>)}
-            </div>}
-            <div className="mt-4 flex gap-2">
-              <input value={newMemory} onChange={(event) => setNewMemory(event.target.value)} maxLength={1000} placeholder="新增一条记忆，例如：偏好简洁直接的反馈" className="field flex-1" />
-              <button type="button" disabled={memorySaving !== null || !newMemory.trim()} onClick={() => void addMemoryItem()} className="rounded-xl bg-stone-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">添加</button>
-            </div>
-            <div className="mt-4 flex items-center justify-between border-t border-stone-200/70 pt-4 text-xs text-stone-400">
-              <div className="flex flex-col gap-1">
-                <span>不应保存 API Key、密码等敏感信息</span>
-                {memoryItems && memoryItems.some((item) => !item.valid) && <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={showStaleMemory} onChange={(event) => setShowStaleMemory(event.target.checked)} className="size-3.5" />显示已过时的记忆（{memoryItems.filter((item) => !item.valid).length}）</label>}
+              <div>
+                <h2 className="flex items-center gap-2 text-base font-semibold"><Brain className="size-4 text-violet-500" />长期记忆</h2>
+                <p className="mt-1 text-xs text-stone-400">跨对话共享，可随时修改或删除。</p>
               </div>
-              <div className="flex items-center gap-3"><button type="button" onClick={() => void clearMemory()} disabled={busy} className="text-rose-600 hover:underline disabled:opacity-40">清空全部</button><button type="button" onClick={() => setMemoryOpen(false)} className="rounded-full bg-stone-950 px-4 py-2 text-xs font-medium text-white hover:bg-stone-800">完成</button></div>
+              <button aria-label="关闭" onClick={() => setMemoryOpen(false)} className="rounded-full p-1.5 text-stone-400 hover:bg-stone-100"><X className="size-4" /></button>
+            </div>
+            {error && <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              {!memoryItems ? <p className="py-8 text-sm text-stone-400">加载中…</p>
+                : memoryItems.filter((item) => item.valid || showStaleMemory).length === 0
+                  ? <p className="py-10 text-center text-sm text-stone-400">还没有长期记忆。</p>
+                  : memoryItems.filter((item) => item.valid || showStaleMemory).map((item) => item.valid ? (
+                    <div key={item.id} className="rounded-2xl border border-stone-200/70 bg-white/80 p-3.5 transition hover:border-violet-200">
+                      <div className="flex items-center gap-1.5 text-[10px] text-stone-400">
+                        <span>{item.sourceKind === "INFERRED" ? "推断" : "你说过"}</span><span>·</span>
+                        <span>{item.kind === "preference" ? "偏好" : item.kind === "goal" ? "目标" : item.kind === "profile" ? "背景" : item.kind === "constraint" ? "约束" : "事实"}</span>
+                      </div>
+                      <AutoResizeTextarea value={memoryEdits[item.id] ?? item.content} onChange={(value) => setMemoryEdits((current) => ({ ...current, [item.id]: value }))} maxLength={1000} />
+                      <div className="mt-1 flex items-center justify-end gap-3 text-[11px]">
+                        <button type="button" disabled={memorySaving !== null} onClick={() => void deleteMemoryItem(item.id)} className="text-stone-300 transition hover:text-rose-600 disabled:opacity-40">删除</button>
+                        {(memoryEdits[item.id] ?? item.content) !== item.content && <button type="button" disabled={memorySaving !== null} onClick={() => void saveMemoryItem(item.id)} className="font-medium text-violet-700 hover:underline disabled:opacity-40">{memorySaving === item.id ? "保存中…" : "保存"}</button>}
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={item.id} className="rounded-2xl border border-dashed border-stone-200 bg-stone-50/60 p-3.5">
+                      <div className="flex items-center gap-1.5 text-[10px] text-stone-400"><span className="rounded-full bg-stone-100 px-1.5 py-0.5">已过时</span><span>{item.validUntil ? `失效于 ${new Date(item.validUntil).toLocaleDateString()}` : ""}</span></div>
+                      <p className="mt-1.5 text-sm leading-6 text-stone-400 line-through">{item.content}</p>
+                      <button type="button" disabled={memorySaving !== null} onClick={() => void restoreMemoryItem(item.content)} className="mt-1 text-[11px] text-violet-700 hover:underline disabled:opacity-40">恢复</button>
+                    </div>
+                  ))}
+            </div>
+            <div className="mt-4 flex items-center gap-2 border-t border-stone-100 pt-4">
+              <input value={newMemory} onChange={(event) => setNewMemory(event.target.value)} maxLength={1000} placeholder="新增一条记忆…" className="min-w-0 flex-1 bg-transparent text-sm text-stone-700 outline-none placeholder:text-stone-400" />
+              <button type="button" disabled={memorySaving !== null || !newMemory.trim()} onClick={() => void addMemoryItem()} className="rounded-full bg-stone-950 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">添加</button>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-400">
+              <div className="flex items-center gap-3">
+                {memoryItems && memoryItems.some((item) => !item.valid) && <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={showStaleMemory} onChange={(event) => setShowStaleMemory(event.target.checked)} className="size-3" />已过时（{memoryItems.filter((item) => !item.valid).length}）</label>}
+              </div>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => void clearMemory()} disabled={busy} className="text-rose-600 hover:underline disabled:opacity-40">清空全部</button>
+                <button type="button" onClick={() => setMemoryOpen(false)} className="rounded-full bg-stone-950 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-800">完成</button>
+              </div>
             </div>
           </section>
         </div>

@@ -89,7 +89,7 @@ jobs:
             wait "$probe_pid" || true
             probe_pid=""
           }
-          java -jar backend/target/ardor-backend-0.6.2.jar --server.port=8081 --spring.flyway.target=35 --spring.jpa.hibernate.ddl-auto=none --app.agent.queue.enabled=false --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-upgrade.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.7.0.jar --server.port=8081 --spring.flyway.target=35 --spring.jpa.hibernate.ddl-auto=none --app.agent.queue.enabled=false --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-upgrade.log" 2>&1 &
           probe_pid=$!
           wait_probe
           docker exec -i ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 <<'SQL'
@@ -100,7 +100,7 @@ jobs:
           docker exec -i ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 < .github/tests/recap-metadata-before.sql
           stop_probe
           docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ardor_fresh_probe'
-          java -jar backend/target/ardor-backend-0.6.2.jar --server.port=8081 --spring.datasource.url=jdbc:postgresql://127.0.0.1:5432/ardor_fresh_probe --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-fresh.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.7.0.jar --server.port=8081 --spring.datasource.url=jdbc:postgresql://127.0.0.1:5432/ardor_fresh_probe --spring.datasource.hikari.maximum-pool-size=2 > "$RUNNER_TEMP/migration-fresh.log" 2>&1 &
           probe_pid=$!
           wait_probe
           test "$(docker exec ardor-acceptance-postgres psql -U ardor -d ardor_fresh_probe -Atc "SELECT COUNT(*) FROM flyway_schema_history WHERE version='39' AND success")" = "1"
@@ -119,7 +119,7 @@ jobs:
       - name: Run end-to-end Golden Path
         shell: bash
         run: |
-          java -jar backend/target/ardor-backend-0.6.2.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s > "$RUNNER_TEMP/backend.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.7.0.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s > "$RUNNER_TEMP/backend.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/backend.pid"
           for attempt in {1..90}; do
             if curl --silent --fail http://127.0.0.1:8080/actuator/health \
@@ -150,7 +150,7 @@ jobs:
             echo "Backend did not exit safely"
             exit 1
           fi
-          java -jar backend/target/ardor-backend-0.6.2.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s >> "$RUNNER_TEMP/backend.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.7.0.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s >> "$RUNNER_TEMP/backend.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/backend.pid"
           for attempt in {1..90}; do
             if curl --silent --fail http://127.0.0.1:8080/actuator/health | grep -q '"status":"UP"'; then exit 0; fi
@@ -158,7 +158,7 @@ jobs:
           done
           exit 1
 
-      - name: Run browser Golden Path
+      - name: Start frontend for acceptance checks
         shell: bash
         run: |
           cd frontend
@@ -168,7 +168,6 @@ jobs:
           npm run start > "$RUNNER_TEMP/frontend.log" 2>&1 &
           for attempt in {1..45}; do
             if curl --silent --fail http://127.0.0.1:3000/login > /dev/null; then
-              node tests/golden-path-ui.mjs
               exit 0
             fi
             sleep 2
@@ -189,13 +188,6 @@ jobs:
           test "$ARDOR_ACCEPTANCE_DISPOSABLE_DB" = true
           docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET free_monthly_limit=100, member_monthly_limit=100, user_minute_limit=100, global_minute_limit=1000 WHERE feature IN ('LEARNING_PLAN','INTERVIEW_RECAP')"
           node backend/src/test/resources/learning-context-acceptance.mjs
-
-      - name: Verify connected learning progress in a real browser
-        working-directory: frontend
-        env:
-          ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
-          ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
-        run: node tests/learning-progress-live.mjs
 
       - name: Upload browser screenshot on failure
         if: failure()

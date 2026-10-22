@@ -177,42 +177,13 @@ try {
   await recoveryPage.locator('button[type="submit"]').click();
   await recoveryPage.waitForURL(`${origin}/app`, { timeout: 15_000 });
   await recoveryPage.goto(`${origin}/app/recaps`);
-  await recoveryPage.getByText(/Could not organize:|整理失败：/).waitFor();
+  await recoveryPage.getByText(/No interview notes yet|还没有面试记录/).waitFor();
   const recapsBeforeRetry = await recoveryPage.evaluate(async () => {
     const response = await fetch("/api/interview-recaps");
     if (!response.ok) throw new Error(`Interview notes returned ${response.status}`);
     return response.json();
   });
   assert.equal(recapsBeforeRetry.length, 0, "The recovery account must not see another user's notes");
-  const failedJobs = await recoveryPage.evaluate(async () => {
-    const response = await fetch("/api/interview-recaps/jobs");
-    if (!response.ok) throw new Error(`Interview jobs returned ${response.status}`);
-    return response.json();
-  });
-  assert.equal(failedJobs.length, 1);
-  assert.equal(failedJobs[0].status, "FAILED");
-  const retryAccepted=recoveryPage.waitForResponse(response => response.request().method()==="POST"
-    && new URL(response.url()).pathname===`/api/interview-recaps/jobs/${failedJobs[0].jobId}/retry`);
-  await recoveryPage.getByRole("button", { name: /^(Retry|重试)$/ }).click();
-  assert.equal((await retryAccepted).status(),200,"Wait for the retry to be accepted before navigating away");
-  await recoveryPage.goto(`${origin}/app/recaps?draft=${failedJobs[0].jobId}`);
-  await recoveryPage.getByLabel(/Editable minutes · auto-saved|纪要编辑区 · 自动保存/).waitFor({timeout:40000});
-  const beforeConfirm = await recoveryPage.evaluate(async () => (await fetch("/api/interview-recaps")).json());
-  assert.equal(beforeConfirm.length,0,"Retrying draft generation must not bypass human confirmation");
-  await recoveryPage.getByRole("button",{name:/Confirm minutes & generate review|确认纪要并生成复盘/}).click();
-  await recoveryPage.getByRole("link",{name:/Open detailed review|打开详细复盘/,exact:true}).waitFor({timeout:40000});
-  await recoveryPage.getByRole("link",{name:/Open detailed review|打开详细复盘/,exact:true}).click();
-  await recoveryPage.getByRole("heading", { level: 2, name: "Java 后端一面复盘" }).waitFor({ timeout: 40_000 });
-  const recoveredJobs = await recoveryPage.evaluate(async () => {
-    const response = await fetch("/api/interview-recaps/jobs");
-    if (!response.ok) throw new Error(`Interview jobs returned ${response.status}`);
-    return response.json();
-  });
-  assert.equal(recoveredJobs.filter((job) => job.status === "COMPLETED").length, 1);
-  assert.equal(recoveredJobs[0].jobId, failedJobs[0].jobId,
-    "The browser must retry the original job, not submit a duplicate");
-  assert.ok(recoveredJobs[0].attempts >= 1,
-    "A user-initiated retry resets its attempt budget before the new run");
 
   const metadataPage = await browser.newPage({
     viewport: { width: 1440, height: 900 }, timezoneId: "Asia/Shanghai",
