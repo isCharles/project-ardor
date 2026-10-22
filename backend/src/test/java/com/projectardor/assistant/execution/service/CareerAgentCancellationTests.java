@@ -34,7 +34,7 @@ class CareerAgentCancellationTests {
             mock(MemoryEmbeddingService.class), mock(ProfileService.class), mock(ObjectMapper.class),
             mock(AgentStreamProgress.class), mock(AgentToolApprovals.class), mock(AgentPermissionGrants.class),
             mock(AgentExecutionAuditStore.class), mock(AgentTraceStore.class), mock(AgentModelCatalogService.class),
-            Duration.ofSeconds(90), Duration.ofMinutes(10));
+            mock(com.projectardor.platform.usage.UsageTokenStore.class), Duration.ofSeconds(90), Duration.ofMinutes(10));
 
     @Test
     void terminalRunIsReportedAsIsWithoutStoppingAnythingAgain() {

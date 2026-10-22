@@ -51,7 +51,7 @@ class UsageAdminAuthorizationTests {
         mvc.perform(put("/api/admin/usage-policies/AGENT_CHAT")
                 .with(user(principal(UserRole.USER))).with(csrf())
                 .contentType("application/json")
-                .content("{\"freeMonthlyLimit\":5,\"memberMonthlyLimit\":500,\"userMinuteLimit\":8,\"globalMinuteLimit\":30}"))
+                .content("{\"freeMonthlyLimit\":5,\"plusMonthlyLimit\":500,\"proMonthlyLimit\":2000,\"userMinuteLimit\":8,\"globalMinuteLimit\":30}"))
                 .andExpect(status().isForbidden());
     }
 
@@ -59,7 +59,7 @@ class UsageAdminAuthorizationTests {
     void regularUserCannotChangeMembership() throws Exception {
         mvc.perform(put("/api/admin/users/{userId}/membership", UUID.randomUUID())
                 .with(user(principal(UserRole.USER))).with(csrf())
-                .contentType("application/json").content("{\"tier\":\"MEMBER\"}"))
+                .contentType("application/json").content("{\"tier\":\"PLUS\"}"))
                 .andExpect(status().isForbidden());
     }
 
@@ -82,7 +82,9 @@ class UsageAdminAuthorizationTests {
         UsageController usageController() {
             return new UsageController(org.mockito.Mockito.mock(QuotaService.class),
                     org.mockito.Mockito.mock(UsagePolicyRepository.class),
-                    org.mockito.Mockito.mock(MembershipService.class));
+                    org.mockito.Mockito.mock(MembershipService.class),
+                    org.mockito.Mockito.mock(MembershipPlanService.class),
+                    org.mockito.Mockito.mock(RedemptionService.class));
         }
 
         @Bean
@@ -94,3 +96,4 @@ class UsageAdminAuthorizationTests {
         }
     }
 }
+

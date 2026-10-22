@@ -115,6 +115,7 @@ public class CareerAgentService {
     private final AgentExecutionAuditStore executionAudit;
     private final AgentTraceStore traceStore;
     private final AgentModelCatalogService modelCatalog;
+    private final com.projectardor.platform.usage.UsageTokenStore usageTokens;
     private final java.time.Duration silenceTimeout;
     private final java.time.Duration totalTimeout;
     private final ConcurrentHashMap<UUID, ActiveStream> activeStreams = new ConcurrentHashMap<>();
@@ -140,6 +141,7 @@ public class CareerAgentService {
             AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals,
             AgentPermissionGrants permissionGrants, AgentExecutionAuditStore executionAudit,
             AgentTraceStore traceStore, AgentModelCatalogService modelCatalog,
+            com.projectardor.platform.usage.UsageTokenStore usageTokens,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:90s}") java.time.Duration silenceTimeout,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.total-timeout:10m}") java.time.Duration totalTimeout) {
         this.store = store;
@@ -157,6 +159,7 @@ public class CareerAgentService {
         this.executionAudit = executionAudit;
         this.traceStore = traceStore;
         this.modelCatalog = modelCatalog;
+        this.usageTokens = usageTokens;
         if (silenceTimeout.isNegative() || silenceTimeout.isZero() || totalTimeout.isNegative() || totalTimeout.isZero()) throw new IllegalArgumentException("Agent 运行期限必须大于零");
         this.silenceTimeout = silenceTimeout; this.totalTimeout = totalTimeout;
     }
@@ -301,12 +304,15 @@ public class CareerAgentService {
                     bound.pendingConfirmations().isEmpty() ? null
                             : runTrace(1, List.of(), bound.pendingConfirmations()), references, hiddenUserMessage);
             if (tracer != null) tracer.complete();
+            recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
             return AgentMessageResponse.from(saved.get(1));
         } catch (LlmCallException exception) {
             if (tracer != null) tracer.fail(exception.getCode());
+            recordAgentUsage(userId, requestId, tracer, null);
             throw exception;
         } catch (IllegalArgumentException | IllegalStateException exception) {
             if (tracer != null) tracer.fail("AGENT_INVALID_STATE");
+            recordAgentUsage(userId, requestId, tracer, null);
             throw exception;
         } catch (RuntimeException exception) {
             Throwable root = rootCause(exception);
@@ -324,6 +330,7 @@ public class CareerAgentService {
             }
             boolean retryable = isTransientFailure(exception);
             if (tracer != null) tracer.fail(retryable ? "AGENT_TEMPORARILY_UNAVAILABLE" : "AGENT_LLM_FAILED");
+            recordAgentUsage(userId, requestId, tracer, null);
             throw new LlmCallException(
                     retryable ? "AGENT_TEMPORARILY_UNAVAILABLE" : "AGENT_LLM_FAILED",
                     retryable
@@ -394,6 +401,7 @@ public class CareerAgentService {
                 AgentRunTracer interruptedTrace = traceRef.get();
                 if (interruptedTrace != null) interruptedTrace.fail("USER".equals(reason) ? "AGENT_RUN_CANCELLED"
                         : "TOTAL".equals(reason) ? "AGENT_RUN_DEADLINE" : "AGENT_UPSTREAM_SILENT");
+                recordAgentUsage(userId, requestId, interruptedTrace, runtimeConfig.model());
                 toolApprovals.close(userId, requestId);
                 streamProgress.finish(progressId, true);
                 try {
@@ -478,6 +486,7 @@ public class CareerAgentService {
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12).compensateOnToolErrors(true).build();
             if (finished.get()) {
                 if (tracer != null) tracer.fail("AGENT_RUN_CANCELLED");
+                recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
                 streamProgress.finish(progressId, true);
                 toolApprovals.close(userId, requestId);
                 return;
@@ -547,6 +556,7 @@ public class CareerAgentService {
                                     : runStore.complete(userId, requestId, conversation, message, answer.strip(), trace, references);
                             streamProgress.finish(progressId, false);
                             if (tracer != null) tracer.complete();
+                            recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
                             long firstPartialMs = firstPartialDelayMs(startedAt, firstPartialAt.get());
                             log.info("Agent stream completed: userId={}, conversationId={}, partialChunks={}, firstPartialMs={}, totalMs={}",
                                     userId, conversation.getId(), partialChunks.get(), firstPartialMs, elapsedMs(startedAt));
@@ -556,6 +566,7 @@ public class CareerAgentService {
                             sink.complete();
                         } catch (RuntimeException exception) {
                             if (tracer != null) tracer.fail("AGENT_COMPLETION_FAILED");
+                            recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
                             streamProgress.finish(progressId, true);
                             sendStreamError(sink, exception, startedAt, userId, persistedRun.get());
                         } finally { toolApprovals.close(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
@@ -564,6 +575,7 @@ public class CareerAgentService {
                         if (!finished.compareAndSet(false, true)) return;
                         lease.fence();
                         if (tracer != null) tracer.fail("AGENT_STREAM_FAILED");
+                        recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
                         streamProgress.finish(progressId, true);
                         try { sendStreamError(sink, classifyStreamFailure(exception), startedAt, userId, persistedRun.get()); }
                         finally { toolApprovals.close(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
@@ -618,6 +630,13 @@ public class CareerAgentService {
         var selected = previous.get().getContextReferences();
         if (selected != null && !selected.isEmpty()) return dateCorrectionContext(userId, conversationId, selected, "");
         return ToolIntentPolicy.dateContext(previous.get().getContent());
+    }
+
+    private void recordAgentUsage(UUID userId, UUID requestId, AgentRunTracer tracer, String model) {
+        if (usageTokens == null || tracer == null || requestId == null) return;
+        usageTokens.record(userId, com.projectardor.platform.usage.UsageFeature.AGENT_CHAT, requestId,
+                (int) Math.min(Integer.MAX_VALUE, tracer.inputTokens()),
+                (int) Math.min(Integer.MAX_VALUE, tracer.outputTokens()), model == null ? tracer.model() : model);
     }
 
     private MessageWindowChatMemory conversationMemory(UUID userId, UUID conversationId) {

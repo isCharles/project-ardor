@@ -25,7 +25,7 @@ class QuotaStoreTests {
                 });
         var policy = new UsagePolicy(UsageFeature.LEARNING_PLAN, 5, 500, 8, 30, Instant.now());
 
-        assertThat(new QuotaStore(redis).consume(UUID.randomUUID(), policy, MembershipTier.MEMBER,
+        assertThat(new QuotaStore(redis).consume(UUID.randomUUID(), policy, MembershipTier.PLUS,
                 UUID.randomUUID(), Instant.parse("2026-10-31T23:59:59Z")))
                 .isEqualTo(QuotaStore.Decision.ALLOWED);
     }
@@ -52,8 +52,9 @@ class QuotaStoreTests {
         var store = new QuotaStore(redis);
         var policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 8, 30, Instant.now());
 
-        assertThat(store.consume(UUID.randomUUID(), policy, MembershipTier.MEMBER,
+        assertThat(store.consume(UUID.randomUUID(), policy, MembershipTier.PLUS,
                 null, Instant.parse("2026-10-03T01:00:00Z")))
                 .isEqualTo(QuotaStore.Decision.USER_MINUTE_LIMIT);
     }
 }
+

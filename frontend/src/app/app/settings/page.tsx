@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Bot, CheckCircle2, ChevronRight, CircleAlert, Database, Globe2, KeyRound, LoaderCircle, LogOut, Mic, RefreshCw, RotateCcw, Save, UserRound, Volume2, Wifi } from "lucide-react";
+import { Activity, Bot, CheckCircle2, ChevronRight, CircleAlert, Database, Gift, Globe2, KeyRound, LoaderCircle, LogOut, Mic, RefreshCw, RotateCcw, Save, UserRound, Volume2, Wifi } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, MouseEvent, useEffect, useState } from "react";
 
@@ -51,7 +51,8 @@ type InlineFeedback = { kind: "pending" | "success" | "error"; message: string }
 type LlmModelListResponse = { models: string[] };
 type HealthServiceType = "PRIMARY_LLM" | "WEB_SEARCH" | AuxiliaryServiceType;
 type HealthResult = { kind: "pending" | "success" | "error"; message: string };
-type UsageSnapshot = { tier: "FREE" | "MEMBER"; resetsAt: string; features: Array<{ feature: string; used: number; limit: number }> };
+type Plan = { code: "FREE" | "PLUS" | "PRO"; nameZh: string; nameEn: string; priceCents: number; currency: string; billingInterval: string; tokenLimit: number; paymentEnabled: boolean };
+type UsageSnapshot = { tier: "FREE" | "PLUS" | "PRO"; plan: Plan | null; resetsAt: string; features: Array<{ feature: string; used: number; limit: number }>; tokens: { used: number; limit: number }; plans: Plan[] };
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -73,6 +74,9 @@ export default function SettingsPage() {
   const [webSearch, setWebSearch] = useState<WebSearchConfig | null>(null);
   const [integrations, setIntegrations] = useState<AuxiliaryApiConfig[] | null>(null);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
+  const [redeemCode, setRedeemCode] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemFeedback, setRedeemFeedback] = useState<InlineFeedback | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -119,6 +123,29 @@ export default function SettingsPage() {
     setError(""); setNotice("");
     try { setNotice(await action()); }
     catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not save", "保存失败")); }
+  }
+
+  async function refreshUsage() {
+    setUsage(await api<UsageSnapshot>("/api/usage"));
+  }
+
+  async function redeemPlan(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!redeemCode.trim()) return;
+    setRedeeming(true);
+    setRedeemFeedback({ kind: "pending", message: t("Redeeming…", "正在兑换…") });
+    try {
+      const result = await api<{ tier: "PLUS" | "PRO"; nameZh: string; nameEn: string }>("/api/usage/redeem", {
+        method: "POST", body: JSON.stringify({ code: redeemCode.trim() }),
+      });
+      setRedeemCode("");
+      setRedeemFeedback({ kind: "success", message: t(`Upgraded to ${result.nameEn}`, `已升级到 ${result.nameZh}`) });
+      await refreshUsage();
+    } catch (reason) {
+      setRedeemFeedback({ kind: "error", message: reason instanceof Error ? reason.message : t("Could not redeem this code", "兑换失败") });
+    } finally {
+      setRedeeming(false);
+    }
   }
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
@@ -446,8 +473,15 @@ export default function SettingsPage() {
         <div className={category === "desktop" ? "space-y-6" : "hidden"}><DesktopSettings /><p className="text-sm text-stone-500">{t("Server connection and updates are available in the Ardor desktop app.", "服务器连接与应用更新在 Ardor 桌面版中可用。")}</p></div>
         <div className={category === "usage" ? "space-y-6" : "hidden"}>
         {usage && <section className="ardor-panel rounded-[2rem] p-6 md:col-span-2 md:p-8">
-          <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-semibold">{t("Usage", "使用额度")}</h2><span className="rounded-full bg-violet-50 px-3 py-1 text-xs text-violet-700">{usage.tier === "MEMBER" ? t("Member", "会员") : t("Free", "免费")}</span></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">{t("Usage", "使用额度")}</h2><p className="mt-1 text-xs text-muted-foreground">{t("Token usage is the primary budget; module limits still apply together.", "按实际 Token 用量计算主额度，各模块次数限制同时生效。")}</p></div><span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">{usage.plan ? (locale === "en" ? usage.plan.nameEn : usage.plan.nameZh) : usage.tier}</span></div>
+          <div className="mt-5 rounded-2xl border border-violet-100 bg-violet-50/45 p-4">
+            <div className="flex items-baseline justify-between gap-3"><span className="text-xs font-medium text-violet-900">{t("Monthly tokens", "本月 Token")}</span><span className="text-xs tabular-nums text-violet-700">{formatTokens(usage.tokens.used)} / {usage.tokens.limit > 0 ? formatTokens(usage.tokens.limit) : t("Unlimited", "不限")}</span></div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/80"><div className="h-full rounded-full bg-violet-600 transition-[width]" style={{ width: usage.tokens.limit > 0 ? `${Math.min(100, Math.round(usage.tokens.used / usage.tokens.limit * 100))}%` : "0%" }} /></div>
+            <p className="mt-2 text-[11px] text-violet-700/80">{t("Recorded from actual model usage; resets monthly.", "按模型实际返回的 Token 记录；每月重置。")}</p>
+          </div>
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{usage.features.filter((item) => ["AGENT_CHAT", "RESUME_ANALYSIS", "INTERVIEW_CREATE", "INTERVIEW_RECAP"].includes(item.feature)).map((item) => <div key={item.feature} className="rounded-2xl bg-white/70 p-4"><p className="text-xs text-muted-foreground">{locale === "en" ? englishUsageLabels[item.feature] ?? item.feature : usageFeatureLabels[item.feature] ?? item.feature}</p><p className="mt-2 text-lg font-semibold tabular-nums">{item.used} / {item.limit}</p></div>)}</div>
+          <div className="mt-7"><h3 className="text-sm font-semibold">{t("Plans", "套餐")}</h3><div className="mt-3 grid gap-3 md:grid-cols-3">{usage.plans.map((plan) => <div key={plan.code} className={`rounded-2xl border p-4 ${plan.code === usage.tier ? "border-violet-300 bg-violet-50/50" : "border-stone-200/70 bg-white/60"}`}><div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold">{locale === "en" ? plan.nameEn : plan.nameZh}</span>{plan.code === usage.tier && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] text-violet-700">{t("Current", "当前")}</span>}</div><p className="mt-2 text-lg font-semibold tabular-nums">{plan.priceCents === 0 ? t("Free", "免费") : `¥${(plan.priceCents / 100).toFixed(0)}`}<span className="ml-1 text-[11px] font-normal text-muted-foreground">{plan.priceCents === 0 ? "" : t("/ month", "/ 月")}</span></p><p className="mt-1 text-xs text-muted-foreground">{plan.tokenLimit > 0 ? `${formatTokens(plan.tokenLimit)} Token` : t("Unlimited tokens", "不限 Token")}</p><Button type="button" variant="outline" disabled className="mt-3 w-full text-xs">{plan.code === usage.tier ? t("Current plan", "当前套餐") : t("Payment unavailable", "支付通道暂未开放")}</Button></div>)}</div></div>
+          <form onSubmit={redeemPlan} className="mt-6 rounded-2xl bg-stone-950/[0.03] p-4"><label htmlFor="redeem-code" className="text-sm font-medium">{t("Redeem a plan code", "使用兑换码升级")}</label><div className="mt-2 flex flex-col gap-2 sm:flex-row"><input id="redeem-code" className="field font-mono sm:flex-1" value={redeemCode} onChange={(event) => setRedeemCode(event.target.value.toUpperCase())} placeholder="ARDOR-XXXX-XXXX" maxLength={80} autoComplete="off" /><Button disabled={redeeming || !redeemCode.trim()} className="sm:w-auto">{redeeming ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Gift className="mr-2 size-4" />}{redeeming ? t("Redeeming…", "兑换中…") : t("Redeem", "兑换")}</Button></div><p className="mt-2 text-[11px] text-muted-foreground">{t("Codes are issued by an administrator. Payment channels are not enabled yet.", "兑换码由管理员发放；在线支付通道暂未开放。")}</p>{redeemFeedback && <p role={redeemFeedback.kind === "error" ? "alert" : "status"} className={`mt-2 text-xs ${redeemFeedback.kind === "error" ? "text-red-600" : redeemFeedback.kind === "success" ? "text-emerald-700" : "text-stone-500"}`}>{redeemFeedback.message}</p>}</form>
           <p className="mt-4 text-xs text-muted-foreground">{t("Resets monthly", "每月重置")} · {new Date(usage.resetsAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN")}</p>
         </section>}
         {!usage && <p className="text-sm text-stone-500">{t("Usage information is currently unavailable.", "暂时无法取得使用额度。")}</p>}
@@ -619,4 +653,10 @@ function FeedbackBanner({ feedback }: { feedback: InlineFeedback | null }) {
       ? "border-red-200 bg-red-50 text-red-700"
       : "border-stone-200 bg-stone-100 text-stone-600";
   return <p role="status" aria-live="polite" className={`mt-4 rounded-xl border px-4 py-3 text-sm leading-5 ${palette}`}>{feedback.message}</p>;
+}
+
+function formatTokens(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value % 1_000 === 0 ? 0 : 1)}K`;
+  return String(value);
 }

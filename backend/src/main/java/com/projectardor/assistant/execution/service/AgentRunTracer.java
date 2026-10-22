@@ -104,5 +104,7 @@ public final class AgentRunTracer {
     public int llmCalls() { return llmCalls.get(); }
     public int toolCalls() { return toolCalls.get(); }
     public int loopRounds() { return loopRounds.get(); }
+    public long inputTokens() { return inputTokens.get(); }
+    public long outputTokens() { return outputTokens.get(); }
     public boolean closed() { return closed.get(); }
 }

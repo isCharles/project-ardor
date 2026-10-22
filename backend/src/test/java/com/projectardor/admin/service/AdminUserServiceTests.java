@@ -25,13 +25,14 @@ class AdminUserServiceTests {
         UserAccount second = UserAccount.create("second@example.com", "hash");
         when(repository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(first, second));
         when(memberships.tiers(List.of(first.getId(), second.getId())))
-                .thenReturn(Map.of(first.getId(), MembershipTier.MEMBER));
+                .thenReturn(Map.of(first.getId(), MembershipTier.PLUS));
 
         var users = new AdminUserService(repository, memberships).list();
 
         assertThat(users).extracting(user -> user.membership())
-                .containsExactly(MembershipTier.MEMBER, MembershipTier.FREE);
+                .containsExactly(MembershipTier.PLUS, MembershipTier.FREE);
         verify(memberships).tiers(List.of(first.getId(), second.getId()));
         verify(memberships, never()).tier(org.mockito.ArgumentMatchers.any());
     }
 }
+
