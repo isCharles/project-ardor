@@ -27,6 +27,8 @@
 
 ## 2. 路径兼容，不改变身份
 
+知识资料的应用服务与 Agent 共用 `KnowledgeDocumentView` / `KnowledgeResearchView` / `KnowledgeSearchHit`，HTTP 层仅适配原有文档、收录结果与检索字段。资料服务不再依赖自身 Web DTO；检索正文仍是不可信来源材料，不因类型变更获得执行权限。原有用户限定读取、混合检索排序、嵌入失败的词法降级、提交后索引与删除确认保持不变。文件上传暂仍接收 Spring `MultipartFile`，不宣称完全脱离传输框架。
+
 投递节奏返回 `ApplicationRhythmView`，HTTP 保留 `ApplicationRhythmResponse` 映射；每天 40 份仍是一个计数，不创建岗位实体。长期记忆服务、整理器与工具使用 `AgentMemoryView` / `AgentMemoryItemView`；HTTP 仍适配原字段，当前摘要与含失效项的历史列表保持不同含义。此次类型迁移不改变来源校验、可信度、自动维护、去重、有效期或删除确认，不迁移表、不改写数据。
 
 规范入口收拢在 `/app/job-search` 和 `/app/learning`。旧页面与规范路径复用同一个实现，保留 query string 与资源 ID；不得复制一套写入流程。旧 API 的语义不因产品命名而改变。

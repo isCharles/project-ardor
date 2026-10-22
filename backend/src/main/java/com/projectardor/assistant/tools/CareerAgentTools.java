@@ -41,9 +41,7 @@ import com.projectardor.learning.practice.mockinterview.service.MockInterviewEva
 import com.projectardor.learning.practice.mockinterview.service.MockInterviewProgressView;
 import com.projectardor.learning.practice.mockinterview.service.MockInterviewSessionView;
 import com.projectardor.materials.knowledge.service.KnowledgeService;
-import com.projectardor.materials.knowledge.web.KnowledgeDocumentResponse;
-import com.projectardor.materials.knowledge.web.KnowledgeResearchResponse;
-import com.projectardor.materials.knowledge.web.KnowledgeSearchResult;
+import com.projectardor.materials.knowledge.service.KnowledgeDocumentView;
 import com.projectardor.learning.plan.domain.LearningPlan;
 import com.projectardor.learning.plan.domain.LearningSourceType;
 import com.projectardor.learning.plan.service.LearningPlanService;
@@ -211,7 +209,7 @@ public class CareerAgentTools {
                 yield "用户在界面中明确指定了面经：" + recap.title() + "（面经 ID：" + recap.id() + "）。需要内容时调用 get_interview_recap。";
             }
             case "KNOWLEDGE" -> {
-                KnowledgeDocumentResponse document = knowledgeService.get(userId, contextId);
+                KnowledgeDocumentView document = knowledgeService.get(userId, contextId);
                 yield "用户在界面中明确指定了知识文档：" + document.title() + "（文档 ID：" + document.id()
                         + "）。需要内容时调用 search_knowledge 检索，不得假装已经阅读全文。";
             }
@@ -361,7 +359,7 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "list_knowledge_documents", value = "列出当前用户知识库中的上传文档和联网资料；返回文档 UUID、来源与切块数量")
-        public List<KnowledgeDocumentResponse> listKnowledgeDocuments() {
+        public List<KnowledgeDocumentView> listKnowledgeDocuments() {
             return knowledgeService.list(userId);
         }
 
@@ -382,7 +380,7 @@ public class CareerAgentTools {
         @Tool(name = "delete_knowledge_document", value = "永久删除当前用户指定的一份知识文档及其全部检索切片。仅在用户明确要求删除时使用；先调用 list_knowledge_documents 定位真实 UUID")
         public Map<String, Object> deleteKnowledgeDocument(@P("知识文档 UUID") String documentId) {
             UUID id = uuid(documentId, "知识文档 ID");
-            KnowledgeDocumentResponse document = knowledgeService.get(userId, id);
+            KnowledgeDocumentView document = knowledgeService.get(userId, id);
             return propose("knowledge_document", id, document.title(),
                     "连同它的全部检索切片一起删除", "/api/knowledge/documents/" + id);
         }
