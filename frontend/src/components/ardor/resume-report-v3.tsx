@@ -84,7 +84,7 @@ export function Radar({ dimensions }: { dimensions: ResumeDimension[] }) {
       const label = dimensionLabels[dimension.id];
       const belowMarket = gradeValue[dimension.grade] < gradeValue[dimension.marketGrade];
       return <g key={dimension.id}>
-        <circle cx={gradeX} cy={gradeY} r="10" fill={belowMarket ? "#dc2626" : gradeFill[dimension.grade]} stroke="white" strokeWidth="1.5" />
+        <circle cx={gradeX} cy={gradeY} r="10" fill={gradeFill[dimension.grade]} stroke="white" strokeWidth="1.5" />
         <text x={gradeX} y={gradeY + 3.5} textAnchor="middle" fill="white" style={{ fontSize: 10, fontWeight: 700 }}>{dimension.grade}</text>
         <text x={labelX} y={labelY + 4} textAnchor={anchor} fill={belowMarket ? "#b91c1c" : "#57534e"} style={{ fontSize: 12, fontWeight: belowMarket ? 750 : 600 }}>{locale === "en" ? label?.shortEn : label?.shortZh}</text>
       </g>;
@@ -272,7 +272,6 @@ export function ResumeReportV3({ report, onBack, onViewResume }: {
             <div className="flex flex-wrap gap-3 text-[11px] text-stone-400">
               <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-600" />{t("You", "你")}</span>
               <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full border border-stone-400 bg-stone-200" />{t("Market requirement", "市场要求")}</span>
-              <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-red-600" />{t("Below market", "未达市场要求")}</span>
             </div>
           </div>
           <div className="flex items-center justify-center py-2"><Radar dimensions={report.dimensions} /></div>
