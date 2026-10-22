@@ -109,7 +109,11 @@ public class LangChainModelFactory {
     }
     StreamingChatModel createStreaming(UUID userId, ReasoningDepth depth, AgentStreamLease lease,
             List<ChatModelListener> listeners) {
-        LlmConfigService.LlmRuntimeConfig config = configService.getRuntimeConfig(userId);
+        return createStreaming(configService.getRuntimeConfig(userId), depth, lease, listeners);
+    }
+
+    StreamingChatModel createStreaming(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
+            AgentStreamLease lease, List<ChatModelListener> listeners) {
         var protocol=protocols.require(config.provider());
         dev.langchain4j.http.client.HttpClientBuilder transport = lease == null ? httpClientBuilder() : new LeasedHttpClientBuilder(httpClientBuilder(), lease);
         if (listeners == null || listeners.isEmpty()) {

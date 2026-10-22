@@ -13,6 +13,7 @@ const { normalizeLocale, desktopText, updateStatusMessage, serverErrorKey, serve
 let window;
 let serverUrl = DEFAULT_SERVER_URL;
 let desktopLocale = null;
+let microphoneAllowed = null;
 let updateStatus = { state: "idle", message: desktopText("en", "idle") };
 let updateCheckRunning = false;
 let offline = false;
@@ -21,7 +22,22 @@ const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function configPath() { return path.join(app.getPath("userData"), "server.json"); }
 function localePath() { return path.join(app.getPath("userData"), "locale.json"); }
+function microphonePermissionPath() { return path.join(app.getPath("userData"), "microphone.json"); }
 function currentLocale() { return desktopLocale ?? "en"; }
+
+function readMicrophoneAllowed() {
+  try { return JSON.parse(fs.readFileSync(microphonePermissionPath(), "utf8")).allowed === true; }
+  catch { return null; }
+}
+
+function saveMicrophoneAllowed() {
+  const target = microphonePermissionPath();
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temporary = `${target}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify({ allowed: true }), { encoding: "utf8", mode: 0o600 });
+  fs.renameSync(temporary, target);
+  microphoneAllowed = true;
+}
 
 function readDesktopLocale() {
   try { return normalizeLocale(JSON.parse(fs.readFileSync(localePath(), "utf8")).locale); }
@@ -232,13 +248,21 @@ if (app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     serverUrl = readServerUrl();
     desktopLocale = readDesktopLocale();
+    microphoneAllowed = readMicrophoneAllowed();
     updateStatus.message = updateStatusMessage(currentLocale(), updateStatus);
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
       if (permission !== "media" || !isTrustedAppUrl(details.requestingUrl, serverUrl) || webContents !== window?.webContents) return callback(false);
+      // Remember an explicit grant so chat dictation and voice interviews do not
+      // open the same native dialog on every microphone request.
+      if (microphoneAllowed === true) return callback(true);
       void dialog.showMessageBox(window, {
         type: "question", buttons: [desktopText(currentLocale(), "deny"), desktopText(currentLocale(), "allow")], defaultId: 0, cancelId: 0,
         title: desktopText(currentLocale(), "microphoneTitle"), message: desktopText(currentLocale(), "microphoneMessage"),
-      }).then(({ response }) => callback(response === 1), () => callback(false));
+      }).then(({ response }) => {
+        if (response !== 1) return callback(false);
+        try { saveMicrophoneAllowed(); } catch { /* The current request can still proceed. */ }
+        callback(true);
+      }, () => callback(false));
     });
     configureUpdater();
     registerIpc();

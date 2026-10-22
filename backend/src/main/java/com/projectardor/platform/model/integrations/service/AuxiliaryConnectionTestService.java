@@ -37,7 +37,13 @@ public class AuxiliaryConnectionTestService {
     public AuxiliaryConnectionTestResponse test(AuxiliaryApiConfigService.AuxiliaryRuntimeConfig config) {
         long startedAt = System.nanoTime();
         try {
-            restClientBuilder.clone().baseUrl(config.baseUrl()).build().get()
+            String baseUrl = config.baseUrl().replaceAll("/+$", "");
+            if (config.provider() != null && config.provider().toUpperCase(java.util.Locale.ROOT).contains("ANTHROPIC")
+                    && !baseUrl.endsWith("/v1")) {
+                // Anthropic-compatible SDKs and relays expose the catalog under /v1.
+                baseUrl = baseUrl + "/v1";
+            }
+            restClientBuilder.clone().baseUrl(baseUrl).build().get()
                     .uri("/models")
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + config.apiKey())
                     .header("x-api-key", config.apiKey())

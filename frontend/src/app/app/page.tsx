@@ -14,8 +14,9 @@ import { type AiJob } from "@/lib/ai-jobs";
 import { Button } from "@/components/ui/button";
 import { AppDialog } from "@/components/ui/app-dialog";
 import { ChatNotifications } from "@/components/ardor/chat-notifications";
+import { ChatVoiceButton } from "@/components/ardor/chat-voice-button";
 import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
-import { ReasoningControl } from "@/components/ardor/reasoning-control";
+import { ReasoningControl, type ModelOption } from "@/components/ardor/reasoning-control";
 import { ServicePicker } from "@/components/ardor/service-picker";
 import { type ToolMeasurement } from "@/components/ardor/tool-duration";
 import { ExecutionTrace } from "@/components/ardor/execution-trace";
@@ -217,6 +218,8 @@ export default function AgentHomePage() {
     } catch { return []; }
   }, [draftStorageKey]);
   const [reasoningReady, setReasoningReady] = useState(false);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const [modelChoice, setModelChoice] = useState("PRIMARY");
   const [titleWatch, setTitleWatch] = useState<{ id: string; title: string } | null>(null);
   const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
@@ -315,9 +318,19 @@ export default function AgentHomePage() {
         const saved = window.sessionStorage.getItem(`ardor:reasoning-depth:${account.id}`);
         if (saved && ["AUTO", "QUICK", "STANDARD", "DEEP"].includes(saved)) setReasoningDepth(saved as ReasoningDepth);
       } finally { setReasoningReady(true); }
+      void api<ModelOption[]>("/api/agent/models").then((items) => {
+        if (!active) return;
+        setModelOptions(items);
+        const saved = window.sessionStorage.getItem(`ardor:model-choice:${account.id}`);
+        const initial = items.find((item) => item.id === saved && item.available)
+          ?? items.find((item) => item.id === "PRIMARY" && item.available)
+          ?? items.find((item) => item.available);
+        if (initial) {
+          setModelChoice(initial.id);
+          setNativeReasoning(initial.nativeControl);
+        }
+      }).catch(() => undefined);
     }).catch(() => undefined);
-    void api<{ nativeControl: boolean }>("/api/agent/reasoning")
-      .then((result) => { if (active) setNativeReasoning(result.nativeControl); }).catch(() => undefined);
     void api<{ globalLevel: number }>("/api/agent/permissions")
       .then((result) => { if (active) setPermissionLevel(result.globalLevel ?? 0); }).catch(() => undefined);
     return () => { active = false; };
@@ -355,9 +368,18 @@ export default function AgentHomePage() {
 
   function reasoningPicker() {
     return <ReasoningControl value={reasoningDepth} disabled={!reasoningReady} nativeControl={nativeReasoning}
+      models={modelOptions} model={modelChoice}
       onChange={(value) => {
         setReasoningDepth(value);
         try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:reasoning-depth:${reasoningAccount.current}`, value); }
+        catch { /* The current selection remains usable when browser storage is unavailable. */ }
+      }}
+      onModelChange={(value) => {
+        const selected = modelOptions.find((item) => item.id === value);
+        if (!selected || !selected.available) return;
+        setModelChoice(value);
+        setNativeReasoning(selected.nativeControl);
+        try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:model-choice:${reasoningAccount.current}`, value); }
         catch { /* The current selection remains usable when browser storage is unavailable. */ }
       }} />;
   }
@@ -373,7 +395,7 @@ export default function AgentHomePage() {
   function permissionPicker() {
     const labels = [t("View only", "仅查看"), t("View & add", "查 + 增"), t("View, add & edit", "查 + 增 + 改"), t("Full access", "完全权限")];
     return <div className="relative">
-      <button type="button" aria-haspopup="menu" aria-expanded={permissionOpen} onClick={() => setPermissionOpen((value) => !value)} title={t("What Ardor may do without asking", "Ardor 可以不经询问直接执行的范围")} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600 transition hover:bg-stone-50">
+      <button type="button" aria-haspopup="menu" aria-expanded={permissionOpen} onClick={() => setPermissionOpen((value) => !value)} title={t("What Ardor may do without asking", "Ardor 可以不经询问直接执行的范围")} className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs text-stone-500 transition hover:bg-stone-100">
         <ShieldCheck className="size-3.5" aria-hidden="true" />{labels[permissionLevel] ?? labels[0]}<ChevronDown className="size-3.5" aria-hidden="true" />
       </button>
       {permissionOpen && <>
@@ -734,7 +756,7 @@ export default function AgentHomePage() {
     if (busy || runningRun || hasQueuedMessages) {
       if (busy && !streamAccepted || queueSubmitting.current || !state?.conversationId) return;
       queueSubmitting.current = true;
-      const payload = { conversationId: state.conversationId, message, reasoningDepth,
+      const payload = { conversationId: state.conversationId, message, reasoningDepth, modelChoice,
         contextReferences: selectedContexts.map(({ type, id }) => ({ type, id })) };
       const slot = `ardor:queue-submit:${reasoningAccount.current}:${state.conversationId}`;
       try {
@@ -835,7 +857,7 @@ export default function AgentHomePage() {
           let streamFailure: AgentStreamEvent | null = null;
           let stopDispatched = false;
           if (retry > 0) setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: "" } : item));
-          await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { requestId, conversationId: activeConversationId, message, reasoningDepth, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
+          await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { requestId, conversationId: activeConversationId, message, reasoningDepth, modelChoice, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
             // A stop can race with initial acceptance. Only a real server event
             // proves this run exists; never send cancellation to a future UUID.
             if (sendControl.signal.aborted && event.type !== "error" && !stopDispatched) {
@@ -1336,7 +1358,7 @@ export default function AgentHomePage() {
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
               <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
-              <div className="flex items-center justify-between gap-3 px-2 pb-1"><div className="flex items-center gap-2">{attachmentPicker()}{permissionPicker()}{reasoningPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div>
+              <div className="flex items-center justify-between gap-2 px-2 pb-1"><div className="flex min-w-0 items-center gap-2">{attachmentPicker()}{permissionPicker()}{draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}</div><div className="flex shrink-0 items-center gap-1.5">{reasoningPicker()}<ChatVoiceButton disabled={!state?.llmConfigured} onTranscript={(text) => { setDraft((current) => current.trim() ? `${current.trim()} ${text}` : text); setError(""); }} onError={setError} /><Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button></div></div>
             </form>
           </div>}
         </section>

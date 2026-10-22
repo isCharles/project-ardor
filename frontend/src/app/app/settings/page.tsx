@@ -225,6 +225,22 @@ export default function SettingsPage() {
       : t("Packy OpenAI endpoint filled: OpenAI Compatible + https://cf.api.fan/v1. Fetch models next.", "已按 OpenAI 兼容填入 Packy 端点；下一步获取模型列表。") });
   }
 
+  function fillFallbackPackyPreset(event: MouseEvent<HTMLButtonElement>) {
+    const form = event.currentTarget.form;
+    if (!form) return;
+    const provider = form.elements.namedItem("provider");
+    const baseUrl = form.elements.namedItem("baseUrl");
+    const model = form.elements.namedItem("model");
+    if (provider instanceof HTMLSelectElement) provider.value = "ANTHROPIC_COMPATIBLE";
+    if (baseUrl instanceof HTMLInputElement) baseUrl.value = "https://cf.api.fan";
+    if (model instanceof HTMLInputElement && !model.value.trim()) model.value = "claude-opus-5-5";
+    setIntegrationFeedback((current) => ({ ...current, FALLBACK_LLM: {
+      kind: "success",
+      message: t("Packy fallback endpoint filled. Enter the Packy key, then save or test the connection.",
+        "已填入 Packy 备用端点。填写 Packy API Key 后保存或测试连接即可。"),
+    } }));
+  }
+
   async function testAllConnections() {
     const serviceTypes: HealthServiceType[] = ["PRIMARY_LLM", "WEB_SEARCH", "EMBEDDING", "ASR", "TTS", "FALLBACK_LLM"];
     const integrationConfigs = integrations ?? [];
@@ -548,9 +564,12 @@ export default function SettingsPage() {
                     {integration.configured && <span className="shrink-0 text-xs font-medium text-emerald-700">{integration.personalOverride ? t("Personal", "个人配置") : t("Admin default", "管理员默认")} {integration.keyHint}</span>}
                   </div>
                   <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                    <label className="block text-xs font-medium">{t("Provider", "服务商")}<input className="field mt-2 text-sm" name="provider" defaultValue={integration.provider} maxLength={120} required placeholder={t("For example, OpenAI", "例如 OpenAI")} /></label>
+                    {integration.serviceType === "FALLBACK_LLM"
+                      ? <label className="block text-xs font-medium">{t("API format", "API 协议")}<select className="field mt-2" name="provider" defaultValue={integration.provider?.toUpperCase().includes("ANTHROPIC") ? "ANTHROPIC_COMPATIBLE" : "OPENAI_COMPATIBLE"}><option value="OPENAI_COMPATIBLE">OpenAI Compatible</option><option value="ANTHROPIC_COMPATIBLE">Anthropic Compatible</option></select></label>
+                      : <label className="block text-xs font-medium">{t("Provider", "服务商")}<input className="field mt-2 text-sm" name="provider" defaultValue={integration.provider} maxLength={120} required placeholder={t("For example, OpenAI", "例如 OpenAI")} /></label>}
                     <label className="block text-xs font-medium">{t("Model", "模型")}<input className="field mt-2 font-mono text-sm" name="model" defaultValue={integration.model} maxLength={160} required placeholder={t("Model name", "模型名称")} /></label>
                     <label className="block text-xs font-medium sm:col-span-2">Base URL<input className="field mt-2 font-mono text-sm" type="url" name="baseUrl" defaultValue={integration.baseUrl} maxLength={512} required placeholder="https://api.example.com" /></label>
+                    {integration.serviceType === "FALLBACK_LLM" && <div className="flex flex-wrap items-center gap-2 sm:col-span-2"><span className="text-xs text-muted-foreground">{t("Relay preset", "中转站预设")}</span><button type="button" onClick={(event) => fillFallbackPackyPreset(event)} className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-100">Packy Claude</button><span className="text-[11px] leading-5 text-muted-foreground">{t("Anthropic Compatible + https://cf.api.fan; use the matching Packy model ID.", "选 Anthropic Compatible，Base URL 填 https://cf.api.fan，模型名使用 Packy 的 Claude ID。")}</span></div>}
                     <label className="block text-xs font-medium sm:col-span-2">API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="new-password" data-1p-ignore data-lpignore="true" placeholder={integration.personalOverride ? t(`Current personal key ${integration.keyHint}; enter a new key to replace it`, `当前个人 Key ${integration.keyHint}；输入新 Key 才会替换`) : integration.configurationSource === "ADMIN" ? t("Leave blank to test the admin default; enter a key to override it", "留空测试管理员默认；填写后创建个人覆盖") : t("An API key is required for initial setup", "首次配置必须填写")} /></label>
                   </div>
                   <div className="mt-auto flex flex-wrap gap-2 pt-6">

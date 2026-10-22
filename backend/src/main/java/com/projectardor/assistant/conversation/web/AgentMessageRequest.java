@@ -20,11 +20,13 @@ public record AgentMessageRequest(
         List<AgentContextReferenceRequest> contextReferences,
         UUID requestId,
         ReasoningDepth reasoningDepth,
+        @Size(max = 24, message = "模型选项无效")
+        String modelChoice,
         UUID interruptedRunId) implements QuotaRequestId {
 
     public AgentMessageRequest(UUID conversationId, String message, String contextType, UUID contextId,
             List<AgentContextReferenceRequest> contextReferences, UUID requestId, ReasoningDepth reasoningDepth) {
-        this(conversationId, message, contextType, contextId, contextReferences, requestId, reasoningDepth, null);
+        this(conversationId, message, contextType, contextId, contextReferences, requestId, reasoningDepth, null, null);
     }
 
     public AgentMessageRequest(UUID conversationId, String message, String contextType, UUID contextId,

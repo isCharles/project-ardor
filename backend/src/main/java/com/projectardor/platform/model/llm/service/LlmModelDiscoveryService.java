@@ -43,9 +43,19 @@ public class LlmModelDiscoveryService {
     public List<String> list(UUID userId, LlmModelListRequest request) {
         String baseUrl = externalBaseUrlPolicy.normalizeAndValidate(request.baseUrl());
         String apiKey = configService.apiKeyForTest(userId, request.apiKey());
+        return list(request.provider(), baseUrl, apiKey);
+    }
+
+    /**
+     * Lists models against an already-resolved endpoint. The caller owns the credential
+     * (for example the reserved fallback integration); this method never reads another
+     * service's key.
+     */
+    public List<String> list(LlmProvider provider, String rawBaseUrl, String apiKey) {
+        String baseUrl = externalBaseUrlPolicy.normalizeAndValidate(rawBaseUrl);
         String payload;
         try {
-            payload = restClientBuilder.clone().baseUrl(discoveryBaseUrl(baseUrl, request.provider())).build().get()
+            payload = restClientBuilder.clone().baseUrl(discoveryBaseUrl(baseUrl, provider)).build().get()
                     .uri("/models")
                     .headers(headers -> {
                         headers.setBearerAuth(apiKey);
@@ -69,7 +79,7 @@ public class LlmModelDiscoveryService {
         } catch (RestClientException exception) {
             throw new IllegalStateException("无法连接该服务，请检查 Base URL、服务端网络或代理设置");
         }
-        return parseModels(payload, request.provider());
+        return parseModels(payload, provider);
     }
 
     private String discoveryBaseUrl(String baseUrl, LlmProvider provider) {

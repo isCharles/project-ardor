@@ -1,5 +1,6 @@
 package com.projectardor.assistant.execution.service;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -13,6 +14,24 @@ public final class ModelReasoningPolicy {
 
     public record Profile(String effort, Map<String, Object> extra, String thinkingType,
             Integer budget, int maxTokens, boolean sendThinking, boolean nativeControl) {}
+
+    public record Level(String value, String label) {}
+
+    /**
+     * Relay /models payloads do not expose a standardized reasoning-level schema, so levels are
+     * inferred from the model family and protocol. The composer reads this list instead of
+     * hard-coding one wide slider for every model.
+     */
+    public static List<Level> levels(LlmRuntimeConfig config) {
+        String model = config.model().toLowerCase(Locale.ROOT);
+        if (!resolve(config, ReasoningDepth.QUICK).nativeControl()) {
+            return List.of(new Level("QUICK", "Low"), new Level("STANDARD", "High"), new Level("DEEP", "Max"));
+        }
+        if (model.contains("deepseek")) {
+            return List.of(new Level("QUICK", "Low"), new Level("STANDARD", "High"), new Level("DEEP", "Max"));
+        }
+        return List.of(new Level("QUICK", "Low"), new Level("STANDARD", "Medium"), new Level("DEEP", "High"));
+    }
 
     public static Profile resolve(LlmRuntimeConfig config, ReasoningDepth requested) {
         ReasoningDepth depth = ReasoningDepth.orAuto(requested);

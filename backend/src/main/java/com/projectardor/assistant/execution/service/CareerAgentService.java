@@ -114,6 +114,7 @@ public class CareerAgentService {
     private final AgentPermissionGrants permissionGrants;
     private final AgentExecutionAuditStore executionAudit;
     private final AgentTraceStore traceStore;
+    private final AgentModelCatalogService modelCatalog;
     private final java.time.Duration silenceTimeout;
     private final java.time.Duration totalTimeout;
     private final ConcurrentHashMap<UUID, ActiveStream> activeStreams = new ConcurrentHashMap<>();
@@ -123,7 +124,7 @@ public class CareerAgentService {
         normalizeMessage(request.message());
         store.requireActive(userId, request.conversationId());
         resolveContexts(userId, request.contextType(), request.contextId(), request.contextReferences());
-        llmConfigService.getRuntimeConfig(userId);
+        modelCatalog.resolve(userId, request.modelChoice());
     }
 
     public CareerAgentService(
@@ -138,7 +139,7 @@ public class CareerAgentService {
             ObjectMapper objectMapper,
             AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals,
             AgentPermissionGrants permissionGrants, AgentExecutionAuditStore executionAudit,
-            AgentTraceStore traceStore,
+            AgentTraceStore traceStore, AgentModelCatalogService modelCatalog,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:90s}") java.time.Duration silenceTimeout,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.total-timeout:10m}") java.time.Duration totalTimeout) {
         this.store = store;
@@ -155,6 +156,7 @@ public class CareerAgentService {
         this.permissionGrants = permissionGrants;
         this.executionAudit = executionAudit;
         this.traceStore = traceStore;
+        this.modelCatalog = modelCatalog;
         if (silenceTimeout.isNegative() || silenceTimeout.isZero() || totalTimeout.isNegative() || totalTimeout.isZero()) throw new IllegalArgumentException("Agent 运行期限必须大于零");
         this.silenceTimeout = silenceTimeout; this.totalTimeout = totalTimeout;
     }
@@ -215,7 +217,14 @@ public class CareerAgentService {
     public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth) {
         return chatInternal(userId, conversationId, rawMessage, contextType, contextId, requestedReferences,
-                requestId, requestedDepth, false);
+                requestId, requestedDepth, false, null);
+    }
+
+    public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
+            UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId,
+            ReasoningDepth requestedDepth, String modelChoice) {
+        return chatInternal(userId, conversationId, rawMessage, contextType, contextId, requestedReferences,
+                requestId, requestedDepth, false, modelChoice);
     }
 
     /** Runs a scheduled automation: the prompt is persisted for model context but hidden from the transcript. */
@@ -226,12 +235,19 @@ public class CareerAgentService {
                 自动化任务：%s
                 """.formatted(prompt == null ? "" : prompt.strip());
         return chatInternal(userId, conversationId, executionPrompt, null, null, List.of(), null,
-                ReasoningDepth.AUTO, true);
+                ReasoningDepth.AUTO, true, null);
     }
 
     private AgentMessageResponse chatInternal(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
             boolean hiddenUserMessage) {
+        return chatInternal(userId, conversationId, rawMessage, contextType, contextId, requestedReferences,
+                requestId, requestedDepth, hiddenUserMessage, null);
+    }
+
+    private AgentMessageResponse chatInternal(UUID userId, UUID conversationId, String rawMessage, String contextType,
+            UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
+            boolean hiddenUserMessage, String modelChoice) {
         ReasoningDepth depth = ReasoningDepth.orAuto(requestedDepth);
         String message = normalizeMessage(rawMessage);
         List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
@@ -243,7 +259,7 @@ public class CareerAgentService {
         }
         AgentRunTracer tracer = null;
         try {
-            var runtimeConfig = llmConfigService.getRuntimeConfig(userId);
+            var runtimeConfig = modelCatalog.resolve(userId, modelChoice).config();
             Conversation conversation = conversationId == null
                     ? store.create(userId)
                     : store.requireActive(userId, conversationId);
@@ -337,6 +353,13 @@ public class CareerAgentService {
 
     public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId,
             List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth, StreamSink sink) {
+        chatStream(userId, conversationId, rawMessage, contextType, contextId, requestedReferences, requestId,
+                requestedDepth, null, sink);
+    }
+
+    public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId,
+            List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
+            String modelChoice, StreamSink sink) {
         ReasoningDepth depth = ReasoningDepth.orAuto(requestedDepth);
         long startedAt = System.nanoTime();
         AtomicBoolean finished = new AtomicBoolean();
@@ -356,7 +379,7 @@ public class CareerAgentService {
                 return;
             }
             acquired = true;
-            var runtimeConfig = llmConfigService.getRuntimeConfig(userId);
+            var runtimeConfig = modelCatalog.resolve(userId, modelChoice).config();
             Conversation conversation = conversationId == null ? store.create(userId) : store.requireActive(userId, conversationId);
             UUID logicalActionId = requestId == null ? null : runStore.logicalActionId(userId, requestId,
                     conversation.getId(), message, contextType, contextId, requestedReferences, depth);
@@ -447,7 +470,7 @@ public class CareerAgentService {
                     .withInterruptedRequest(interruptedRequest)
                     .withDateCorrectionContext(dateCorrectionContext(userId, conversation.getId(), references, interruptedRequest));
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
-                    .streamingChatModel(modelFactory.createStreaming(userId, depth, lease, listeners))
+                    .streamingChatModel(modelFactory.createStreaming(runtimeConfig, depth, lease, listeners))
                     .systemMessage(systemMessage).chatMemory(memory)
                     .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings,
                             sink::waitingForApproval, message, permissionGrants, executionAudit,
