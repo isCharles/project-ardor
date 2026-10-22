@@ -470,4 +470,32 @@ class CareerAgentToolsTests {
                 mock(TavilySearchService.class), mock(KnowledgeService.class), mock(LearningPlanService.class),
                 mock(ApplicationRhythmService.class), opportunities, mock(com.projectardor.platform.jobs.aijobs.AiJobService.class), mock(com.projectardor.learning.review.service.FlashcardService.class));
     }
+
+    @Test void mockInterviewToolsDelegateToOwnedViewsWithoutChangingUserOrInputs() {
+        var interviews = mock(InterviewService.class);
+        var tools = new CareerAgentTools(mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), interviews,
+                mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class), mock(TaskSeriesService.class),
+                mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class), mock(TavilySearchService.class), mock(KnowledgeService.class),
+                mock(LearningPlanService.class), mock(ApplicationRhythmService.class), mock(OpportunityService.class),
+                mock(com.projectardor.platform.jobs.aijobs.AiJobService.class), mock(com.projectardor.learning.review.service.FlashcardService.class));
+        UUID user = UUID.randomUUID(), id = UUID.randomUUID(), question = UUID.randomUUID();
+        var view = com.projectardor.learning.practice.mockinterview.service.MockInterviewSessionView.from(
+                InterviewSession.create(user, null, null, "Backend"));
+        var progress = new com.projectardor.learning.practice.mockinterview.service.MockInterviewProgressView(
+                id, com.projectardor.learning.practice.mockinterview.domain.InterviewStatus.IN_PROGRESS, 1, 3, false, null);
+        when(interviews.listViews(user)).thenReturn(List.of(view));
+        when(interviews.createView(user, null, com.projectardor.learning.practice.mockinterview.domain.InterviewModality.TEXT,
+                null, "Backend", 5, null)).thenReturn(view);
+        when(interviews.nextQuestionView(user, id)).thenReturn(progress);
+        when(interviews.submitAnswerView(user, id, question, "Synthetic answer", null)).thenReturn(progress);
+        when(interviews.cancelView(user, id)).thenReturn(view);
+        var bound = tools.bind(user, "Synthetic answer");
+        assertThat(bound.listInterviews()).containsExactly(view);
+        assertThat(bound.createInterview("Backend", "", "", null, "")).isSameAs(view);
+        assertThat(bound.getNextQuestion(id.toString())).isSameAs(progress);
+        assertThat(bound.submitInterviewAnswer(id.toString(), question.toString(), "Synthetic answer")).isSameAs(progress);
+        assertThat(bound.cancelInterview(id.toString())).isSameAs(view);
+        verify(interviews).submitAnswerView(user, id, question, "Synthetic answer", null);
+        verify(interviews, never()).submitAnswer(any(), any(), any(), any(), any());
+    }
 }

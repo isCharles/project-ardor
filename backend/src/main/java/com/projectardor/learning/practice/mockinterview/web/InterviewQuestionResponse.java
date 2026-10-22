@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.projectardor.learning.practice.mockinterview.domain.InterviewQuestion;
-import com.projectardor.learning.practice.mockinterview.service.LeetCodeHot100;
+import com.projectardor.learning.practice.mockinterview.service.MockInterviewProgressView;
 
 public record InterviewQuestionResponse(
         UUID id,
@@ -17,12 +17,16 @@ public record InterviewQuestionResponse(
     public record LeetCodeProblem(int id, String slug, String titleEn, String titleZh) {}
 
     public static InterviewQuestionResponse from(InterviewQuestion question) {
+        return fromView(MockInterviewProgressView.Question.from(question));
+    }
+
+    public static InterviewQuestionResponse fromView(MockInterviewProgressView.Question question) {
         if (question == null) return null;
-        LeetCodeProblem leetcode = LeetCodeHot100.find(question.getLeetcodeSlug())
-                .map(problem -> new LeetCodeProblem(problem.id(), problem.slug(), problem.titleEn(), problem.titleZh()))
-                .orElse(null);
+        var problem = question.leetcode();
+        LeetCodeProblem leetcode = problem == null ? null
+                : new LeetCodeProblem(problem.id(), problem.slug(), problem.titleEn(), problem.titleZh());
         return new InterviewQuestionResponse(
-                question.getId(), question.getSequenceNumber(), question.getQuestionText(),
-                question.getQuestionType(), question.getEvaluationCriteria(), leetcode);
+                question.id(), question.sequenceNumber(), question.questionText(),
+                question.questionType(), question.evaluationCriteria(), leetcode);
     }
 }

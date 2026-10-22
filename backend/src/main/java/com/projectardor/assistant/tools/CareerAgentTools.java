@@ -37,9 +37,9 @@ import com.projectardor.scheduling.service.TaskSeriesView;
 import com.projectardor.assistant.memory.service.AgentMemoryService;
 import com.projectardor.assistant.memory.service.AgentMemoryView;
 import com.projectardor.assistant.memory.service.AgentMemoryItemView;
-import com.projectardor.learning.practice.mockinterview.web.InterviewEvaluationResponse;
-import com.projectardor.learning.practice.mockinterview.web.InterviewProgressResponse;
-import com.projectardor.learning.practice.mockinterview.web.InterviewSessionResponse;
+import com.projectardor.learning.practice.mockinterview.service.MockInterviewEvaluationView;
+import com.projectardor.learning.practice.mockinterview.service.MockInterviewProgressView;
+import com.projectardor.learning.practice.mockinterview.service.MockInterviewSessionView;
 import com.projectardor.materials.knowledge.service.KnowledgeService;
 import com.projectardor.materials.knowledge.web.KnowledgeDocumentResponse;
 import com.projectardor.materials.knowledge.web.KnowledgeResearchResponse;
@@ -749,46 +749,45 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "list_interviews", value = "列出当前用户已有的模拟面试")
-        public List<InterviewSessionResponse> listInterviews() {
-            return interviewService.list(userId).stream().map(InterviewSessionResponse::from).toList();
+        public List<MockInterviewSessionView> listInterviews() {
+            return interviewService.listViews(userId);
         }
 
         @Tool(name = "create_interview", value = "为当前用户创建文本模拟面试并生成题目；目标岗位不明确时必须先向用户澄清。用户在为某场真实面试做针对性练习时，传入该面试流程 UUID")
-        public InterviewSessionResponse createInterview(
+        public MockInterviewSessionView createInterview(
                 @P("目标岗位") String targetRole,
                 @P(value = "目标公司；没有时传空字符串", required = false) String targetCompany,
                 @P(value = "要复用的简历分析 UUID；不使用简历时传空字符串", required = false) String resumeAnalysisId,
                 @P(value = "题目数量，3 到 10", required = false) Integer questionCount,
                 @P(value = "关联的真实面试流程 UUID；不关联传空字符串", required = false) String jobOpportunityId) {
-            return InterviewSessionResponse.from(interviewService.create(
+            return interviewService.createView(
                     userId,
                     nullableUuid(resumeAnalysisId, "简历分析 ID"),
                     com.projectardor.learning.practice.mockinterview.domain.InterviewModality.TEXT,
                     blankToNull(targetCompany),
                     targetRole,
                     questionCount == null ? 5 : questionCount,
-                    nullableUuid(jobOpportunityId, "面试流程 ID")));
+                    nullableUuid(jobOpportunityId, "面试流程 ID"));
         }
 
         @Tool(name = "get_next_question", value = "读取当前用户某场面试的下一道未回答题目")
-        public InterviewProgressResponse getNextQuestion(@P("面试 UUID") String interviewId) {
-            return InterviewProgressResponse.from(
-                    interviewService.getNextQuestion(userId, uuid(interviewId, "面试 ID")));
+        public MockInterviewProgressView getNextQuestion(@P("面试 UUID") String interviewId) {
+            return interviewService.nextQuestionView(userId, uuid(interviewId, "面试 ID"));
         }
 
         @Tool(name = "submit_interview_answer", value = "按顺序提交当前用户的文本面试答案")
-        public InterviewProgressResponse submitInterviewAnswer(
+        public MockInterviewProgressView submitInterviewAnswer(
                 @P("面试 UUID") String interviewId,
                 @P("当前题目 UUID") String questionId,
                 @P("用户的回答原文") String answer) {
             if (!com.projectardor.assistant.execution.service.ToolIntentPolicy.verbatimQuote(trustedUserRequest, answer))
                 throw new IllegalArgumentException("只能提交用户本轮提供的回答原文，不能提交检索结果或模型生成的回答");
-            return InterviewProgressResponse.from(interviewService.submitAnswer(
+            return interviewService.submitAnswerView(
                     userId,
                     uuid(interviewId, "面试 ID"),
                     uuid(questionId, "题目 ID"),
                     answer,
-                    null));
+                    null);
         }
 
         @Tool(name = "finish_interview", value = "全部题目回答完毕后提交后台评价任务；返回任务 UUID，可以稍后查看，不能声称已生成评价")
@@ -806,9 +805,8 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "get_interview_evaluation", value = "读取当前用户某场已完成面试的结构化评价")
-        public InterviewEvaluationResponse getInterviewEvaluation(@P("面试 UUID") String interviewId) {
-            return InterviewEvaluationResponse.from(
-                    interviewService.getEvaluation(userId, uuid(interviewId, "面试 ID")));
+        public MockInterviewEvaluationView getInterviewEvaluation(@P("面试 UUID") String interviewId) {
+            return interviewService.evaluationView(userId, uuid(interviewId, "面试 ID"));
         }
 
         @Tool(name = "delete_interview", value = "永久删除当前用户指定的一场模拟面试，以及关联题目、回答和评价。只有用户明确要求删除时使用；先调用 list_interviews 确认目标，目标不唯一时先追问")
@@ -822,8 +820,8 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "cancel_interview", value = "取消当前用户的模拟面试但保留记录和答案，仅当用户要求停止或取消时使用。用户要求删除记录时必须使用 delete_interview")
-        public InterviewSessionResponse cancelInterview(@P("模拟面试 UUID") String interviewId) {
-            return InterviewSessionResponse.from(interviewService.cancel(userId, uuid(interviewId, "面试 ID")));
+        public MockInterviewSessionView cancelInterview(@P("模拟面试 UUID") String interviewId) {
+            return interviewService.cancelView(userId, uuid(interviewId, "面试 ID"));
         }
 
         @Tool(name = "list_interview_recap_jobs", value = "读取当前用户面经整理的后台任务状态，包括进行中和失败的任务；不会重新提交或重试")
