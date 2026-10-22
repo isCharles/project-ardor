@@ -13,7 +13,7 @@ import { type AiJob } from "@/lib/ai-jobs";
 
 import { Button } from "@/components/ui/button";
 import { AppDialog } from "@/components/ui/app-dialog";
-import { ChatTaskDock } from "@/components/ardor/chat-task-dock";
+import { ChatNotifications } from "@/components/ardor/chat-notifications";
 import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
 import { ReasoningControl } from "@/components/ardor/reasoning-control";
 import { ServicePicker } from "@/components/ardor/service-picker";
@@ -1224,7 +1224,7 @@ export default function AgentHomePage() {
         <aside aria-label={t("Conversations", "对话栏")} aria-hidden={sidebarOpen === false} inert={sidebarOpen === false} className={`fixed inset-y-0 left-16 z-40 shrink-0 flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl md:static md:z-20 md:shadow-none ${sidebarOpen === false ? "hidden" : sidebarOpen === true ? "flex" : "hidden md:flex"}`} style={{ width: "min(18rem, calc(100vw - 4rem))" }}>
           <div className="flex h-12 items-center justify-between px-2">
             <WorkspaceBrand admin={isAdmin} />
-            <div className="flex items-center"><button aria-label={t("Search chats", "搜索对话")} onClick={() => { setSearchOpen((value) => !value); setRecentOpen(true); setChatSearch(""); }} className="rounded-lg p-2 text-stone-500 hover:bg-white"><Search className="size-4" /></button></div>
+            <div className="flex items-center gap-0.5"><ChatNotifications /><button aria-label={t("Search chats", "搜索对话")} onClick={() => { setSearchOpen((value) => !value); setRecentOpen(true); setChatSearch(""); }} className="rounded-lg p-2 text-stone-500 hover:bg-white"><Search className="size-4" /></button></div>
           </div>
           <button data-new-chat type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium shadow-sm transition hover:border-stone-300 hover:shadow disabled:opacity-50"><Plus className="size-4" />{t("New chat", "新对话")}</button>
 
@@ -1287,7 +1287,6 @@ export default function AgentHomePage() {
                   <h2 className="text-4xl font-semibold tracking-[-0.04em] text-stone-950 md:text-5xl">What should we build{state?.displayName?.trim() ? `, ${state.displayName.trim()}` : ""}?</h2>
                   {runningRun && <div role="status" className="mx-auto mt-5 max-w-2xl rounded-2xl border border-violet-100 bg-white/75 px-4 py-3 text-left text-sm text-violet-700">{t(`Ardor is working on your last message · ${runningRun.label}. It will appear when ready.`, `Ardor 正在处理上一条消息 · ${runningRun.label}。完成后会自动显示。`)}</div>}
                   {(visibleError || retryFailures.length > 0) && <div className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{retryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{retryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
-                  <div className="mx-auto mt-8 max-w-2xl text-left"><ChatTaskDock /></div>
                   <form onSubmit={submit} className="mx-auto mt-8 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
                     {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
@@ -1320,7 +1319,6 @@ export default function AgentHomePage() {
             )}
           </div>
 
-          <ChatTaskDock />
           {messages.length > 0 && <div className="ardor-composer-enter relative z-10 shrink-0 px-4 pb-5 md:px-8">
             {feedbackBanner}
             <div className="mx-auto max-h-[45dvh] max-w-3xl overflow-y-auto">
