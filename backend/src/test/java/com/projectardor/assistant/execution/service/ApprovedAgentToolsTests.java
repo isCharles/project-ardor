@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -25,6 +26,26 @@ class ApprovedAgentToolsTests {
     static class FakeTools {
         @Tool(name = "fake_write", value = "写操作")
         public String write(@P("值") String value) {
+            return "executed:" + value;
+        }
+    }
+
+    static class ScopedFakeTools implements ToolIntentScope {
+        private final boolean allow;
+        final AtomicInteger calls = new AtomicInteger();
+
+        ScopedFakeTools(boolean allow) {
+            this.allow = allow;
+        }
+
+        @Override
+        public boolean permitsWrite(String tool) {
+            return allow;
+        }
+
+        @Tool(name = "fake_write", value = "写操作")
+        public String write(@P("值") String value) {
+            calls.incrementAndGet();
             return "executed:" + value;
         }
     }
@@ -61,6 +82,45 @@ class ApprovedAgentToolsTests {
 
     private static ToolExecutionRequest writeRequest() {
         return ToolExecutionRequest.builder().name("fake_write").arguments("{\"value\":\"hi\"}").build();
+    }
+
+    private static ToolExecutor scopedExecutor(ScopedFakeTools tools, AgentToolApprovals approvals,
+            AgentPermissionGrants permissions) {
+        var executors = ApprovedAgentTools.wrap(tools, USER, RUN, approvals, null,
+                new AgentToolTimings(), waiting -> {}, "只读请求", permissions);
+        return executors.entrySet().stream()
+                .filter(entry -> entry.getKey().name().equals("fake_write"))
+                .findFirst().orElseThrow().getValue();
+    }
+
+    @Test
+    void intentScopeBlocksWritesBeforeAutoApproval() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        when(permissions.autoApproves(USER, "fake_write")).thenReturn(true);
+        ScopedFakeTools tools = new ScopedFakeTools(false);
+
+        String result = scopedExecutor(tools, approvals, permissions).execute(writeRequest(), null);
+
+        assertThat(result).contains("TOOL_NOT_PERMITTED");
+        assertThat(tools.calls).hasValue(0);
+        verify(approvals, never()).await(any(), any(), any(), any());
+        verify(permissions, never()).recordAutoApproval(any(), any(), any(), any());
+    }
+
+    @Test
+    void intentScopeAllowsWritesWithinTheCapturedUserRequest() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        when(approvals.await(eq(USER), eq(RUN), eq("fake_write"), any())).thenReturn(true);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        ScopedFakeTools tools = new ScopedFakeTools(true);
+
+        String result = scopedExecutor(tools, approvals, permissions).execute(writeRequest(), null);
+
+        assertThat(result).isEqualTo("executed:hi");
+        assertThat(tools.calls).hasValue(1);
     }
 
     private static ToolExecutor auditedExecutor(String toolName, AgentToolApprovals approvals,

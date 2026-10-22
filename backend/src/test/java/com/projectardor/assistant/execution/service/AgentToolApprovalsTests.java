@@ -188,12 +188,19 @@ class AgentToolApprovalsTests {
         public String delete() { calls.incrementAndGet(); return "deleted"; }
     }
 
-    @Test void writesRequireAnExactUiConfirmationNotKeywordScope() throws Exception {
+    @Test void writesRequireIntentScopeAndExactUiConfirmation() throws Exception {
         var probe = new WriteProbe();
         var call = ToolExecutionRequest.builder().name("create_calendar_task").arguments("{}").build();
+        probe.request = "请帮我添加明天的日程";
         assertThat(ApprovedAgentTools.wrap(probe, owner, null, gate).values().iterator().next().execute(call, null)).contains("PERMISSION_NOT_GRANTED");
         gate.begin(owner, run);
         probe.request = "Search the web for calendar examples";
+        var blocked = ApprovedAgentTools.wrap(probe, owner, run, gate).values().iterator().next().execute(call, null);
+        assertThat(blocked).contains("TOOL_NOT_PERMITTED");
+        assertThat(probe.calls).hasValue(0);
+        assertThat(gate.list(owner, run)).isEmpty();
+
+        probe.request = "请帮我添加明天的日程";
         var executor = ApprovedAgentTools.wrap(probe, owner, run, gate).values().iterator().next();
         var result = CompletableFuture.supplyAsync(() -> executor.execute(call, null));
         var proposal = pending(gate);

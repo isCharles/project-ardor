@@ -95,10 +95,20 @@ final class ApprovedAgentTools {
                 boolean proposal = PROPOSALS.contains(tool);
                 boolean read = ToolIntentPolicy.isRead(tool);
                 boolean automationWrite = automation && AUTOMATION_WRITES.contains(tool);
+                boolean actualWrite = !read && !proposal;
+                long requested = timings.now();
+                if (actualWrite && bound instanceof ToolIntentScope intentScope && !intentScope.permitsWrite(tool)) {
+                    // The user's trusted wording is captured before model output. A write that is
+                    // outside that scope must never reach auto-approval or the business service.
+                    UUID blockedRow = startAudit(executionAudit, auditContext, request, tool, "AUTO");
+                    finishAudit(executionAudit, blockedRow, userId, "NOT_EXECUTED", null,
+                            "TOOL_INTENT_NOT_PERMITTED");
+                    timings.record(request.id(), requested, requested, false);
+                    return "{\"status\":\"TOOL_NOT_PERMITTED\",\"message\":\"当前用户请求没有授权这次写入；未执行本次操作，不要重复调用或声称已完成。\"}";
+                }
                 boolean allowed = (!destructive || proposal) && (proposal || read || requestId != null || automationWrite)
                         && (read ? approvals.canRead(userId, requestId)
                                 : automationWrite || approvals.canPropose(userId, requestId));
-                long requested = timings.now();
                 boolean autoApproved = false;
                 if (allowed && !proposal && !read && !automationWrite && permissions != null
                         && permissions.autoApproves(userId, tool)) {
