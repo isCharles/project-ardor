@@ -42,15 +42,15 @@ public class InterviewController {
     public InterviewSessionResponse create(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody CreateInterviewRequest request) {
-        return InterviewSessionResponse.from(interviewService.create(
+        return InterviewSessionResponse.fromView(interviewService.createView(
                 principal.userId(), request.resumeAnalysisId(), request.resolvedModality(), request.targetCompany(),
                 request.targetRole(), request.resolvedQuestionCount(), request.jobOpportunityId()));
     }
 
     @GetMapping
     public List<InterviewSessionResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return interviewService.list(principal.userId()).stream()
-                .map(InterviewSessionResponse::from)
+        return interviewService.listViews(principal.userId()).stream()
+                .map(InterviewSessionResponse::fromView)
                 .toList();
     }
 
@@ -58,15 +58,15 @@ public class InterviewController {
     public InterviewSessionResponse get(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID sessionId) {
-        return InterviewSessionResponse.from(interviewService.get(principal.userId(), sessionId));
+        return InterviewSessionResponse.fromView(interviewService.getView(principal.userId(), sessionId));
     }
 
     @GetMapping("/{sessionId}/next-question")
     public InterviewProgressResponse getNextQuestion(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID sessionId) {
-        return InterviewProgressResponse.from(
-                interviewService.getNextQuestion(principal.userId(), sessionId));
+        return InterviewProgressResponse.fromView(
+                interviewService.nextQuestionView(principal.userId(), sessionId));
     }
 
     @PostMapping("/{sessionId}/answers")
@@ -74,7 +74,7 @@ public class InterviewController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID sessionId,
             @Valid @RequestBody SubmitAnswerRequest request) {
-        return InterviewProgressResponse.from(interviewService.submitAnswer(
+        return InterviewProgressResponse.fromView(interviewService.submitAnswerView(
                 principal.userId(), sessionId, request.questionId(),
                 request.answerText(), request.durationSeconds()));
     }
@@ -84,7 +84,7 @@ public class InterviewController {
     public InterviewEvaluationResponse finish(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID sessionId) {
-        return InterviewEvaluationResponse.from(interviewService.finish(principal.userId(), sessionId));
+        return InterviewEvaluationResponse.fromView(interviewService.finishView(principal.userId(), sessionId));
     }
 
     @PostMapping("/{sessionId}/evaluation-jobs")
@@ -99,7 +99,7 @@ public class InterviewController {
     public InterviewSessionResponse cancel(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID sessionId) {
-        return InterviewSessionResponse.from(interviewService.cancel(principal.userId(), sessionId));
+        return InterviewSessionResponse.fromView(interviewService.cancelView(principal.userId(), sessionId));
     }
 
     @DeleteMapping("/{sessionId}")
@@ -114,7 +114,7 @@ public class InterviewController {
     public InterviewEvaluationResponse getEvaluation(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID sessionId) {
-        return InterviewEvaluationResponse.from(
-                interviewService.getEvaluation(principal.userId(), sessionId));
+        return InterviewEvaluationResponse.fromView(
+                interviewService.evaluationView(principal.userId(), sessionId));
     }
 }

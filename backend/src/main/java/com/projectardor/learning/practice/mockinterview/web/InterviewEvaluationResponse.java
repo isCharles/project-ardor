@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.projectardor.learning.practice.mockinterview.domain.InterviewEvaluation;
+import com.projectardor.learning.practice.mockinterview.service.MockInterviewEvaluationView;
 
 public record InterviewEvaluationResponse(
         UUID id,
@@ -17,9 +18,12 @@ public record InterviewEvaluationResponse(
         Instant createdAt) {
 
     public static InterviewEvaluationResponse from(InterviewEvaluation evaluation) {
+        return fromView(MockInterviewEvaluationView.from(evaluation));
+    }
+
+    public static InterviewEvaluationResponse fromView(MockInterviewEvaluationView evaluation) {
         return new InterviewEvaluationResponse(
-                evaluation.getId(), evaluation.getInterviewSessionId(), evaluation.getOverallScore(),
-                evaluation.getEvaluation(), evaluation.getModelName(),
-                evaluation.getPromptVersion(), evaluation.getCreatedAt());
+                evaluation.id(), evaluation.interviewSessionId(), evaluation.overallScore(),
+                evaluation.evaluation(), evaluation.modelName(), evaluation.promptVersion(), evaluation.createdAt());
     }
 }
