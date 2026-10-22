@@ -71,4 +71,24 @@ class LlmModelDiscoveryServiceTests {
                 .hasMessageNotContaining("secret-key");
         server.verify();
     }
+
+    @Test
+    void addsAnthropicVersionPathWhenTheConfiguredBaseUrlHasNoVersion() {
+        var config = mock(LlmConfigService.class);
+        var policy = mock(ExternalBaseUrlPolicy.class);
+        var builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        var service = new LlmModelDiscoveryService(config, policy, builder, new ObjectMapper());
+        var user = java.util.UUID.randomUUID();
+        when(config.apiKeyForTest(user, "test-key")).thenReturn("test-key");
+        when(policy.normalizeAndValidate("https://cf.api.fan")).thenReturn("https://cf.api.fan");
+        server.expect(requestTo("https://cf.api.fan/v1/models"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"data\":[{\"id\":\"claude-opus-5-5\"}]}", MediaType.APPLICATION_JSON));
+
+        assertThat(service.list(user, new LlmModelListRequest(
+                LlmProvider.ANTHROPIC_COMPATIBLE, "https://cf.api.fan", "test-key")))
+                .containsExactly("claude-opus-5-5");
+        server.verify();
+    }
 }

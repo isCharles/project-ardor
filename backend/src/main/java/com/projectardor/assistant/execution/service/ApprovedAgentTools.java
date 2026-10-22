@@ -34,6 +34,8 @@ final class ApprovedAgentTools {
             "delete_recurring_task", "delete_resume", "delete_interview", "delete_memory_card",
             "delete_all_memory_cards", "delete_interview_recap", "delete_job_opportunity",
             "delete_job_opportunity_round", "delete_automation", "delete_calendar_advice");
+    /** Advisory writes that a trusted scheduled automation may persist without a live approval dialog. */
+    private static final Set<String> AUTOMATION_WRITES = Set.of("update_calendar_advice", "update_application_advice");
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals) {
         return wrap(bound, userId, requestId, approvals, null, new AgentToolTimings(), waiting -> {}, null);
     }
@@ -56,7 +58,14 @@ final class ApprovedAgentTools {
         return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, null);
     }
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId, AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting, String userRequest, AgentPermissionGrants permissions) {
-        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions, null, null);
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions, null, null, false);
+    }
+
+    /** Trusted scheduled automation may persist its own low-risk advice cards without a live user. */
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
+            AgentToolApprovals approvals, String userRequest, AgentPermissionGrants permissions, boolean automation) {
+        return wrap(bound, userId, requestId, approvals, null, new AgentToolTimings(), waiting -> {},
+                userRequest, permissions, null, null, automation);
     }
 
     /** Full variant used by a durable streaming run: adds the structured execution audit context. */
@@ -64,6 +73,14 @@ final class ApprovedAgentTools {
             AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
             String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
             UUID conversationId) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
+                executionAudit, conversationId, false);
+    }
+
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
+            AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
+            String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
+            UUID conversationId, boolean automation) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         AgentExecutionAuditStore.ToolCallContext auditContext =
                 AgentExecutionAuditStore.ToolCallContext.of(userId, conversationId, requestId);
@@ -77,19 +94,22 @@ final class ApprovedAgentTools {
                 boolean destructive = tool.startsWith("delete_") || tool.equals("clear_all_memories");
                 boolean proposal = PROPOSALS.contains(tool);
                 boolean read = ToolIntentPolicy.isRead(tool);
-                boolean allowed = (!destructive || proposal) && (proposal || read || requestId != null)
-                        && (read ? approvals.canRead(userId, requestId) : approvals.canPropose(userId, requestId));
+                boolean automationWrite = automation && AUTOMATION_WRITES.contains(tool);
+                boolean allowed = (!destructive || proposal) && (proposal || read || requestId != null || automationWrite)
+                        && (read ? approvals.canRead(userId, requestId)
+                                : automationWrite || approvals.canPropose(userId, requestId));
                 long requested = timings.now();
                 boolean autoApproved = false;
-                if (allowed && !proposal && !read && permissions != null && permissions.autoApproves(userId, tool)) {
+                if (allowed && !proposal && !read && !automationWrite && permissions != null
+                        && permissions.autoApproves(userId, tool)) {
                     autoApproved = true;
                     // A permission level skips the dialog, never the audit trail.
                     permissions.recordAutoApproval(userId, requestId, tool, request.arguments());
                 }
                 String approvalSource = proposal ? (destructive ? "DELETE_PROPOSAL" : "PROPOSAL")
-                        : read || autoApproved ? "AUTO" : "CONFIRMED";
+                        : read || autoApproved || automationWrite ? "AUTO" : "CONFIRMED";
                 UUID auditRow = null;
-                if (allowed && !autoApproved && !proposal && !read) {
+                if (allowed && !autoApproved && !proposal && !read && !automationWrite) {
                     // Record the attempt before waiting so a long approval is observable as STARTED.
                     auditRow = startAudit(executionAudit, auditContext, request, tool, approvalSource);
                     waiting.accept(true);

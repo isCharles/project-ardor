@@ -215,10 +215,14 @@ export default function SettingsPage() {
   function fillPackyPreset() {
     const form = document.getElementById("personal-api-primary-llm");
     if (!(form instanceof HTMLFormElement)) return;
-    (form.elements.namedItem("provider") as HTMLSelectElement).value = "OPENAI_COMPATIBLE";
-    (form.elements.namedItem("baseUrl") as HTMLInputElement).value = "https://cf.api.fan/v1";
+    const model = (form.elements.namedItem("model") as HTMLInputElement).value.toLowerCase();
+    const claude = /claude|opus|sonnet|haiku/.test(model);
+    (form.elements.namedItem("provider") as HTMLSelectElement).value = claude ? "ANTHROPIC_COMPATIBLE" : "OPENAI_COMPATIBLE";
+    (form.elements.namedItem("baseUrl") as HTMLInputElement).value = claude ? "https://cf.api.fan" : "https://cf.api.fan/v1";
     setModelOptions([]);
-    setModelFeedback({ kind: "success", message: t("Packy endpoint filled. Choose an OpenAI-compatible model group, then fetch models.", "已填入 Packy 端点。请选择支持 OpenAI 兼容的令牌分组，再获取模型列表。") });
+    setModelFeedback({ kind: "success", message: claude
+      ? t("Packy Claude endpoint filled: Anthropic Compatible + https://cf.api.fan. Fetch models next.", "已按 Claude 填入 Packy Anthropic 端点；下一步获取模型列表。Packy 的 Claude 模型走 Anthropic 协议，不要用 OpenAI 的 /v1。")
+      : t("Packy OpenAI endpoint filled: OpenAI Compatible + https://cf.api.fan/v1. Fetch models next.", "已按 OpenAI 兼容填入 Packy 端点；下一步获取模型列表。") });
   }
 
   async function testAllConnections() {
@@ -492,7 +496,7 @@ export default function SettingsPage() {
             <div>
               <div className="flex items-center justify-between gap-3"><label htmlFor="llm-base-url" className="text-sm font-medium">Base URL</label><button type="button" onClick={fillPackyPreset} className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-100">Packy</button></div>
               <input id="llm-base-url" className="field mt-2 font-mono text-sm" type="url" name="baseUrl" defaultValue={llm.baseUrl} maxLength={512} required />
-              <span className="mt-2 block text-xs font-normal leading-5 text-muted-foreground">{t("DeepSeek: https://api.deepseek.com · Packy: click the Packy preset, then fetch models.", "DeepSeek 填 https://api.deepseek.com；Packy 点上方预设，再获取模型列表。")}</span>
+              <span className="mt-2 block text-xs font-normal leading-5 text-muted-foreground">{t("DeepSeek: https://api.deepseek.com · Packy Claude: Anthropic Compatible + https://cf.api.fan · Packy other models: OpenAI Compatible + /v1.", "DeepSeek 填 https://api.deepseek.com；Packy Claude 选 Anthropic Compatible 并填 https://cf.api.fan；Packy 其他模型选 OpenAI Compatible 并加 /v1。")}</span>
             </div>
             <div>
               <div className="flex items-center justify-between gap-3">

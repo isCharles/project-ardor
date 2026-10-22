@@ -40,6 +40,11 @@ class ApprovedAgentToolsTests {
         public String listMemories() {
             return "[]";
         }
+
+        @Tool(name = "update_calendar_advice", value = "保存日历建议")
+        public String updateCalendarAdvice(@P("建议") String advice) {
+            return "{\"status\":\"SAVED\"}";
+        }
     }
 
     private static final UUID USER = UUID.randomUUID();
@@ -141,6 +146,22 @@ class ApprovedAgentToolsTests {
         assertThat(source.getValue()).isEqualTo("DELETE_PROPOSAL");
         verify(auditStore).finishToolCall(eq(row), eq(USER), eq("PROPOSED"), isNull(), isNull());
         verify(auditStore).recordAudit(eq(USER), eq(RUN), eq("delete_memory"), anyString(), eq("DELETE_PROPOSAL"));
+    }
+
+    @Test
+    void trustedAutomationMayPersistAdvisoryWritesWithoutALiveDialog() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        var executors = ApprovedAgentTools.wrap(new AuditTools(), USER, null, approvals, "保存建议", permissions, true);
+        ToolExecutor executor = executors.entrySet().stream()
+                .filter(entry -> entry.getKey().name().equals("update_calendar_advice"))
+                .findFirst().orElseThrow().getValue();
+
+        String result = executor.execute(request("update_calendar_advice", "{\"advice\":\"下一步\"}"), null);
+
+        assertThat(result).contains("SAVED");
+        verify(approvals, never()).await(any(), any(), any(), any());
+        verify(approvals, never()).canPropose(any(), any());
     }
 
     @Test

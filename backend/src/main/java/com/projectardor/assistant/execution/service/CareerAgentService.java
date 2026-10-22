@@ -217,7 +217,13 @@ public class CareerAgentService {
 
     /** Runs a scheduled automation: the prompt is persisted for model context but hidden from the transcript. */
     public AgentMessageResponse chatAutomation(UUID userId, UUID conversationId, String prompt) {
-        return chatInternal(userId, conversationId, prompt, null, null, List.of(), null, ReasoningDepth.AUTO, true);
+        String executionPrompt = """
+                这是一个已经启用的定时自动化任务，现在到点执行。用户不在本轮对话中，不能向用户追问、不能要求用户确认时间或补充信息；请直接使用当前账户已有数据，调用需要的工具完成任务。
+                如果某个信息确实缺失，按现有数据做最合理的处理，并在结果里说明假设，不要等待用户回复。
+                自动化任务：%s
+                """.formatted(prompt == null ? "" : prompt.strip());
+        return chatInternal(userId, conversationId, executionPrompt, null, null, List.of(), null,
+                ReasoningDepth.AUTO, true);
     }
 
     private AgentMessageResponse chatInternal(UUID userId, UUID conversationId, String rawMessage, String contextType,
@@ -247,7 +253,8 @@ public class CareerAgentService {
                     .chatMemory(memory)
                     // A synchronous retry keeps the logical request but is a new tool-call attempt.
                     // Reusing requestId as the run ID would make regenerated arguments create a second slot.
-                    .tools(ApprovedAgentTools.wrap(bound, userId, null, toolApprovals, message, permissionGrants))
+                    .tools(ApprovedAgentTools.wrap(bound, userId, null, toolApprovals, message, permissionGrants,
+                            hiddenUserMessage))
                     .maxToolCallingRoundTrips(8)
                     .maxSequentialToolsInvocations(12)
                     .compensateOnToolErrors(true)

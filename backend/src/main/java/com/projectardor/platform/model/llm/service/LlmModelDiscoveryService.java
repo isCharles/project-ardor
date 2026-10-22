@@ -45,7 +45,7 @@ public class LlmModelDiscoveryService {
         String apiKey = configService.apiKeyForTest(userId, request.apiKey());
         String payload;
         try {
-            payload = restClientBuilder.clone().baseUrl(baseUrl).build().get()
+            payload = restClientBuilder.clone().baseUrl(discoveryBaseUrl(baseUrl, request.provider())).build().get()
                     .uri("/models")
                     .headers(headers -> {
                         headers.setBearerAuth(apiKey);
@@ -72,11 +72,18 @@ public class LlmModelDiscoveryService {
         return parseModels(payload, request.provider());
     }
 
+    private String discoveryBaseUrl(String baseUrl, LlmProvider provider) {
+        String normalized = baseUrl.replaceAll("/+$", "");
+        if (provider == LlmProvider.ANTHROPIC_COMPATIBLE && !normalized.endsWith("/v1")) {
+            return normalized + "/v1";
+        }
+        return normalized;
+    }
+
     private List<String> parseModels(String payload, LlmProvider provider) {
         if (payload == null || payload.isBlank()) {
             throw new IllegalStateException("服务没有返回模型列表");
-        }
-        try {
+        }        try {
             JsonNode root = objectMapper.readTree(payload);
             JsonNode entries = root.path("data");
             if (!entries.isArray()) entries = root.path("models");
