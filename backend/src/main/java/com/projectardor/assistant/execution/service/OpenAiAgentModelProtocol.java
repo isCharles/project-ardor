@@ -1,12 +1,14 @@
 package com.projectardor.assistant.execution.service;
 
 import java.time.Duration;
+import java.util.List;
 import org.springframework.stereotype.Component;
 import com.projectardor.platform.model.llm.domain.LlmProvider;
 import com.projectardor.platform.model.llm.service.LlmConfigService.LlmRuntimeConfig;
 import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 
@@ -14,14 +16,23 @@ import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 public class OpenAiAgentModelProtocol implements AgentModelProtocol {
     @Override public LlmProvider provider(){return LlmProvider.OPENAI_COMPATIBLE;}
     @Override public ChatModel chat(LlmRuntimeConfig config,ModelReasoningPolicy.Profile profile,HttpClientBuilder transport,Duration timeout,int retries) {
+        return chat(config, profile, transport, timeout, retries, List.of());
+    }
+    @Override public ChatModel chat(LlmRuntimeConfig config,ModelReasoningPolicy.Profile profile,HttpClientBuilder transport,
+            Duration timeout,int retries,List<ChatModelListener> listeners) {
         return OpenAiChatModel.builder().httpClientBuilder(transport).baseUrl(config.baseUrl()).apiKey(config.apiKey())
                 .modelName(config.model()).reasoningEffort(profile.effort()).customParameters(profile.extra())
                 .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking(),"reasoning_content")
-                .timeout(timeout).maxRetries(retries).build();
+                .timeout(timeout).maxRetries(retries).listeners(listeners).build();
     }
     @Override public StreamingChatModel streaming(LlmRuntimeConfig config,ModelReasoningPolicy.Profile profile,HttpClientBuilder transport,Duration timeout) {
+        return streaming(config, profile, transport, timeout, List.of());
+    }
+    @Override public StreamingChatModel streaming(LlmRuntimeConfig config,ModelReasoningPolicy.Profile profile,
+            HttpClientBuilder transport,Duration timeout,List<ChatModelListener> listeners) {
         return OpenAiStreamingChatModel.builder().httpClientBuilder(transport).baseUrl(config.baseUrl()).apiKey(config.apiKey())
                 .modelName(config.model()).reasoningEffort(profile.effort()).customParameters(profile.extra())
-                .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking(),"reasoning_content").timeout(timeout).build();
+                .returnThinking(profile.sendThinking()).sendThinking(profile.sendThinking(),"reasoning_content")
+                .timeout(timeout).listeners(listeners).build();
     }
 }

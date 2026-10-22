@@ -22,6 +22,7 @@ import com.projectardor.assistant.ReasoningDepth;
 import dev.langchain4j.http.client.jdk.JdkHttpClientBuilder;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
 import com.projectardor.assistant.execution.service.AgentStreamLease;
 import com.projectardor.assistant.execution.service.LeasedHttpClientBuilder;
 
@@ -68,6 +69,10 @@ public class LangChainModelFactory {
         return create(configService.getRuntimeConfig(userId), depth);
     }
 
+    public ChatModel create(UUID userId, ReasoningDepth depth, List<ChatModelListener> listeners) {
+        return create(configService.getRuntimeConfig(userId), depth, listeners);
+    }
+
     public ChatModel create(LlmConfigService.LlmRuntimeConfig config) {
         return create(config, ReasoningDepth.AUTO);
     }
@@ -78,8 +83,18 @@ public class LangChainModelFactory {
     }
 
     public ChatModel create(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth) {
+        return create(config, depth, List.of());
+    }
+
+    public ChatModel create(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
+            List<ChatModelListener> listeners) {
         var protocol=protocols.require(config.provider());
-        return protocol.chat(config,protocol.reasoning(config,depth),httpClientBuilder(),readTimeout,MODEL_INTERNAL_RETRIES);
+        if (listeners == null || listeners.isEmpty()) {
+            return protocol.chat(config,protocol.reasoning(config,depth),httpClientBuilder(),readTimeout,
+                    MODEL_INTERNAL_RETRIES);
+        }
+        return protocol.chat(config,protocol.reasoning(config,depth),httpClientBuilder(),readTimeout,
+                MODEL_INTERNAL_RETRIES, listeners);
     }
 
     public StreamingChatModel createStreaming(UUID userId) {
@@ -90,10 +105,17 @@ public class LangChainModelFactory {
         return createStreaming(userId, depth, null);
     }
     StreamingChatModel createStreaming(UUID userId, ReasoningDepth depth, AgentStreamLease lease) {
+        return createStreaming(userId, depth, lease, List.of());
+    }
+    StreamingChatModel createStreaming(UUID userId, ReasoningDepth depth, AgentStreamLease lease,
+            List<ChatModelListener> listeners) {
         LlmConfigService.LlmRuntimeConfig config = configService.getRuntimeConfig(userId);
         var protocol=protocols.require(config.provider());
         dev.langchain4j.http.client.HttpClientBuilder transport = lease == null ? httpClientBuilder() : new LeasedHttpClientBuilder(httpClientBuilder(), lease);
-        return protocol.streaming(config,protocol.reasoning(config,depth),transport,readTimeout);
+        if (listeners == null || listeners.isEmpty()) {
+            return protocol.streaming(config,protocol.reasoning(config,depth),transport,readTimeout);
+        }
+        return protocol.streaming(config,protocol.reasoning(config,depth),transport,readTimeout, listeners);
     }
 
     private JdkHttpClientBuilder httpClientBuilder() {

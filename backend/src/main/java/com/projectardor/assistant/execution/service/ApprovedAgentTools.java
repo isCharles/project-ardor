@@ -65,7 +65,14 @@ final class ApprovedAgentTools {
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
             AgentToolApprovals approvals, String userRequest, AgentPermissionGrants permissions, boolean automation) {
         return wrap(bound, userId, requestId, approvals, null, new AgentToolTimings(), waiting -> {},
-                userRequest, permissions, null, null, automation);
+                userRequest, permissions, null, null, automation, null);
+    }
+
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
+            AgentToolApprovals approvals, String userRequest, AgentPermissionGrants permissions, boolean automation,
+            AgentRunTracer tracer) {
+        return wrap(bound, userId, requestId, approvals, null, new AgentToolTimings(), waiting -> {},
+                userRequest, permissions, null, null, automation, tracer);
     }
 
     /** Full variant used by a durable streaming run: adds the structured execution audit context. */
@@ -74,13 +81,21 @@ final class ApprovedAgentTools {
             String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
             UUID conversationId) {
         return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
-                executionAudit, conversationId, false);
+                executionAudit, conversationId, false, null);
     }
 
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
             AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
             String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
             UUID conversationId, boolean automation) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
+                executionAudit, conversationId, automation, null);
+    }
+
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
+            AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
+            String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
+            UUID conversationId, boolean automation, AgentRunTracer tracer) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         AgentExecutionAuditStore.ToolCallContext auditContext =
                 AgentExecutionAuditStore.ToolCallContext.of(userId, conversationId, requestId);
@@ -141,6 +156,9 @@ final class ApprovedAgentTools {
                     auditRow = startAudit(executionAudit, auditContext, request, tool, approvalSource);
                 }
                 UUID row = auditRow;
+                UUID traceSpan = tracer == null ? null : tracer.startChild("TOOL", tool, Map.of(
+                        "tool", tool, "approvalSource", approvalSource, "proposal", proposal));
+                if (tracer != null) tracer.recordTool();
                 AtomicBoolean executed = new AtomicBoolean();
                 Supplier<String> call = () -> { executed.set(true); return delegate.execute(request, memoryId); };
                 String outcome = "COMPLETED";
@@ -167,6 +185,13 @@ final class ApprovedAgentTools {
                 } finally {
                     finishAudit(executionAudit, row, userId, outcome, auditResult, errorCode);
                     timings.record(request.id(), requested, approved, executed.get());
+                    if (tracer != null && traceSpan != null) {
+                        String spanStatus = "FAILED".equals(outcome) ? "FAILED"
+                                : "NOT_EXECUTED".equals(outcome) ? "NOT_EXECUTED" : "COMPLETED";
+                        tracer.finishChild(traceSpan, spanStatus, errorCode, null, null, null,
+                                Map.of("executed", executed.get(), "proposal", proposal,
+                                        "approvalSource", approvalSource));
+                    }
                 }
             });
         }
