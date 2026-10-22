@@ -159,6 +159,11 @@ http.createServer((request, response) => {
   request.on("data", (chunk) => { body += chunk; });
   request.on("end", () => {
     const payload = JSON.parse(body || "{}");
+    if (payload.model === "final-minutes-failure-probe") {
+      response.writeHead(400, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "Synthetic normalization failure" } }));
+      return;
+    }
     if (request.url.endsWith("/embeddings")) {
       const inputs = Array.isArray(payload.input) ? payload.input : [payload.input];
       setTimeout(() => {

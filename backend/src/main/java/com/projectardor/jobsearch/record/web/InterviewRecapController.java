@@ -14,6 +14,20 @@ public class InterviewRecapController {
     private final InterviewRecapService service;
     private final InterviewRecapQueueService queueService;
     public InterviewRecapController(InterviewRecapService service, InterviewRecapQueueService queueService) { this.service = service; this.queueService = queueService; }
+    @PostMapping("/final-minutes") @ResponseStatus(HttpStatus.ACCEPTED)
+    @QuotaProtected(UsageFeature.INTERVIEW_RECAP)
+    public InterviewRecapQueueService.FinalMinutesReceipt submitFinalMinutes(@AuthenticationPrincipal ArdorPrincipal p,
+            @Valid @RequestBody InterviewRecapCreateRequest request) {
+        return queueService.requestFinalMinutes(p.userId(), request.content(), request.jobOpportunityId(), request.interviewRoundId());
+    }
+    @GetMapping("/final-minutes/{id}")
+    public InterviewRecapQueueService.FinalMinutesView finalMinutes(@AuthenticationPrincipal ArdorPrincipal p, @PathVariable UUID id) {
+        return queueService.finalMinutes(p.userId(), id);
+    }
+    @GetMapping("/final-minutes")
+    public List<InterviewRecapQueueService.FinalMinutesSummary> finalMinutes(@AuthenticationPrincipal ArdorPrincipal p) {
+        return queueService.finalMinutes(p.userId());
+    }
     @PostMapping @ResponseStatus(HttpStatus.ACCEPTED)
     @QuotaProtected(UsageFeature.INTERVIEW_RECAP)
     public InterviewRecapTaskResponse create(@AuthenticationPrincipal ArdorPrincipal principal, @Valid @RequestBody InterviewRecapCreateRequest request) {

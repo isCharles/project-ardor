@@ -1,6 +1,6 @@
 # Ardor 领域合同与迁移基线
 
-核对日期：2026-10-19。主分支基线包含 PR #133 的确认纪要流程。目标见 [整体架构演进规划](ARCHITECTURE_EVOLUTION.md)。本文件区分当前合同、兼容适配与尚待实施的模型，不替代原生 Goal。
+历史基线包含 PR #133 的确认纪要流程；最新最终纪要模式及兼容边界见下表和 [纪要工作流](INTERVIEW_MINUTES_WORKFLOW.md)。目标见 [整体架构演进规划](ARCHITECTURE_EVOLUTION.md)。本文件区分当前合同、兼容适配与尚待实施的模型，不替代原生 Goal。
 
 ## 1. 术语与状态所有权
 
@@ -9,7 +9,7 @@
 | 真实面试流程 / InterviewProcess | 求职 | `jobsearch.interview.domain.JobOpportunity`；SCHEDULED、AWAITING_RESULT、NEXT_ROUND、REJECTED | 不是模拟会话，也不是完整投递漏斗 |
 | 面试轮次 / InterviewRound | 求职 | `OpportunityRound`，轮次号、环节、时间和时长 | 学习任务不是面试轮次 |
 | 面试记录与问题 | 求职 | `jobsearch.record.domain.InterviewRecap` 关联流程与可空轮次；问题通过报告继承 | 不推测历史轮次，不重复要求填写父对象拥有的信息 |
-| 原始转录、确认纪要与复盘版本 | 求职 | 原始任务保留原文；`interview_minutes` 可编辑；`interview_minutes_reviews` 保存不可变确认快照与异步结果 | Agent 不能代替用户确认；报告不是原文；新增轮次关联必须覆盖整条来源链 |
+| 最终纪要与规范化结果；历史转录/确认版本 | 求职 | 新提交直接保存最终纪要并异步规范化；V59 模式区分旧转录任务；旧 `interview_minutes` / `interview_minutes_reviews` 历史保留 | 新入口不要求原始转录或二次确认；Agent 不得改写用户提交来源；结果不是事实源；轮次关联覆盖整条来源链 |
 | 投递活动 | 求职 | 日计数、目标与提醒 | 日计数不等于逐份投递记录 |
 | 学习计划 | 学习 | SCHEDULED、IN_PROGRESS、NEEDS_REVIEW、COMPLETED；LearningPlanView 为 HTTP/Agent 共用的领域应用快照，见 [快照合同](LEARNING_ATTEMPT_HISTORY.md#学习计划应用快照) | 来源与目标面试是关联，不是全部学习都必须有面试父对象 |
 | 学习尝试与内容版本 | 学习 | V52 新增 `learning_attempts`（每轮提交一行不可变事实）与 `learning_plans.content_version`/`exercises_version`；旧 `last_evaluation.attempts` 仅作兼容投影 | 尝试历史不是最后分数缓存；版本号不是资源 UUID；回填的 LEGACY 行不伪造评分模型 |

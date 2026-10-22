@@ -13,7 +13,7 @@ const creationPrompts = {
   CARDS: ["Help me prepare flashcards about…", "帮我整理关于…的记忆卡"],
   RESUMES: ["Help me analyze my resume for…", "帮我针对…分析简历"],
   INTERVIEWS: ["Prepare a mock interview for…", "帮我准备一场…岗位的模拟面试"],
-  RECAPS: ["Organize these interview notes and identify what I should improve:\n", "帮我整理下面的面试内容，找出薄弱点：\n"],
+  RECAPS: ["Organize these final interview minutes without inventing details:\n", "帮我规范化整理下面的最终面试纪要，不补造细节：\n"],
   KNOWLEDGE: ["Find and add reliable learning material about…", "帮我查找并收录关于…的可靠学习资料"],
   CALENDAR: ["Add this to my calendar:\n", "帮我把下面这件事安排到日历：\n"],
   APPLICATIONS: ["Help me record today's applications…", "帮我记录今天的投递情况…"],

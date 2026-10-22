@@ -44,9 +44,20 @@ public class InterviewRecapQueueService {
 
     @Transactional
     public TaskResult request(UUID userId, String rawContent, UUID jobOpportunityId, UUID roundId) {
+        return request(userId, rawContent, jobOpportunityId, roundId, false);
+    }
+
+    @Transactional
+    public FinalMinutesReceipt requestFinalMinutes(UUID userId, String content, UUID processId, UUID roundId) {
+        var task = request(userId, content, processId, roundId, true);
+        return new FinalMinutesReceipt(task.jobId(), task.status().name(), task.recapId(),
+                "/app/recaps?minutes=" + task.jobId());
+    }
+
+    private TaskResult request(UUID userId, String rawContent, UUID jobOpportunityId, UUID roundId, boolean finalMinutes) {
         interviewContexts.require(userId, jobOpportunityId, roundId);
         String content = requiredContent(rawContent);
-        String inputHash = inputHash(content);
+        String inputHash = inputHash(content, finalMinutes);
         jobRepository.lockRequestSlot(userId, inputHash);
         Optional<InterviewRecapJob> active = jobRepository
                 .findFirstByUserIdAndInputHashAndStatusInOrderByCreatedAtDesc(userId, inputHash, REUSABLE);
@@ -54,10 +65,32 @@ public class InterviewRecapQueueService {
                 || !java.util.Objects.equals(roundId, active.get().getInterviewRoundId()))) {
             throw new IllegalArgumentException("相同转录已关联其他面试或轮次，不会静默改挂");
         }
-        return active.map(TaskResult::from)
-                .orElseGet(() -> TaskResult.from(jobRepository.saveAndFlush(
-                        InterviewRecapJob.create(userId, inputHash, content, jobOpportunityId, roundId))));
+        return active.map(TaskResult::from).orElseGet(() -> {
+            var job = InterviewRecapJob.create(userId, inputHash, content, jobOpportunityId, roundId);
+            if (finalMinutes) job.useFinalMinutes();
+            return TaskResult.from(jobRepository.saveAndFlush(job));
+        });
     }
+
+    @Transactional(readOnly = true)
+    public FinalMinutesView finalMinutes(UUID userId, UUID id) {
+        var job = ownedJob(userId, id);
+        if (!job.isFinalMinutes()) throw new ResourceNotFoundException("最终纪要不存在");
+        return new FinalMinutesView(job.getId(), job.getRawContent(), job.getStatus().name(), job.getRecapId(),
+                job.getErrorCode(), job.getErrorMessage(), job.getJobOpportunityId(), job.getInterviewRoundId());
+    }
+
+    public record FinalMinutesView(UUID jobId, String minutes, String status, UUID recapId,
+            String errorCode, String errorMessage, UUID jobOpportunityId, UUID interviewRoundId) {}
+    public record FinalMinutesReceipt(UUID jobId, String status, UUID recapId, String resultPath) {}
+
+    @Transactional(readOnly = true)
+    public List<FinalMinutesSummary> finalMinutes(UUID userId) {
+        return jobRepository.findTop20ByUserIdAndFinalMinutesTrueOrderByCreatedAtDesc(userId).stream()
+                .map(job -> new FinalMinutesSummary(job.getId(), job.getRawContent().substring(0,
+                        Math.min(100, job.getRawContent().length())), job.getStatus().name(), job.getRecapId())).toList();
+    }
+    public record FinalMinutesSummary(UUID jobId, String preview, String status, UUID recapId) {}
 
     @Transactional
     public TaskResult fromReport(UUID userId, UUID recapId) {
@@ -141,18 +174,22 @@ public class InterviewRecapQueueService {
         return value;
     }
 
-    private static String inputHash(String content) {
+    private static String inputHash(String content, boolean finalMinutes) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(("MINUTES_V1\n" + content).getBytes(StandardCharsets.UTF_8)));
+                    .digest(((finalMinutes ? "FINAL_MINUTES_V1\n" : "MINUTES_V1\n") + content).getBytes(StandardCharsets.UTF_8)));
         } catch (Exception exception) { throw new IllegalStateException("无法生成内容指纹", exception); }
     }
 
     public record TaskResult(UUID jobId, UUID recapId, InterviewRecapJobStatus status, int attempts,
-            String errorCode, String errorMessage, Instant createdAt, Instant finishedAt) {
+            String errorCode, String errorMessage, Instant createdAt, Instant finishedAt, boolean finalMinutes) {
+        public TaskResult(UUID jobId, UUID recapId, InterviewRecapJobStatus status, int attempts,
+                String errorCode, String errorMessage, Instant createdAt, Instant finishedAt) {
+            this(jobId,recapId,status,attempts,errorCode,errorMessage,createdAt,finishedAt,false);
+        }
         static TaskResult from(InterviewRecapJob job) {
             return new TaskResult(job.getId(), job.getRecapId(), job.getStatus(), job.getAttempts(),
-                    job.getErrorCode(), job.getErrorMessage(), job.getCreatedAt(), job.getFinishedAt());
+                    job.getErrorCode(), job.getErrorMessage(), job.getCreatedAt(), job.getFinishedAt(), job.isFinalMinutes());
         }
         static TaskResult completed(UUID recapId, Instant createdAt) {
             return new TaskResult(null, recapId, InterviewRecapJobStatus.COMPLETED, 0, null, null, createdAt, null);

@@ -33,8 +33,14 @@ public class InterviewRecapWorker {
 
     private void process(InterviewRecapJob job) {
         try {
-            minutes.prepare(job);
-            queueService.complete(job.getId(), null);
+            if (job.isFinalMinutes()) {
+                var result = recapService.normalizeFinalMinutes(job.getUserId(), job.getRawContent(),
+                        job.getJobOpportunityId(), job.getInterviewRoundId(), job.getId());
+                queueService.complete(job.getId(), result.id());
+            } else {
+                minutes.prepare(job);
+                queueService.complete(job.getId(), null);
+            }
         } catch (RuntimeException failure) {
             LOGGER.warn("Interview recap job {} failed: {}", job.getId(), failure.getClass().getSimpleName());
             queueService.fail(job.getId(), failure);
