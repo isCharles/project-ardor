@@ -2,7 +2,7 @@
 
 import {
   BookOpenText, Brain, Briefcase, CalendarDays, FileSearch, GraduationCap,
-  Clock3, Ellipsis, Home, LogOut, MessageSquareText, Settings2, SquareStack, Target, TrendingUp,
+  Clock3, Ellipsis, Home, LogOut, MessageSquareText, Settings2, SquareStack, Target, TrendingUp, UsersRound,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -12,9 +12,11 @@ import { destinations, destinationActive, defaultDestinationIds, normalizeDestin
 import { api, ApiError } from "@/lib/api";
 import { type TaskSummary } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
+import { AppDialog } from "@/components/ui/app-dialog";
 import { ChatRailLink } from "./chat-rail-link";
+import { Button } from "@/components/ui/button";
 
-const icons = { home: Home, briefcase: Briefcase, target: Target, "file-search": FileSearch, book: BookOpenText, graduation: GraduationCap, message: MessageSquareText, stack: SquareStack, trend: TrendingUp, calendar: CalendarDays, clock: Clock3 };
+const icons = { home: Home, briefcase: Briefcase, target: Target, "file-search": FileSearch, book: BookOpenText, graduation: GraduationCap, message: MessageSquareText, users: UsersRound, stack: SquareStack, trend: TrendingUp, calendar: CalendarDays, clock: Clock3 };
 const workspaces = destinations.map(item => ({ ...item, icon: icons[item.icon as keyof typeof icons] }));
 const defaultIds = defaultDestinationIds;
 function preferenceKey(userId: string) { return `ardor:workspace-rail:v1:${userId}`; }
@@ -64,7 +66,12 @@ export function WorkspaceRail() {
   const [account, setAccount] = useState<{ id: string; email: string; admin: boolean } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [preference, setPreference] = useState<{ userId: string; ids: string[]; revision?: number; supportsIds?: boolean } | null>(null);
+  const [customRevision, setCustomRevision] = useState(0);
+  const [customSaving, setCustomSaving] = useState(false);
   const savingPreference = useRef(false);
+  const [customizing, setCustomizing] = useState(false);
+  const [customDraft, setCustomDraft] = useState<string[]>(defaultIds);
+  const [customError, setCustomError] = useState("");
   const [railContext, setRailContext] = useState<{ id: string; x: number; y: number } | null>(null);
   const [railSaving, setRailSaving] = useState(false);
   const [railError, setRailError] = useState("");
@@ -136,10 +143,29 @@ export function WorkspaceRail() {
   }, [account?.id]);
 
   useEffect(() => {
+    const open = () => { if (account) { setCustomDraft(pinnedIds); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); setMoreOpen(false); setAccountOpen(false); } };
     const sync = (event: StorageEvent) => { if (account && event.key === cacheKey(account.id)) window.dispatchEvent(new Event("ardor:sidebar-refresh")); };
+    window.addEventListener("ardor:customize-sidebar", open);
     window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
-  }, [account]);
+    return () => { window.removeEventListener("ardor:customize-sidebar", open); window.removeEventListener("storage", sync); };
+  }, [account, pinnedIds, preference?.revision]);
+
+  async function saveSidebar() {
+    if (!account || customSaving || preference?.revision === undefined) return;
+    setCustomSaving(true); savingPreference.current = true; setCustomError("");
+    try {
+      const view = validView(await api<SidebarWire>("/api/profile/sidebar", { method: "PUT", body: JSON.stringify({ ...(preference?.supportsIds ? { destinationIds: customDraft } : { hrefs: legacyHrefsForDestinations(customDraft) }), expectedRevision: customRevision, expectedUserId: account.id }) }));
+      if (view.userId !== account.id) throw new Error("Account changed");
+      setPreference({ userId: account.id, ids: view.ids, revision: view.revision, supportsIds: view.supportsIds });
+      cacheView(account.id, view);
+      setCustomizing(false);
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 409) {
+        try { const view = validView(await api<SidebarWire>("/api/profile/sidebar")); if (view.userId === account.id) { setPreference({ userId: account.id, ids: view.ids, revision: view.revision, supportsIds: view.supportsIds }); setCustomRevision(view.revision); } } catch { /* Keep the draft on refresh failure. */ }
+        setCustomError(t("Another device changed your sidebar. Your choices are kept here; review them, then save again to replace the account layout.", "其他设备已更新侧栏。你的选择仍保留在这里，请核对后再次保存，才会替换账户布局。"));
+      } else setCustomError(t("Could not sync your sidebar. Your choices are kept; retry when the server is available.", "侧栏同步失败，你的选择已保留。请在服务恢复后重试。"));
+    } finally { setCustomSaving(false); savingPreference.current = false; }
+  }
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -391,8 +417,17 @@ export function WorkspaceRail() {
           {group.items.map((item) => { const label = t(item.en, item.zh); return <Link key={item.id} href={item.href} onContextMenu={(event) => openRailContext(event, item.id)} onClick={() => { acknowledgeBackground(item.modules); closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-violet-50 ${destinationActive(item.id, pathname) ? "bg-violet-50 text-violet-700" : "text-stone-700"}`}><item.icon className="size-4 shrink-0" aria-hidden="true" /><span>{label}</span>{hasReady(item.href) && <span className="ml-auto size-2 rounded-full bg-red-500" aria-hidden="true" />}</Link>; })}
         </Fragment>)}
         <button type="button" onClick={() => { if (pathname === "/app") window.dispatchEvent(new Event("ardor:open-memory")); else { window.sessionStorage.setItem("ardor:open-memory", "1"); router.push("/app"); } closeMore(); window.dispatchEvent(new Event("ardor:close-chat-drawer")); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-stone-700 hover:bg-violet-50"><Brain className="size-4 shrink-0" aria-hidden="true" />{t("Memory", "总体记忆")}</button>
+        <button type="button" disabled={!account} onClick={() => { closeMore(); setCustomDraft(pinnedIds); setCustomRevision(preference?.revision ?? 0); setCustomError(""); setCustomizing(true); }} className="mt-1 flex w-full items-center gap-3 rounded-xl border-t border-stone-100 px-3 py-2.5 text-left text-sm text-violet-700 hover:bg-violet-50"><Settings2 className="size-4" />{t("Customize sidebar", "自定义侧栏")}</button>
       </div>}
 
+      {customizing && <AppDialog title={t("Customize sidebar", "自定义侧栏")} onClose={() => setCustomizing(false)}>
+        <p className="mb-4 text-sm text-stone-500">{t("Selected modules stay in the sidebar. Others go in More. Synced to your account across browser and desktop.", "选中项显示在侧栏，其余收进更多。按账户在浏览器与桌面端同步。")}</p>
+        {preference?.revision === undefined && <p role="status" className="mb-3 text-xs text-stone-500">{t("Waiting to read account settings. Your choices will not be overwritten.", "正在读取账户设置，不会覆盖你的选择。")} <button type="button" className="text-violet-700 underline" onClick={() => window.dispatchEvent(new Event("ardor:sidebar-refresh"))}>{t("Retry sync", "重试同步")}</button></p>}
+        <div className="space-y-1">{workspaces.map((item, index) => <Fragment key={item.id}>{(index === 0 || workspaces[index - 1].domain !== item.domain) && <p className="px-3 pb-1 pt-3 text-xs font-semibold text-stone-500">{groupLabel(item.domain, t)}</p>}<label className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 hover:bg-violet-50"><item.icon className="size-4 text-stone-500" /><span className="flex-1 text-sm">{t(item.en, item.zh)}</span><input type="checkbox" checked={customDraft.includes(item.id)} disabled={fixedIds.includes(item.id) || customSaving} onChange={(event) => setCustomDraft((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} className="size-4 accent-violet-600" /></label></Fragment>)}</div>
+        {customError && <p role="alert" className="mt-3 text-sm text-red-600">{customError}</p>}
+        {account && legacyHrefs(account.id) && <button type="button" disabled={customSaving} onClick={() => setCustomDraft(destinationsFromLegacy(legacyHrefs(account.id)))} className="mt-3 text-xs text-violet-700 underline">{t("Load this device's previous layout", "载入此设备的旧布局")}</button>}
+        <div className="mt-5 flex justify-between gap-2"><Button variant="outline" disabled={customSaving} onClick={() => setCustomDraft(defaultIds)}>{t("Reset defaults", "恢复默认")}</Button><Button disabled={customSaving || preference?.revision === undefined} onClick={() => void saveSidebar()}>{customSaving ? t("Syncing…", "正在同步…") : t("Save", "保存")}</Button></div>
+      </AppDialog>}
       {accountOpen && (
         <>
           <button type="button" className="fixed inset-0 z-40 cursor-default" aria-label={t("Close account menu", "关闭账户菜单")} onClick={() => setAccountOpen(false)} />

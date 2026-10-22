@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Bot, CheckCircle2, CircleAlert, Database, Globe2, KeyRound, LoaderCircle, LogOut, Mic, RotateCcw, Save, UserRound, Volume2, Wifi } from "lucide-react";
+import { Activity, Bot, CheckCircle2, ChevronRight, CircleAlert, Database, Globe2, KeyRound, LoaderCircle, LogOut, Mic, RefreshCw, RotateCcw, Save, UserRound, Volume2, Wifi } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, MouseEvent, useEffect, useState } from "react";
 
@@ -48,6 +48,7 @@ type AuxiliaryApiConfig = {
   personalOverride: boolean;
 };
 type InlineFeedback = { kind: "pending" | "success" | "error"; message: string };
+type LlmModelListResponse = { models: string[] };
 type HealthServiceType = "PRIMARY_LLM" | "WEB_SEARCH" | AuxiliaryServiceType;
 type HealthResult = { kind: "pending" | "success" | "error"; message: string };
 type UsageSnapshot = { tier: "FREE" | "MEMBER"; resetsAt: string; features: Array<{ feature: string; used: number; limit: number }> };
@@ -80,6 +81,9 @@ export default function SettingsPage() {
   const [testingWebSearch, setTestingWebSearch] = useState(false);
   const [savingWebSearch, setSavingWebSearch] = useState(false);
   const [llmFeedback, setLlmFeedback] = useState<InlineFeedback | null>(null);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [modelFeedback, setModelFeedback] = useState<InlineFeedback | null>(null);
   const [webSearchFeedback, setWebSearchFeedback] = useState<InlineFeedback | null>(null);
   const [testingIntegrations, setTestingIntegrations] = useState<Partial<Record<AuxiliaryServiceType, boolean>>>({});
   const [savingIntegrations, setSavingIntegrations] = useState<Partial<Record<AuxiliaryServiceType, boolean>>>({});
@@ -177,6 +181,44 @@ export default function SettingsPage() {
       setLlmFeedback({ kind: "success", message: `${result.message} · ${result.model} · ${result.latencyMs} ms` });
     } catch (reason) { setLlmFeedback({ kind: "error", message: reason instanceof Error ? reason.message : t("Connection test failed", "连接测试失败") }); }
     finally { setTestingLlm(false); }
+  }
+
+  async function fetchModelOptions(event: MouseEvent<HTMLButtonElement>) {
+    const form = event.currentTarget.form;
+    if (!form) return;
+    const data = new FormData(form);
+    const baseUrl = String(data.get("baseUrl") ?? "").trim();
+    if (!baseUrl) {
+      setModelFeedback({ kind: "error", message: t("Enter a Base URL first.", "请先填写 Base URL。") });
+      return;
+    }
+    setFetchingModels(true);
+    setModelFeedback({ kind: "pending", message: t("Reading models from the endpoint…", "正在从服务端读取模型…") });
+    try {
+      const result = await api<LlmModelListResponse>("/api/settings/llm/models", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: data.get("provider"),
+          baseUrl,
+          apiKey: data.get("apiKey"),
+        }),
+      });
+      setModelOptions(result.models);
+      setModelFeedback({ kind: "success", message: t(`${result.models.length} models found. Pick one below.`, `找到 ${result.models.length} 个模型，可在下方选择。`) });
+    } catch (reason) {
+      setModelFeedback({ kind: "error", message: reason instanceof Error ? reason.message : t("Could not fetch models", "获取模型列表失败") });
+    } finally {
+      setFetchingModels(false);
+    }
+  }
+
+  function fillPackyPreset() {
+    const form = document.getElementById("personal-api-primary-llm");
+    if (!(form instanceof HTMLFormElement)) return;
+    (form.elements.namedItem("provider") as HTMLSelectElement).value = "OPENAI_COMPATIBLE";
+    (form.elements.namedItem("baseUrl") as HTMLInputElement).value = "https://cf.api.fan/v1";
+    setModelOptions([]);
+    setModelFeedback({ kind: "success", message: t("Packy endpoint filled. Choose an OpenAI-compatible model group, then fetch models.", "已填入 Packy 端点。请选择支持 OpenAI 兼容的令牌分组，再获取模型列表。") });
   }
 
   async function testAllConnections() {
@@ -342,6 +384,17 @@ export default function SettingsPage() {
   const allApiConfigs = [llm, webSearch, ...integrations];
   const personalApiCount = allApiConfigs.filter((item) => item.personalOverride).length;
   const inheritedApiCount = allApiConfigs.filter((item) => item.configurationSource === "ADMIN").length;
+  const apiServiceRows: Array<{ type: HealthServiceType; label: string; icon: typeof KeyRound; configured: boolean; personal: boolean }> = [
+    { type: "PRIMARY_LLM", label: healthServiceLabels.PRIMARY_LLM, icon: KeyRound, configured: llm.configured, personal: llm.personalOverride },
+    { type: "WEB_SEARCH", label: healthServiceLabels.WEB_SEARCH, icon: Globe2, configured: webSearch.configured, personal: webSearch.personalOverride },
+    ...integrations.map((integration) => ({
+      type: integration.serviceType,
+      label: integrationDetails[integration.serviceType].title,
+      icon: integrationDetails[integration.serviceType].icon,
+      configured: integration.configured,
+      personal: integration.personalOverride,
+    })),
+  ];
   const englishUsageLabels: Record<string, string> = {
     AGENT_CHAT: "Agent chat", RESUME_ANALYSIS: "Resume analysis",
     INTERVIEW_CREATE: "Mock interviews", INTERVIEW_RECAP: "Interview recaps",
@@ -413,14 +466,50 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <nav aria-label={t("API services", "API 服务")} className="flex flex-wrap gap-2">{(Object.keys(healthServiceLabels) as HealthServiceType[]).map((type) => <button key={type} type="button" aria-current={apiService === type ? "page" : undefined} onClick={() => setApiService(type)} className={`rounded-xl px-3 py-2 text-sm ${apiService === type ? "bg-violet-100 text-violet-800" : "bg-white/70 text-stone-600 hover:bg-white"}`}>{healthServiceLabels[type]}</button>)}</nav>
+        <div className="grid items-start gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <nav aria-label={t("API services", "API 服务")} className="ardor-panel rounded-[1.5rem] p-2">
+          {apiServiceRows.map((row) => {
+            const Icon = row.icon;
+            const selected = apiService === row.type;
+            return <button key={row.type} type="button" aria-current={selected ? "page" : undefined} onClick={() => setApiService(row.type)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors ${selected ? "bg-violet-50 text-violet-800" : "text-stone-700 hover:bg-stone-50"}`}>
+              <Icon className={`size-4 shrink-0 ${selected ? "text-violet-600" : "text-stone-400"}`} aria-hidden="true" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{row.label}</span>
+                <span className={`mt-0.5 block truncate text-[11px] ${row.personal ? "text-violet-600" : row.configured ? "text-stone-400" : "text-amber-600"}`}>
+                  {row.personal ? t("Personal", "个人配置") : row.configured ? t("Admin default", "管理员默认") : t("Not configured", "未配置")}
+                </span>
+              </span>
+              <ChevronRight className={`size-3.5 shrink-0 ${selected ? "text-violet-500" : "text-stone-300"}`} aria-hidden="true" />
+            </button>;
+          })}
+        </nav>
+        <div className="min-w-0 space-y-6">
         <section className={apiService === "PRIMARY_LLM" ? "ardor-panel flex flex-col rounded-[2rem] p-6 md:p-8" : "hidden"}>
           <div className="flex items-center justify-between gap-4"><div className="flex items-center gap-3"><KeyRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("LLM service", "LLM 服务")}</h2></div>{llm.configured && <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"><CheckCircle2 className="size-3.5" />{llm.personalOverride ? t("Personal", "个人配置") : t("Admin default", "管理员默认")} {llm.keyHint}</span>}</div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("Ardor uses LangChain4j tool calling. Choose a model that supports tools, test the connection, then save.", "Agent 使用 LangChain4j Tool Calling。模型必须支持工具调用；建议先测试连接，再保存配置。")}</p>
           <form id="personal-api-primary-llm" key={JSON.stringify(llm)} className="mt-7 flex flex-1 flex-col gap-5" onSubmit={saveLlm}>
             <label className="block text-sm font-medium">{t("API format", "API 协议")}<select className="field mt-2" name="provider" defaultValue={llm.provider}><option value="OPENAI_COMPATIBLE">OpenAI Compatible</option><option value="ANTHROPIC_COMPATIBLE">Anthropic Compatible</option></select></label>
-            <label className="block text-sm font-medium">Base URL<input className="field mt-2 font-mono text-sm" type="url" name="baseUrl" defaultValue={llm.baseUrl} maxLength={512} required /><span className="mt-2 block text-xs font-normal leading-5 text-muted-foreground">{t("DeepSeek example: use https://api.deepseek.com for OpenAI, or https://api.deepseek.com/anthropic for Anthropic.", "DeepSeek 示例：OpenAI 填 https://api.deepseek.com；Anthropic 填 https://api.deepseek.com/anthropic。")}</span></label>
-            <label className="block text-sm font-medium">{t("Model name", "模型名称")}<input className="field mt-2 font-mono text-sm" name="model" defaultValue={llm.model} maxLength={160} required /></label>
+            <div>
+              <div className="flex items-center justify-between gap-3"><label htmlFor="llm-base-url" className="text-sm font-medium">Base URL</label><button type="button" onClick={fillPackyPreset} className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-100">Packy</button></div>
+              <input id="llm-base-url" className="field mt-2 font-mono text-sm" type="url" name="baseUrl" defaultValue={llm.baseUrl} maxLength={512} required />
+              <span className="mt-2 block text-xs font-normal leading-5 text-muted-foreground">{t("DeepSeek: https://api.deepseek.com · Packy: click the Packy preset, then fetch models.", "DeepSeek 填 https://api.deepseek.com；Packy 点上方预设，再获取模型列表。")}</span>
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="llm-model" className="text-sm font-medium">{t("Model name", "模型名称")}</label>
+                <button type="button" disabled={fetchingModels} onClick={(event) => void fetchModelOptions(event)} className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-100 disabled:opacity-50">
+                  {fetchingModels ? <LoaderCircle className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+                  {fetchingModels ? t("Reading…", "读取中…") : t("Fetch models", "获取模型")}
+                </button>
+              </div>
+              <input id="llm-model" className="field mt-2 font-mono text-sm" name="model" defaultValue={llm.model} maxLength={160} required list="llm-model-options" />
+              <datalist id="llm-model-options">{modelOptions.map((model) => <option key={model} value={model} />)}</datalist>
+              {modelOptions.length > 0 && <select aria-label={t("Available models", "可用模型")} defaultValue="" onChange={(event) => { if (!event.target.value) return; (document.getElementById("llm-model") as HTMLInputElement).value = event.target.value; }} className="field mt-2 font-mono text-sm">
+                <option value="">{t(`Select from ${modelOptions.length} fetched models`, `从已获取的 ${modelOptions.length} 个模型中选择`)}</option>
+                {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
+              </select>}
+              {modelFeedback && <p role={modelFeedback.kind === "error" ? "alert" : "status"} className={`mt-2 text-xs leading-5 ${modelFeedback.kind === "error" ? "text-red-600" : modelFeedback.kind === "success" ? "text-emerald-700" : "text-stone-500"}`}>{modelFeedback.message}</p>}
+            </div>
             <label className="block text-sm font-medium">API Key<input className="field mt-2 font-mono text-sm" type="password" name="apiKey" maxLength={4096} autoComplete="new-password" data-1p-ignore data-lpignore="true" placeholder={llm.personalOverride ? t(`Current personal key ${llm.keyHint}; enter a new key to replace it`, `当前个人 Key ${llm.keyHint}；输入新 Key 才会替换`) : llm.configurationSource === "ADMIN" ? t("Leave blank to test the admin default; enter a key to override it", "留空测试管理员默认；填写后创建个人覆盖") : t("An API key is required for initial setup", "首次配置必须填写")} /></label>
             <div className="mt-auto flex flex-wrap gap-3 pt-2"><Button type="button" variant="outline" disabled={testingLlm || savingLlm} onClick={testLlm}>{testingLlm ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Wifi className="mr-2 size-4" />}{testingLlm ? t("Testing…", "正在测试…") : t("Test connection", "测试连接")}</Button><Button disabled={testingLlm || savingLlm}>{savingLlm ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}{savingLlm ? t("Saving…", "正在保存…") : t("Save personal configuration", "保存为个人配置")}</Button>{llm.personalOverride && <Button type="button" variant="outline" onClick={() => void restoreAdminDefault("llm")}><RotateCcw className="mr-2 size-4" />{t("Restore admin default", "恢复管理员默认")}</Button>}</div>
             <FeedbackBanner feedback={llmFeedback} />
@@ -469,6 +558,8 @@ export default function SettingsPage() {
                 </form>
               );
             })}
+        </div>
+        </div>
         </>}
         </div>
         </div>

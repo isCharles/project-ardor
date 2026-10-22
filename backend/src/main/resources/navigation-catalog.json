@@ -41,7 +41,7 @@
       "legacyHref": "/app/opportunities",
       "en": "Interviews",
       "zh": "面试",
-      "icon": "briefcase",
+      "icon": "users",
       "aliases": [
         "/app/opportunities"
       ],

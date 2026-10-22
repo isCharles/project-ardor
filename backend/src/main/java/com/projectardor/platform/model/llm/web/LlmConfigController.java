@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.platform.model.llm.service.LlmConfigService;
 import com.projectardor.platform.model.llm.service.LlmConnectionTestService;
+import com.projectardor.platform.model.llm.service.LlmModelDiscoveryService;
 import com.projectardor.platform.usage.QuotaProtected;
 import com.projectardor.platform.usage.UsageFeature;
 
@@ -25,10 +26,13 @@ public class LlmConfigController {
 
     private final LlmConfigService service;
     private final LlmConnectionTestService connectionTestService;
+    private final LlmModelDiscoveryService modelDiscoveryService;
 
-    public LlmConfigController(LlmConfigService service, LlmConnectionTestService connectionTestService) {
+    public LlmConfigController(LlmConfigService service, LlmConnectionTestService connectionTestService,
+            LlmModelDiscoveryService modelDiscoveryService) {
         this.service = service;
         this.connectionTestService = connectionTestService;
+        this.modelDiscoveryService = modelDiscoveryService;
     }
 
     @GetMapping
@@ -49,6 +53,13 @@ public class LlmConfigController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody LlmConfigUpdateRequest request) {
         return connectionTestService.test(principal.userId(), request);
+    }
+
+    @PostMapping("/models")
+    public LlmModelListResponse listModels(
+            @AuthenticationPrincipal ArdorPrincipal principal,
+            @Valid @RequestBody LlmModelListRequest request) {
+        return new LlmModelListResponse(modelDiscoveryService.list(principal.userId(), request));
     }
 
     @DeleteMapping
