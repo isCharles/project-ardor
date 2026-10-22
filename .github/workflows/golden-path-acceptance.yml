@@ -189,12 +189,21 @@ jobs:
           docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET free_monthly_limit=100, member_monthly_limit=100, user_minute_limit=100, global_minute_limit=1000 WHERE feature IN ('LEARNING_PLAN','INTERVIEW_RECAP')"
           node backend/src/test/resources/learning-context-acceptance.mjs
 
+      - name: Verify connected learning progress in the redesigned browser UI
+        working-directory: frontend
+        env:
+          ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
+          ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
+        run: node tests/learning-progress-live.mjs
+
       - name: Upload browser screenshot on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: golden-path-browser-failure
-          path: ${{ runner.temp }}/ardor-ui-failure.png
+          path: |
+            ${{ runner.temp }}/ardor-ui-failure.png
+            frontend/.next/learning-progress-live-failure.png
           if-no-files-found: ignore
 
       - name: Show service logs on failure

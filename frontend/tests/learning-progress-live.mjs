@@ -10,7 +10,7 @@ const model=process.env.ARDOR_ACCEPTANCE_LLM_BASE;
 assert.ok(backend&&model,"Explicit disposable backend and fake model URLs required");
 const origin="http://127.0.0.1:3114";
 const server=spawn(process.execPath,["node_modules/next/dist/bin/next","start","-p","3114"],{stdio:"pipe"});
-let logs="",browser;server.stdout.on("data",x=>logs+=x);server.stderr.on("data",x=>logs+=x);
+let logs="",browser,page;server.stdout.on("data",x=>logs+=x);server.stderr.on("data",x=>logs+=x);
 try {
   let ready=false;
   for(let i=0;i<100;i++){if(server.exitCode!==null)throw new Error(logs);try{if((await fetch(origin)).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,100));}
@@ -46,9 +46,12 @@ try {
     const u=new URL(route.request().url());const r=await route.fetch({url:backend+u.pathname+u.search});
     await route.fulfill({response:r});
   });
-  const page=await context.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
+  page=await context.newPage();
+  const errors=[];page.on("pageerror",e=>errors.push(e.message));
   await page.goto(origin+"/app/learning/progress?sourceInterviewId="+interview.id);
-  await page.getByRole("link",{name:"Ask Ardor for a learning plan",exact:true}).click();
+  const sourceTrack=page.locator(`[data-progress-question="${question.id}"]`);
+  await sourceTrack.getByRole("button",{name:"Ask Ardor for a tailored plan",exact:true}).hover();
+  await sourceTrack.getByRole("link",{name:"Build a tailored plan",exact:true}).click();
   const composer=page.getByRole("textbox",{name:/Message Ardor|给 Ardor 发消息/});
   await composer.waitFor();
   assert.ok((await composer.inputValue()).includes(question.id),"Handoff retains the exact source question");
@@ -62,9 +65,36 @@ try {
   await page.getByRole("heading",{name:question.questionText,exact:true}).waitFor();
   assert.equal(await page.locator('a[href="/app/learning?id='+plan.id+'"]').count(),1);
   assert.equal(await page.locator('a[href="/app/cards?card='+card.id+'"]').count(),1);
-  assert.match(await page.locator("[data-progress-question]").innerText(),/Attempts · 1/);
+  await sourceTrack.getByText(/Retried 1×/).waitFor();
+  await page.reload();
+  await sourceTrack.getByText(/Retried 1×/).waitFor();
+  // Both canonical and legacy routes must preserve the selected source and its
+  // links. A redesign must not silently retire this authenticated coverage.
+  await page.goto(origin+"/app/evidence?sourceInterviewId="+interview.id);
+  await sourceTrack.getByText(/Retried 1×/).waitFor();
+  assert.equal(await sourceTrack.locator(`a[href="/app/learning?id=${plan.id}"]`).count(),1);
+  assert.equal(await sourceTrack.locator(`a[href="/app/cards?card=${card.id}"]`).count(),1);
+  const stranger=await browser.newContext();
+  try {
+    const csrfResponse=await stranger.request.get(backend+"/api/auth/csrf");
+    assert.equal(csrfResponse.status(),200);
+    const csrf=await csrfResponse.json();
+    const registration=await stranger.request.post(backend+"/api/auth/register",{
+      headers:{[csrf.headerName]:csrf.token},
+      data:{email:"progress-stranger-"+randomUUID()+"@ardor.invalid",password:"Live-"+randomUUID()+"!"},
+    });
+    assert.equal(registration.status(),201);
+    const denied=await stranger.request.get(backend+"/api/learning-progress?sourceInterviewId="+interview.id);
+    assert.equal(denied.status(),404,"Another user's source must not be visible");
+    const ownProgress=await stranger.request.get(backend+"/api/learning-progress");
+    assert.equal(ownProgress.status(),200);
+    assert.equal((await ownProgress.json()).tracks.length,0);
+  } finally { await stranger.close(); }
   assert.deepEqual(errors,[]);
   await page.screenshot({path:".next/learning-progress-live.png",fullPage:true});
   console.log("PASS: real browser, authenticated disposable API and PostgreSQL; two source rounds, confirmed review, learning, replay and card review render in one owned progress view. No API mocks.");
-} catch(error){console.error(logs.slice(-1000));throw error;}
+} catch(error){
+  await page?.screenshot({path:".next/learning-progress-live-failure.png",fullPage:true}).catch(()=>{});
+  console.error(logs.slice(-1000));throw error;
+}
 finally{await browser?.close();server.kill();}
