@@ -104,7 +104,9 @@ async function runCase(item) {
       }),
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`stream HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    if (!response.ok) {
+      throw new Error(`HTTP_${response.status}: ${(await response.text()).slice(0, 300)}`);
+    }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -117,11 +119,11 @@ async function runCase(item) {
     const error = events.find((event) => event.type === "error");
     if (error) throw new Error(`${error.errorCode ?? "AGENT_ERROR"}: ${error.content ?? ""}`);
     const done = events.find((event) => event.type === "done");
-    if (!done) throw new Error("stream ended without a done event");
+    if (!done) throw new Error("AGENT_STREAM_NO_DONE: stream ended without a done event");
     const traceResponse = await fetch(`${base}/api/agent/runs/${requestId}/trace`, {
       headers: { Cookie: cookieJar, Accept: "application/json" },
     });
-    if (!traceResponse.ok) throw new Error(`trace HTTP ${traceResponse.status}`);
+    if (!traceResponse.ok) throw new Error(`TRACE_HTTP_${traceResponse.status}`);
     const trace = await traceResponse.json();
     const toolNames = trace.spans.filter((span) => span.kind === "TOOL").map((span) => span.name);
     const failures = [];
@@ -140,15 +142,27 @@ async function runCase(item) {
     const cost = (input / 1_000_000) * inputPrice + (output / 1_000_000) * outputPrice;
     tokensUsed += total;
     costUsed += cost;
-    return { id: item.id, status: failures.length ? "FAIL" : "PASS", failures, requestId,
+    return { id: item.id, status: failures.length ? "FAIL" : "PASS",
+      failureKind: failures.length ? "EXPECTATION" : null, failures, requestId,
       toolNames, llmCalls: trace.totals?.llmCalls ?? 0, inputTokens: input, outputTokens: output,
       costUsd: Number(cost.toFixed(6)), traceStatus: trace.status };
   } catch (error) {
-    return { id: item.id, status: "ERROR", failures: [error instanceof Error ? error.message : String(error)],
-      requestId, toolNames: [], llmCalls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+    const failureKind = classifyFailure(error);
+    return { id: item.id, status: "ERROR", failureKind,
+      failures: [failureKind], requestId, toolNames: [], llmCalls: 0,
+      inputTokens: 0, outputTokens: 0, costUsd: 0 };
   } finally {
     clearTimeout(timer);
   }
+}
+
+function classifyFailure(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const code = message.match(/^([A-Z][A-Z0-9_]+):/)?.[1];
+  if (code) return code;
+  if (message.startsWith("HTTP_") || message.startsWith("TRACE_HTTP_")) return "TRANSPORT";
+  if (error instanceof Error && error.name === "AbortError") return "TIMEOUT";
+  return "UNEXPECTED";
 }
 
 async function worker(queue, results) {
@@ -169,13 +183,18 @@ const report = {
   generatedAt: new Date().toISOString(), base, cases: results,
   totals: { cases: results.length, passed: results.filter((item) => item.status === "PASS").length,
     failed: results.filter((item) => item.status !== "PASS").length,
-    tokens: tokensUsed, costUsd: Number(costUsed.toFixed(6)) },
+    tokens: tokensUsed, costUsd: Number(costUsed.toFixed(6)),
+    failuresByKind: Object.fromEntries(Object.entries(
+      results.reduce((counts, item) => {
+        if (item.status !== "PASS") counts[item.failureKind ?? "UNEXPECTED"] = (counts[item.failureKind ?? "UNEXPECTED"] ?? 0) + 1;
+        return counts;
+      }, {})).sort()) },
   caps: { maxCases, concurrency, maxTokens, maxCost, inputPrice, outputPrice, timeoutMs },
   budgetStopped: stopped,
 };
 if (process.env.ARDOR_EVAL_REPORT) fs.writeFileSync(process.env.ARDOR_EVAL_REPORT, JSON.stringify(report, null, 2));
 for (const result of results) {
-  console.log(`${result.status.padEnd(5)} ${result.id} tokens=${result.inputTokens + result.outputTokens} cost=$${result.costUsd} tools=${result.toolNames.join(",")}`);
+  console.log(`${result.status.padEnd(5)} ${result.id} kind=${result.failureKind ?? "-"} tokens=${result.inputTokens + result.outputTokens} cost=$${result.costUsd} tools=${result.toolNames.join(",")}`);
   for (const failure of result.failures) console.log(`      ${failure}`);
 }
 console.log(JSON.stringify(report.totals));

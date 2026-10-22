@@ -31,7 +31,15 @@ node scripts/agent-eval.mjs
 
 每次通过 `/api/agent/messages/stream` 发起新对话，结束后读取
 `/api/agent/runs/{requestId}/trace` 的实际 Token 和工具调用。脚本不会记录 Prompt、
-答案正文、API Key 或 Cookie；报告只包含 case id、状态、工具名和 Token/费用汇总。
+答案正文、API Key 或 Cookie；报告只包含 case id、状态、失败分类、工具名和 Token/费用汇总。
+
+失败分类：
+
+- `EXPECTATION`：工具或答案断言不满足；
+- `TIMEOUT`：单 case 超时；
+- `TRANSPORT`：HTTP/SSE/Trace 传输失败；
+- `QUOTA_*`、`LLM_*`、`AGENT_*`：服务端返回的稳定错误码；
+- `UNEXPECTED`：未归类异常，报告不包含原始 Prompt/答案。
 
 预算规则：
 

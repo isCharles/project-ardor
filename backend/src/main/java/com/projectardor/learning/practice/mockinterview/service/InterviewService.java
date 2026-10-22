@@ -56,6 +56,9 @@ public class InterviewService {
     private final TransactionTemplate transactions;
     private final LeetCodeHot100 hot100;
     private final com.projectardor.jobsearch.interview.service.OpportunityService opportunities;
+    /** Serializes manual finish and async evaluation for the same session in this process. */
+    private final java.util.concurrent.ConcurrentHashMap<UUID, Object> evaluationLocks =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     public InterviewService(
             InterviewSessionRepository sessionRepository,
@@ -243,6 +246,13 @@ public class InterviewService {
     }
 
     public InterviewEvaluation finish(UUID userId, UUID sessionId) {
+        Object lock = evaluationLocks.computeIfAbsent(sessionId, ignored -> new Object());
+        synchronized (lock) {
+            return finishLocked(userId, sessionId);
+        }
+    }
+
+    private InterviewEvaluation finishLocked(UUID userId, UUID sessionId) {
         InterviewSession session = get(userId, sessionId);
         var existing = evaluationRepository.findByInterviewSessionIdAndUserId(sessionId, userId);
         if (existing.isPresent()) return existing.get();
@@ -369,7 +379,19 @@ public class InterviewService {
         Map<String, Object> normalized = new LinkedHashMap<>();
         for (String key : EVALUATION_KEYS) {
             Object value = parsed.get(key);
-            normalized.put(key, value instanceof List<?> ? value : List.of());
+            if (value instanceof List<?> items) {
+                List<String> bounded = new ArrayList<>();
+                for (Object item : items) {
+                    if (bounded.size() >= 20) break;
+                    if (item == null) continue;
+                    String text = String.valueOf(item).strip();
+                    if (text.isBlank()) continue;
+                    bounded.add(text.length() <= 1000 ? text : text.substring(0, 1000));
+                }
+                normalized.put(key, bounded);
+            } else {
+                normalized.put(key, List.of());
+            }
         }
         return normalized;
     }
