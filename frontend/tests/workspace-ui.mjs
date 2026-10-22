@@ -20,9 +20,6 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.ARDOR_UI_BROWSER_CHANNEL ? { channel: process.env.ARDOR_UI_BROWSER_CHANNEL } : {}) });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   let userId = "workspace-owner";
-  const sidebarViews = new Map();
-  let sidebarSaveFails = false;
-  const sidebarDefaults = ["/app", "/app/resumes", "/app/interviews", "/app/cards", "/app/calendar", "/app/applications"];
   let admin = false;
   let taskRefreshFails = false;
   let displayedMessages = [];
@@ -56,17 +53,6 @@ try {
     let body = {};
     if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin };
     else if (path === "/api/agent/permissions") body = { globalLevel: 0, modules: [] };
-    else if (path === "/api/profile/sidebar") {
-      body = sidebarViews.get(userId) ?? { userId, hrefs: sidebarDefaults, revision: 0, configured: false };
-      if (route.request().method() === "PUT") {
-        if (sidebarSaveFails) return route.fulfill({ status: 503, json: { message: "Synthetic sync failure" } });
-        const input = route.request().postDataJSON();
-        if (input.expectedUserId !== userId) return route.fulfill({ status: 400, json: { message: "Account changed" } });
-        if (input.expectedRevision !== body.revision) return route.fulfill({ status: 409, json: { message: "Version changed" } });
-        body = { userId, hrefs: input.hrefs, revision: body.revision + 1, configured: true };
-        sidebarViews.set(userId, body);
-      }
-    }
     else if (path === "/api/agent/features") body = [
       { key: "LEARNING", id: "f1111111-1111-3111-8111-111111111111", label: "学习", englishLabel: "Learning", description: "学习概念", englishDescription: "Learn concepts and practice" },
       { key: "CARDS", id: "f2222222-2222-3222-8222-222222222222", label: "记忆卡", englishLabel: "Flashcards", description: "准备记忆卡" },
@@ -285,45 +271,14 @@ try {
   await page.getByRole("heading", { name: "My custom title", exact: true }).waitFor();
   assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "STANDARD");
 
-  await page.getByRole("button", { name: "More workspaces" }).click();
-  await page.getByRole("button", { name: "Customize sidebar", exact: true }).click();
-  const custom = page.getByRole("dialog", { name: "Customize sidebar" });
-  assert.equal(await custom.getByLabel("Chat", { exact: true }).isDisabled(), true);
-  await custom.getByLabel("Resumes", { exact: true }).uncheck();
-  await custom.getByLabel("Materials & index", { exact: true }).check();
-  await custom.getByRole("button", { name: "Save", exact: true }).click();
-  await custom.waitFor({ state: "hidden" });
   const nav = page.getByRole("navigation", { name: "Workspaces", exact: true });
-  assert.equal(await nav.getByRole("link", { name: "Resumes", exact: true }).count(), 0);
-  assert.equal(await nav.getByRole("link", { name: "Materials & index", exact: true }).count(), 1);
-  const freshDevice = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await freshDevice.route("**/api/**", handleApi);
-  await freshDevice.addInitScript(() => localStorage.setItem("ardor:workspace-rail:v1:workspace-owner", JSON.stringify(["/app", "/app/knowledge"])));
-  const freshPage = await freshDevice.newPage();
-  await freshPage.goto(`${origin}/app`);
-  await freshPage.getByRole("navigation", { name: "Workspaces", exact: true }).getByRole("link", { name: "Materials & index", exact: true }).waitFor();
-  assert.equal(await freshPage.getByRole("navigation", { name: "Workspaces", exact: true }).getByRole("link", { name: "Resumes", exact: true }).count(), 0,
-    "A fresh browser uses the account layout rather than defaults or an older local layout");
-  assert.deepEqual(await freshPage.evaluate(() => JSON.parse(localStorage.getItem("ardor:workspace-rail:v1:workspace-owner"))), ["/app", "/app/knowledge"], "The old local layout remains recoverable");
-  await freshDevice.close();
   await page.getByRole("button", { name: "More workspaces" }).click();
-  await page.getByRole("button", { name: "Customize sidebar", exact: true }).click();
-  await custom.getByLabel("Calendar", { exact: true }).uncheck();
-  sidebarSaveFails = true;
-  await custom.getByRole("button", { name: "Save", exact: true }).click();
-  await custom.getByText(/Could not sync your sidebar/).waitFor();
-  assert.equal(await custom.getByLabel("Calendar", { exact: true }).isChecked(), false);
-  sidebarSaveFails = false;
-  const beforeConflict = sidebarViews.get(userId);
-  sidebarViews.set(userId, { ...beforeConflict, revision: beforeConflict.revision + 1 });
-  await custom.getByRole("button", { name: "Save", exact: true }).click();
-  await custom.getByText(/Another device changed your sidebar/).waitFor();
-  assert.equal(await custom.getByLabel("Calendar", { exact: true }).isChecked(), false);
-  await custom.getByRole("button", { name: "Save", exact: true }).click();
-  await custom.waitFor({ state: "hidden" });
+  assert.equal(await page.getByRole("button", { name: "Customize sidebar", exact: true }).count(), 0,
+    "The fixed workspace rail no longer exposes a customize dialog");
+  await page.keyboard.press("Escape");
   await page.screenshot({ path: ".next/workspace-chat.png" });
   await page.reload();
-  await nav.getByRole("link", { name: "Materials & index", exact: true }).waitFor();
+  await nav.getByRole("link", { name: "Chat", exact: true }).waitFor();
   await page.getByRole("button", { name: "More workspaces" }).click();
   await page.locator("#ardor-more-workspaces").getByRole("link", { name: "Resumes", exact: true }).waitFor();
 
@@ -347,31 +302,10 @@ try {
   await services.getByRole("button", { name: "Primary LLM", exact: true }).click();
   assert.equal(await page.locator('#personal-api-primary-llm input[name="model"]').inputValue(), "Unsaved model");
   await categories.getByRole("button", { name: "General & sidebar" }).click();
-  await page.getByRole("button", { name: "Customize sidebar", exact: true }).click();
-  await custom.getByRole("button", { name: "Reset defaults" }).click();
-  await custom.press("Escape"); // cancel must not save defaults
   await page.reload();
-  await nav.getByRole("link", { name: "Materials & index", exact: true }).waitFor();
   userId = "workspace-other";
   await page.reload();
   await nav.getByRole("link", { name: "Job search", exact: true }).waitFor();
-  assert.equal(await nav.getByRole("link", { name: "Materials & index", exact: true }).count(), 0);
-  await page.evaluate(() => localStorage.setItem("ardor:workspace-rail:v1:workspace-other", "bad json"));
-  await page.reload();
-  await nav.getByRole("link", { name: "Job search", exact: true }).waitFor();
-  assert.equal(sidebarViews.has("workspace-other"), false, "Default or corrupt local layouts must not initialize the account layout");
-  userId = "legacy-sidebar-owner";
-  const migrationDevice = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await migrationDevice.route("**/api/**", handleApi);
-  await migrationDevice.addInitScript(() => localStorage.setItem("ardor:workspace-rail:v1:legacy-sidebar-owner", JSON.stringify(["/app", "/app/knowledge"])));
-  const migrationPage = await migrationDevice.newPage();
-  const migrationSaved = migrationPage.waitForResponse(response => response.url().endsWith("/api/profile/sidebar") && response.request().method() === "PUT");
-  await migrationPage.goto(`${origin}/app`);
-  assert.equal((await migrationSaved).ok(), true);
-  assert.deepEqual(sidebarViews.get(userId).hrefs, ["/app", "/app/knowledge"]);
-  assert.equal(sidebarViews.get(userId).revision, 1);
-  await migrationDevice.close();
-  userId = "workspace-other";
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.setViewportSize({ width: 1440, height: 900 });

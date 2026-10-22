@@ -176,9 +176,9 @@ async function main() {
   await sidebarOwner.request("/api/profile", { method: "PUT", body: { displayName: "Sidebar sync", headline: "Updated profile", targetRoles: [], timezone: "Asia/Shanghai" } });
   assert.deepEqual(await otherDevice.request("/api/profile/sidebar"), savedSidebar, "Profile edits preserve sidebar preferences");
   const domainSidebar = await sidebarOwner.request("/api/profile/sidebar", { method: "PUT",
-    body: { destinationIds: ["job-search", "learning.practice"], expectedRevision: 2, expectedUserId: sidebarUser.id } });
-  assert.deepEqual(domainSidebar.destinationIds, ["chat", "job-search", "learning.practice"]);
-  assert.deepEqual(domainSidebar.hrefs, ["/app", "/app/opportunities", "/app/interviews"]);
+    body: { destinationIds: ["job-search", "learning.mock-interviews"], expectedRevision: 2, expectedUserId: sidebarUser.id } });
+  assert.deepEqual(domainSidebar.destinationIds, ["chat", "job-search", "learning.mock-interviews"]);
+  assert.deepEqual(domainSidebar.hrefs, ["/app", "/app/job-search", "/app/learning/practice/mock-interviews"]);
   assert.deepEqual(await otherDevice.request("/api/profile/sidebar"), domainSidebar, "Stable IDs must persist in the real database across login sessions");
   const legacyRoundTrip = await otherDevice.request("/api/profile/sidebar", { method: "PUT",
     body: { hrefs: domainSidebar.hrefs, expectedRevision: 3, expectedUserId: sidebarUser.id } });
@@ -186,7 +186,7 @@ async function main() {
   await sidebarOwner.request("/api/profile/sidebar", { method: "PUT", expected: 400,
     body: { destinationIds: ["admin"], expectedRevision: 4, expectedUserId: sidebarUser.id } });
   await stranger.request("/api/profile/sidebar", { method: "PUT", expected: 400,
-    body: { destinationIds: ["learning.progress"], expectedRevision: 4, expectedUserId: sidebarUser.id } });
+    body: { destinationIds: ["learning.removed"], expectedRevision: 4, expectedUserId: sidebarUser.id } });
   assert.deepEqual(await sidebarOwner.request("/api/profile/sidebar"), legacyRoundTrip, "Invalid IDs and stale-account requests must not mutate saved preferences");
   await owner.request("/api/settings/llm", {
     method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
