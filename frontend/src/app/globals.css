@@ -581,8 +581,4 @@ time,
 }
 
 
-/* PDF export: hide interactive navigation/actions in the captured report. */
-.pdf-exporting .pdf-hidden { display: none !important; }
-.pdf-exporting { background: #fbfaf8 !important; }
-.pdf-exporting h1 { overflow: visible !important; white-space: normal !important; text-overflow: clip !important; }
-.issue-card { break-inside: avoid; page-break-inside: avoid; }
+

@@ -206,7 +206,7 @@ export default function ResumesPage() {
     const dialog = reanalyzeOpen && <ReanalyzeDialog defaultFamily={typeof data?.roleFamily === "string" ? data.roleFamily : "general"} busy={busy === "analyze"} onClose={() => setReanalyzeOpen(false)} onSubmit={(role, jd, family) => { setReanalyzeOpen(false); void analyze(selected, role, jd, family); }} />;
     if (report) return <main className="ardor-workbench min-h-screen text-[#1d1d1f]">
       <div style={{ paddingRight: previewOpen ? previewWidth : 0 }}>
-        <ResumeReportV3 report={report} onBack={() => { setSelectedId(null); setAnalysis(null); }} onViewResume={viewOriginalResume} />
+        <ResumeReportV3 report={report} resumeId={selected.id} onBack={() => { setSelectedId(null); setAnalysis(null); }} onViewResume={viewOriginalResume} />
       </div>
       {previewOpen && <ResumePreviewPanel resumeId={selected.id} filename={selected.originalFilename} width={previewWidth} onWidthChange={setPreviewWidth} onClose={() => setPreviewOpen(false)} />}
     </main>;

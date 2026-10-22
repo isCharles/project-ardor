@@ -3,7 +3,7 @@
 import { ArrowLeft, Download, FileText, Sparkles } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useLocale } from "@/lib/locale";
 
 export type RadarGrade = "S" | "A" | "B" | "C" | "D" | "E" | "F";
@@ -136,129 +136,66 @@ function IssueCard({ issue, t }: { issue: ResumeIssue; t: (en: string, zh: strin
   </article>;
 }
 
-export function ResumeReportV3({ report, onBack, onViewResume }: {
+export function ResumeReportV3({ report, resumeId, onBack, onViewResume }: {
   report: ResumeReportV3Data;
+  resumeId?: string;
   onBack?: () => void;
   onViewResume?: () => void;
 }) {
   const { t } = useLocale();
   const issueGroups: IssueSeverity[] = ["A", "B", "C"];
-  const reportRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
 
-  async function exportPdf() {
-    if (!reportRef.current || exporting) return;
+  async function exportReport() {
+    if (!resumeId || exporting) return;
     setExportError("");
     setExporting(true);
-    const details = Array.from(reportRef.current.querySelectorAll<HTMLDetailsElement>("details"));
-    const previousOpen = details.map((item) => item.open);
-    details.forEach((item) => { item.open = true; });
     try {
-      // Let the pdf-exporting class hide screen-only actions and open every Fix row.
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      const node = reportRef.current;
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import("html2canvas-pro"),
-        import("jspdf"),
-      ]);
-      const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 10;
-      const contentWidth = pageWidth - margin * 2;
-      const bottom = pageHeight - margin;
-      const gap = 4;
-      const rootWidth = node.getBoundingClientRect().width;
-      const blocks = Array.from(node.querySelectorAll<HTMLElement>("[data-pdf-block], .issue-card"));
-      const paintPage = () => {
-        pdf.setFillColor(251, 250, 248);
-        pdf.rect(0, 0, pageWidth, pageHeight, "F");
-      };
-      paintPage();
-      let cursorY = margin;
-      for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
-        const block = blocks[blockIndex];
-        const isSectionHeader = block.tagName === "DIV" && block.parentElement?.tagName === "SECTION";
-        const next = blocks[blockIndex + 1];
-        // Keep a severity heading with the first card when possible.
-        if (isSectionHeader && next?.classList.contains("issue-card")) {
-          const headerHeight = block.getBoundingClientRect().height * contentWidth / rootWidth;
-          const nextHeight = next.getBoundingClientRect().height * contentWidth / rootWidth;
-          if (cursorY + headerHeight + gap + nextHeight > bottom && cursorY > margin) {
-            pdf.addPage(); paintPage(); cursorY = margin;
-          }
-        }
-        const canvas = await html2canvas(block, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: "#fbfaf8",
-          logging: false,
-          windowWidth: node.scrollWidth,
-          windowHeight: node.scrollHeight,
-        });
-        let imageHeight = canvas.height * contentWidth / canvas.width;
-        if (cursorY + imageHeight > bottom && cursorY > margin) {
-          pdf.addPage(); paintPage(); cursorY = margin;
-        }
-        if (imageHeight <= bottom - margin + 0.01) {
-          pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", margin, cursorY, contentWidth, imageHeight);
-          cursorY += imageHeight + gap;
-          continue;
-        }
-        // Only an unusually tall block needs slicing; normal cards stay whole.
-        const pxPerMm = canvas.width / contentWidth;
-        const maxSlicePx = Math.floor((bottom - margin) * pxPerMm);
-        const sliceCanvas = document.createElement("canvas");
-        const context = sliceCanvas.getContext("2d");
-        if (!context) throw new Error("Canvas is unavailable");
-        sliceCanvas.width = canvas.width;
-        for (let offset = 0; offset < canvas.height; offset += maxSlicePx) {
-          const sliceHeight = Math.min(maxSlicePx, canvas.height - offset);
-          sliceCanvas.height = sliceHeight;
-          context.clearRect(0, 0, sliceCanvas.width, sliceHeight);
-          context.drawImage(canvas, 0, -offset);
-          imageHeight = sliceHeight * contentWidth / canvas.width;
-          pdf.addImage(sliceCanvas.toDataURL("image/jpeg", 0.95), "JPEG", margin, cursorY, contentWidth, imageHeight);
-          cursorY += imageHeight;
-          if (offset + sliceHeight < canvas.height) {
-            pdf.addPage(); paintPage(); cursorY = margin;
-          }
-        }
-        cursorY += gap;
+      const response = await fetch(`/report-api/${encodeURIComponent(resumeId)}`, { credentials: "include", cache: "no-store" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { message?: string };
+        throw new Error(body.message ?? "报告导出失败");
       }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
       const safeName = report.filename.replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|]+/g, "-");
-      pdf.save(`Ardor-${safeName}-report.pdf`);
+      link.href = url;
+      link.download = `Ardor-${safeName}-report.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
     } catch (error) {
-      console.error("Resume PDF export failed", error);
-      setExportError(t("Could not export the PDF. Try again or use your browser's print dialog.", "PDF 导出失败，请重试或使用浏览器的打印功能。"));
+      console.error("LaTeX report export failed", error);
+      setExportError(error instanceof Error ? error.message : t("Could not export the report. Try again.", "报告导出失败，请重试。"));
     } finally {
-      details.forEach((item, index) => { item.open = previousOpen[index] ?? false; });
       setExporting(false);
     }
   }
 
-  return <div ref={reportRef} className={`min-h-screen text-[#1d1d1f] ${exporting ? "pdf-exporting" : ""}`}><div className="mx-auto max-w-5xl px-5 pb-20 pt-6 md:px-10">
-    <div className="pdf-hidden flex flex-wrap items-center justify-between gap-3">
+  return <div className="min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-5xl px-5 pb-20 pt-6 md:px-10">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <button type="button" onClick={onBack} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 transition hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("All resumes", "所有简历")}</button>
       <span className="rounded-full border border-white/80 bg-white/60 px-3 py-1.5 text-xs text-stone-500">{report.condition}</span>
     </div>
 
-    <header data-pdf-block className="flex flex-wrap items-end justify-between gap-3 pb-5 pt-6">
+    <header className="flex flex-wrap items-end justify-between gap-3 pb-5 pt-6">
       <div className="min-w-0">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">RESUME REPORT</p>
         <h1 className="mt-1.5 truncate text-2xl font-semibold tracking-tight md:text-3xl">{report.filename}</h1>
       </div>
-      <div className="pdf-hidden flex flex-wrap items-center gap-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         <button type="button" onClick={onViewResume} className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-stone-600 hover:bg-white"><FileText className="size-4" />{t("View original", "查看原简历")}</button>
-        <button type="button" onClick={() => void exportPdf()} disabled={exporting} className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 font-medium text-white hover:bg-black disabled:opacity-50"><Download className="size-4" />{exporting ? t("Exporting…", "导出中…") : t("Export report", "导出报告")}</button>
+        <button type="button" onClick={() => void exportReport()} disabled={exporting} className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 font-medium text-white hover:bg-black disabled:opacity-50"><Download className="size-4" />{exporting ? t("Exporting…", "导出中…") : t("Export report", "导出报告")}</button>
       </div>
     </header>
     {exportError && <p role="alert" className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{exportError}</p>}
 
-    {report.general && <p data-pdf-block className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">{t("Generalised analysis only: without a JD this report may not reflect a specific role. Add a JD when starting a new analysis for role-specific evidence.", "本次为通用化分析，可能不具针对性；如需岗位匹配，请在开始新分析时补充 JD。")}</p>}
+    {report.general && <p className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">{t("Generalised analysis only: without a JD this report may not reflect a specific role. Add a JD when starting a new analysis for role-specific evidence.", "本次为通用化分析，可能不具针对性；如需岗位匹配，请在开始新分析时补充 JD。")}</p>}
 
-    <section data-pdf-block className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+    <section className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
       <div className="rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_60px_rgba(49,39,70,0.07)] backdrop-blur-xl md:p-8">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Competitiveness", "当前竞争力")}</p>
         <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-2">
@@ -290,7 +227,7 @@ export function ResumeReportV3({ report, onBack, onViewResume }: {
         if (issues.length === 0) return null;
         const meta = severityMeta[severity];
         return <section key={severity} aria-label={t(...meta.label)}>
-          <div data-pdf-block className="mb-3 flex items-baseline gap-2.5 border-b border-stone-200/80 pb-3">
+          <div className="mb-3 flex items-baseline gap-2.5 border-b border-stone-200/80 pb-3">
             <span className={`grid size-6 shrink-0 place-items-center rounded-md text-[11px] font-semibold ${meta.tag}`}>{severity}</span>
             <h2 className="text-xl font-semibold tracking-[-0.02em]">{t(...meta.label)}</h2>
             <span className="text-sm text-stone-400">{issues.length} {t("items", "条")}</span>
@@ -301,7 +238,7 @@ export function ResumeReportV3({ report, onBack, onViewResume }: {
       })}
     </div>
 
-    {report.strengths.length > 0 && <section data-pdf-block className="mt-6 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-[0_14px_40px_rgba(49,39,70,0.05)] backdrop-blur-xl">
+    {report.strengths.length > 0 && <section className="mt-6 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-[0_14px_40px_rgba(49,39,70,0.05)] backdrop-blur-xl">
       <div className="flex items-center gap-2 text-emerald-600"><Sparkles className="size-4" /><h2 className="text-sm font-semibold uppercase tracking-[0.14em]">{t("What works", "优点")}</h2></div>
       <ul className="mt-3 space-y-1.5 text-sm leading-6 text-stone-700">{report.strengths.map((strength, index) => <li key={index}>· <InlineMarkdown text={strength} /></li>)}</ul>
     </section>}
@@ -309,4 +246,7 @@ export function ResumeReportV3({ report, onBack, onViewResume }: {
     </div>
   </div>;
 }
+
+
+
 
