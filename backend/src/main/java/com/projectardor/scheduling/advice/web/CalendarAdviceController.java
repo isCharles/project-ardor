@@ -24,13 +24,13 @@ public class CalendarAdviceController {
 
     @GetMapping
     public CalendarAdviceResponse get(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return service.get(principal.userId());
+        return CalendarAdviceResponse.from(service.get(principal.userId()));
     }
 
     @PutMapping
     public CalendarAdviceResponse save(@AuthenticationPrincipal ArdorPrincipal principal,
             @RequestBody CalendarAdviceResponse.Update request) {
-        return service.save(principal.userId(), request.headline(), request.days(), request.weeks(), request.months());
+        return CalendarAdviceResponse.from(service.save(principal.userId(), request.headline(), request.days(), request.weeks(), request.months()));
     }
 
     @DeleteMapping

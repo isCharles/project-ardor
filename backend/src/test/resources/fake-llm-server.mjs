@@ -184,6 +184,29 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+    if (payload.model === "calendar-advice-module-probe" && isAgentRequest) {
+      const names = payload.tools.map(tool => tool.function.name);
+      const expected = ["get_calendar_advice", "update_calendar_advice", "delete_calendar_advice"];
+      const message = String(payload.messages.filter(item => item.role === "user").at(-1)?.content);
+      const mode = message.includes("advice-probe-update") ? "update" : message.includes("advice-probe-delete") ? "delete" : "get";
+      const output = String(payload.messages.filter(item => item.role === "tool").at(-1)?.content ?? "");
+      if (new Set(names).size !== names.length || expected.some(name => !names.includes(name))
+          || hasToolResult && (mode === "get" ? !output.includes("Owner advice fixture") || output.includes("Foreign advice fixture")
+            : mode === "update" ? !output.includes("Updated owner advice fixture") : !output.includes("CONFIRMATION_REQUIRED"))) {
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "Calendar advice contract or owner isolation failed" } })); return;
+      }
+      const args = mode === "update" ? { headline: "Updated owner advice fixture", days: ["Updated action"], weeks: [], months: [] } : {};
+      const delta = hasToolResult ? { role: "assistant", content: `Synthetic calendar advice ${mode} verified.` }
+        : { role: "assistant", tool_calls: [{ index: 0, id: "advice-probe", type: "function",
+          function: { name: `${mode}_calendar_advice`, arguments: JSON.stringify(args) } }] };
+      response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
+      for (const [chunk, finish] of [[delta, null], [{}, hasToolResult ? "stop" : "tool_calls"]]) {
+        response.write(`data: ${JSON.stringify({ id: "advice-probe", object: "chat.completion.chunk", model: payload.model,
+          choices: [{ index: 0, delta: chunk, finish_reason: finish }] })}\n\n`);
+      }
+      response.end("data: [DONE]\n\n"); return;
+    }
     if (payload.model === "automation-module-probe" && isAgentRequest) {
       const names = payload.tools.map(tool => tool.function.name);
       const expected = ["list_automations", "get_automation", "create_automation", "update_automation", "delete_automation"];

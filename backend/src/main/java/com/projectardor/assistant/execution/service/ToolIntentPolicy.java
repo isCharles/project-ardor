@@ -77,7 +77,7 @@ public final class ToolIntentPolicy {
             case "create_automation" -> "创建|新增|添加|设置|安排|建立|每天|每周|每月|定期|定时|以后|今后|create|add|set|schedule|every";
             case "update_automation" -> "修改|调整|更新|改成|改为|暂停|恢复|启用|停用|关闭|打开|update|change|pause|resume|enable|disable";
             case "delete_automation" -> "删除|删掉|取消|停止|移除|delete|remove|cancel|stop";
-            case "update_calendar_advice" -> "保存|更新|写入|记录|规划|建议|安排|save|update|write|record|plan|advice";
+            case "update_calendar_advice" -> "保存|更新|修改|写入|记录|规划|建议|安排|save|update|change|write|record|plan|advice";
             case "delete_calendar_advice" -> "删除|清空|清除|移除|delete|clear|remove";
             default -> "(?!)";
         };

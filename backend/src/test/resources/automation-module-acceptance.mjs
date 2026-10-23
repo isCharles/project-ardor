@@ -29,9 +29,9 @@ for (const method of ["GET", "PATCH", "DELETE"]) await foreign.request(`/api/aut
   method, expected: 404, ...(method === "PATCH" ? { body: { enabled: false } } : {}) });
 assert.equal((await owner.request(`/api/automations/${own.id}`)).enabled, true);
 await owner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "automation-module-probe", apiKey: "fake-only" } });
-async function turn(message) {
-  const conversation = await owner.request("/api/agent/conversations", { method: "POST", expected: 201 });
-  const text = await owner.request("/api/agent/messages/stream", { method: "POST", raw: true,
+async function turn(message, client = owner) {
+  const conversation = await client.request("/api/agent/conversations", { method: "POST", expected: 201 });
+  const text = await client.request("/api/agent/messages/stream", { method: "POST", raw: true,
     body: { conversationId: conversation.id, requestId: randomUUID(), message, reasoningDepth: "AUTO" } });
   const events = text.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => JSON.parse(line.slice(5).trim()));
   assert.equal(events.filter(event => event.type === "done").length, 1, text.slice(-1200));
@@ -58,3 +58,32 @@ await owner.request(`/api/automations/${own.id}`, { expected: 404 });
 assert.equal((await foreign.request(`/api/automations/${theirs.id}`)).enabled, true);
 await foreign.request(`/api/automations/${theirs.id}`, { method: "DELETE", expected: 204 });
 console.log("Automation module: real model/tool/application flow, stable JSON, owned reads/update, foreign 404, proposal-only deletion and authenticated confirmation passed.");
+
+// Separate identity keeps each fixture below the default monthly chat allowance.
+const adviceOwner = new Client();
+await adviceOwner.request("/api/auth/register", { method: "POST", expected: 201,
+  body: { email: `advice-${randomUUID()}@ardor.invalid`, password: `Synthetic-${randomUUID()}!` } });
+const advice = (headline) => ({ headline, days: ["One action"], weeks: [], months: [] });
+await adviceOwner.request("/api/calendar/advice", { method: "PUT", body: advice("Owner advice fixture") });
+await foreign.request("/api/calendar/advice", { method: "PUT", body: advice("Foreign advice fixture") });
+await adviceOwner.request("/api/settings/llm", { method: "PUT", body: {
+  provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "calendar-advice-module-probe", apiKey: "fake-only" } });
+await turn("读取我的日历建议 advice-probe-read", adviceOwner);
+await adviceOwner.request("/api/agent/permissions/*", { method: "PUT", expected: 204, body: { level: 3 } });
+await turn("修改我的日历建议 advice-probe-update", adviceOwner);
+const savedAdvice = await adviceOwner.request("/api/calendar/advice");
+assert.deepEqual(Object.keys(savedAdvice).sort(), ["headline", "days", "weeks", "months", "updatedAt"].sort());
+assert.equal(savedAdvice.headline, "Updated owner advice fixture");
+assert.deepEqual(savedAdvice.days, ["Updated action"]);
+const adviceEvents = await turn("清除我的日历建议 advice-probe-delete", adviceOwner);
+const adviceConfirmation = adviceEvents.find(event => event.type === "confirm")?.confirmation;
+assert.equal(adviceConfirmation?.endpoint, "/api/calendar/advice");
+assert.equal(adviceConfirmation?.label, "日历建议");
+assert.equal((await adviceOwner.request("/api/calendar/advice")).headline, savedAdvice.headline,
+  "Agent deletion must only propose, including user-scoped singleton resources");
+await adviceOwner.request(adviceConfirmation.endpoint, { method: "DELETE", expected: 204 });
+assert.deepEqual(await adviceOwner.request("/api/calendar/advice"), {
+  headline: null, days: [], weeks: [], months: [], updatedAt: null });
+assert.equal((await foreign.request("/api/calendar/advice")).headline, "Foreign advice fixture");
+await foreign.request("/api/calendar/advice", { method: "DELETE", expected: 204 });
+console.log("Calendar advice module: five-field contract, owned reads/update, stable singleton proposal and authenticated deletion passed.");

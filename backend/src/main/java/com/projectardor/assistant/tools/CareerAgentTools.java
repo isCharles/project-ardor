@@ -22,11 +22,11 @@ import com.projectardor.assistant.tools.modules.AgentToolContext;
 import com.projectardor.assistant.tools.modules.AgentToolProvider;
 import com.projectardor.assistant.tools.modules.KnowledgeAgentToolProvider;
 import com.projectardor.assistant.tools.modules.AutomationAgentToolProvider;
+import com.projectardor.assistant.tools.modules.CalendarAdviceAgentToolProvider;
 
 import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
 import com.projectardor.assistant.automation.service.AutomationService;
 import com.projectardor.scheduling.advice.service.CalendarAdviceService;
-import com.projectardor.scheduling.advice.web.CalendarAdviceResponse;
 import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmView;
 import com.projectardor.learning.practice.mockinterview.service.InterviewService;
 import com.projectardor.scheduling.domain.CalendarTaskPriority;
@@ -61,13 +61,13 @@ import com.projectardor.materials.resume.domain.Resume;
 import com.projectardor.materials.resume.domain.ResumeAnalysis;
 import com.projectardor.materials.resume.service.ResumeAnalysisQueueService;
 import com.projectardor.materials.resume.service.ResumeService;
-import com.projectardor.materials.resume.web.ResumeAnalysisTaskResponse;
+import com.projectardor.materials.resume.service.ResumeAnalysisQueueService.TaskResult;
 import com.projectardor.learning.review.domain.MemoryCardRating;
 import com.projectardor.learning.review.domain.MemoryCardSource;
 import com.projectardor.jobsearch.record.service.InterviewRecapService;
 import com.projectardor.jobsearch.record.service.InterviewRecapQueueService;
 import com.projectardor.jobsearch.record.service.InterviewRecordView;
-import com.projectardor.jobsearch.record.web.InterviewRecapTaskResponse;
+import com.projectardor.jobsearch.record.service.InterviewRecordTaskView;
 import com.projectardor.learning.review.service.FlashcardService;
 import com.projectardor.learning.review.service.FlashcardView;
 import com.projectardor.platform.model.websearch.service.TavilySearchService;
@@ -102,7 +102,6 @@ public class CareerAgentTools {
     private final KnowledgeService knowledgeService;
     private final LearningPlanService learningPlanService;
     private final ApplicationRhythmService applicationRhythmService;
-    private final CalendarAdviceService calendarAdviceService;
     private final OpportunityService opportunityService;
     private final com.projectardor.platform.jobs.aijobs.AiJobService aiJobs;
     private final com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit;
@@ -184,10 +183,10 @@ public class CareerAgentTools {
         this.tavilySearchService = tavilySearchService;
         this.knowledgeService = knowledgeService;
         this.toolProviders = List.of(new KnowledgeAgentToolProvider(knowledgeService),
-                new AutomationAgentToolProvider(automationService));
+                new AutomationAgentToolProvider(automationService),
+                new CalendarAdviceAgentToolProvider(calendarAdviceService));
         this.learningPlanService = learningPlanService;
         this.applicationRhythmService = applicationRhythmService;
-        this.calendarAdviceService = calendarAdviceService;
         this.opportunityService = opportunityService;
         this.aiJobs = aiJobs;
         this.executionAudit = executionAudit;
@@ -530,30 +529,6 @@ public class CareerAgentTools {
         }
 
 
-        @Tool(name = "get_calendar_advice", value = "读取当前用户日历右侧的 Ardor 建议卡；需要知道上次给用户的规划时先调用")
-        public CalendarAdviceResponse getCalendarAdvice() {
-            return calendarAdviceService.get(userId);
-        }
-
-        @Tool(name = "update_calendar_advice", value = """
-                把一次规划建议写入日历右侧的建议卡，让用户在日历里持续看到，而不是只在聊天里说过。
-                当用户让你“规划一下接下来几天/几周/几个月”“看看求职节奏”“给出接下来做什么的建议”，或你主动给出这类时间范围建议时，必须先调用本工具再回答。
-                只写真实基于用户日历、面试、投递、学习状态的建议；不要编造安排。
-                必须精炼：headline 是一句话结论；days/weeks/months 各最多 3 条，每条一句话，不要写大段段落或 Markdown 标题。
-                """)
-        public CalendarAdviceResponse updateCalendarAdvice(
-                @P(value = "一句话结论，最多 60 字；没有就传空字符串", required = false) String headline,
-                @P(value = "未来几天的行动，最多 3 条，每件一句话；没有就传空数组", required = false) List<String> days,
-                @P(value = "未来 2–4 周的行动，最多 3 条，每件一句话；没有就传空数组", required = false) List<String> weeks,
-                @P(value = "未来 1–3 个月的方向，最多 3 条，每件一句话；没有就传空数组", required = false) List<String> months) {
-            return calendarAdviceService.save(userId, headline, days, weeks, months);
-        }
-
-        @Tool(name = "delete_calendar_advice", value = "提议清空当前用户日历右侧的 Ardor 建议卡；只在用户明确要求清除建议时使用，需用户点击确认")
-        public Map<String, Object> deleteCalendarAdvice() {
-            return propose("calendar_advice", null, "日历建议",
-                    "清除日历右侧的 Ardor 建议卡，不影响任何日程", "/api/calendar/advice");
-        }
 
         @Tool(name = "update_application_advice", value = """
                 把投递节奏建议写入求职页的“投递节奏”卡片。用户问“现在该不该继续投/投多少/投什么公司岗位”或让你判断投递强度时，必须先结合面试状态（即将面试、等结果、连续被拒）、学习计划和本周投递量，再调用本工具保存，不能只在聊天里说。
@@ -673,15 +648,13 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "analyze_resume", value = "将当前用户已经上传并解析的简历提交到异步分析队列；重复调用会复用已有结果")
-        public ResumeAnalysisTaskResponse analyzeResume(@P("简历 UUID") String resumeId) {
-            return ResumeAnalysisTaskResponse.from(
-                    resumeAnalysisQueueService.request(userId, uuid(resumeId, "简历 ID")));
+        public TaskResult analyzeResume(@P("简历 UUID") String resumeId) {
+            return resumeAnalysisQueueService.request(userId, uuid(resumeId, "简历 ID"));
         }
 
         @Tool(name = "get_resume_analysis_status", value = "查询当前用户某份简历的异步分析状态")
-        public ResumeAnalysisTaskResponse getResumeAnalysisStatus(@P("简历 UUID") String resumeId) {
-            return ResumeAnalysisTaskResponse.from(
-                    resumeAnalysisQueueService.status(userId, uuid(resumeId, "简历 ID")));
+        public TaskResult getResumeAnalysisStatus(@P("简历 UUID") String resumeId) {
+            return resumeAnalysisQueueService.status(userId, uuid(resumeId, "简历 ID"));
         }
 
         @Tool(name = "get_resume_analysis", value = "读取当前用户一份已经完成的结构化简历分析")
@@ -776,8 +749,8 @@ public class CareerAgentTools {
         }
 
         @Tool(name = "list_interview_recap_jobs", value = "读取当前用户面经整理的后台任务状态，包括进行中和失败的任务；不会重新提交或重试")
-        public List<InterviewRecapTaskResponse> listInterviewRecapJobs() {
-            return interviewRecapQueueService.list(userId).stream().map(InterviewRecapTaskResponse::from).toList();
+        public List<InterviewRecordTaskView> listInterviewRecapJobs() {
+            return interviewRecapQueueService.list(userId).stream().map(InterviewRecordTaskView::from).toList();
         }
 
         @Tool(name = "organize_interview_recap", value = "保存用户提供的最终面试纪要并在后台规范化整理，直接生成可读结果，不需要原始转录或再次确认。不补造事实。面经必须属于一场面试，先 list_job_opportunities 定位 UUID，目标不清先追问；用户应在本轮提交最终纪要")

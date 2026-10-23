@@ -234,6 +234,67 @@ class ModularAgentToolsTests {
     }
 
     @Test
+    void calendarAdviceModuleUsesOwnedViewsAndTheExistingPermissionFence() {
+        var service = mock(com.projectardor.scheduling.advice.service.CalendarAdviceService.class);
+        var view = new com.projectardor.scheduling.advice.service.CalendarAdviceView("Owned advice", List.of("One action"), List.of(), List.of(), Instant.now());
+        when(service.get(owner)).thenReturn(view);
+        when(service.save(owner, "Owned advice", List.of("One action"), null, null)).thenReturn(view);
+        var host = tools();
+        var provider = new com.projectardor.assistant.tools.modules.CalendarAdviceAgentToolProvider(service);
+        host.configureToolProviders(List.of(provider));
+        var bound = host.bind(owner, "保存日历建议", run);
+        var executors = wrapped(bound, null, null);
+        assertThat(execute(executors, "get_calendar_advice", "{}")).contains("Owned advice");
+        String args = "{\"headline\":\"Owned advice\",\"days\":[\"One action\"]}";
+        assertThat(execute(wrapped(host.bind(owner, "只查看日历建议", run), null, null), "update_calendar_advice", args))
+                .contains("TOOL_NOT_PERMITTED");
+        verify(service, never()).save(any(), any(), any(), any(), any());
+        when(permissions.autoApproves(owner, "update_calendar_advice")).thenReturn(true);
+        assertThat(execute(executors, "update_calendar_advice", args)).contains("Owned advice");
+        assertThat(execute(executors, "update_calendar_advice", args)).contains("DUPLICATE_WRITE_BLOCKED");
+        assertThat(execute(executors, "delete_calendar_advice", "{}")).contains("CONFIRMATION_REQUIRED");
+        assertThat(bound.pendingConfirmations()).singleElement().satisfies(card -> {
+            assertThat(card.targetId()).isNull();
+            assertThat(card.endpoint()).isEqualTo("/api/calendar/advice");
+        });
+        verify(service, never()).delete(any());
+        verify(approvals, never()).await(any(), any(), any(), any());
+        var lease = new AgentStreamLease(); lease.fence();
+        assertThat(execute(wrapped(bound, lease, null), "get_calendar_advice", "{}")).contains("RUN_STOPPED");
+        verify(service, times(1)).get(owner);
+        assertThat(new com.projectardor.assistant.tools.AgentToolSchemaCatalog(List.of(provider)).schemas())
+                .containsKeys("get_calendar_advice", "update_calendar_advice", "delete_calendar_advice");
+    }
+
+    @Test
+    void taskToolsUseApplicationResultsAndKeepTheirExistingJson() {
+        var host = tools();
+        var queue = (com.projectardor.materials.resume.service.ResumeAnalysisQueueService)
+                org.springframework.test.util.ReflectionTestUtils.getField(host, "resumeAnalysisQueueService");
+        var records = (com.projectardor.jobsearch.record.service.InterviewRecapQueueService)
+                org.springframework.test.util.ReflectionTestUtils.getField(host, "interviewRecapQueueService");
+        UUID resumeId = UUID.randomUUID(), jobId = UUID.randomUUID();
+        when(queue.status(owner, resumeId)).thenReturn(new com.projectardor.materials.resume.service.ResumeAnalysisQueueService.TaskResult(
+                jobId, resumeId, com.projectardor.materials.resume.domain.ResumeAnalysisJobStatus.QUEUED, null, 0, null, null));
+        when(records.list(owner)).thenReturn(List.of(new com.projectardor.jobsearch.record.service.InterviewRecapQueueService.TaskResult(
+                jobId, null, com.projectardor.jobsearch.record.domain.InterviewRecapJobStatus.RUNNING, 1, null, null, Instant.now(), null, true)));
+        var bound = host.bind(owner, "查询任务状态", run);
+        var executors = wrapped(bound, null, null);
+        var json = tools.jackson.databind.json.JsonMapper.builder().findAndAddModules().build();
+        var analysis = json.readTree(execute(executors, "get_resume_analysis_status", "{\"resumeId\":\"" + resumeId + "\"}"));
+        assertThat(analysis.properties()).hasSize(7);
+        assertThat(analysis.path("status").asText()).isEqualTo("QUEUED");
+        var recap = json.readTree(execute(executors, "list_interview_recap_jobs", "{}")).get(0);
+        assertThat(recap.properties()).hasSize(10);
+        assertThat(recap.path("draftUrl").asText()).isEqualTo("/app/recaps?minutes=" + jobId);
+        assertThat(recap.has("finalMinutes")).isFalse();
+        verify(queue).status(owner, resumeId);
+        verify(queue, never()).request(any(), any());
+        verify(records).list(owner);
+        verify(approvals, never()).await(any(), any(), any(), any());
+    }
+
+    @Test
     void springDiscoversLocalAdaptersWithoutReplacingTheKnowledgeModule() {
         try (var context = new AnnotationConfigApplicationContext()) {
             context.registerBean(KnowledgeService.class, () -> knowledge);

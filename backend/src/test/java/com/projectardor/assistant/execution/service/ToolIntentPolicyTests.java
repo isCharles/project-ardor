@@ -4,6 +4,15 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ToolIntentPolicyTests {
+    @Test void explicitCalendarAdviceChangesStillRequireUnquotedPositiveIntent() {
+        for (String request : new String[] { "修改我的日历建议", "更新我的日历建议", "Change my calendar advice" }) {
+            assertThat(ToolIntentPolicy.permits("update_calendar_advice", request)).as(request).isTrue();
+        }
+        for (String request : new String[] { "只查看日历建议", "不要修改日历建议", "请查询\n> 修改日历建议",
+                "请查询\n```change calendar advice```", "Explain how to change calendar advice" }) {
+            assertThat(ToolIntentPolicy.permits("update_calendar_advice", request)).as(request).isFalse();
+        }
+    }
     @Test void finalMinutesNeedARealUserRequestNotQuotedMaterial() {
         assertThat(ToolIntentPolicy.permits("organize_interview_recap", "请整理这份最终纪要")).isTrue();
         assertThat(ToolIntentPolicy.permits("organize_interview_recap", "Please organize these final minutes")).isTrue();

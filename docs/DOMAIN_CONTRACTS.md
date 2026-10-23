@@ -8,6 +8,12 @@
 
 ## 1. 术语与状态所有权
 
+### 工具与 HTTP 的应用结果边界
+
+日程建议使用 Scheduling 的不可变 `CalendarAdviceView`；手动接口保留五字段 HTTP 响应适配。既有截断、去重、旧文本规范化、用户主键与删除范围保持不变，工具适配移到现有模块提供者，不新建授权或状态来源。
+
+简历分析工具直接使用既有队列的七字段 `TaskResult`；HTTP 继续映射原响应。面试记录任务共享 `InterviewRecordTaskView` 作为十字段兼容投影，集中保留旧 `nextAction/draftUrl` 的工作流提示和别名链接；HTTP 和工具不再互相导入。该投影不是新业务实体或任务执行器，不重写任务、来源、状态和 worker fencing。无数据迁移，回退应用即可。
+
 | 对象 | 所有者 | 当前实现与状态 | 不得混同 |
 |---|---|---|---|
 | 真实面试流程 / InterviewProcess | 求职 | `jobsearch.interview.domain.JobOpportunity`；SCHEDULED、AWAITING_RESULT、NEXT_ROUND、REJECTED | 不是模拟会话，也不是完整投递漏斗 |
