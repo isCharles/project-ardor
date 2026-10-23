@@ -14,9 +14,11 @@ public record AgentConversationTraceResponse(
             UUID runId,
             String message,
             String assistantMessage,
+            String thinkingOutput,
             String status,
             Instant createdAt,
             Instant updatedAt,
             List<AgentTraceSpanResponse> spans) {
     }
 }
+

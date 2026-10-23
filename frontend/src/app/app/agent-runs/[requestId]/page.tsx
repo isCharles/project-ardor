@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
+import { MarkdownContent } from "@/components/ardor/markdown-content";
 import { useLocale } from "@/lib/locale";
 
 type TraceSpan = {
@@ -38,7 +39,7 @@ type Trace = {
 type ConversationTrace = {
   conversationId: string;
   title: string;
-  runs: Array<{ runId: string; message: string; assistantMessage: string; status: string; createdAt: string; updatedAt: string; spans: TraceSpan[] }>;
+  runs: Array<{ runId: string; message: string; assistantMessage: string; thinkingOutput: string; status: string; createdAt: string; updatedAt: string; spans: TraceSpan[] }>;
 };
 
 type ToolSchema = Record<string, unknown>;
@@ -134,7 +135,7 @@ export default function AgentRunTracePage() {
   }, [trace, filter]);
 
   return <main className="ardor-workbench min-h-screen px-5 pb-20 pt-6 text-[#1d1d1f] md:px-10">
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-7xl">
       <div className="flex items-center justify-between gap-3">
         <Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("Back to chat", "返回对话")}</Link>
         <div className="flex items-center gap-2">{trace?.conversationId && <Link href={`/app/agent-runs/${requestId}?conversation=${trace.conversationId}`} className="rounded-full bg-white/80 px-3 py-1.5 text-[11px] text-stone-500 hover:text-violet-700">{t("Conversation trace", "多轮轨迹")}</Link>}<span className="rounded-full bg-violet-50 px-3 py-1 text-[11px] font-medium text-violet-700">{t("Developer trace", "开发者视图")}</span></div>
@@ -224,16 +225,21 @@ function InspectorView({ spans, selected, filter, onFilter, onSelect, schemas }:
   </section>;
 }
 
-function InspectorPanel({ span, schema }: { span: TraceSpan; schema?: ToolSchema }) {
+function InspectorPanel({ span, schema, sourceLabel, thinking }: { span: TraceSpan; schema?: ToolSchema; sourceLabel?: string; thinking?: string }) {
   const { t } = useLocale();
-  const [tab, setTab] = useState<"overview" | "input" | "result" | "schema" | "metadata" | "timing">("overview");
+  const [tab, setTab] = useState<"overview" | "preview" | "raw" | "input" | "result" | "schema" | "metadata" | "timing">("overview");
   useEffect(() => setTab("overview"), [span.id]);
   const input = preview(span.kind === "TOOL" ? span.attributes.argumentsPreview : span.attributes.inputPreview);
   const result = preview(span.kind === "TOOL" ? span.attributes.resultPreview : span.attributes.outputPreview);
   const requestedTools = Array.isArray(span.attributes.requestedTools)
     ? span.attributes.requestedTools.filter((item): item is string => typeof item === "string")
     : [];
-  const tabs = [
+  const isAssistant = span.kind === "LLM";
+  const tabs = isAssistant ? [
+    ["overview", t("Overview", "概述")],
+    ["preview", t("Preview", "预览")],
+    ["raw", t("Raw content", "原始内容")],
+  ] as const : [
     ["overview", t("Overview", "概述")],
     ["input", t("Input", "输入")],
     ["result", t("Result", "结果")],
@@ -244,7 +250,7 @@ function InspectorPanel({ span, schema }: { span: TraceSpan; schema?: ToolSchema
   return <div data-trace-inspector-panel className="overflow-hidden rounded-2xl border border-white/80 bg-white/80">
     <div className="border-b border-stone-200/70 px-5 pt-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{span.kind}</p><h2 className="mt-1 truncate text-lg font-semibold">{span.name}</h2></div>
+        <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{isAssistant ? t("Assistant", "助手") : span.kind}</p><h2 className="mt-1 truncate text-lg font-semibold">{span.name}</h2></div>
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-stone-500"><span className={`rounded-full px-2 py-0.5 ${span.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : span.status === "RUNNING" ? "bg-violet-50 text-violet-700" : "bg-rose-50 text-rose-700"}`}>{span.status}</span><span>{formatDuration(span.durationMs)}</span></div>
       </div>
       <div role="tablist" aria-label={t("Span details", "步骤详情")} className="mt-4 flex gap-1 overflow-x-auto">
@@ -252,7 +258,24 @@ function InspectorPanel({ span, schema }: { span: TraceSpan; schema?: ToolSchema
       </div>
     </div>
     <div className="p-5">
-      {tab === "overview" && <div className="grid gap-x-8 gap-y-3 text-xs sm:grid-cols-2">
+      {tab === "overview" && (isAssistant ? <div className="grid gap-x-8 gap-y-4 text-xs sm:grid-cols-2">
+        <InspectorField label={t("Source", "来源")} value={sourceLabel ?? span.runId} />
+        <InspectorField label={t("Status", "状态")} value={span.status} />
+        <InspectorField label={t("Model", "模型")} value={span.model ?? "—"} />
+        <InspectorField label={t("Tokens", "Token")} value={`${span.inputTokens ?? 0} / ${span.outputTokens ?? 0}`} />
+        <InspectorField label={t("Duration", "总时长")} value={formatDuration(span.durationMs)} />
+        <InspectorField label={t("Prompt version", "Prompt 版本")} value={span.promptVersion ?? "—"} />
+        <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Preview", "预览")}</p>{thinking && <details className="mt-2 rounded-xl bg-stone-50 p-4"><summary className="cursor-pointer text-[11px] font-medium text-stone-600">{t("Model reasoning output", "模型思考输出")}</summary><div className="mt-2 max-h-56 overflow-auto"><MarkdownContent className="text-sm leading-7 text-stone-700">{thinking}</MarkdownContent></div></details>}<div className="mt-2 max-h-56 overflow-auto rounded-xl bg-stone-50 p-4">{result ? <MarkdownContent className="text-sm leading-7 text-stone-700">{result}</MarkdownContent> : <p className="text-xs text-stone-500">{requestedTools.length > 0 ? t("Tool call only; no assistant text.", "仅工具调用，没有助手文本。") : t("No assistant output recorded.", "没有记录助手输出。")}</p>}</div></div>
+        <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Request timing", "请求计时")}</p><div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <InspectorField label={t("Started at", "开始时间")} value={formatDateTime(span.startedAt)} mono />
+          <InspectorField label={t("Total duration", "总时长")} value={formatDuration(span.durationMs)} />
+          <InspectorField label={t("TTFT", "首 token 延迟")} value="—" />
+          <InspectorField label={t("Generation", "生成")} value="—" />
+          <InspectorField label={t("Throughput", "吞吐量")} value="—" />
+          <InspectorField label={t("Timing source", "计时来源")} value={t("Recorded span timestamps", "记录的 span 时间戳")} />
+        </div></div>
+        {requestedTools.length > 0 && <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Requested tools", "请求的工具")}</p><div className="mt-1.5 flex flex-wrap gap-1.5">{requestedTools.map((tool) => <span key={tool} className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-[10px] text-violet-700">{tool}</span>)}</div></div>}
+      </div> : <div className="grid gap-x-8 gap-y-3 text-xs sm:grid-cols-2">
         <InspectorField label={t("Kind", "类型")} value={span.kind} />
         <InspectorField label={t("Status", "状态")} value={span.status} />
         <InspectorField label={t("Model", "模型")} value={span.model ?? "—"} />
@@ -263,7 +286,9 @@ function InspectorPanel({ span, schema }: { span: TraceSpan; schema?: ToolSchema
         <InspectorField label={t("Error code", "错误码")} value={span.errorCode ?? "—"} />
         <InspectorField label={t("Span ID", "步骤 ID")} value={span.id} mono wide />
         {requestedTools.length > 0 && <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Requested tools", "请求的工具")}</p><div className="mt-1.5 flex flex-wrap gap-1.5">{requestedTools.map((tool) => <span key={tool} className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-[10px] text-violet-700">{tool}</span>)}</div></div>}
-      </div>}
+      </div>)}
+      {tab === "preview" && <div className="space-y-4">{thinking && <div><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Model reasoning output", "模型思考输出")}</p><div className="mt-2 max-h-[45vh] overflow-auto rounded-xl bg-stone-50 p-4"><MarkdownContent className="text-sm leading-7 text-stone-700">{thinking}</MarkdownContent></div></div>}<div><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Assistant output", "助手输出")}</p>{result ? <MarkdownContent className="mt-2 text-sm leading-7 text-stone-700">{result}</MarkdownContent> : <p className="mt-2 rounded-xl bg-stone-50 p-4 text-xs text-stone-500">{t("No assistant output recorded.", "没有记录助手输出。")}</p>}</div></div>}
+      {tab === "raw" && <div className="space-y-4">{thinking && <InspectorPre label={t("Raw reasoning", "原始思考")} text={thinking} empty="" />}<InspectorPre label={t("Raw output", "原始输出")} text={result} empty={t("No output recorded.", "没有记录输出。")} /><InspectorPre label={t("Raw input", "原始输入")} text={input} empty={t("No input recorded.", "没有记录输入。")} /></div>}
       {tab === "input" && <InspectorPre label={span.kind === "TOOL" ? t("Arguments", "参数") : t("Input preview", "输入预览")} text={input} empty={t("No input preview was recorded.", "没有记录输入预览。")} />}
       {tab === "result" && <InspectorPre label={span.kind === "THOUGHT" ? t("Phase conclusion", "阶段结论") : t("Result", "结果")} text={result} empty={t("No result preview was recorded.", "没有记录结果预览。")} />}
       {tab === "schema" && (schema ? <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-stone-50 p-4 text-[11px] leading-5 text-stone-600">{JSON.stringify(schema, null, 2)}</pre> : <p className="rounded-xl bg-stone-50 p-4 text-xs text-stone-500">{t("No schema was registered for this step.", "这个步骤没有注册 Schema。")}</p>)}
@@ -319,14 +344,18 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
   const toolCalls = allSpans.filter((span) => span.kind === "TOOL").length;
   const inputTokens = allSpans.reduce((sum, span) => sum + (span.inputTokens ?? 0), 0);
   const outputTokens = allSpans.reduce((sum, span) => sum + (span.outputTokens ?? 0), 0);
+  const visibleRuns = trace.runs.filter((run) => !runFilter.trim() || `${run.message}\n${run.assistantMessage}`.toLowerCase().includes(runFilter.trim().toLowerCase()));
   return <div className="mt-4">
     <div data-trace-overview className="grid grid-cols-2 gap-3 sm:grid-cols-5">
       {[[t("Duration", "时长"), formatDuration(duration)], [t("Turns", "轮次"), trace.runs.length], [t("Model calls", "模型调用"), llmCalls], [t("Tool calls", "工具调用"), toolCalls], [t("Tokens", "Token"), `${inputTokens} / ${outputTokens}`]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/80 bg-white/70 px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{label}</p><p className="mt-1 text-base font-semibold tabular-nums text-stone-800">{value}</p></div>)}
     </div>
     <div className="mt-3 flex items-center justify-between gap-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Trace view", "轨迹视图")}</p><div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Trace view", "轨迹视图")}><button type="button" aria-pressed={traceView === "graph"} onClick={() => setTraceView("graph")} className={`rounded-full px-3 py-1.5 text-xs transition ${traceView === "graph" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}>{t("Graph", "图")}</button><button type="button" aria-pressed={traceView === "trajectory"} onClick={() => setTraceView("trajectory")} className={`rounded-full px-3 py-1.5 text-xs transition ${traceView === "trajectory" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}>{t("Trajectory", "轨迹检查器")}</button></div></div>
     {traceView === "trajectory" && <TraceTimeOverview runs={trace.runs} selectedRunId={selectedRun?.runId ?? null} selectedSpanId={selectedSpanId} onSelect={(runId, spanId) => { setSelectedRunId(runId); setSelectedSpanId(spanId); }} />}
-    <section data-conversation-trace className="mt-3 grid gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
-    <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/70">
+    <section data-conversation-trace className={`mt-3 grid gap-3 ${traceView === "trajectory" ? "lg:grid-cols-[320px_minmax(0,1fr)]" : ""}`}>
+    {traceView === "graph" && <div className="flex gap-2 overflow-x-auto pb-1 lg:col-span-2">
+      {visibleRuns.map((run, index) => <button key={run.runId} type="button" data-conversation-run onClick={() => setSelectedRunId(run.runId)} className={`min-w-[220px] max-w-[280px] shrink-0 rounded-xl border px-3 py-3 text-left transition ${selectedRun?.runId === run.runId ? "border-violet-300 bg-violet-50" : "border-white/80 bg-white/70 hover:bg-white"}`}><div className="flex items-center gap-2"><span className="text-[10px] font-semibold tabular-nums text-stone-400">#{index + 1}</span><span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${run.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : run.status === "RUNNING" ? "bg-violet-50 text-violet-700" : "bg-rose-50 text-rose-700"}`}>{run.status}</span><span className="ml-auto text-[10px] text-stone-400">{formatDuration(run.spans.find((span) => span.kind === "RUN")?.durationMs ?? null)}</span></div><p className="mt-1.5 line-clamp-1 text-xs font-medium text-stone-800">{run.message}</p></button>)}
+    </div>}
+    {traceView === "trajectory" && <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/70">
       <div className="border-b border-stone-200/70 px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Conversation", "对话")}</p>
         <h2 className="mt-1 truncate text-sm font-semibold text-stone-800">{trace.title || t("Untitled chat", "未命名对话")}</h2>
@@ -334,7 +363,7 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
         <label className="mt-2 flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[11px] text-stone-500"><Search className="size-3" /><input aria-label={t("Search turns", "搜索轮次")} value={runFilter} onChange={(event) => setRunFilter(event.target.value)} placeholder={t("Search turns", "搜索轮次")} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-400" /></label>
       </div>
       <div className="max-h-[72vh] overflow-y-auto p-2">
-        {trace.runs.filter((run) => !runFilter.trim() || `${run.message}\n${run.assistantMessage}`.toLowerCase().includes(runFilter.trim().toLowerCase())).map((run, index) => {
+        {visibleRuns.map((run, index) => {
           const root = run.spans.find((span) => span.kind === "RUN");
           return <button key={run.runId} type="button" data-conversation-run onClick={() => setSelectedRunId(run.runId)} className={`w-full rounded-xl px-3 py-3 text-left transition ${selectedRun?.runId === run.runId ? "bg-violet-50 ring-1 ring-violet-200" : "hover:bg-stone-50"}`}>
             <div className="flex items-center gap-2"><span className="text-[10px] font-semibold tabular-nums text-stone-400">#{index + 1}</span><span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${run.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : run.status === "RUNNING" ? "bg-violet-50 text-violet-700" : "bg-rose-50 text-rose-700"}`}>{run.status}</span><span className="ml-auto text-[10px] text-stone-400">{formatDuration(root?.durationMs ?? null)}</span></div>
@@ -351,11 +380,11 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
           {selectedRun.spans.map((span) => <button key={span.id} type="button" data-trace-step-item onClick={() => setSelectedSpanId(span.id)} className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] ${selectedSpanId === span.id ? "bg-violet-50 text-violet-800" : "text-stone-500 hover:bg-stone-50"}`}><span className={`size-1.5 rounded-full ${span.kind === "LLM" ? "bg-violet-400" : span.kind === "TOOL" ? "bg-sky-400" : "bg-stone-400"}`} /><span className="min-w-0 flex-1 truncate">{span.kind === "RUN" ? t("Agent run", "Agent 运行") : span.name}</span><span className="shrink-0 tabular-nums text-stone-400">{formatDuration(span.durationMs)}</span></button>)}
         </div>
       </div>}
-    </div>
-    <div className="min-w-0">{selectedRun ? <>
+    </div>}
+    <div className={`min-w-0 ${traceView === "graph" ? "lg:col-span-2" : ""}`}>{selectedRun ? <>
       {traceView === "graph" ? <>
         <div className="mt-3">{flow.length > 0 ? <FlowGraph nodes={flow} selectedId={selectedSpanId} onSelect={setSelectedSpanId} /> : <div className="rounded-2xl bg-white/60 p-5 text-sm text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</div>}</div>
-      </> : selectedSpan ? <div data-trajectory-inspector className="mt-3"><InspectorPanel span={selectedSpan} schema={schemas[selectedSpan.name]} /></div> : <p className="mt-3 text-xs text-stone-400">{t("Select a step to inspect.", "选择一个步骤查看详情。")}</p>}
+      </> : selectedSpan ? <div data-trajectory-inspector className="mt-3"><InspectorPanel span={selectedSpan} schema={schemas[selectedSpan.name]} thinking={selectedRun.thinkingOutput} sourceLabel={trace.runs.findIndex((run) => run.runId === selectedRun.runId) >= 0 ? `${t("Turn", "轮次")} #${trace.runs.findIndex((run) => run.runId === selectedRun.runId) + 1}` : trace.conversationId} /></div> : <p className="mt-3 text-xs text-stone-400">{t("Select a step to inspect.", "选择一个步骤查看详情。")}</p>}
     </> : <div className="rounded-2xl border border-white/80 bg-white/70 p-5 text-sm text-stone-500">{t("Select a turn to inspect.", "选择一轮查看详情。")}</div>}
     </div>
   </section>
@@ -449,7 +478,7 @@ function FlowGraph({ nodes, selectedId, onSelect }: { nodes: FlowNode[]; selecte
   if (nodes.length === 0) return <div className="rounded-2xl bg-white/60 p-5 text-sm text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</div>;
   const width = Math.max(720, ...nodes.map((node) => node.x + NODE_WIDTH + 24));
   const height = Math.max(300, ...nodes.map((node) => node.y + NODE_HEIGHT + 24));
-  const scale = availableWidth > 0 ? Math.min(1, availableWidth / width) : 1;
+  const scale = availableWidth > 0 ? Math.min(1.4, availableWidth / width) : 1;
   return <div ref={hostRef} data-flow-graph className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/55 p-4 shadow-[0_14px_40px_rgba(49,39,70,0.04)]">
     <div style={{ width: width * scale, height: height * scale }}>
     <div className="relative" style={{ width, height, transform: `scale(${scale})`, transformOrigin: "top left" }}>
@@ -578,6 +607,10 @@ function formatDuration(value: number | null) {
   if (!value || value <= 0) return "—";
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(1)} s`;
 }
+
+
+
+
 
 
 

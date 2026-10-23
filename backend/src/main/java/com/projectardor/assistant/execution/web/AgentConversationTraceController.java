@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.assistant.conversation.service.AgentConversationStore;
 import com.projectardor.assistant.execution.service.AgentRunStore;
+import com.projectardor.assistant.execution.service.AgentStreamProgress;
 import com.projectardor.assistant.execution.service.AgentTraceStore;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 
@@ -22,12 +23,14 @@ public class AgentConversationTraceController {
     private final AgentTraceStore traceStore;
     private final AgentRunStore runStore;
     private final AgentConversationStore conversations;
+    private final AgentStreamProgress progress;
 
     public AgentConversationTraceController(AgentTraceStore traceStore, AgentRunStore runStore,
-            AgentConversationStore conversations) {
+            AgentConversationStore conversations, AgentStreamProgress progress) {
         this.traceStore = traceStore;
         this.runStore = runStore;
         this.conversations = conversations;
+        this.progress = progress;
     }
 
     @GetMapping("/{conversationId}/trace")
@@ -43,11 +46,21 @@ public class AgentConversationTraceController {
         List<AgentConversationTraceResponse.RunTrace> runs = runStore
                 .recentForConversation(principal.userId(), conversationId, 30).stream()
                 .map(run -> new AgentConversationTraceResponse.RunTrace(
-                        run.id(), run.message(), assistantByRun.getOrDefault(run.id(), ""), run.status(),
+                        run.id(), run.message(), assistantByRun.getOrDefault(run.id(), ""),
+                        thinking(principal.userId(), run.id()), run.status(),
                         run.createdAt(), run.updatedAt(),
                         traceStore.find(principal.userId(), run.id()).stream()
                                 .map(AgentTraceSpanResponse::from).toList()))
                 .toList();
         return new AgentConversationTraceResponse(conversation.getId(), conversation.getTitle(), runs);
     }
+
+    private String thinking(UUID userId, UUID runId) {
+        try {
+            return progress.get(userId, runId).thinkingOutput();
+        } catch (RuntimeException missing) {
+            return "";
+        }
+    }
 }
+
