@@ -77,7 +77,9 @@ V62 migration 扩展了 `agent_trace_spans.kind` 约束，允许 `THOUGHT`。
 { "type": "phase", "content": "PLAN", "label": "制定执行计划", "elapsedMs": 1200 }
 ```
 
-聊天页把 phase 追加到 live execution trace，阶段标题随当前 phase 改变；开发者 trace 页支持 `THOUGHT` 节点和按 startedAt 排序的执行图。
+`phase` 只表示开始，聊天页显示进行中。阶段返回或失败后发送 `phase_end`，携带该阶段实际耗时及
+`toolStatus=COMPLETED/FAILED`；不能在阶段刚开始时就记为已完成。开发者 trace 页支持 `THOUGHT`
+节点和按 startedAt 排序的执行图；首次读取 404 或临时网络错误最多自动重试 10 次，认证错误不重试。
 
 ## 测试
 

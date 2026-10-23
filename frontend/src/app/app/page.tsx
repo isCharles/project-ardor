@@ -38,7 +38,7 @@ type Conversation = { id: string; title: string; pinned: boolean; titleManuallyS
 type AgentMemory = { content: string; updatedAt: string | null };
 type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null };
 type RetryFailure = { label: string; detail: string };
-type AgentStreamEvent = ToolMeasurement & { type: "status" | "phase" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string };
+type AgentStreamEvent = ToolMeasurement & { type: "status" | "phase" | "phase_end" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string };
 type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number };
 type AgentRun = { id: string; conversationId: string; message: string; status: "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED"; label: string; errorCode: string | null; errorMessage: string | null; retryable: boolean; createdAt: string; updatedAt: string };
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
@@ -891,7 +891,12 @@ export default function AgentHomePage() {
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
             } else if (event.type === "phase" && event.label) {
               setStreamPhase(event.content ?? "PLAN");
-              setRunSteps((current) => [...current, { key: `phase-${event.content ?? "phase"}-${current.length}`, label: event.label!, elapsedMs: event.elapsedMs ?? 0, done: true }]);
+              setRunSteps((current) => [...current, { key: `phase-${event.content ?? "phase"}-${current.length}`, label: event.label!, elapsedMs: 0, done: false }]);
+            } else if (event.type === "phase_end" && event.label) {
+              setRunSteps((current) => {
+                const index = current.findLastIndex((step) => step.key.startsWith(`phase-${event.content}-`) && !step.done);
+                return current.map((step, cursor) => cursor === index ? { ...step, elapsedMs: event.elapsedMs ?? 0, status: event.toolStatus, done: true } : step);
+              });
             } else if (event.type === "status" && event.label) {
               setStreamPhase("WAITING_DATA");
               setRunSteps((current) => current.some((step) => step.key === "status") ? current.map((step) => step.key === "status" ? { ...step, label: event.label! } : step) : [...current, { key: "status", label: event.label!, elapsedMs: 0, done: false }]);

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
 type TraceSpan = {
@@ -65,15 +65,22 @@ export default function AgentRunTracePage() {
     if (!requestId) return;
     let active = true;
     let timer: number | undefined;
+    let failures = 0;
     const load = async () => {
       try {
         const value = await api<Trace>(`/api/agent/runs/${requestId}/trace`);
         if (!active) return;
         setTrace(value);
         setError("");
+        failures = 0;
         if (value.status === "RUNNING") timer = window.setTimeout(() => void load(), 2000);
       } catch (reason) {
-        if (active) setError(reason instanceof Error ? reason.message : t("Could not load trace", "无法读取执行轨迹"));
+        if (!active) return;
+        const transient = !(reason instanceof ApiError) || reason.status === 404 || reason.status >= 500;
+        if (transient && ++failures <= 10) {
+          setError(t("Trace is not ready yet. Retrying…", "执行轨迹尚未就绪，正在重试…"));
+          timer = window.setTimeout(() => void load(), Math.min(5000, failures * 500));
+        } else setError(reason instanceof Error ? reason.message : t("Could not load trace", "无法读取执行轨迹"));
       }
     };
     void load();

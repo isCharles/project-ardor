@@ -272,7 +272,7 @@ public class CareerAgentService {
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
             ContextBundle promptContext = buildContext(userId, conversation.getId(),
-                    systemPrompt(userId, message) + depth.guidance(), runtimeConfig, depth, tracer);
+                    systemPrompt(userId, message) + depth.guidance(), runtimeConfig, depth, tracer, null);
             ChatMemory memory = promptContext.memory();
             String systemMessage = promptContext.systemPrompt();
             if (contextSpan != null) {
@@ -450,8 +450,8 @@ public class CareerAgentService {
             traceRef.set(tracer);
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
-            ContextBundle promptContext = buildContext(userId, conversation.getId(),
-                    systemPrompt(userId, message) + depth.guidance(), runtimeConfig, depth, tracer);
+            ContextBundle promptContext = lease.modelCall(() -> buildContext(userId, conversation.getId(),
+                    systemPrompt(userId, message) + depth.guidance(), runtimeConfig, depth, tracer, lease));
             ChatMemory memory = promptContext.memory();
             String systemMessage = promptContext.systemPrompt();
             if (contextSpan != null) {
@@ -491,12 +491,21 @@ public class CareerAgentService {
                             requestId, conversation.getId(), lease, toolTimings, tracer, memory.messages(),
                             message.contains("确认计划") || message.contains("计划确认") || message.contains("先确认"));
                     AgentGraphRuntime.Observer graphObserver = new AgentGraphRuntime.Observer() {
+                        private final Map<AgentGraphRuntime.Node, String> labels = new java.util.EnumMap<>(AgentGraphRuntime.Node.class);
                         @Override public void phase(AgentGraphRuntime.Node node, String label) {
                             if (lease.stopped()) throw new java.util.concurrent.CancellationException("本轮已停止");
                             lease.data();
+                            labels.put(node, label);
                             sink.send(AgentStreamEvent.phase(node.name(), label, elapsedMs(startedAt)));
-                            streamProgress.step(progressId, label, 0, "COMPLETED");
-                            persistedSteps.add(new RunStep(label, 0, "COMPLETED", null, null));
+                            streamProgress.tool(progressId, label);
+                            if (requestId != null) runStore.progress(userId, requestId, label, false);
+                        }
+                        @Override public void phaseFinished(AgentGraphRuntime.Node node, long duration, boolean success) {
+                            String label = labels.get(node);
+                            String status = success ? "COMPLETED" : "FAILED";
+                            streamProgress.step(progressId, label, duration, status);
+                            persistedSteps.add(new RunStep(label, duration, status, null, null));
+                            if (!finished.get()) sink.send(AgentStreamEvent.phaseFinished(node.name(), label, duration, status));
                         }
                         @Override public void observation(AgentGraphRuntime.GatherResult result) {
                             sink.send(AgentStreamEvent.status("已整理证据：" + result.summary(), elapsedMs(startedAt)));
@@ -701,10 +710,11 @@ public class CareerAgentService {
 
     private ContextBundle buildContext(UUID userId, UUID conversationId, String baseSystem,
             com.projectardor.platform.model.llm.service.LlmConfigService.LlmRuntimeConfig runtimeConfig,
-            ReasoningDepth depth, AgentRunTracer tracer) {
+            ReasoningDepth depth, AgentRunTracer tracer, AgentStreamLease lease) {
         var contextListeners = tracer == null ? List.<dev.langchain4j.model.chat.listener.ChatModelListener>of()
                 : List.<dev.langchain4j.model.chat.listener.ChatModelListener>of(new AgentModelTraceListener(tracer, runtimeConfig.model()));
-        AgentContextCompactor.Prepared prepared = contextCompactor.prepare(userId, conversationId, baseSystem, runtimeConfig, depth, contextListeners);
+        AgentContextCompactor.Prepared prepared = contextCompactor.prepare(userId, conversationId, baseSystem, runtimeConfig, depth,
+                contextListeners, () -> lease == null || !lease.stopped());
         // Keep the tool-call loop memory message-based. TokenWindowChatMemory can evict
         // the user message and tool results after a large result, leaving only system
         // text; the next model round then invents an unrelated task.
@@ -721,6 +731,7 @@ public class CareerAgentService {
         promptHistory.sort(java.util.Comparator.comparing(AgentMessageResponse::createdAt,
                 java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())));
         ChatMemory memory = MessageWindowChatMemory.withMaxMessages(Math.max(40, promptHistory.size() + 26));
+        if (!prepared.summaryContext().isBlank()) memory.add(AiMessage.from(prepared.summaryContext()));
         for (AgentMessageResponse historyMessage : promptHistory) {
             if ("USER".equals(historyMessage.role())) memory.add(UserMessage.from(recoveredContextualMessage(userId, historyMessage)));
             else if ("ASSISTANT".equals(historyMessage.role())) memory.add(AiMessage.from(historyMessage.content()));

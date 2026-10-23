@@ -11,6 +11,25 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 
 class AgentGraphRuntimeTests {
+    @Test void reportsAStartedPhaseOnlyAfterItsWorkFinishesAndMarksFailuresTruthfully() {
+        List<String> events = new ArrayList<>();
+        var observer = new AgentGraphRuntime.Observer() {
+            public void phase(AgentGraphRuntime.Node node, String label) { events.add(node + ":START"); }
+            public void phaseFinished(AgentGraphRuntime.Node node, long elapsed, boolean success) {
+                assertThat(elapsed).isGreaterThanOrEqualTo(0);
+                events.add(node + (success ? ":DONE" : ":FAILED"));
+            }
+        };
+        var model = org.mockito.Mockito.mock(AgentGraphRuntime.Model.class);
+        org.mockito.Mockito.when(model.plan(org.mockito.ArgumentMatchers.anyString())).thenAnswer(call -> {
+            assertThat(events).containsExactly("PLAN:START");
+            throw new IllegalStateException("synthetic planning failure");
+        });
+        assertThatThrownBy(() -> new AgentGraphRuntime(model, observer, null, null).run("fixture", "read-only"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(events).containsExactly("PLAN:START", "PLAN:FAILED");
+    }
+
 
     @Test
     void runsPlanGatherObserveReflectAnswerAndStopsWhenEvidenceIsSufficient() {

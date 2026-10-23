@@ -49,6 +49,13 @@ for (let index = 0; index < 2; index++) {
     JSON.stringify(events.filter((event) => event.type === "error")));
   assert.deepEqual(events.filter((event) => event.type === "phase").map((event) => event.content),
     ["PLAN", "GATHER", "OBSERVE", "REFLECT", "ANSWER"]);
+  const finishedPhases = events.filter((event) => event.type === "phase_end");
+  assert.equal(finishedPhases.length, 5);
+  for (const event of finishedPhases) {
+    assert.equal(event.toolStatus, "COMPLETED");
+    assert.ok(event.elapsedMs >= 0);
+    assert.ok(events.findIndex((item) => item === event) > events.findIndex((item) => item.type === "phase" && item.content === event.content));
+  }
   assert.equal((await owner.request(`/api/agent/runs/${requestId}`)).status, "COMPLETED");
   const trace = await owner.request(`/api/agent/runs/${requestId}/trace`);
   assert.equal(trace.status, "COMPLETED");

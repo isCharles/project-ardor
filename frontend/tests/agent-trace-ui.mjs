@@ -42,6 +42,7 @@ try {
       span("llm-2", "root", "LLM", "llm.call.2", "2026-10-23T08:00:04Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 148 }),
     ],
   };
+  let traceRequests = 0;
   await context.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body = {};
@@ -49,13 +50,17 @@ try {
     else if (path === "/api/auth/csrf") body = { token: "fixture", headerName: "X-CSRF-TOKEN" };
     else if (path === "/api/profile/sidebar") body = { userId: "trace-fixture", hrefs: ["/app"], revision: 1, configured: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
-    else if (path === "/api/agent/runs/fixture-run/trace") body = trace;
+    else if (path === "/api/agent/runs/fixture-run/trace") {
+      if (++traceRequests === 1) return route.fulfill({ status: 404, json: { message: "Trace is starting" } });
+      body = trace;
+    }
     await route.fulfill({ json: body });
   });
 
   const page = await context.newPage();
   await page.goto(`${origin}/app/agent-runs/fixture-run`);
   await page.locator("[data-trace-node]").first().waitFor();
+  assert.ok(traceRequests >= 2, "An initial not-found race must retry without requiring a page reload");
   assert.equal(await page.locator("[data-trace-node]").count(), 6, "Flow graph renders every span including THOUGHT phases");
   await page.getByRole("button", { name: "Flow", exact: true }).waitFor();
   await page.getByRole("button", { name: "Timeline", exact: true }).waitFor();

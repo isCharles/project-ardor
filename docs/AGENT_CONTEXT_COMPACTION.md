@@ -29,7 +29,7 @@ same *system shape* while doing the summary call itself:
 
 ```text
 system prompt
-+ durable structured summary of older turns
++ historical assistant data containing a JSON-encoded summary of older turns
 + recent turns verbatim
 + current user message
 ```
@@ -51,8 +51,9 @@ system prompt
 - advances coverage only through messages actually sent to the summarizer. The 12,000-character
   batch target never marks an omitted suffix covered; an oversized first message stays whole.
 
-The prompt summary is wrapped in `<conversation_summary version="N">` and injected into the
-system prompt as historical data, not authorization. A message-count window remains on the tool-call loop,
+The JSON-encoded summary is placed in a historical **assistant data message**, never interpolated
+into the system instruction or presented as a new user command. Raw generated text cannot close
+an XML wrapper and promote itself to system instructions. A message-count window remains on the tool-call loop,
 with enough capacity for all uncovered turns plus the bounded tool loop: a token window was tried and
 removed because a large tool result could evict the user message, leaving only the system
 prompt and causing the next model round to hallucinate a different task. Token awareness lives
@@ -65,6 +66,11 @@ lost merely because they have not produced a saved assistant exchange. Graph pha
 history. Summary-model calls use the run's model listener, so their reported tokens participate in
 the run ledger rather than becoming invisible extra calls. V64 adds composite conversation/owner
 validation without changing V63 or deleting any stored summaries.
+
+The raw-message cap counts only messages not yet covered by a summary; saved raw history growing
+past the cap does not permanently turn on per-turn summarization. Streaming context preparation
+uses the same cancellation lease as graph calls. A stopped/deadline-expired run interrupts the
+wait and rechecks the active fence before saving a returned summary.
 
 `context.load` trace attributes now include:
 

@@ -55,6 +55,7 @@ public final class AgentGraphRuntime {
 
     public interface Observer {
         default void phase(Node node, String label) {}
+        default void phaseFinished(Node node, long elapsedMs, boolean success) {}
         default void observation(GatherResult result) {}
         default void completed(Result result) {}
     }
@@ -85,11 +86,10 @@ public final class AgentGraphRuntime {
         if (checkpoint == null) checkpoint = new Checkpoint(runId, Node.PLAN, 0, 0, "", List.of(), "", "");
 
         while (true) {
+            Checkpoint current = checkpoint;
             switch (checkpoint.node()) {
                 case PLAN -> {
-                    observer.phase(Node.PLAN, "制定执行计划");
-                    String plan = model.plan(request);
-                    if (plan == null || plan.isBlank()) throw new IllegalStateException("plan 不能为空");
+                    String plan = phase(Node.PLAN, "制定执行计划", () -> requiredText(model.plan(request), "plan"));
                     checkpoint = new Checkpoint(runId, Node.GATHER, 1, 0, plan, List.of(), "", "");
                 }
                 case GATHER -> {
@@ -98,12 +98,17 @@ public final class AgentGraphRuntime {
                                 checkpoint.plan(), checkpoint.gathered(), "达到最大检索轮次", checkpoint.answer());
                         continue;
                     }
-                    observer.phase(Node.GATHER, "读取第 " + checkpoint.round() + " 轮证据");
-                    GatherResult gathered = model.gather(request, checkpoint.plan(), checkpoint.round());
+                    GatherResult gathered = phase(Node.GATHER, "读取第 " + checkpoint.round() + " 轮证据",
+                            () -> {
+                                GatherResult value = model.gather(request, current.plan(), current.round());
+                                if (value == null) throw new IllegalStateException("GATHER 没有返回证据");
+                                int calls = current.toolCalls() + value.tools().size();
+                                if (calls > budget.maxToolCalls()) {
+                                    throw new IllegalStateException("超过只读工具预算: " + calls + " > " + budget.maxToolCalls());
+                                }
+                                return value;
+                            });
                     int toolCalls = checkpoint.toolCalls() + gathered.tools().size();
-                    if (toolCalls > budget.maxToolCalls()) {
-                        throw new IllegalStateException("超过只读工具预算: " + toolCalls + " > " + budget.maxToolCalls());
-                    }
                     List<GatherResult> all = new java.util.ArrayList<>(checkpoint.gathered());
                     all.add(gathered);
                     observer.observation(gathered);
@@ -111,23 +116,21 @@ public final class AgentGraphRuntime {
                             checkpoint.plan(), all, checkpoint.reflection(), checkpoint.answer());
                 }
                 case OBSERVE -> {
-                    observer.phase(Node.OBSERVE, "整理本轮证据");
+                    phase(Node.OBSERVE, "整理本轮证据", () -> null);
                     checkpoint = new Checkpoint(runId, Node.REFLECT, checkpoint.round(), checkpoint.toolCalls(),
                             checkpoint.plan(), checkpoint.gathered(), checkpoint.reflection(), checkpoint.answer());
                 }
                 case REFLECT -> {
-                    observer.phase(Node.REFLECT, "判断证据是否足够");
-                    String reflection = model.reflect(request, checkpoint.plan(), checkpoint.gathered(), checkpoint.round());
-                    if (reflection == null || reflection.isBlank()) throw new IllegalStateException("reflection 不能为空");
+                    String reflection = phase(Node.REFLECT, "判断证据是否足够",
+                            () -> requiredText(model.reflect(request, current.plan(), current.gathered(), current.round()), "reflection"));
                     boolean needMore = reflection.startsWith("NEED_MORE");
                     Node next = needMore && checkpoint.round() < budget.maxGatherRounds() ? Node.GATHER : Node.ANSWER;
                     checkpoint = new Checkpoint(runId, next, needMore && next == Node.GATHER ? checkpoint.round() + 1 : checkpoint.round(),
                             checkpoint.toolCalls(), checkpoint.plan(), checkpoint.gathered(), reflection, checkpoint.answer());
                 }
                 case ANSWER -> {
-                    observer.phase(Node.ANSWER, "生成最终回答");
-                    String answer = model.answer(request, checkpoint.plan(), checkpoint.gathered(), checkpoint.reflection());
-                    if (answer == null || answer.isBlank()) throw new IllegalStateException("answer 不能为空");
+                    String answer = phase(Node.ANSWER, "生成最终回答",
+                            () -> requiredText(model.answer(request, current.plan(), current.gathered(), current.reflection()), "answer"));
                     Result result = new Result(answer, checkpoint.round(), checkpoint.toolCalls(), Node.COMPLETED);
                     checkpoints.save(new Checkpoint(runId, Node.COMPLETED, checkpoint.round(), checkpoint.toolCalls(),
                             checkpoint.plan(), checkpoint.gathered(), checkpoint.reflection(), answer));
@@ -144,6 +147,24 @@ public final class AgentGraphRuntime {
                 }
             }
             checkpoints.save(checkpoint);
+        }
+    }
+
+    private static String requiredText(String value, String phase) {
+        if (value == null || value.isBlank()) throw new IllegalStateException(phase + " 不能为空");
+        return value;
+    }
+
+    private <T> T phase(Node node, String label, java.util.function.Supplier<T> work) {
+        observer.phase(node, label);
+        long started = System.nanoTime();
+        boolean success = false;
+        try {
+            T value = work.get();
+            success = true;
+            return value;
+        } finally {
+            observer.phaseFinished(node, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), success);
         }
     }
 

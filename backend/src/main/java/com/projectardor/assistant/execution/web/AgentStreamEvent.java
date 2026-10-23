@@ -60,6 +60,10 @@ public record AgentStreamEvent(
     public static AgentStreamEvent delta(String content) {
         return new AgentStreamEvent("delta", content, null, null, null, null, null, null, null, null);
     }
+    public static AgentStreamEvent phaseFinished(String phase, String label, long elapsedMs, String status) {
+        return new AgentStreamEvent("phase_end", phase, null, label, elapsedMs, null, null, null, null, null,
+                null, null, status);
+    }
     public static AgentStreamEvent thinking(String content) {
         return new AgentStreamEvent("thinking", content, null, "收到模型思考输出", null, null, null, null, null, null);
     }

@@ -24,6 +24,36 @@ import tools.jackson.databind.json.JsonMapper;
 
 /** Exercises the production graph branch, not only the standalone state machine. No paid model. */
 class CareerAgentGraphIntegrationTests {
+    @Test void generatedSummaryNeverEntersTheSystemInstruction() {
+        var fixture = new Fixture();
+        when(fixture.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any())).thenReturn(
+                new AgentContextCompactor.Prepared("Trusted system", List.of(), 1, 4, 20, null, "PAST-DATA-ONLY"));
+        fixture.run();
+        assertThat(fixture.requests).hasSize(4).allSatisfy(request -> {
+            assertThat(request.messages().stream().filter(message -> message instanceof dev.langchain4j.data.message.SystemMessage)
+                    .map(Object::toString).toList()).allSatisfy(text -> assertThat(text).doesNotContain("PAST-DATA-ONLY"));
+            assertThat(request.messages().stream().filter(message -> message instanceof AiMessage).map(Object::toString).toList())
+                    .anySatisfy(text -> assertThat(text).contains("PAST-DATA-ONLY"));
+        });
+    }
+
+    @Test void cancellationDuringContextCompactionCannotDispatchTheGraph() throws Exception {
+        var fixture = new Fixture(Duration.ofMillis(1));
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        when(fixture.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any())).thenAnswer(call -> {
+            entered.countDown();
+            try { new java.util.concurrent.CountDownLatch(1).await(); }
+            catch (InterruptedException expected) { Thread.currentThread().interrupt(); }
+            throw new java.util.concurrent.CancellationException("stopped context");
+        });
+        var execution = java.util.concurrent.CompletableFuture.runAsync(fixture::run);
+        assertThat(entered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        fixture.service.watchStreams();
+        execution.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(fixture.requests).isEmpty();
+        assertThat(fixture.events).anySatisfy(event -> assertThat(event.errorCode()).isEqualTo("AGENT_RUN_DEADLINE"));
+    }
+
     @Test void gatherCannotExceedThreeActualToolExecutionsEvenIfTheModelRequestsFour() {
         var fixture = new Fixture();
         when(fixture.model.chat(any(ChatRequest.class))).thenAnswer(call -> {
@@ -104,6 +134,7 @@ class CareerAgentGraphIntegrationTests {
         final AgentConversationStore conversations = mock(AgentConversationStore.class);
         final AgentRunStore runs = mock(AgentRunStore.class);
         final AgentStreamProgress progress = mock(AgentStreamProgress.class);
+        final AgentContextCompactor compactor = mock(AgentContextCompactor.class);
         final CareerAgentTools.BoundCareerTools bound = mock(CareerAgentTools.BoundCareerTools.class, RETURNS_SELF);
         final List<AgentStreamEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
         final List<ChatRequest> requests = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -127,8 +158,7 @@ class CareerAgentGraphIntegrationTests {
             when(memoryEmbedding.context(eq(user), anyString())).thenReturn("");
             var profiles = mock(ProfileService.class);
             when(profiles.get(user)).thenReturn(UserProfile.create(user, "Synthetic owner"));
-            var compactor = mock(AgentContextCompactor.class);
-            when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList()))
+            when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any()))
                     .thenReturn(new AgentContextCompactor.Prepared("Synthetic system", List.of(
                             ConversationMessage.user(user, conversation.getId(), "Earlier user instruction")), 0, 0, 10, null));
             when(model.chat(any(ChatRequest.class))).thenAnswer(call -> {
