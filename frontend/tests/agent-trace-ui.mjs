@@ -74,7 +74,7 @@ try {
   await page.getByText("llm.call.1", { exact: true }).first().waitFor();
   await page.screenshot({ path: ".next/agent-trace-flow.png", fullPage: true });
 
-  await page.getByRole("button", { name: "Inspector", exact: true }).click();
+  await page.getByRole("button", { name: "Trajectory", exact: true }).click();
   await page.locator("[data-trace-inspector]").waitFor();
   await page.getByRole("tab", { name: "Overview", exact: true }).waitFor();
   assert.equal(await page.locator("[data-trace-inspector-item]").count(), 6, "Inspector lists every span");
@@ -91,6 +91,11 @@ try {
   await page.goto(`${origin}/app/agent-runs/fixture-run?conversation=fixture-conv`);
   await page.locator("[data-conversation-trace]").waitFor();
   assert.equal(await page.locator("[data-conversation-run]").count(), 2, "Conversation trace lists every turn");
+  await page.getByRole("button", { name: "Graph", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Trajectory", exact: true }).click();
+  await page.locator("[data-trajectory-inspector]").waitFor();
+  assert.equal(await page.locator("[data-trace-node]").count(), 0, "Trajectory mode hides the graph");
+  await page.getByRole("button", { name: "Graph", exact: true }).click();
   await page.locator("[data-conversation-run]").nth(1).click();
   await page.getByText("第二轮问题", { exact: true }).first().waitFor();
   assert.ok(await page.locator("[data-trace-node]").count() > 0, "Selected turn renders its flow");
@@ -101,6 +106,7 @@ try {
   await browser?.close();
   server.kill();
 }
+
 
 
 

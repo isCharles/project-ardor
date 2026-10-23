@@ -41,6 +41,8 @@ type ConversationTrace = {
   runs: Array<{ runId: string; message: string; assistantMessage: string; status: string; createdAt: string; updatedAt: string; spans: TraceSpan[] }>;
 };
 
+type ToolSchema = Record<string, unknown>;
+
 type FlowNode = { span: TraceSpan; x: number; y: number };
 
 const NODE_WIDTH = 160;
@@ -66,6 +68,7 @@ export default function AgentRunTracePage() {
   const [trace, setTrace] = useState<Trace | null>(null);
   const [conversationTrace, setConversationTrace] = useState<ConversationTrace | null>(null);
   const [conversationId, setConversationId] = useState("");
+  const [toolSchemas, setToolSchemas] = useState<Record<string, ToolSchema>>({});
   const [error, setError] = useState("");
   const [view, setView] = useState<"flow" | "timeline" | "inspector">("flow");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -73,6 +76,11 @@ export default function AgentRunTracePage() {
 
   useEffect(() => {
     setConversationId(new URLSearchParams(window.location.search).get("conversation") ?? "");
+    let active = true;
+    void api<Record<string, ToolSchema>>("/api/agent/tools/schemas").then((value) => {
+      if (active) setToolSchemas(value);
+    }).catch(() => { /* Schema is optional in the developer view. */ });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -136,7 +144,7 @@ export default function AgentRunTracePage() {
         <p className="mt-3 truncate font-mono text-xs text-stone-400">{conversationId ? `${t("Conversation", "对话")} ${conversationId}` : requestId}</p>
       </header>
 
-      {conversationTrace && <ConversationTraceView trace={conversationTrace} />}
+      {conversationTrace && <ConversationTraceView trace={conversationTrace} schemas={toolSchemas} />}
       {!conversationTrace && !trace && !error && <div role="status" className="flex items-center gap-3 rounded-2xl bg-white/70 px-4 py-3 text-sm text-stone-500"><LoaderCircle className="size-4 animate-spin text-violet-500" />{t("Loading trace…", "正在读取执行轨迹…")}</div>}
       {error && <div role="alert" className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
       {trace && <>
@@ -163,7 +171,7 @@ export default function AgentRunTracePage() {
           <div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Trace view", "轨迹视图")}>
             <button type="button" aria-pressed={view === "flow"} onClick={() => setView("flow")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${view === "flow" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}><GitBranch className="size-3.5" />{t("Flow", "流程图")}</button>
             <button type="button" aria-pressed={view === "timeline"} onClick={() => setView("timeline")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${view === "timeline" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}><List className="size-3.5" />{t("Timeline", "时间线")}</button>
-            <button type="button" aria-pressed={view === "inspector"} onClick={() => setView("inspector")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${view === "inspector" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}><Search className="size-3.5" />{t("Inspector", "检查器")}</button>
+            <button type="button" aria-pressed={view === "inspector"} onClick={() => setView("inspector")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${view === "inspector" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}><Search className="size-3.5" />{t("Trajectory", "轨迹检查器")}</button>
           </div>
         </div>
 
@@ -173,19 +181,19 @@ export default function AgentRunTracePage() {
               <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-stone-400">
                 {(["LLM", "TOOL", "CONTEXT", "ASYNC"] as const).map((kind) => <span key={kind} className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-full ${kind === "LLM" ? "bg-violet-400" : kind === "TOOL" ? "bg-sky-400" : kind === "CONTEXT" ? "bg-stone-400" : "bg-emerald-400"}`} />{kindMeta[kind].label}</span>)}
               </div>
-              {selected ? <SpanDetails span={selected} /> : <p className="mt-3 text-xs text-stone-400">{t("Select a node to inspect metadata.", "点击节点查看元数据。")}</p>}
+              {selected ? <SpanDetails span={selected} schema={toolSchemas[selected.name]} /> : <p className="mt-3 text-xs text-stone-400">{t("Select a node to inspect metadata.", "点击节点查看元数据。")}</p>}
             </section>
           : view === "timeline"
           ? <section className="mt-3">{trace.spans.filter((span) => span.kind === "RUN").map((span) => <TraceRow key={span.id} span={span} root />)}<div className="relative ml-5 mt-2 space-y-2 border-l border-stone-200/80 pl-5">{trace.spans.filter((span) => span.kind !== "RUN").map((span) => <TraceRow key={span.id} span={span} />)}</div>{trace.spans.length === 0 && <p className="text-sm text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</p>}</section>
-          : <InspectorView spans={filteredSpans} selected={selected} filter={filter} onFilter={setFilter} onSelect={setSelectedId} />}
+          : <InspectorView spans={filteredSpans} selected={selected} filter={filter} onFilter={setFilter} onSelect={setSelectedId} schemas={toolSchemas} />}
       </>}
     </div>
   </main>;
 }
 
-function InspectorView({ spans, selected, filter, onFilter, onSelect }: {
+function InspectorView({ spans, selected, filter, onFilter, onSelect, schemas }: {
   spans: TraceSpan[]; selected: TraceSpan | null; filter: string;
-  onFilter: (value: string) => void; onSelect: (id: string) => void;
+  onFilter: (value: string) => void; onSelect: (id: string) => void; schemas: Record<string, ToolSchema>;
 }) {
   const { t } = useLocale();
   return <section data-trace-inspector className="mt-3 grid gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
@@ -212,13 +220,13 @@ function InspectorView({ spans, selected, filter, onFilter, onSelect }: {
         {spans.length === 0 && <p className="p-3 text-xs text-stone-500">{t("No matching spans.", "没有匹配的步骤。")}</p>}
       </div>
     </div>
-    <div className="min-w-0">{selected ? <InspectorPanel span={selected} /> : <div className="rounded-2xl border border-white/80 bg-white/70 p-5 text-sm text-stone-500">{t("Select a step to inspect.", "选择一个步骤查看详情。")}</div>}</div>
+    <div className="min-w-0">{selected ? <InspectorPanel span={selected} schema={schemas[selected.name]} /> : <div className="rounded-2xl border border-white/80 bg-white/70 p-5 text-sm text-stone-500">{t("Select a step to inspect.", "选择一个步骤查看详情。")}</div>}</div>
   </section>;
 }
 
-function InspectorPanel({ span }: { span: TraceSpan }) {
+function InspectorPanel({ span, schema }: { span: TraceSpan; schema?: ToolSchema }) {
   const { t } = useLocale();
-  const [tab, setTab] = useState<"overview" | "input" | "result" | "metadata" | "timing">("overview");
+  const [tab, setTab] = useState<"overview" | "input" | "result" | "schema" | "metadata" | "timing">("overview");
   useEffect(() => setTab("overview"), [span.id]);
   const input = preview(span.kind === "TOOL" ? span.attributes.argumentsPreview : span.attributes.inputPreview);
   const result = preview(span.kind === "TOOL" ? span.attributes.resultPreview : span.attributes.outputPreview);
@@ -229,6 +237,7 @@ function InspectorPanel({ span }: { span: TraceSpan }) {
     ["overview", t("Overview", "概述")],
     ["input", t("Input", "输入")],
     ["result", t("Result", "结果")],
+    ["schema", t("Schema", "Schema")],
     ["metadata", t("Metadata", "元数据")],
     ["timing", t("Timing", "计时")],
   ] as const;
@@ -257,6 +266,7 @@ function InspectorPanel({ span }: { span: TraceSpan }) {
       </div>}
       {tab === "input" && <InspectorPre label={span.kind === "TOOL" ? t("Arguments", "参数") : t("Input preview", "输入预览")} text={input} empty={t("No input preview was recorded.", "没有记录输入预览。")} />}
       {tab === "result" && <InspectorPre label={span.kind === "THOUGHT" ? t("Phase conclusion", "阶段结论") : t("Result", "结果")} text={result} empty={t("No result preview was recorded.", "没有记录结果预览。")} />}
+      {tab === "schema" && (schema ? <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-stone-50 p-4 text-[11px] leading-5 text-stone-600">{JSON.stringify(schema, null, 2)}</pre> : <p className="rounded-xl bg-stone-50 p-4 text-xs text-stone-500">{t("No schema was registered for this step.", "这个步骤没有注册 Schema。")}</p>)}
       {tab === "metadata" && <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-stone-50 p-4 text-[11px] leading-5 text-stone-600">{JSON.stringify(span.attributes, null, 2)}</pre>}
       {tab === "timing" && <div className="grid gap-3 sm:grid-cols-2">
         <InspectorField label={t("Started at", "开始时间")} value={formatDateTime(span.startedAt)} mono />
@@ -282,10 +292,11 @@ function formatDateTime(value: string | null) {
   return new Date(value).toLocaleString();
 }
 
-function ConversationTraceView({ trace }: { trace: ConversationTrace }) {
+function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; schemas: Record<string, ToolSchema> }) {
   const { t } = useLocale();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(trace.runs.at(-1)?.runId ?? null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+  const [traceView, setTraceView] = useState<"graph" | "trajectory">("graph");
   const selectedRun = trace.runs.find((run) => run.runId === selectedRunId) ?? trace.runs.at(-1) ?? null;
   const flow = useMemo(() => buildFlow(selectedRun?.spans ?? []), [selectedRun]);
   const selectedSpan = selectedRun?.spans.find((span) => span.id === selectedSpanId) ?? null;
@@ -295,7 +306,21 @@ function ConversationTraceView({ trace }: { trace: ConversationTrace }) {
   useEffect(() => {
     setSelectedSpanId(selectedRun?.spans[0]?.id ?? null);
   }, [selectedRun?.runId]);
-  return <section data-conversation-trace className="mt-4 grid gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
+  const allSpans = trace.runs.flatMap((run) => run.spans).filter((span) => span.kind !== "RUN");
+  const starts = allSpans.map(spanStart).filter((value): value is number => value !== null);
+  const ends = allSpans.map(spanEnd).filter((value): value is number => value !== null);
+  const duration = starts.length && ends.length ? Math.max(...ends) - Math.min(...starts) : 0;
+  const llmCalls = allSpans.filter((span) => span.kind === "LLM").length;
+  const toolCalls = allSpans.filter((span) => span.kind === "TOOL").length;
+  const inputTokens = allSpans.reduce((sum, span) => sum + (span.inputTokens ?? 0), 0);
+  const outputTokens = allSpans.reduce((sum, span) => sum + (span.outputTokens ?? 0), 0);
+  return <div className="mt-4">
+    <div data-trace-overview className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      {[[t("Duration", "时长"), formatDuration(duration)], [t("Turns", "轮次"), trace.runs.length], [t("Model calls", "模型调用"), llmCalls], [t("Tool calls", "工具调用"), toolCalls], [t("Tokens", "Token"), `${inputTokens} / ${outputTokens}`]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/80 bg-white/70 px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{label}</p><p className="mt-1 text-base font-semibold tabular-nums text-stone-800">{value}</p></div>)}
+    </div>
+    <div className="mt-3 flex items-center justify-between gap-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Trace view", "轨迹视图")}</p><div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Trace view", "轨迹视图")}><button type="button" aria-pressed={traceView === "graph"} onClick={() => setTraceView("graph")} className={`rounded-full px-3 py-1.5 text-xs transition ${traceView === "graph" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}>{t("Graph", "图")}</button><button type="button" aria-pressed={traceView === "trajectory"} onClick={() => setTraceView("trajectory")} className={`rounded-full px-3 py-1.5 text-xs transition ${traceView === "trajectory" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}>{t("Trajectory", "轨迹检查器")}</button></div></div>
+    <TraceTimeOverview runs={trace.runs} selectedRunId={selectedRun?.runId ?? null} selectedSpanId={selectedSpanId} onSelect={(runId, spanId) => { setSelectedRunId(runId); setSelectedSpanId(spanId); }} />
+    <section data-conversation-trace className="mt-3 grid gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
     <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/70">
       <div className="border-b border-stone-200/70 px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Conversation", "对话")}</p>
@@ -309,11 +334,17 @@ function ConversationTraceView({ trace }: { trace: ConversationTrace }) {
             <div className="flex items-center gap-2"><span className="text-[10px] font-semibold tabular-nums text-stone-400">#{index + 1}</span><span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${run.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : run.status === "RUNNING" ? "bg-violet-50 text-violet-700" : "bg-rose-50 text-rose-700"}`}>{run.status}</span><span className="ml-auto text-[10px] text-stone-400">{formatDuration(root?.durationMs ?? null)}</span></div>
             <p className="mt-1.5 line-clamp-2 text-xs font-medium leading-5 text-stone-800">{run.message}</p>
             {run.assistantMessage && <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-stone-400">{run.assistantMessage}</p>}
-            <p className="mt-1 text-[10px] text-stone-400">{run.spans.length} {t("steps", "个步骤")}</p>
+            <p className="mt-1 text-[10px] text-stone-400">{run.spans.length} {t("steps", "个步骤")} · {run.spans.filter((span) => span.kind === "TOOL").length} {t("tool calls", "个工具调用")}</p>
           </button>;
         })}
         {trace.runs.length === 0 && <p className="p-3 text-xs text-stone-500">{t("No turns were recorded for this conversation.", "这个对话还没有记录到轮次。")}</p>}
       </div>
+      {traceView === "trajectory" && selectedRun && <div className="border-t border-stone-200/70 p-2">
+        <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Steps", "步骤")}</p>
+        <div className="max-h-52 overflow-y-auto">
+          {selectedRun.spans.map((span) => <button key={span.id} type="button" data-trace-step-item onClick={() => setSelectedSpanId(span.id)} className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] ${selectedSpanId === span.id ? "bg-violet-50 text-violet-800" : "text-stone-500 hover:bg-stone-50"}`}><span className={`size-1.5 rounded-full ${span.kind === "LLM" ? "bg-violet-400" : span.kind === "TOOL" ? "bg-sky-400" : "bg-stone-400"}`} /><span className="min-w-0 flex-1 truncate">{span.kind === "RUN" ? t("Agent run", "Agent 运行") : span.name}</span><span className="shrink-0 tabular-nums text-stone-400">{formatDuration(span.durationMs)}</span></button>)}
+        </div>
+      </div>}
     </div>
     <div className="min-w-0">{selectedRun ? <>
       <div className="rounded-2xl border border-white/80 bg-white/80 p-4">
@@ -321,11 +352,62 @@ function ConversationTraceView({ trace }: { trace: ConversationTrace }) {
         <p className="mt-3 text-sm font-medium text-stone-800">{selectedRun.message}</p>
         {selectedRun.assistantMessage && <p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-500">{selectedRun.assistantMessage}</p>}
       </div>
-      <div className="mt-3">{flow.length > 0 ? <FlowGraph nodes={flow} selectedId={selectedSpanId} onSelect={setSelectedSpanId} /> : <div className="rounded-2xl bg-white/60 p-5 text-sm text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</div>}</div>
-      {selectedSpan ? <SpanDetails span={selectedSpan} /> : <p className="mt-3 text-xs text-stone-400">{t("Select a node to inspect metadata.", "点击节点查看元数据。")}</p>}
+      {traceView === "graph" ? <> 
+        <div className="mt-3">{flow.length > 0 ? <FlowGraph nodes={flow} selectedId={selectedSpanId} onSelect={setSelectedSpanId} /> : <div className="rounded-2xl bg-white/60 p-5 text-sm text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</div>}</div>
+        {selectedSpan ? <SpanDetails span={selectedSpan} schema={schemas[selectedSpan.name]} /> : <p className="mt-3 text-xs text-stone-400">{t("Select a node to inspect metadata.", "点击节点查看元数据。")}</p>}
+      </> : selectedSpan ? <div data-trajectory-inspector className="mt-3"><InspectorPanel span={selectedSpan} schema={schemas[selectedSpan.name]} /></div> : <p className="mt-3 text-xs text-stone-400">{t("Select a step to inspect.", "选择一个步骤查看详情。")}</p>}
     </> : <div className="rounded-2xl border border-white/80 bg-white/70 p-5 text-sm text-stone-500">{t("Select a turn to inspect.", "选择一轮查看详情。")}</div>}
     </div>
-  </section>;
+  </section>
+  </div>;
+}
+
+function spanStart(span: TraceSpan): number | null {
+  const value = new Date(span.startedAt).getTime();
+  return Number.isFinite(value) ? value : null;
+}
+
+function spanEnd(span: TraceSpan): number | null {
+  const start = spanStart(span);
+  if (start === null) return null;
+  if (span.finishedAt) {
+    const finished = new Date(span.finishedAt).getTime();
+    if (Number.isFinite(finished)) return finished;
+  }
+  return span.durationMs != null ? start + span.durationMs : null;
+}
+
+function TraceTimeOverview({ runs, selectedRunId, selectedSpanId, onSelect }: {
+  runs: ConversationTrace["runs"]; selectedRunId: string | null; selectedSpanId: string | null;
+  onSelect: (runId: string, spanId: string) => void;
+}) {
+  const { t } = useLocale();
+  const timed = runs.flatMap((run) => run.spans
+    .filter((span) => span.kind !== "RUN")
+    .map((span) => ({ runId: run.runId, span, start: spanStart(span), end: spanEnd(span) }))
+    .filter((item): item is { runId: string; span: TraceSpan; start: number; end: number } => item.start !== null && item.end !== null));
+  if (timed.length === 0) return <div className="mt-3 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-xs text-stone-500">{t("No timing data for this conversation.", "这个对话没有计时数据。")}</div>;
+  const domainStart = Math.min(...timed.map((item) => item.start));
+  const domainEnd = Math.max(...timed.map((item) => item.end));
+  const domain = Math.max(1, domainEnd - domainStart);
+  const lanes: Array<[string, TraceSpan["kind"][]]> = [
+    [t("Input / context", "输入 / 上下文"), ["CONTEXT", "THOUGHT", "ASYNC", "RETRY"]],
+    [t("Model", "模型"), ["LLM"]],
+    [t("Tools", "工具"), ["TOOL"]],
+  ];
+  return <div data-trace-timeline className="mt-3 rounded-2xl border border-white/80 bg-white/70 p-4">
+    <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Time overview", "时间总览")}</p><span className="text-[10px] tabular-nums text-stone-400">{formatDuration(domain)}</span></div>
+    <div className="mt-3 space-y-2">
+      {lanes.map(([label, kinds]) => <div key={label} className="flex items-center gap-3"><span className="w-24 shrink-0 text-right text-[10px] text-stone-400">{label}</span><div className="relative h-7 flex-1 rounded-lg bg-stone-100/80">{timed.filter((item) => kinds.includes(item.span.kind)).map((item) => {
+        const left = ((item.start - domainStart) / domain) * 100;
+        const width = Math.max(0.6, ((item.end - item.start) / domain) * 100);
+        const selected = item.runId === selectedRunId && item.span.id === selectedSpanId;
+        const failed = item.span.status === "FAILED";
+        return <button key={`${item.runId}-${item.span.id}`} type="button" data-trace-lane onClick={() => onSelect(item.runId, item.span.id)} title={`${item.span.name} · ${formatDuration(item.end - item.start)}`} style={{ left: `${left}%`, width: `${width}%` }} className={`absolute top-1 bottom-1 min-w-[3px] rounded-full transition ${selected ? "z-10 ring-2 ring-violet-500" : "hover:brightness-90"} ${failed ? "bg-rose-400" : item.span.kind === "LLM" ? "bg-violet-400" : item.span.kind === "TOOL" ? "bg-sky-400" : "bg-stone-400"}`} aria-label={`${item.span.name} ${formatDuration(item.end - item.start)}`} />;
+      })}</div></div>)}
+    </div>
+    <p className="mt-2 text-[10px] text-stone-400">{t("Bars use recorded start, finish and duration. Click a bar to focus its step; missing timing is not invented.", "时间条只使用记录的 start/finish/duration；缺失的计时不会被伪造，点击可定位步骤。")}</p>
+  </div>;
 }
 
 function buildFlow(spans: TraceSpan[]): FlowNode[] {
@@ -391,7 +473,7 @@ function TraceNode({ node, index, selected, onSelect }: { node: FlowNode; index:
   </button>;
 }
 
-function SpanDetails({ span }: { span: TraceSpan }) {
+function SpanDetails({ span, schema }: { span: TraceSpan; schema?: ToolSchema }) {
   const { t } = useLocale();
   const attributes = span.attributes;
   const inputPreview = preview(attributes.inputPreview);
@@ -430,6 +512,10 @@ function SpanDetails({ span }: { span: TraceSpan }) {
     {requestedTools.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-stone-500"><span>{t("Requested tools", "请求的工具")}</span>{requestedTools.map((tool) => <span key={tool} className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-[10px] text-violet-700">{tool}</span>)}</div>}
     <p className="mt-3 text-[10px] leading-5 text-stone-400">{t("Preview content is truncated and redacted; it is not the full prompt, tool payload or private chain-of-thought.", "预览内容已截断并脱敏，不是完整 prompt、工具 payload 或私有思维链。")}</p>
 
+    {schema && <details className="mt-3 text-[11px] text-stone-500">
+      <summary className="cursor-pointer text-stone-500">{t("Schema", "Schema")}</summary>
+      <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-stone-50 p-3 text-[10px] leading-5 text-stone-600">{JSON.stringify(schema, null, 2)}</pre>
+    </details>}
     <details className="mt-3 text-[11px] text-stone-500">
       <summary className="cursor-pointer text-stone-500">{t("Metadata", "元数据")}</summary>
       <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-stone-50 p-3 text-[10px] leading-5 text-stone-600">{JSON.stringify(attributes, null, 2)}</pre>
@@ -478,6 +564,10 @@ function formatDuration(value: number | null) {
   if (!value || value <= 0) return "—";
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(1)} s`;
 }
+
+
+
+
 
 
 

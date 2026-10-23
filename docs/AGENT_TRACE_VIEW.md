@@ -60,3 +60,18 @@ links carry the conversation id automatically.
 The endpoint is owner-scoped and returns only the latest 30 runs. Each run's
 spans are read through the same bounded `AgentTraceStore` used by the single-run
 trace; raw prompts and tool payloads remain out of the trace store.
+
+## Graph and Trajectory modes
+
+The trace page exposes both visualizations over the same run data:
+
+- **Graph**: the serpentine flow graph, retained from the original developer view;
+- **Trajectory**: the DSH-style turn list + span inspector, with
+  `Overview / Input / Result / Schema / Metadata / Timing` tabs;
+- multi-turn mode adds a conversation overview (duration, turns, model/tool
+  calls, tokens), a three-lane time overview (input/context, model, tools), and
+  a step list.
+
+Tool schemas come from `GET /api/agent/tools/schemas`, generated from the same
+`@Tool` / `@P` annotations used by LangChain4j. When a field was not recorded,
+the UI labels it unavailable; it never invents timing, schema or usage.
