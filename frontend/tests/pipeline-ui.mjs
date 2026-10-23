@@ -30,10 +30,11 @@ try {
   let slowJob = false, jobPolls = 0;
   await context.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
-    if (path === "/api/interview-recaps/jobs" && slowJob) {
+    if (path === "/api/interview-recaps/final-minutes/slow-job" && slowJob) {
       jobPolls++;
       if (jobPolls === 3) recaps.push({ ...recaps[0], id: "slow", title: "Slow completed notes" });
-      return route.fulfill({ json: [{ jobId: "slow-job", status: jobPolls < 3 ? "RUNNING" : "COMPLETED", recapId: jobPolls < 3 ? null : "slow" }] });
+      return route.fulfill({ json: { jobId: "slow-job", minutes: "Saved final minutes fixture", errorMessage: null,
+        status: jobPolls < 3 ? "RUNNING" : "COMPLETED", recapId: jobPolls < 3 ? null : "slow" } });
     }
     const body = path === "/api/auth/me" ? { id: "pipeline-fixture", email: "pipeline@ardor.invalid", admin: false }
       : path === "/api/auth/csrf" ? { token: "fixture", headerName: "X-CSRF-TOKEN" }
@@ -43,6 +44,7 @@ try {
       : path === "/api/opportunities" ? opportunities
       : path === "/api/memory-cards" ? [1, 2].map(id => ({ id: `card-${id}`, recapQuestionId: "question-one", front: cardFront, status: "ACTIVE" }))
       : path === "/api/learning-plans" ? [{ id: "plan-one", concept: longConcept, sourceType: "RECAP", sourceId: "question-one", originKind: "INTERVIEW_QUESTION", originResourceId: "question-one", originRecordId: "linked", targetInterviewId: "process-two", status: "SCHEDULED" }]
+      : path === "/api/interview-recaps/final-minutes" ? slowJob ? [{ jobId: "slow-job", preview: "Slow submitted minutes", status: "RUNNING", recapId: null }] : []
       : path === "/api/interview-recaps" ? recaps : [];
     await route.fulfill({ json: body });
   });
@@ -62,16 +64,29 @@ try {
   await page.screenshot({ path: ".next/pipeline-recap.png", fullPage: true });
   slowJob = true;
   await page.goto(`${origin}/app/recaps`);
-  await page.getByRole("link", { name: /Slow completed notes/ }).waitFor({ timeout: 20000 });
-  assert.ok(jobPolls >= 3, "Polling must continue when the active job count stays unchanged");
-  await page.goto(`${origin}/app/opportunities?selected=process-one`);
+  await page.getByText("Saved submissions", { exact: true }).click();
+  await page.getByRole("link", { name: /Slow submitted minutes/ }).click();
+  await page.getByRole("status").filter({ hasText: /Minutes saved/ }).waitFor();
+  await page.getByRole("heading", { name: "Slow completed notes", exact: true }).waitFor({ timeout: 20000 });
+  assert.ok(jobPolls >= 3, "Selected final minutes must keep polling while status remains RUNNING");
+  assert.equal(new URL(page.url()).searchParams.get("minutes"), "slow-job");
+  assert.equal(new URL(page.url()).searchParams.get("selected"), "slow");
+  await page.getByText("Saved final minutes", { exact: true }).click();
+  await page.getByText("Saved final minutes fixture", { exact: true }).waitFor();
+  await page.goto(`${origin}/app/opportunities`);
+  await page.getByRole("row").filter({ has: page.getByRole("cell", { name: "Fixture company", exact: true }) })
+    .getByRole("button", { name: "Backend intern", exact: true }).click();
   const cardsLink = page.getByRole("link", { name: "Flashcards 2", exact: true });
   await cardsLink.waitFor();
-  assert.equal(await page.getByRole("link",{name:"View learning progress from this interview",exact:true}).getAttribute("href"),
+  assert.equal(await page.getByRole("link",{name:/View learning progress from this interview/}).getAttribute("href"),
     "/app/learning/progress?sourceInterviewId=process-one","Interview progress is scoped by provenance, not preparation target");
-  const sourcePlan=page.locator('a[href="/app/learning?id=plan-one"]');
+  const courseButton = page.getByRole("button", { name: /1 related course/ });
+  await courseButton.click();
+  const courseDialog = page.getByRole("dialog", { name: "Courses", exact: true });
+  const sourcePlan=courseDialog.locator('a[href="/app/learning?id=plan-one"]');
   assert.match(await sourcePlan.innerText(),/Learning from here/i);
   assert.doesNotMatch(await sourcePlan.innerText(),/Preparation/i);
+  await courseDialog.getByRole("button", { name: "Close", exact: true }).click();
   assert.ok(!(await page.locator("main").innerText()).includes("PRIVATE_CARD_BODY_"), "Card bodies must not render, including concatenated summaries");
   for (const width of [1440, 900, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -90,17 +105,34 @@ try {
     assert.ok(geometry.tableWidth <= Math.max(860, geometry.containerWidth) + 2, `Long association expanded table at ${width}px`);
     assert.ok(geometry.documentWidth <= geometry.viewportWidth + 1, `Long content expanded viewport at ${width}px`);
     assert.ok(geometry.controlsFit, `Result control overlaps another cell at ${width}px`);
-    assert.ok(geometry.titles.length >= 2 && geometry.titles.every(title => title.ellipsis === "ellipsis" && title.clipped && title.fits), `Association titles did not truncate at ${width}px`);
+    assert.ok(geometry.titles.length >= 1 && geometry.titles.every(title => title.ellipsis === "ellipsis" && title.clipped && title.fits), `Notes titles did not truncate at ${width}px`);
+    await courseButton.click();
+    const courseGeometry = await sourcePlan.locator("span[title]").evaluate(span => {
+      const dialog = span.closest("dialog").getBoundingClientRect();
+      return { ellipsis: getComputedStyle(span).textOverflow, clipped: span.scrollWidth > span.clientWidth,
+        fits: span.getBoundingClientRect().right <= dialog.right,
+        documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth };
+    });
+    assert.ok(courseGeometry.ellipsis === "ellipsis" && courseGeometry.clipped && courseGeometry.fits,
+      `Course picker title did not truncate at ${width}px`);
+    assert.ok(courseGeometry.documentWidth <= courseGeometry.viewportWidth + 1, `Course picker expanded viewport at ${width}px`);
+    await page.screenshot({ path: `.next/pipeline-course-${width}.png`, fullPage: true });
+    await courseDialog.getByRole("button", { name: "Close", exact: true }).click();
     assert.equal(await cardsLink.getAttribute("href"), "/app/cards");
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: ".next/pipeline-compact-associations.png", fullPage: true });
-  await page.goto(`${origin}/app/opportunities?selected=process-two`);
-  const targetPlan=page.locator('a[href="/app/learning?id=plan-one"]');
+  await page.getByRole("row").filter({ has: page.getByRole("cell", { name: "Preparation employer", exact: true }) })
+    .getByRole("button", { name: "Backend intern", exact: true }).click();
+  await page.getByRole("button", { name: /1 related course/ }).click();
+  const targetPlan=courseDialog.locator('a[href="/app/learning?id=plan-one"]');
   await targetPlan.waitFor();
   assert.equal(await targetPlan.count(),1,"One plan must appear only once in a target interview");
   assert.match(await targetPlan.innerText(),/Preparation/i);
   assert.doesNotMatch(await targetPlan.innerText(),/Learning from here/i);
   assert.deepEqual(errors, []);
-  console.log("Pipeline UI: notes navigation, polling, compact associations and count-only cards passed at desktop/tablet/mobile widths.");
+  console.log("Pipeline UI: notes navigation, final-minutes polling, source/target course picker, compact associations and count-only cards passed at desktop/tablet/mobile widths.");
+} catch (error) {
+  await browser?.contexts()[0]?.pages()[0]?.screenshot({ path: ".next/pipeline-failure.png", fullPage: true }).catch(() => {});
+  throw error;
 } finally { await browser?.close(); server.kill(); }
