@@ -56,3 +56,14 @@ node backend/src/test/resources/recovery-acceptance.mjs verify
 - PERSONAL 来源、personalOverride、provider、baseUrl、model、keyHint 与 seed 一致。假模型强制验证 fake-only 凭据；恢复后不重新提交密钥，以新岗位上下文成功完成分析。
 - 反向验证：假模型拒绝缺失或错误凭据，正确合成凭据通过；将恢复 PDF 可逆改名（字节保留）后 verify 因准确路径缺失失败，恢复原名后 verify 再次通过。证明不能凭其他文件的相同字节绕过关联检查。
 - 证据保存在独立工作树被忽略的 backend/target/recovery-proof-v2-20261021，含合成 manifest 和备份，不能提交或打印其账号凭据。上述结果仍不等同于真实用户/生产恢复或完整桌面人工回归。
+
+## 2026-10-24 当前 V64 / 简历应用边界 v2 复测
+
+- 使用 #190 的精确候选 `eb63cccfdf08ee8626c0819634b7658c93c3e904`，JAR SHA-256 `DF31349650AC677F286076F1525692FFA09E34CE7BF962A0A1098EBE70B5FF0C`。内部合成网络与日常 Compose 分离，数据库角色为 fixture，假模型强制检查 fake-only；本机仅通过固定目标转发器访问，初次内部端口不可达不计为产品成功。
+- seed 后先停止源应用，再导出数据库、复制实际上传目录。恢复到另一份空 PostgreSQL；启动应用前源/目标均为 **58 表、91 行**，按表/完整行排序的汇总 MD5 均为 `dc764daca1a888c1182974b7f0173d99`。数据库备份 SHA-256 `D5A5628DF38E85C866A311B66D2C927229ECE6722BDC90EF9C030CD756D1E6AD`。
+- 恢复 **1 份非空 PDF**，SHA-256 `0F09028509D54A91357CA0BC2A44278AF94D7CE282A2DBD989533824037E625D`。恢复应用绑定独立的只读文件目录和空 Redis，不连接源数据库/源文件/源 session。重新认证后原 userId、简历/历史报告/卡片身份及复习次数保留，数据库 storage_key 对应的主机文件及应用配置根目录内文件都按字节核验。
+- PERSONAL 来源、个人覆盖、协议、Base URL、模型和 Key 提示保持；不重新提交密钥，用新岗位上下文发起的非缓存分析成功。假模型另实测拒绝缺失/错误凭据，正确合成凭据通过。
+- 将恢复文件在原目录内可逆改名（同样字节仍存在），verify 因准确存储键路径缺失而失败；finally 恢复原名。再次完整验证触发恢复库默认免费月分析额度 1 后，仅提高该合成恢复库的重复验收额度，再次 verify 通过；未改日常额度、未清计数。全表摘要相等是在应用重启写入及此验收策略修改之前检查，不将最终运行数据库宣称为冻结快照，也不据此证明月使用窗口恢复。
+- 工作副本位于忽略的 `backend/target/recovery-proof-v2-20261024-eb63ccc`；长期备份、PDF、合成 manifest、摘要 SQL 与 `PROOF.md` 已额外保存在构建目录外 `C:/Users/Administrator/.codex/worktrees/ardor-mock-views/backups/20261024-recovery-v2-eb63ccc/`，避免后续 clean 误删证据。manifest 含随机合成凭据，仍不得提交或打印。
+
+本轮没有恢复或读取真实用户的正文/凭据；不证明生产密钥找回、真实供应商、月用量窗口、多副本、生产规模耗时或完整桌面恢复行为。没有因此完成整体架构 Goal。
