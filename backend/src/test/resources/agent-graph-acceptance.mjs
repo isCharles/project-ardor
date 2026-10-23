@@ -59,11 +59,20 @@ for (let index = 0; index < 2; index++) {
   }
   assert.equal((await owner.request(`/api/agent/runs/${requestId}`)).status, "COMPLETED");
   const trace = await owner.request(`/api/agent/runs/${requestId}/trace`);
+  assert.equal(trace.conversationId, conversation.id);
   assert.equal(trace.status, "COMPLETED");
   assert.equal(trace.totals.llmCalls, 4);
   await other.request(`/api/agent/runs/${requestId}/trace`, { expected: 404 });
   await other.request(`/api/agent/runs/${requestId}`, { expected: 404 });
+  await other.request(`/api/agent/conversations/${conversation.id}/trace`, { expected: 404 });
 }
+const conversationTrace = await owner.request(`/api/agent/conversations/${conversation.id}/trace`);
+assert.equal(conversationTrace.runs.length, 2);
+assert.ok(conversationTrace.runs.every((run) => run.status === "COMPLETED" && run.assistantMessage && run.spans.length));
+const schemas = await owner.request("/api/agent/tools/schemas");
+assert.deepEqual(schemas.update_learning_plan.required, ["planId"]);
+assert.deepEqual(schemas.search_knowledge.required, ["query"]);
+await new Client().request("/api/agent/tools/schemas", { expected: 401 });
 const state = await owner.request(`/api/agent?conversationId=${conversation.id}`);
 assert.equal(state.messages.filter((message) => message.role === "USER").length, 2);
 assert.equal(state.messages.filter((message) => message.role === "ASSISTANT").length, 2);
