@@ -1,0 +1,185 @@
+package com.projectardor.assistant.memory.service;
+
+import java.util.List;
+import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import com.projectardor.assistant.ReasoningDepth;
+import com.projectardor.assistant.conversation.domain.ConversationMessage;
+import com.projectardor.assistant.conversation.service.AgentConversationStore;
+import com.projectardor.assistant.execution.service.LangChainModelFactory;
+import com.projectardor.platform.model.llm.domain.LlmProvider;
+import com.projectardor.platform.model.llm.service.LlmConfigService;
+
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.model.TokenCountEstimator;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
+
+/**
+ * Compacts the prompt view of a conversation without deleting persisted messages.
+ *
+ * <p>The shape follows the proven long-context pattern: keep recent turns verbatim,
+ * summarize older turns into a versioned durable block, and carry that block forward.
+ * Claude's server compaction and OpenAI Codex's compaction endpoint both expose this
+ * same shape; Ardor needs its own summary because it talks to arbitrary user models.</p>
+ */
+@Service
+public class AgentContextCompactor {
+    private static final Logger log = LoggerFactory.getLogger(AgentContextCompactor.class);
+
+    private final AgentConversationStore conversations;
+    private final ConversationSummaryStore summaries;
+    private final LangChainModelFactory modelFactory;
+    private final int recentMessages;
+    private final int maxRawMessages;
+    private final int maxHistoryTokens;
+
+    public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
+            LangChainModelFactory modelFactory,
+            @Value("${app.agent.context.recent-messages:8}") int recentMessages,
+            @Value("${app.agent.context.max-raw-messages:24}") int maxRawMessages,
+            @Value("${app.agent.context.max-history-tokens:12000}") int maxHistoryTokens) {
+        this.conversations = conversations;
+        this.summaries = summaries;
+        this.modelFactory = modelFactory;
+        this.recentMessages = Math.max(2, recentMessages);
+        this.maxRawMessages = Math.max(4, maxRawMessages);
+        this.maxHistoryTokens = Math.max(1000, maxHistoryTokens);
+    }
+
+    public Prepared prepare(UUID userId, UUID conversationId, String systemPrompt,
+            LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth) {
+        List<ConversationMessage> visible = conversations.allMessages(userId, conversationId).stream()
+                .filter(message -> !message.isHidden())
+                .toList();
+        var previous = summaries.latest(userId, conversationId);
+        int covered = previous.map(summary -> coveredIndex(visible, summary.coveredMessageId(), summary.coveredCount())).orElse(0);
+        int recentStart = Math.max(covered, Math.max(0, visible.size() - recentMessages));
+        List<ConversationMessage> older = covered < recentStart ? visible.subList(covered, recentStart) : List.of();
+        List<ConversationMessage> recent = visible.subList(Math.max(0, visible.size() - recentMessages), visible.size());
+
+        TokenCountEstimator estimator = estimator(config);
+        String currentSummary = previous.map(ConversationSummaryStore.Summary::content).orElse("");
+        boolean overBudget = estimateTokens(estimator, currentSummary, older, recent) > maxHistoryTokens;
+        boolean enoughToCompact = older.size() >= 8;
+        List<ConversationMessage> effectiveRecent = recent;
+        if (!older.isEmpty() && (overBudget || enoughToCompact)) {
+            CompactionResult compacted = compact(userId, conversationId, config, depth, previous, older, estimator);
+            if (compacted != null) {
+                currentSummary = compacted.content();
+                previous = java.util.Optional.of(compacted.summary());
+            } else {
+                // Never silently drop history because the summarizer is unavailable.
+                effectiveRecent = visible.subList(Math.max(0, visible.size() - 40), visible.size());
+            }
+        }
+        String summarySection = currentSummary.isBlank() ? "" : """
+                <conversation_summary version="%d">
+                %s
+                </conversation_summary>
+                """.formatted(previous.map(ConversationSummaryStore.Summary::version).orElse(1), currentSummary);
+        String enrichedSystem = summarySection.isBlank() ? systemPrompt : systemPrompt + "\n\n" + summarySection;
+        int estimated = estimateTokens(estimator, enrichedSystem, List.of(), effectiveRecent);
+        return new Prepared(enrichedSystem, effectiveRecent, previous.map(ConversationSummaryStore.Summary::version).orElse(0),
+                older.size(), estimated, estimator);
+    }
+
+    private CompactionResult compact(UUID userId, UUID conversationId, LlmConfigService.LlmRuntimeConfig config,
+            ReasoningDepth depth, java.util.Optional<ConversationSummaryStore.Summary> previous,
+            List<ConversationMessage> older, TokenCountEstimator estimator) {
+        StringBuilder prompt = new StringBuilder("""
+                你是 Ardor 的上下文压缩器。请把旧对话压缩成可继续工作的结构化摘要。
+                只保留：用户目标、稳定事实与偏好、已做决定、未完成任务、关键实体 ID、用户纠正、未解决问题、工具结果中的关键结论。
+                不保留寒暄、重复内容、模型猜测；不编造。用中文输出，最多 900 字。
+
+                已有摘要：
+                """);
+        prompt.append(previous.map(ConversationSummaryStore.Summary::content).orElse("（无）"));
+        prompt.append("\n\n需要并入摘要的旧对话：\n");
+        int used = 0;
+        for (ConversationMessage message : older) {
+            String content = message.getContent() == null ? "" : message.getContent();
+            if (used + content.length() > 12_000) break;
+            prompt.append(message.getRole()).append(": ").append(content).append('\n');
+            used += content.length();
+        }
+        String summary;
+        try {
+            ChatModel model = modelFactory.create(config, depth, List.of());
+            summary = model.chat(prompt.toString());
+        } catch (RuntimeException unavailable) {
+            log.warn("Context summarization unavailable: conversationId={}, type={}", conversationId,
+                    unavailable.getClass().getSimpleName());
+            return null;
+        }
+        if (summary == null || summary.isBlank()) return null;
+        String trimmed = summary.length() > 4000 ? summary.substring(0, 4000) + "…" : summary;
+        int version = previous.map(ConversationSummaryStore.Summary::version).orElse(0) + 1;
+        UUID coveredMessageId = older.getLast().getId();
+        int tokenCount = estimator.estimateTokenCountInText(trimmed);
+        int coveredCount = previous.map(ConversationSummaryStore.Summary::coveredCount).orElse(0) + older.size();
+        var saved = summaries.save(userId, conversationId, version, coveredMessageId, coveredCount, trimmed,
+                tokenCount, config.model());
+        return new CompactionResult(saved, trimmed);
+    }
+
+    private static int coveredIndex(List<ConversationMessage> messages, UUID coveredMessageId, int fallback) {
+        for (int index = 0; index < messages.size(); index++) {
+            if (messages.get(index).getId().equals(coveredMessageId)) return index + 1;
+        }
+        return Math.min(Math.max(0, fallback), messages.size());
+    }
+
+    private static int estimateTokens(TokenCountEstimator estimator, String system, List<ConversationMessage> older,
+            List<ConversationMessage> recent) {
+        int total = estimator.estimateTokenCountInText(system == null ? "" : system);
+        for (ConversationMessage message : older) {
+            total += estimator.estimateTokenCountInText(message.getContent() == null ? "" : message.getContent());
+        }
+        for (ConversationMessage message : recent) {
+            total += estimator.estimateTokenCountInText(message.getContent() == null ? "" : message.getContent());
+        }
+        return total;
+    }
+
+    private static TokenCountEstimator estimator(LlmConfigService.LlmRuntimeConfig config) {
+        if (config.provider() == LlmProvider.OPENAI_COMPATIBLE) {
+            try {
+                return new OpenAiTokenCountEstimator(config.model());
+            } catch (RuntimeException unsupported) {
+                // Unknown relay model IDs may not have a bundled vocabulary.
+            }
+        }
+        return new ApproximateEstimator();
+    }
+
+    private record CompactionResult(ConversationSummaryStore.Summary summary, String content) {}
+
+    public record Prepared(String systemPrompt, List<ConversationMessage> recentMessages, int summaryVersion,
+            int compactedMessages, int estimatedTokens, TokenCountEstimator estimator) {}
+
+    /** Conservative fallback for providers without a local tokenizer. */
+    static final class ApproximateEstimator implements TokenCountEstimator {
+        @Override public int estimateTokenCountInText(String text) {
+            return text == null || text.isEmpty() ? 0 : (text.length() + 1) / 2;
+        }
+
+        @Override public int estimateTokenCountInMessage(ChatMessage message) {
+            return 4 + estimateTokenCountInText(message == null ? "" : message.toString());
+        }
+
+        @Override public int estimateTokenCountInMessages(Iterable<ChatMessage> messages) {
+            int total = 0;
+            for (ChatMessage message : messages) total += estimateTokenCountInMessage(message);
+            return total;
+        }
+    }
+}
+
+
+

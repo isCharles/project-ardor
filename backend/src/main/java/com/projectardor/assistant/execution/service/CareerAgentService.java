@@ -40,7 +40,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import dev.langchain4j.memory.ChatMemory;
+import dev.langchain4j.memory.chat.TokenWindowChatMemory;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.agent.tool.Tool;
@@ -49,6 +50,8 @@ import com.projectardor.assistant.conversation.service.AgentConversationStore;
 import com.projectardor.assistant.execution.graph.AgentGraphRuntime;
 import com.projectardor.assistant.execution.service.LangChainModelFactory;
 import com.projectardor.assistant.memory.service.AgentMemoryService;
+import com.projectardor.assistant.memory.service.AgentContextCompactor;
+import com.projectardor.assistant.conversation.domain.ConversationMessage;
 import com.projectardor.assistant.memory.service.MemoryEmbeddingService;
 
 @Service
@@ -112,6 +115,7 @@ public class CareerAgentService {
     private final LlmConfigService llmConfigService;
     private final AgentMemoryService memoryService;
     private final MemoryEmbeddingService memoryEmbedding;
+    private final AgentContextCompactor contextCompactor;
     private final ProfileService profileService;
     private final ObjectMapper objectMapper;
     private final AgentStreamProgress streamProgress;
@@ -156,6 +160,7 @@ public class CareerAgentService {
             LlmConfigService llmConfigService,
             AgentMemoryService memoryService,
             MemoryEmbeddingService memoryEmbedding,
+            AgentContextCompactor contextCompactor,
             ProfileService profileService,
             ObjectMapper objectMapper,
             AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals,
@@ -171,6 +176,7 @@ public class CareerAgentService {
         this.llmConfigService = llmConfigService;
         this.memoryService = memoryService;
         this.memoryEmbedding = memoryEmbedding;
+        this.contextCompactor = contextCompactor;
         this.profileService = profileService;
         this.objectMapper = objectMapper;
         this.streamProgress = streamProgress;
@@ -290,11 +296,13 @@ public class CareerAgentService {
                     conversation.getId(), runtimeConfig.model(), AgentRunTracer.PROMPT_VERSION);
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
-            MessageWindowChatMemory memory = conversationMemory(userId, conversation.getId());
-            String systemMessage = systemPrompt(userId, message) + depth.guidance();
+            ContextBundle promptContext = buildContext(userId, conversation.getId(),
+                    systemPrompt(userId, message) + depth.guidance(), runtimeConfig, depth);
+            ChatMemory memory = promptContext.memory();
+            String systemMessage = promptContext.systemPrompt();
             if (contextSpan != null) {
                 tracer.finishChild(contextSpan, "COMPLETED", null, runtimeConfig.model(), null, null,
-                        java.util.Map.of("promptChars", systemMessage.length()));
+                        promptContext.attributes());
             }
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, requestId,
                     requestId == null ? null : UUID.randomUUID());
@@ -467,11 +475,13 @@ public class CareerAgentService {
             traceRef.set(tracer);
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
-            MessageWindowChatMemory memory = conversationMemory(userId, conversation.getId());
-            String systemMessage = systemPrompt(userId, message) + depth.guidance();
+            ContextBundle promptContext = buildContext(userId, conversation.getId(),
+                    systemPrompt(userId, message) + depth.guidance(), runtimeConfig, depth);
+            ChatMemory memory = promptContext.memory();
+            String systemMessage = promptContext.systemPrompt();
             if (contextSpan != null) {
                 tracer.finishChild(contextSpan, "COMPLETED", null, runtimeConfig.model(), null, null,
-                        java.util.Map.of("promptChars", systemMessage.length()));
+                        promptContext.attributes());
             }
             AgentModelTraceListener traceListener = tracer == null ? null
                     : new AgentModelTraceListener(tracer, runtimeConfig.model());
@@ -709,15 +719,37 @@ public class CareerAgentService {
                 (int) Math.min(Integer.MAX_VALUE, tracer.outputTokens()), model == null ? tracer.model() : model);
     }
 
-    private MessageWindowChatMemory conversationMemory(UUID userId, UUID conversationId) {
-        MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(40);
-        var history = conversationHistory(userId, conversationId, true);
-        for (var historyMessage : history.subList(Math.max(0, history.size() - 40), history.size())) {
-            if ("USER".equals(historyMessage.role())) memory.add(UserMessage.from(recoveredContextualMessage(userId, historyMessage)));
-            else if ("ASSISTANT".equals(historyMessage.role())) memory.add(AiMessage.from(historyMessage.content()));
+    private ContextBundle buildContext(UUID userId, UUID conversationId, String baseSystem,
+            com.projectardor.platform.model.llm.service.LlmConfigService.LlmRuntimeConfig runtimeConfig,
+            ReasoningDepth depth) {
+        AgentContextCompactor.Prepared prepared = contextCompactor.prepare(userId, conversationId, baseSystem, runtimeConfig, depth);
+        ChatMemory memory = TokenWindowChatMemory.withMaxTokens(8000, prepared.estimator());
+        for (ConversationMessage historyMessage : prepared.recentMessages()) {
+            if ("USER".equals(historyMessage.getRole())) memory.add(UserMessage.from(recoveredContextualMessage(userId, historyMessage)));
+            else if ("ASSISTANT".equals(historyMessage.getRole())) memory.add(AiMessage.from(historyMessage.getContent()));
         }
-        return memory;
+        java.util.Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+        attributes.put("promptChars", prepared.systemPrompt().length());
+        attributes.put("historyMessages", prepared.recentMessages().size());
+        attributes.put("estimatedTokens", prepared.estimatedTokens());
+        attributes.put("compactedMessages", prepared.compactedMessages());
+        attributes.put("summaryVersion", prepared.summaryVersion());
+        return new ContextBundle(prepared.systemPrompt(), memory, attributes);
     }
+
+    private String recoveredContextualMessage(UUID userId, ConversationMessage message) {
+        if (message.getContextReferences() == null || message.getContextReferences().isEmpty()) return message.getContent();
+        String hints = message.getContextReferences().stream().map(reference -> {
+            try { return tools.contextHint(userId, reference.type(), reference.id()); }
+            catch (com.projectardor.common.web.ResourceNotFoundException unavailable) {
+                return "此前引用的资料已不可用：" + reference.type() + "（ID：" + reference.id() + "）。不得假装已读取内容。";
+            }
+        }).collect(java.util.stream.Collectors.joining("\n"));
+        return message.getContent() + "\n\n<selected_context>\n" + hints + "\n</selected_context>";
+    }
+
+    private record ContextBundle(String systemPrompt, ChatMemory memory,
+            java.util.Map<String, Object> attributes) {}
 
     private List<AgentMessageResponse> conversationHistory(UUID userId, UUID conversationId) {
         return conversationHistory(userId, conversationId, false);
@@ -1219,6 +1251,10 @@ public class CareerAgentService {
         default void waitingForApproval(boolean waiting) {}
     }
 }
+
+
+
+
 
 
 
