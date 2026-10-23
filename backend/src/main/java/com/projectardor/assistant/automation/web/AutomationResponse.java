@@ -3,7 +3,7 @@ package com.projectardor.assistant.automation.web;
 import java.time.Instant;
 import java.util.UUID;
 
-import com.projectardor.assistant.automation.domain.Automation;
+import com.projectardor.assistant.automation.service.AutomationView;
 
 public record AutomationResponse(
         UUID id,
@@ -18,10 +18,10 @@ public record AutomationResponse(
         String lastError,
         Instant createdAt,
         Instant updatedAt) {
-    public static AutomationResponse from(Automation automation) {
-        return new AutomationResponse(automation.getId(), automation.getTitle(), automation.getPrompt(),
-                automation.getCronExpression(), automation.getTimezone(), automation.isEnabled(),
-                automation.getNextRunAt(), automation.getLastRunAt(), automation.getLastStatus(),
-                automation.getLastError(), automation.getCreatedAt(), automation.getUpdatedAt());
+    public static AutomationResponse from(AutomationView automation) {
+        return new AutomationResponse(automation.id(), automation.title(), automation.prompt(),
+                automation.cronExpression(), automation.timezone(), automation.enabled(),
+                automation.nextRunAt(), automation.lastRunAt(), automation.lastStatus(),
+                automation.lastError(), automation.createdAt(), automation.updatedAt());
     }
 }

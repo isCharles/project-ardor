@@ -34,26 +34,26 @@ public class AutomationController {
 
     @GetMapping
     public List<AutomationResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return service.list(principal.userId()).stream().map(AutomationResponse::from).toList();
+        return service.listViews(principal.userId()).stream().map(AutomationResponse::from).toList();
     }
 
     @GetMapping("/{id}")
     public AutomationResponse get(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id) {
-        return AutomationResponse.from(service.get(principal.userId(), id));
+        return AutomationResponse.from(service.getView(principal.userId(), id));
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public AutomationResponse create(@AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody AutomationCreateRequest request) {
-        return AutomationResponse.from(service.create(principal.userId(), request.title(), request.prompt(),
+        return AutomationResponse.from(service.createView(principal.userId(), request.title(), request.prompt(),
                 request.cronExpression(), request.timezone()));
     }
 
     @PatchMapping("/{id}")
     public AutomationResponse update(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id,
             @Valid @RequestBody AutomationUpdateRequest request) {
-        return AutomationResponse.from(service.update(principal.userId(), id, request.title(), request.prompt(),
+        return AutomationResponse.from(service.updateView(principal.userId(), id, request.title(), request.prompt(),
                 request.cronExpression(), request.timezone(), request.enabled()));
     }
 

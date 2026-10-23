@@ -24,6 +24,15 @@ import org.junit.jupiter.api.Test;
  */
 class ArchitectureBoundaryTests {
     @Test
+    void automationToolsStayLocalAndConsumeOnlyApplicationViews() throws IOException {
+        String host = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
+        assertTrue(!host.contains("@Tool(name = \"create_automation\"")
+                && !host.contains("@Tool(name = \"list_automations\""), "Automation belongs in its local adapter");
+        assertNoImports("assistant/tools", Pattern.compile("import com\\.projectardor\\.assistant\\.automation\\.(web|repository|domain)\\..*"));
+        assertNoImports("assistant/automation/service", Pattern.compile("import com\\.projectardor\\.assistant\\.automation\\.web\\..*"));
+    }
+
+    @Test
     void knowledgeToolsStayLocalAndUseMaterialsApplicationServices() throws IOException {
         String host = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
         assertTrue(!host.contains("@Tool(name = \"search_knowledge\"")

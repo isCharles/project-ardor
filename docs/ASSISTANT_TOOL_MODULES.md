@@ -2,13 +2,17 @@
 
 ## 当前实施范围
 
+自动化的五个既有工具现使用 `AutomationAgentToolProvider`：`list_automations/get_automation/create_automation/update_automation/delete_automation`。手动 HTTP 与 Agent 都读取 `AutomationService` 生成的 `AutomationView`，不再由中央工具类导入 HTTP 响应或持有自动化实体。快照保留原 12 个 JSON 字段和 null 语义；创建/更新在事务内 flush 后生成，保留生命周期时间戳；查询不 flush。调度器仍在自动化自身边界使用实体，不将它跨域输出。
+
+这批选用现有提供者机制和具名快照，而不是新建自动化注册中心、平行权限表或通用任务实体。`AutomationService` 的快照入口委托原有校验/调度规则，HTTP 仍负责请求校验及状态码，自动化调度、claim 和历史状态不改变。无新增 migration；回退应用代码即可，既有自动化和对话数据保留。
+
 知识资料的四个工具已从 `CareerAgentTools.BoundCareerTools` 移入助手域的 `KnowledgeAgentToolProvider`：`list_knowledge_documents`、`search_knowledge`、`research_knowledge_from_web`、`delete_knowledge_document`。
 
 模块仍调用资料域 `KnowledgeService` 的应用快照接口，不拥有知识实体、仓储、索引或删除事务。工具名、参数名、scope、HTTP 路径和结果含义保持兼容。本批无 schema 迁移，也不改变用户权限设置。这是进程内适配器拆分，不是插件平台：不加载用户上传代码，不允许模型登记工具，也不新增独立服务。
 
 ## 装配与生命周期
 
-Spring 发现 `AgentToolProvider` 组件并交给宿主；已有直接构造入口默认装配知识模块，供旧测试和调用方兼容。每次 `bind` 都创建新的绑定对象，`AgentToolContext` 捕获本轮可信用户及宿主的提案、不可信内容包装回调，不通过模型参数选择用户。
+Spring 发现 `AgentToolProvider` 组件并交给宿主；已有直接构造入口默认装配知识与自动化模块，供旧测试和调用方兼容。每次 `bind` 都创建新的绑定对象，`AgentToolContext` 捕获本轮可信用户及宿主的提案、不可信内容包装回调，不通过模型参数选择用户。
 
 `AgentToolBundle` 只提供不可变的绑定对象列表。普通对话、流式对话及自动化继续经过 `ApprovedAgentTools`，不直接将提供者暴露给模型框架执行。连接测试使用同一发现入口收集 schema，但工具执行器仍为原有 no-op，不产生业务副作用。
 
@@ -25,6 +29,10 @@ Spring 发现 `AgentToolProvider` 组件并交给宿主；已有直接构造入�
 5. 提案留在宿主本轮的待确认列表，保留现有结构化审计与恢复身份，不因对象拆分改成模块私有列表。
 
 ## 验证与回退
+
+自动化边界新增 `AutomationViewTests`，覆盖按用户读取、快照与 HTTP JSON 一致、不可变/脱离实体、默认时区、cron 校验、更新保留字段、flush 后时间戳和事务声明。`ModularAgentToolsTests` 补自动化实际装配、删除只提案、目标不存在不提案、意图拒绝、既有设置自动批准、写入去重及取消阻断。架构守卫禁止自动化工具回到中央类，禁止工具依赖该域实体/仓储/Web DTO。
+
+`automation-module-acceptance.mjs` 通过真实会话、假模型、工具适配器和 PostgreSQL 验证：原 12 字段、双用户 CRUD 隔离、查询只读、明确暂停、删除只有确认卡、用户确认接口才删除。假模型验证五个 schema 无重名，并检查工具结果有本用户名称而无另一用户名称；不据此宣称真实供应商语义质量。首次全量测试遇到新增测试的泛型断言编译错误，修正后完整重跑 666 项，0 失败/错误、1 门控跳过；最终集成/CI/部署分别记录，不复用上一批证据。
 
 `ModularAgentToolsTests` 验证实际宿主和模块装配、schema 与执行集合一致、能力目录覆盖、重复名称拒绝、来源包装、可信用户传递、意图拒绝、审计、写入去重、取消以及删除提案。架构守卫禁止模块导入知识仓储/Web DTO/实体，并禁止知识检索/收录工具方法回到中央宿主。
 
