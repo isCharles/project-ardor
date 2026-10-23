@@ -52,6 +52,10 @@ try {
     const path = url.pathname;
     let body = {};
     if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin };
+    else if (path === "/api/agent/models") body = [
+      { id: "PRIMARY", label: "deepseek-v4-flash", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
+      { id: "FALLBACK:claude-opus-5-5", label: "claude-opus-5-5", provider: "ANTHROPIC_COMPATIBLE", available: true, nativeControl: true },
+    ];
     else if (path === "/api/agent/permissions") body = { globalLevel: 0, modules: [] };
     else if (path === "/api/agent/features") body = [
       { key: "LEARNING", id: "f1111111-1111-3111-8111-111111111111", label: "学习", englishLabel: "Learning", description: "学习概念", englishDescription: "Learn concepts and practice" },
@@ -241,14 +245,21 @@ try {
   assert.equal(await page.getByRole("region", { name: "Attachments", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
   const depth = page.getByRole("dialog", { name: "Model and thinking depth options" });
-  await depth.getByRole("slider").focus();
-  await page.keyboard.press("End");
+  for (const icon of ["color-deepseek.svg", "color-claude.svg"]) {
+    assert.equal(await depth.locator(`[style*="${icon}"]`).count(), 1, `Model must render its ${icon} mark`);
+    const asset = await context.request.get(`${origin}/model-icons/${icon}`);
+    assert.equal(asset.status(), 200, `Model icon must be served: ${icon}`);
+    assert.match(asset.headers()["content-type"], /image\/svg\+xml/);
+  }
+  assert.equal(await depth.getByRole("slider").count(), 0, "Reasoning uses buttons, not the removed range slider");
+  await depth.getByRole("button", { name: "Max", exact: true }).focus();
+  await page.keyboard.press("Enter");
   assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "DEEP");
-  await page.keyboard.press("Home");
+  await depth.getByRole("button", { name: "Low", exact: true }).click();
   assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "QUICK");
   await depth.getByRole("button", { name: "High", exact: true }).click();
   assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "STANDARD");
-  await page.screenshot({ path: ".next/reasoning-slider.png" });
+  await page.screenshot({ path: ".next/reasoning-buttons.png" });
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Chat actions", exact: true }).click();
   await page.getByRole("button", { name: "Rename", exact: true }).click();
@@ -401,6 +412,7 @@ try {
   await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
   await page.getByRole("button", { name: "Low", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: "Model and thinking depth", exact: true }).getAttribute("data-reasoning-depth"), "QUICK");
+  await page.keyboard.press("Escape");
   await draftBox.click();
   releaseStream();
   await page.getByText("Synthetic agent reply", { exact: true }).waitFor();
@@ -489,6 +501,7 @@ try {
   await draftBox.fill("Queued follow-up two");
   await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
   await page.getByRole("button", { name: "Max", exact: true }).click();
+  await page.keyboard.press("Escape");
   await draftBox.click();
   await Promise.all([
     page.waitForResponse((response) => response.url().endsWith("/api/agent/messages/steer") && response.request().method() === "POST"),
