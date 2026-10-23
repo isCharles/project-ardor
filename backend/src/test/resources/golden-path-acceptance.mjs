@@ -1067,7 +1067,9 @@ async function main() {
     body: { conversationId: knowledgeConversation.id, requestId: randomUUID(), message: "列出我的知识库文档" } });
   assert.ok(knowledgeReply.content.includes(ownedKnowledge.id), "Agent must execute the discovered knowledge adapter");
   assert.ok(!knowledgeReply.content.includes(knowledgeDocument.id), "Tool result must not include another owner's documents");
-  await stranger.request(`/api/knowledge/documents/${ownedKnowledge.id}`, { expected: 404 });
+  await stranger.request(`/api/knowledge/documents/${ownedKnowledge.id}`, { method: "DELETE", expected: 404 });
+  assert.ok((await knowledgeOwner.request("/api/knowledge/documents")).some(item => item.id === ownedKnowledge.id),
+    "A foreign delete attempt must leave the owner's document intact");
   const resumeUpload = new FormData();
   resumeUpload.set("file",new Blob([syntheticResumePdf()],{type:"application/pdf"}),"golden-task-resume.pdf");
   const resume = await asyncOwner.request("/api/resumes",{method:"POST",expected:201,body:resumeUpload});
