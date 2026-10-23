@@ -448,6 +448,9 @@ public class CareerAgentService {
             AgentRunTracer tracer = requestId == null ? null : AgentRunTracer.begin(traceStore,
                     userId, requestId, conversation.getId(), runtimeConfig.model(), AgentRunTracer.PROMPT_VERSION);
             traceRef.set(tracer);
+            streamProgress.begin(userId, progressId);
+            if (finished.get()) { streamProgress.finish(progressId, true); return; }
+            sink.send(AgentStreamEvent.status("正在整理对话上下文", elapsedMs(startedAt)));
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
             ContextBundle promptContext = lease.modelCall(() -> buildContext(userId, conversation.getId(),
@@ -463,7 +466,6 @@ public class CareerAgentService {
             java.util.List<dev.langchain4j.model.chat.listener.ChatModelListener> listeners =
                     traceListener == null ? java.util.List.of() : java.util.List.of(traceListener);
             ConcurrentHashMap<String, Long> toolStarts = new ConcurrentHashMap<>();
-            streamProgress.begin(userId, progressId);
             toolApprovals.begin(userId, requestId);
             if (finished.get()) {
                 streamProgress.finish(progressId, true);

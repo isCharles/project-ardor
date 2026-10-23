@@ -73,6 +73,49 @@ class AgentControllerCancellationTests {
     }
 
     @Test
+    void streamReturnsBeforeModelWorkCompletesAndUsesAuthenticatedOwner() throws Exception {
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var exited = new java.util.concurrent.CountDownLatch(1);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            var sink = invocation.getArgument(9, CareerAgentService.StreamSink.class);
+            entered.countDown();
+            try {
+                sink.send(AgentStreamEvent.status("正在整理对话上下文", 0));
+                if (!release.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                    throw new AssertionError("Controller blocked while model work was pending");
+                }
+                sink.complete();
+            } finally {
+                exited.countDown();
+            }
+            return null;
+        }).when(agentService).chatStream(org.mockito.ArgumentMatchers.eq(owner),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("合成请求"),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        try {
+            var result = mvc.perform(post("/api/agent/messages/stream").with(user(principal)).with(csrf())
+                    .contentType("application/json").content("{\"message\":\"合成请求\"}"))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted())
+                    .andReturn();
+            org.junit.jupiter.api.Assertions.assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            org.junit.jupiter.api.Assertions.assertEquals(1, exited.getCount(), "Model work must still be blocked");
+            // A live emitter must already be initialized before the model is released.
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+            while (!result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8).contains("正在整理对话上下文")
+                    && System.nanoTime() < deadline) Thread.sleep(10);
+            String received = result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            org.junit.jupiter.api.Assertions.assertTrue(received.contains("正在整理对话上下文"), received);
+        } finally {
+            release.countDown();
+            org.junit.jupiter.api.Assertions.assertTrue(exited.await(2, java.util.concurrent.TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
     void cancelReturns202WithTruthfulRunStateAndPrincipalOwner() throws Exception {
         UUID requestId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();

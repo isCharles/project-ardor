@@ -388,7 +388,8 @@ http.createServer((request, response) => {
       pendingLearningResponses.push(respond);
       if (pendingLearningResponses.length === 2) releaseLearningResponses();
       else learningFallbackTimer = setTimeout(releaseLearningResponses, 5000);
-    } else if (restartAssessment) setTimeout(respond,restartRequests===1 ? 45000 : 1500);
+    } else if (payload.model === "graph-live-probe") setTimeout(respond, 1500);
+    else if (restartAssessment) setTimeout(respond,restartRequests===1 ? 45000 : 1500);
     else if (delayedReplay || payload.model === "async-evaluation-probe") setTimeout(respond, 1500);
     else respond();
   });

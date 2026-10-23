@@ -7,7 +7,7 @@ const model = process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090";
 
 class Client {
   cookies = new Map();
-  async request(path, { method = "GET", body, expected = 200, raw = false } = {}) {
+  async request(path, { method = "GET", body, expected = 200, raw = false, streaming = false } = {}) {
     const headers = {};
     if (!["GET", "HEAD"].includes(method)) {
       const csrf = await this.request("/api/auth/csrf");
@@ -22,6 +22,7 @@ class Client {
       const pair = line.split(";")[0], at = pair.indexOf("=");
       this.cookies.set(pair.slice(0, at), pair.slice(at + 1));
     }
+    if (streaming && response.status === expected) return response;
     const text = await response.text();
     assert.equal(response.status, expected, `${method} ${path}: ${text.slice(0, 160)}`);
     return raw ? text : text ? JSON.parse(text) : null;
@@ -66,4 +67,27 @@ for (let index = 0; index < 2; index++) {
 const state = await owner.request(`/api/agent?conversationId=${conversation.id}`);
 assert.equal(state.messages.filter((message) => message.role === "USER").length, 2);
 assert.equal(state.messages.filter((message) => message.role === "ASSISTANT").length, 2);
-console.log("Graph HTTP acceptance: session, consecutive SSE runs, phase order, persisted completion/history, model-call totals and foreign run/trace 404 passed (synthetic model, not semantic quality).");
+// Structural streaming assertion: the model deliberately delays every phase.
+// Receiving a buffered final response must not pass this check.
+await owner.request("/api/settings/llm", { method: "PUT", body: {
+  provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "graph-live-probe", apiKey: "fake-only",
+} });
+const liveId = randomUUID();
+const live = await owner.request("/api/agent/messages/stream", { method: "POST", streaming: true, body: {
+  conversationId: conversation.id, requestId: liveId, message: "请只读分析并显示实时进度", reasoningDepth: "AUTO",
+} });
+const reader = live.body.getReader();
+const first = await reader.read();
+assert.ok(first.value?.length, "A live progress event must arrive before completion");
+assert.equal((await owner.request(`/api/agent/runs/${liveId}`)).status, "RUNNING",
+  "SSE must not be buffered until the whole graph completes");
+const decoder = new TextDecoder();
+let liveText = decoder.decode(first.value, { stream: true });
+while (true) {
+  const { value, done } = await reader.read();
+  liveText += decoder.decode(value, { stream: !done });
+  if (done) break;
+}
+assert.ok(liveText.includes('"type":"done"'));
+assert.equal((await owner.request(`/api/agent/runs/${liveId}`)).status, "COMPLETED");
+console.log("Graph HTTP acceptance: session, consecutive SSE runs, phase start/end order, persisted completion/history, model-call totals, foreign run/trace 404 and live progress before delayed model completion passed (synthetic model, not semantic quality).");
