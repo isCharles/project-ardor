@@ -63,15 +63,16 @@ public final class AgentRunTracer {
     }
 
     public void recordLlm(Integer inTokens, Integer outTokens, boolean toolRound) {
-        if (!active()) return;
+        // Metering is a run fact, not a side effect of optional span persistence.
+        if (closed.get()) return;
         llmCalls.incrementAndGet();
         if (toolRound) loopRounds.incrementAndGet();
-        if (inTokens != null) inputTokens.addAndGet(inTokens);
-        if (outTokens != null) outputTokens.addAndGet(outTokens);
+        if (inTokens != null) inputTokens.addAndGet(Math.max(0, inTokens));
+        if (outTokens != null) outputTokens.addAndGet(Math.max(0, outTokens));
     }
 
     public void recordTool() {
-        if (active()) toolCalls.incrementAndGet();
+        if (!closed.get()) toolCalls.incrementAndGet();
     }
 
     public void complete() {
@@ -83,7 +84,9 @@ public final class AgentRunTracer {
     }
 
     private void finish(String status, String errorCode) {
-        if (!active() || !closed.compareAndSet(false, true)) return;
+        boolean observable = active();
+        if (!closed.compareAndSet(false, true)) return;
+        if (!observable) return;
         store.finishSpan(userId, rootSpanId, status, errorCode, model, promptVersion,
                 (int) Math.min(Integer.MAX_VALUE, inputTokens.get()),
                 (int) Math.min(Integer.MAX_VALUE, outputTokens.get()),

@@ -23,6 +23,22 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.TokenUsage;
 
 class AgentModelTraceListenerTests {
+    @Test
+    void responseTokensAreCountedEvenWhenNoTraceSpanCanBeCreated() {
+        AgentRunTracer tracer = AgentRunTracer.begin(null, UUID.randomUUID(), UUID.randomUUID(), null,
+                "fixture", null);
+        AgentModelTraceListener listener = new AgentModelTraceListener(tracer, "fixture");
+        ChatModelResponseContext context = mock(ChatModelResponseContext.class);
+        when(context.attributes()).thenReturn(new HashMap<>());
+        when(context.chatResponse()).thenReturn(ChatResponse.builder().aiMessage(AiMessage.from("synthetic"))
+                .tokenUsage(new TokenUsage(11, 7)).build());
+        listener.onResponse(context);
+        tracer.complete();
+        assertThat(tracer.inputTokens()).isEqualTo(11);
+        assertThat(tracer.outputTokens()).isEqualTo(7);
+        assertThat(tracer.closed()).isTrue();
+    }
+
 
     @Test
     void recordsOneLlmSpanWithModelTokensAndToolRound() {

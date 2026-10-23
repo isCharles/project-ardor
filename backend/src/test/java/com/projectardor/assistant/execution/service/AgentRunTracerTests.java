@@ -14,6 +14,39 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class AgentRunTracerTests {
+    @Test
+    void disablingTracePersistenceDoesNotDisableRunTokenTotals() {
+        AgentTraceStore store = mock(AgentTraceStore.class);
+        AgentRunTracer tracer = AgentRunTracer.begin(store, UUID.randomUUID(), UUID.randomUUID(), null, "fixture", null);
+        tracer.recordLlm(120, 40, true);
+        tracer.recordLlm(5, 6, false);
+        tracer.recordLlm(-10, -20, false);
+        tracer.recordTool();
+        tracer.complete();
+        tracer.recordLlm(999, 999, true);
+        assertThat(tracer.inputTokens()).isEqualTo(125);
+        assertThat(tracer.outputTokens()).isEqualTo(46);
+        assertThat(tracer.llmCalls()).isEqualTo(3);
+        assertThat(tracer.toolCalls()).isEqualTo(1);
+        assertThat(tracer.closed()).isTrue();
+        org.mockito.Mockito.verify(store, org.mockito.Mockito.never()).finishSpan(any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void missingRootSpanDoesNotLoseUsageOrKeepAnEndedRunOpen() {
+        AgentTraceStore store = mock(AgentTraceStore.class);
+        when(store.enabled()).thenReturn(true);
+        AgentRunTracer tracer = AgentRunTracer.begin(store, UUID.randomUUID(), UUID.randomUUID(), null, "fixture", null);
+        tracer.recordLlm(7, 9, false);
+        tracer.fail("fixture");
+        tracer.complete();
+        assertThat(tracer.inputTokens()).isEqualTo(7);
+        assertThat(tracer.outputTokens()).isEqualTo(9);
+        assertThat(tracer.closed()).isTrue();
+        assertThat(tracer.active()).isFalse();
+        org.mockito.Mockito.verify(store, org.mockito.Mockito.never()).finishSpan(any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
 
     @Test
     void aggregatesActualLlmAndToolCallsWithoutUsingConfiguredRoundCaps() {
