@@ -149,10 +149,13 @@ function buildFlow(spans: TraceSpan[]): FlowNode[] {
   return ordered.map((span, index) => {
     if (index === 0) return { span, x: START_X, y: START_Y };
     const childIndex = index - 1;
+    const row = Math.floor(childIndex / perRow);
+    const column = childIndex % perRow;
+    const visualColumn = row % 2 === 0 ? column : perRow - 1 - column;
     return {
       span,
-      x: START_X + (childIndex % perRow) * (NODE_WIDTH + NODE_GAP),
-      y: firstChildY + Math.floor(childIndex / perRow) * (NODE_HEIGHT + 42),
+      x: START_X + visualColumn * (NODE_WIDTH + NODE_GAP),
+      y: firstChildY + row * (NODE_HEIGHT + 42),
     };
   });
 }
@@ -168,13 +171,15 @@ function FlowGraph({ nodes, selectedId, onSelect }: { nodes: FlowNode[]; selecte
         <defs><marker id="trace-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#c4b5fd" /></marker></defs>
         {nodes.slice(1).map((node, index) => {
           const from = nodes[index];
-          const x1 = from.x + NODE_WIDTH;
-          const y1 = from.y + NODE_HEIGHT / 2;
-          const x2 = node.x;
-          const y2 = node.y + NODE_HEIGHT / 2;
-          const mid = (x1 + x2) / 2;
+          const vertical = Math.abs(node.x - from.x) < 1;
+          const x1 = vertical ? from.x + NODE_WIDTH / 2 : node.x > from.x ? from.x + NODE_WIDTH : from.x;
+          const y1 = vertical ? from.y + NODE_HEIGHT : from.y + NODE_HEIGHT / 2;
+          const x2 = vertical ? node.x + NODE_WIDTH / 2 : node.x > from.x ? node.x : node.x + NODE_WIDTH;
+          const y2 = vertical ? node.y : node.y + NODE_HEIGHT / 2;
+          const mid = vertical ? (y1 + y2) / 2 : (x1 + x2) / 2;
           const failed = node.span.status === "FAILED";
-          return <path key={`${from.span.id}-${node.span.id}`} d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`} fill="none" stroke={failed ? "#fb7185" : "#c4b5fd"} strokeWidth="1.5" markerEnd="url(#trace-arrow)" />;
+          const path = vertical ? `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}` : `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;
+          return <path key={`${from.span.id}-${node.span.id}`} d={path} fill="none" stroke={failed ? "#fb7185" : "#c4b5fd"} strokeWidth="1.5" markerEnd="url(#trace-arrow)" />;
         })}
       </svg>
       {nodes.map((node, index) => <TraceNode key={node.span.id} node={node} index={index} selected={selectedId === node.span.id} onSelect={onSelect} />)}
@@ -282,6 +287,7 @@ function formatDuration(value: number | null) {
   if (!value || value <= 0) return "—";
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(1)} s`;
 }
+
 
 
 
