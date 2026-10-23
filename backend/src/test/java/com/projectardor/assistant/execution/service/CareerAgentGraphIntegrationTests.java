@@ -37,7 +37,7 @@ class CareerAgentGraphIntegrationTests {
         });
     }
 
-    @Test void cancellationDuringContextCompactionCannotDispatchTheGraph() throws Exception {
+    @org.junit.jupiter.api.RepeatedTest(20) void cancellationDuringContextCompactionCannotDispatchTheGraph() throws Exception {
         var fixture = new Fixture(Duration.ofMillis(1));
         var entered = new java.util.concurrent.CountDownLatch(1);
         when(fixture.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any())).thenAnswer(call -> {
@@ -48,7 +48,7 @@ class CareerAgentGraphIntegrationTests {
         });
         var execution = java.util.concurrent.CompletableFuture.runAsync(fixture::run);
         assertThat(entered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
-        fixture.service.watchStreams();
+        expire(fixture, execution);
         execution.get(5, java.util.concurrent.TimeUnit.SECONDS);
         assertThat(fixture.requests).isEmpty();
         assertThat(fixture.events).anySatisfy(event -> assertThat(event.errorCode()).isEqualTo("AGENT_RUN_DEADLINE"));
@@ -75,7 +75,7 @@ class CareerAgentGraphIntegrationTests {
         assertThat(fixture.events.stream().filter(event -> event.type().equals("done"))).hasSize(1);
     }
 
-    @Test void deadlineStopsTheRunningPhaseWithoutDispatchingGatherOrAnswer() throws Exception {
+    @org.junit.jupiter.api.RepeatedTest(20) void deadlineStopsTheRunningPhaseWithoutDispatchingGatherOrAnswer() throws Exception {
         var fixture = new Fixture(Duration.ofMillis(1));
         var entered = new java.util.concurrent.CountDownLatch(1);
         when(fixture.model.chat(any(ChatRequest.class))).thenAnswer(call -> {
@@ -87,7 +87,7 @@ class CareerAgentGraphIntegrationTests {
         });
         var execution = java.util.concurrent.CompletableFuture.runAsync(fixture::run);
         assertThat(entered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
-        fixture.service.watchStreams();
+        expire(fixture, execution);
         execution.get(5, java.util.concurrent.TimeUnit.SECONDS);
         assertThat(fixture.requests).hasSize(1);
         assertThat(fixture.events).anySatisfy(event -> assertThat(event.errorCode()).isEqualTo("AGENT_RUN_DEADLINE"));
@@ -126,6 +126,15 @@ class CareerAgentGraphIntegrationTests {
         assertThat(fixture.events.stream().filter(event -> event.type().equals("done"))).hasSize(1);
         assertThat(fixture.requests).allSatisfy(request ->
                 assertThat(request.messages().toString()).contains("Delete 1 2 3 and regenerate", "本轮已停止"));
+    }
+
+    private static void expire(Fixture fixture, java.util.concurrent.CompletableFuture<Void> execution) throws Exception {
+        // Fast CI can reach the latch before the real 1 ms deadline. Observe the
+        // actual expired state instead of assuming one immediate watch already expired.
+        for (int attempt = 0; attempt < 100 && !execution.isDone(); attempt++) {
+            fixture.service.watchStreams();
+            if (!execution.isDone()) Thread.sleep(5);
+        }
     }
 
     private static final class Fixture {
