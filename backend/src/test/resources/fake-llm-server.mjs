@@ -184,6 +184,29 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+    if (payload.model === "automation-module-probe" && isAgentRequest) {
+      const names = payload.tools.map(tool => tool.function.name);
+      const expected = ["list_automations", "get_automation", "create_automation", "update_automation", "delete_automation"];
+      const message = String(payload.messages.filter(item => item.role === "user").at(-1)?.content);
+      const mode = message.includes("automation-probe-update") ? "update" : message.includes("automation-probe-delete") ? "delete" : "list";
+      const id = message.match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0];
+      const output = String(payload.messages.filter(item => item.role === "tool").at(-1)?.content ?? "");
+      if (new Set(names).size !== names.length || expected.some(name => !names.includes(name))
+          || hasToolResult && (mode === "list" ? !output.includes("Automation owner fixture") || output.includes("Automation foreign fixture")
+            : mode === "update" ? !output.includes('"enabled":false') : !output.includes("CONFIRMATION_REQUIRED"))) {
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "Automation module contract or owner isolation failed" } })); return;
+      }
+      const toolName = mode === "list" ? "list_automations" : `${mode}_automation`;
+      const args = mode === "list" ? {} : { automationId: id, ...(mode === "update" ? { enabled: false } : {}) };
+      const delta = hasToolResult ? { role: "assistant", content: `Synthetic automation ${mode} verified.` }
+        : { role: "assistant", tool_calls: [{ index: 0, id: "automation-probe", type: "function", function: { name: toolName, arguments: JSON.stringify(args) } }] };
+      response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
+      for (const [chunk, finish] of [[delta, null], [{}, hasToolResult ? "stop" : "tool_calls"]]) {
+        response.write(`data: ${JSON.stringify({ id: "automation-probe", object: "chat.completion.chunk", model: payload.model, choices: [{ index: 0, delta: chunk, finish_reason: finish }] })}\n\n`);
+      }
+      response.end("data: [DONE]\n\n"); return;
+    }
     if (payload.model === "date-correction-probe" && isAgentRequest) {
       const message = String(payload.messages.filter(item => item.role === "user").at(-1)?.content);
       const planId = message.match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0];

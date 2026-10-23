@@ -23,6 +23,32 @@ public class AutomationService {
         this.repository = repository;
     }
 
+    @Transactional(readOnly = true)
+    public List<AutomationView> listViews(UUID userId) {
+        return list(userId).stream().map(AutomationView::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public AutomationView getView(UUID userId, UUID id) {
+        return AutomationView.from(get(userId, id));
+    }
+
+    @Transactional
+    public AutomationView createView(UUID userId, String title, String prompt, String cronExpression, String timezone) {
+        var automation = create(userId, title, prompt, cronExpression, timezone);
+        repository.flush();
+        return AutomationView.from(automation);
+    }
+
+    @Transactional
+    public AutomationView updateView(UUID userId, UUID id, String title, String prompt,
+            String cronExpression, String timezone, Boolean enabled) {
+        var automation = update(userId, id, title, prompt, cronExpression, timezone, enabled);
+        // Match the old post-transaction HTTP mapping, including @PreUpdate timestamps.
+        repository.flush();
+        return AutomationView.from(automation);
+    }
+
     @Transactional
     public Automation create(UUID userId, String title, String prompt, String cronExpression, String timezone) {
         String cleanTitle = required(title, "自动化名称不能为空", 160);

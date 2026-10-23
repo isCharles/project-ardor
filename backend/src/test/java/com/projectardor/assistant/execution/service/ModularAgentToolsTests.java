@@ -170,6 +170,70 @@ class ModularAgentToolsTests {
     }
 
     @Test
+    void automationModuleKeepsOwnerAndDeletionProposalWithoutDeleting() {
+        var service = mock(com.projectardor.assistant.automation.service.AutomationService.class);
+        UUID id = UUID.randomUUID();
+        var view = new com.projectardor.assistant.automation.service.AutomationView(id, "Owned automation", "Synthetic prompt",
+                "0 0 9 * * *", "Asia/Shanghai", true, Instant.now(), null, null, null, Instant.now(), Instant.now());
+        when(service.getView(owner, id)).thenReturn(view);
+        var host = tools();
+        var provider = new com.projectardor.assistant.tools.modules.AutomationAgentToolProvider(service);
+        host.configureToolProviders(List.of(provider));
+        var bound = host.bind(owner, "删除自动化任务", run);
+        var executors = wrapped(bound, null, null);
+        assertThat(execute(executors, "get_automation", "{\"automationId\":\"" + id + "\"}"))
+                .contains("Owned automation");
+        assertThat(execute(executors, "delete_automation", "{\"automationId\":\"" + id + "\"}"))
+                .contains("CONFIRMATION_REQUIRED");
+        assertThat(bound.pendingConfirmations()).singleElement().satisfies(card -> {
+            assertThat(card.targetId()).isEqualTo(id);
+            assertThat(card.endpoint()).isEqualTo("/api/automations/" + id);
+        });
+        verify(service, never()).delete(any(), any());
+        verify(approvals, never()).await(any(), any(), any(), any());
+        assertThat(new com.projectardor.assistant.tools.AgentToolSchemaCatalog(List.of(provider)).schemas())
+                .containsKeys("list_automations", "get_automation", "create_automation", "update_automation", "delete_automation");
+    }
+
+    @Test
+    void automationWritesRetainIntentApprovalAndDuplicateWriteFences() {
+        var service = mock(com.projectardor.assistant.automation.service.AutomationService.class);
+        var host = tools();
+        host.configureToolProviders(List.of(new com.projectardor.assistant.tools.modules.AutomationAgentToolProvider(service)));
+        String args = "{\"title\":\"Daily\",\"prompt\":\"Synthetic prompt\",\"cronExpression\":\"0 0 9 * * *\"}";
+        assertThat(execute(wrapped(host.bind(owner, "只查询自动化，不要修改", run), null, null), "create_automation", args))
+                .contains("TOOL_NOT_PERMITTED");
+        verifyNoInteractions(service);
+        when(permissions.autoApproves(owner, "create_automation")).thenReturn(true);
+        when(service.createView(owner, "Daily", "Synthetic prompt", "0 0 9 * * *", null))
+                .thenReturn(new com.projectardor.assistant.automation.service.AutomationView(UUID.randomUUID(), "Created", "Synthetic prompt",
+                        "0 0 9 * * *", "Asia/Shanghai", true, Instant.now(), null, null, null, Instant.now(), Instant.now()));
+        var executors = wrapped(host.bind(owner, "每天创建自动化任务", run), null, null);
+        assertThat(execute(executors, "create_automation", args)).contains("Created");
+        assertThat(execute(executors, "create_automation", args)).contains("DUPLICATE_WRITE_BLOCKED");
+        verify(service, times(1)).createView(owner, "Daily", "Synthetic prompt", "0 0 9 * * *", null);
+        verify(approvals, never()).await(any(), any(), any(), any());
+    }
+
+    @Test
+    void cancelledAutomationReadDoesNotExecuteAndForeignTargetsProduceNoProposal() {
+        var service = mock(com.projectardor.assistant.automation.service.AutomationService.class);
+        var host = tools();
+        host.configureToolProviders(List.of(new com.projectardor.assistant.tools.modules.AutomationAgentToolProvider(service)));
+        var bound = host.bind(owner, "删除自动化任务", run);
+        var lease = new AgentStreamLease();
+        lease.fence();
+        assertThat(execute(wrapped(bound, lease, null), "list_automations", "{}")).contains("RUN_STOPPED");
+        verifyNoInteractions(service);
+        UUID id = UUID.randomUUID();
+        when(service.getView(owner, id)).thenThrow(new ResourceNotFoundException("自动化任务不存在"));
+        assertThat(execute(wrapped(bound, null, null), "delete_automation", "{\"automationId\":\"" + id + "\"}"))
+                .contains("不存在");
+        assertThat(bound.pendingConfirmations()).isEmpty();
+        verify(service, never()).delete(any(), any());
+    }
+
+    @Test
     void springDiscoversLocalAdaptersWithoutReplacingTheKnowledgeModule() {
         try (var context = new AnnotationConfigApplicationContext()) {
             context.registerBean(KnowledgeService.class, () -> knowledge);
