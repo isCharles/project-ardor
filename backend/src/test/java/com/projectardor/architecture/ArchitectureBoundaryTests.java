@@ -24,6 +24,16 @@ import org.junit.jupiter.api.Test;
  */
 class ArchitectureBoundaryTests {
     @Test
+    void knowledgeToolsStayLocalAndUseMaterialsApplicationServices() throws IOException {
+        String host = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
+        assertTrue(!host.contains("@Tool(name = \"search_knowledge\"")
+                && !host.contains("@Tool(name = \"research_knowledge_from_web\""),
+                "Knowledge tool methods belong in their adapter, not the central host");
+        assertNoImports("assistant/tools/modules",
+                Pattern.compile("import com\\.projectardor\\.materials\\.knowledge\\.(web|repository|domain)\\..*"));
+    }
+
+    @Test
     void mockInterviewReadsResumeThroughMaterialsApplicationContext() throws IOException {
         assertNoImports("learning/practice/mockinterview/service",
                 Pattern.compile("import com\\.projectardor\\.materials\\.resume\\.(domain|repository)\\..*"));
