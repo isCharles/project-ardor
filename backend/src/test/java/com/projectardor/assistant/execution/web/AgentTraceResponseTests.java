@@ -23,7 +23,8 @@ class AgentTraceResponseTests {
         var secondLlm = span(UUID.randomUUID(), root, "LLM", "llm.call.2", "COMPLETED", 3000L, 1200, 80,
                 Map.of("toolRound", false));
 
-        var response = AgentTraceResponse.from(run, List.of(rootSpan, firstLlm, tool, secondLlm).stream()
+        UUID conversationId = UUID.randomUUID();
+        var response = AgentTraceResponse.from(run, conversationId, List.of(rootSpan, firstLlm, tool, secondLlm).stream()
                 .map(AgentTraceSpanResponse::from).toList());
 
         assertThat(response.status()).isEqualTo("COMPLETED");
@@ -43,3 +44,4 @@ class AgentTraceResponseTests {
                 attributes);
     }
 }
+
