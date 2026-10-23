@@ -92,6 +92,8 @@ jobs:
         run: node tests/workspace-ui.mjs
       - name: Resume scoring UI regression (mock APIs)
         run: node tests/resume-scoring-ui.mjs
+      - name: Agent trace UI regression (mock APIs)
+        run: node tests/agent-trace-ui.mjs
       - name: Learning operation UI regression (mock APIs)
         run: node tests/learning-operation-ui.mjs
       - name: Learning source and target UI regression (mock APIs)

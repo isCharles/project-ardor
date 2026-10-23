@@ -61,3 +61,17 @@ sources are excluded from Git and the Docker build context.
   against an explicitly synthetic authenticated backend fixture, not real accounts.
   The `report-export` CI job parses and renders the exported Chinese PDF and retains
   synthetic artifacts. It does not replace real-backend cross-user tests.
+## UI and CI contract
+
+- The report header action is labelled **Export report / 导出报告**; it must
+  not be named “Export PDF” because that can be mistaken for exporting the
+  original resume.
+- The old client-side canvas screenshot exporter and its dependencies
+  (`html2canvas-pro`, `jspdf`) were removed.
+- `frontend/tests/resume-scoring-ui.mjs` opens the legacy-report entry with
+  **Start analysis / 开始分析**. The report itself has no re-analyze action.
+- The browser UI regression does not invoke the LaTeX route; the separate
+  `report-export` CI job exercises the actual container, TeX engine and PDF output.
+- Before changing the button label or report flow, update
+  `frontend/tests/resume-scoring-ui.mjs` and run it with
+  `ARDOR_UI_BROWSER_CHANNEL=msedge` locally if the bundled Chromium is absent.

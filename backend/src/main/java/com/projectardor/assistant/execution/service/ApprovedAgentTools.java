@@ -99,6 +99,15 @@ final class ApprovedAgentTools {
             AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
             String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
             UUID conversationId, boolean automation, AgentRunTracer tracer) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
+                executionAudit, conversationId, automation, tracer, null);
+    }
+
+    /** A graph phase may only see an explicit read-only subset of the tool surface. */
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
+            AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
+            String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
+            UUID conversationId, boolean automation, AgentRunTracer tracer, Set<String> allowedTools) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         Map<String, Boolean> attemptedWrites = new java.util.concurrent.ConcurrentHashMap<>();
         AgentExecutionAuditStore.ToolCallContext auditContext =
@@ -107,6 +116,7 @@ final class ApprovedAgentTools {
         for (Object toolObject : AgentToolBundle.objects(bound)) {
         for (var method : toolObject.getClass().getMethods()) {
             if (!method.isAnnotationPresent(Tool.class)) continue;
+            if (allowedTools != null && !allowedTools.contains(method.getAnnotation(Tool.class).name())) continue;
             var specification = ToolSpecifications.toolSpecificationFrom(method);
             if (!names.add(specification.name())) throw new IllegalStateException("工具重复登记：" + specification.name());
             var delegate = new DefaultToolExecutor(toolObject, method);
@@ -180,16 +190,21 @@ final class ApprovedAgentTools {
                     auditRow = startAudit(executionAudit, auditContext, request, tool, approvalSource);
                 }
                 UUID row = auditRow;
-                UUID traceSpan = tracer == null ? null : tracer.startChild("TOOL", tool, Map.of(
-                        "tool", tool, "approvalSource", approvalSource, "proposal", proposal));
+                Map<String, Object> toolAttributes = new LinkedHashMap<>();
+                toolAttributes.put("tool", tool);
+                toolAttributes.put("approvalSource", approvalSource);
+                toolAttributes.put("proposal", proposal);
+                toolAttributes.put("argumentsPreview", TracePreview.of(request.arguments()));
+                UUID traceSpan = tracer == null ? null : tracer.startChild("TOOL", tool, toolAttributes);
                 if (tracer != null) tracer.recordTool();
                 AtomicBoolean executed = new AtomicBoolean();
                 Supplier<String> call = () -> { executed.set(true); return delegate.execute(request, memoryId); };
                 String outcome = "COMPLETED";
                 String errorCode = null;
                 String auditResult = null;
+                String returned = null;
                 try {
-                    String returned = lease == null ? call.get() : lease.execute(call);
+                    returned = lease == null ? call.get() : lease.execute(call);
                     if (!executed.get()) {
                         // The lease refused a late call after cancel/deadline: it never ran.
                         outcome = "NOT_EXECUTED";
@@ -212,9 +227,12 @@ final class ApprovedAgentTools {
                     if (tracer != null && traceSpan != null) {
                         String spanStatus = "FAILED".equals(outcome) ? "FAILED"
                                 : "NOT_EXECUTED".equals(outcome) ? "NOT_EXECUTED" : "COMPLETED";
-                        tracer.finishChild(traceSpan, spanStatus, errorCode, null, null, null,
-                                Map.of("executed", executed.get(), "proposal", proposal,
-                                        "approvalSource", approvalSource));
+                        Map<String, Object> resultAttributes = new LinkedHashMap<>();
+                        resultAttributes.put("executed", executed.get());
+                        resultAttributes.put("proposal", proposal);
+                        resultAttributes.put("approvalSource", approvalSource);
+                        resultAttributes.put("resultPreview", TracePreview.of(auditResult != null ? auditResult : returned));
+                        tracer.finishChild(traceSpan, spanStatus, errorCode, null, null, null, resultAttributes);
                     }
                 }
             });

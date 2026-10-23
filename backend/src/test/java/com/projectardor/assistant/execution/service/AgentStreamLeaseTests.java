@@ -10,6 +10,38 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AgentStreamLeaseTests {
+    @Test void stoppedGraphNeverStartsAnotherModelPhase() {
+        var lease = new AgentStreamLease();
+        AtomicInteger calls = new AtomicInteger();
+        lease.fence();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> lease.modelCall(calls::incrementAndGet))
+                .isInstanceOf(java.util.concurrent.CancellationException.class);
+        assertThat(calls).hasValue(0);
+    }
+    @Test void graphStopInterruptsTheModelEvenAfterAToolRound() throws Exception {
+        var lease = new AgentStreamLease();
+        CountDownLatch entered = new CountDownLatch(1), interrupted = new CountDownLatch(1);
+        var task = CompletableFuture.supplyAsync(() -> lease.modelCall(() -> {
+            lease.toolWaiting();
+            lease.toolFinished();
+            entered.countDown();
+            try { new CountDownLatch(1).await(); }
+            catch (InterruptedException expected) { interrupted.countDown(); Thread.currentThread().interrupt(); }
+            return "late answer";
+        }));
+        assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
+        lease.fence();
+        assertThat(interrupted.await(2, TimeUnit.SECONDS)).isTrue();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> task.get(2, TimeUnit.SECONDS))
+                .hasCauseInstanceOf(java.util.concurrent.CancellationException.class);
+    }
+    @Test void successfulGraphCallReturnsAndResetsItsSilenceClock() {
+        AtomicLong nanos = new AtomicLong();
+        var lease = new AgentStreamLease(nanos::get);
+        assertThat(lease.modelCall(() -> { nanos.set(Duration.ofSeconds(89).toNanos()); return "done"; })).isEqualTo("done");
+        nanos.set(Duration.ofSeconds(100).toNanos());
+        assertThat(lease.expired(Duration.ofSeconds(90), Duration.ofMinutes(10))).isFalse();
+    }
     @Test void silenceIsMeasuredFromRealDataNotHeartbeatOrToolWait() {
         AtomicLong nanos = new AtomicLong();
         AgentStreamLease lease = new AgentStreamLease(nanos::get);

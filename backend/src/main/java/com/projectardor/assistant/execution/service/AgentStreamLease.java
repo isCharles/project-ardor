@@ -16,6 +16,7 @@ final class AgentStreamLease {
     private int activeTools;
     private Runnable cancel;
     private Runnable transportCancel;
+    private Runnable synchronousCancel;
     private Runnable release;
     AgentStreamLease() { this(System::nanoTime); }
     AgentStreamLease(LongSupplier clock) { this.clock = clock; this.startedAt = clock.getAsLong(); this.lastData = startedAt; }
@@ -53,6 +54,34 @@ final class AgentStreamLease {
         return false;
     }
     synchronized boolean stopped() { return stopped; }
+    /** Synchronous graph phases still obey the same stop/deadline fence. */
+    <T> T modelCall(Supplier<T> call) {
+        var task = new java.util.concurrent.FutureTask<T>(() -> {
+            if (stopped()) throw new java.util.concurrent.CancellationException("Agent run stopped");
+            return call.get();
+        });
+        Runnable cancellation = () -> task.cancel(true);
+        synchronized (this) {
+            if (stopped) throw new java.util.concurrent.CancellationException("Agent run stopped");
+            synchronousCancel = cancellation;
+        }
+        Thread.ofVirtual().name("ardor-graph-model").start(task);
+        try {
+            T value = task.get();
+            if (stopped()) throw new java.util.concurrent.CancellationException("Agent run stopped");
+            data();
+            return value;
+        } catch (InterruptedException interrupted) {
+            task.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new java.util.concurrent.CancellationException("Agent run interrupted");
+        } catch (java.util.concurrent.ExecutionException failed) {
+            if (failed.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw new IllegalStateException("Graph model call failed", failed.getCause());
+        } finally {
+            synchronized (this) { if (synchronousCancel == cancellation) synchronousCancel = null; }
+        }
+    }
     String execute(Supplier<String> businessCall) {
         synchronized (this) {
             if (stopped) return "{\"status\":\"RUN_STOPPED\",\"message\":\"本轮已经停止，没有执行工具\"}";
@@ -71,28 +100,33 @@ final class AgentStreamLease {
     void stop(Runnable whenIdle) {
         Runnable cancellation;
         Runnable transport;
+        Runnable synchronous;
         Runnable ready = null;
         synchronized (this) {
             if (releaseRegistered) return;
             releaseRegistered = true;
             stopped = true; cancellation = cancel; cancel = null;
             transport = transportCancel; transportCancel = null;
+            synchronous = synchronousCancel; synchronousCancel = null;
             release = whenIdle;
             if (activeTools == 0) { ready = release; release = null; }
         }
-        try { cancelSafely(transport); cancelSafely(cancellation); }
+        try { cancelSafely(transport); cancelSafely(cancellation); cancelSafely(synchronous); }
         finally { if (ready != null) ready.run(); }
     }
     void fence() {
         Runnable cancellation;
         Runnable transport;
+        Runnable synchronous;
         synchronized (this) {
             if (stopped) return;
             stopped = true; cancellation = cancel; cancel = null;
             transport = transportCancel; transportCancel = null;
+            synchronous = synchronousCancel; synchronousCancel = null;
         }
         cancelSafely(transport);
         cancelSafely(cancellation);
+        cancelSafely(synchronous);
     }
     private void cancelSafely(Runnable action) {
         if (action == null) return;
