@@ -57,6 +57,18 @@
 
 ## 本机现场与备份
 
+### 2026-10-24 合并后实测
+
+PR #185 最终 head `ce274565928c3b9aecce40b85f3e2d6e4024aee8` 五项 CI 全通过，合并为 `25a7137b411ec120d54c8ce0fe916e28d4da9a22`；源码树比较无差异。Golden Path run `39988023220` 8m27s，前端/桌面/PDF run `39988023112`，迁移 run `39988022908`。真实隔离容器额外通过完整主线、连续图/SSE/多轮轨迹归属和 Schema、纪要工作流、学习来源目标，以及无 API mock 的学习进度和最终纪要浏览器验收。
+
+补测环境的两次配置失配未记作产品通过：纪要脚本包含后端 `/actuator/health` 探针，给前端根地址时 404 而超时，按脚本合同改用测试后端；来源专项首次触发每分钟额度，按 CI 同一隔离夹具配置后通过。没有修改生产限额、健康路由或降低断言。
+
+部署前检查无 RUNNING Agent/AI 任务，只重建 backend/frontend，保留 PostgreSQL/Redis 和既有卷。运行镜像分别为 `sha256:aff5daccfaa121ea421475bf5eba48c6cb7f6b6be1e28236a0aab1557fff21f5` 与 `sha256:87c58f2459c5334cba771e7a2db816227645a5aca9f66e122f881818181ee401`，revision 均为上述 PR head。实际 health UP、login 200、匿名 `/api/auth/me` 401、CSRF 字段存在、12 SVG 返回 200 且 MIME 正确；Flyway V64。旧会话运行时探针单独通过 1 项，只创建并删除自身合成键。
+
+新备份位于仓库外 `C:/Users/Administrator/.codex/worktrees/ardor-mock-views/backups/20261024-before-graph-9e87b41/`。数据库 SHA-256 `7F33D3833EBF9C9E9BEAD7BA5DE8513F3AC63B75E70CC0A1A88832946A9676F3`，文件卷 SHA-256 `DC3619265FD19AC17D2355CB3F19D3C30C8AC52F8B34B512609112E97863F8F9`；归档目录可由 pg_restore 解析，不据此宣称已完成真实数据恢复演练。目录内含候选及回退 Compose 覆盖文件，旧应用镜像固定为 `ardor-{backend,frontend}-before-graph:20261024`。回退应用不 down migration，不删除 V64 或用户数据。
+
+以下为较早部署前现场，不代表当前版本：
+
 核验时日常容器来自 `E:/Projects/project-ardor/docker-compose.yml`，backend/frontend 使用无 revision 标签的项目镜像，数据库已为 V63；说明先前部署快照已被后续工作替代，不能沿用旧镜像推断当前源码版本。前端 login 200、代理匿名鉴权 401、后端 health UP。本次整合版尚未部署。
 
 构建清理曾误删放在 `backend/target` 的旧备份副本；已从容器原副本及只读文件卷恢复，两份 SHA-256 均与此前原备份完全一致，未修改运行数据库或文件卷。备份现在位于仓库外的 `C:/Users/Administrator/.codex/worktrees/ardor-mock-views/backups/20261023-before-knowledge/`，不再置于可清理的构建目录。
