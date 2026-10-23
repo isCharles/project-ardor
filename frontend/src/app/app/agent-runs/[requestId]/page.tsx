@@ -273,6 +273,10 @@ function InspectorPanel({ span, schema }: { span: TraceSpan; schema?: ToolSchema
         <InspectorField label={t("Finished at", "结束时间")} value={span.finishedAt ? formatDateTime(span.finishedAt) : "—"} mono />
         <InspectorField label={t("Duration", "耗时")} value={formatDuration(span.durationMs)} />
         <InspectorField label={t("Duration (ms)", "耗时（毫秒）")} value={span.durationMs ?? "—"} mono />
+        <InspectorField label={t("TTFT", "首 token 延迟")} value="—" />
+        <InspectorField label={t("Generation", "生成")} value="—" />
+        <InspectorField label={t("Throughput", "吞吐量")} value="—" />
+        <InspectorField label={t("Timing source", "计时来源")} value={t("Recorded span timestamps", "记录的 span 时间戳")} />
       </div>}
       <p className="mt-4 text-[10px] leading-5 text-stone-400">{t("Previews are truncated and redacted; full prompts, tool payloads and private chain-of-thought are not stored.", "预览已截断并脱敏；不存储完整 prompt、工具 payload 或私有思维链。")}</p>
     </div>
@@ -297,6 +301,7 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
   const [selectedRunId, setSelectedRunId] = useState<string | null>(trace.runs.at(-1)?.runId ?? null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [traceView, setTraceView] = useState<"graph" | "trajectory">("graph");
+  const [runFilter, setRunFilter] = useState("");
   const selectedRun = trace.runs.find((run) => run.runId === selectedRunId) ?? trace.runs.at(-1) ?? null;
   const flow = useMemo(() => buildFlow(selectedRun?.spans ?? []), [selectedRun]);
   const selectedSpan = selectedRun?.spans.find((span) => span.id === selectedSpanId) ?? null;
@@ -326,9 +331,10 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Conversation", "对话")}</p>
         <h2 className="mt-1 truncate text-sm font-semibold text-stone-800">{trace.title || t("Untitled chat", "未命名对话")}</h2>
         <p className="mt-1 text-[10px] text-stone-400">{trace.runs.length} {t("turns", "轮")}</p>
+        <label className="mt-2 flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[11px] text-stone-500"><Search className="size-3" /><input aria-label={t("Search turns", "搜索轮次")} value={runFilter} onChange={(event) => setRunFilter(event.target.value)} placeholder={t("Search turns", "搜索轮次")} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-400" /></label>
       </div>
       <div className="max-h-[72vh] overflow-y-auto p-2">
-        {trace.runs.map((run, index) => {
+        {trace.runs.filter((run) => !runFilter.trim() || `${run.message}\n${run.assistantMessage}`.toLowerCase().includes(runFilter.trim().toLowerCase())).map((run, index) => {
           const root = run.spans.find((span) => span.kind === "RUN");
           return <button key={run.runId} type="button" data-conversation-run onClick={() => setSelectedRunId(run.runId)} className={`w-full rounded-xl px-3 py-3 text-left transition ${selectedRun?.runId === run.runId ? "bg-violet-50 ring-1 ring-violet-200" : "hover:bg-stone-50"}`}>
             <div className="flex items-center gap-2"><span className="text-[10px] font-semibold tabular-nums text-stone-400">#{index + 1}</span><span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${run.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : run.status === "RUNNING" ? "bg-violet-50 text-violet-700" : "bg-rose-50 text-rose-700"}`}>{run.status}</span><span className="ml-auto text-[10px] text-stone-400">{formatDuration(root?.durationMs ?? null)}</span></div>
@@ -564,6 +570,7 @@ function formatDuration(value: number | null) {
   if (!value || value <= 0) return "—";
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(1)} s`;
 }
+
 
 
 
