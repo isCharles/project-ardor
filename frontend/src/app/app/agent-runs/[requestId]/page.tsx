@@ -135,7 +135,7 @@ export default function AgentRunTracePage() {
   }, [trace, filter]);
 
   return <main className="ardor-workbench min-h-screen px-5 pb-20 pt-6 text-[#1d1d1f] md:px-10">
-    <div className="mx-auto max-w-7xl">
+    <div className="mx-auto max-w-[1600px]">
       <div className="flex items-center justify-between gap-3">
         <Link href="/app" className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("Back to chat", "返回对话")}</Link>
         <div className="flex items-center gap-2">{trace?.conversationId && <Link href={`/app/agent-runs/${requestId}?conversation=${trace.conversationId}`} className="rounded-full bg-white/80 px-3 py-1.5 text-[11px] text-stone-500 hover:text-violet-700">{t("Conversation trace", "多轮轨迹")}</Link>}<span className="rounded-full bg-violet-50 px-3 py-1 text-[11px] font-medium text-violet-700">{t("Developer trace", "开发者视图")}</span></div>
@@ -325,7 +325,7 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
   const { t } = useLocale();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(trace.runs.at(-1)?.runId ?? null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
-  const [traceView, setTraceView] = useState<"graph" | "trajectory">("graph");
+  const [stepView, setStepView] = useState<"list" | "graph">("list");
   const [runFilter, setRunFilter] = useState("");
   const selectedRun = trace.runs.find((run) => run.runId === selectedRunId) ?? trace.runs.at(-1) ?? null;
   const flow = useMemo(() => buildFlow(selectedRun?.spans ?? []), [selectedRun]);
@@ -336,6 +336,7 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
   useEffect(() => {
     setSelectedSpanId(selectedRun?.spans[0]?.id ?? null);
   }, [selectedRun?.runId]);
+  const visibleRuns = trace.runs.filter((run) => !runFilter.trim() || `${run.message}\n${run.assistantMessage}`.toLowerCase().includes(runFilter.trim().toLowerCase()));
   const allSpans = trace.runs.flatMap((run) => run.spans).filter((span) => span.kind !== "RUN");
   const starts = allSpans.map(spanStart).filter((value): value is number => value !== null);
   const ends = allSpans.map(spanEnd).filter((value): value is number => value !== null);
@@ -344,53 +345,52 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
   const toolCalls = allSpans.filter((span) => span.kind === "TOOL").length;
   const inputTokens = allSpans.reduce((sum, span) => sum + (span.inputTokens ?? 0), 0);
   const outputTokens = allSpans.reduce((sum, span) => sum + (span.outputTokens ?? 0), 0);
-  const visibleRuns = trace.runs.filter((run) => !runFilter.trim() || `${run.message}\n${run.assistantMessage}`.toLowerCase().includes(runFilter.trim().toLowerCase()));
+  const turnIndex = selectedRun ? trace.runs.findIndex((run) => run.runId === selectedRun.runId) + 1 : 0;
   return <div className="mt-4">
     <div data-trace-overview className="grid grid-cols-2 gap-3 sm:grid-cols-5">
       {[[t("Duration", "时长"), formatDuration(duration)], [t("Turns", "轮次"), trace.runs.length], [t("Model calls", "模型调用"), llmCalls], [t("Tool calls", "工具调用"), toolCalls], [t("Tokens", "Token"), `${inputTokens} / ${outputTokens}`]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/80 bg-white/70 px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{label}</p><p className="mt-1 text-base font-semibold tabular-nums text-stone-800">{value}</p></div>)}
     </div>
-    <div className="mt-3 flex items-center justify-between gap-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Trace view", "轨迹视图")}</p><div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Trace view", "轨迹视图")}><button type="button" aria-pressed={traceView === "graph"} onClick={() => setTraceView("graph")} className={`rounded-full px-3 py-1.5 text-xs transition ${traceView === "graph" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}>{t("Graph", "图")}</button><button type="button" aria-pressed={traceView === "trajectory"} onClick={() => setTraceView("trajectory")} className={`rounded-full px-3 py-1.5 text-xs transition ${traceView === "trajectory" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}>{t("Trajectory", "轨迹检查器")}</button></div></div>
-    {traceView === "trajectory" && <TraceTimeOverview runs={trace.runs} selectedRunId={selectedRun?.runId ?? null} selectedSpanId={selectedSpanId} onSelect={(runId, spanId) => { setSelectedRunId(runId); setSelectedSpanId(spanId); }} />}
-    <section data-conversation-trace className={`mt-3 grid gap-3 ${traceView === "trajectory" ? "lg:grid-cols-[320px_minmax(0,1fr)]" : ""}`}>
-    {traceView === "graph" && <div className="flex gap-2 overflow-x-auto pb-1 lg:col-span-2">
-      {visibleRuns.map((run, index) => <button key={run.runId} type="button" data-conversation-run onClick={() => setSelectedRunId(run.runId)} className={`min-w-[220px] max-w-[280px] shrink-0 rounded-xl border px-3 py-3 text-left transition ${selectedRun?.runId === run.runId ? "border-violet-300 bg-violet-50" : "border-white/80 bg-white/70 hover:bg-white"}`}><div className="flex items-center gap-2"><span className="text-[10px] font-semibold tabular-nums text-stone-400">#{index + 1}</span><span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${run.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : run.status === "RUNNING" ? "bg-violet-50 text-violet-700" : "bg-rose-50 text-rose-700"}`}>{run.status}</span><span className="ml-auto text-[10px] text-stone-400">{formatDuration(run.spans.find((span) => span.kind === "RUN")?.durationMs ?? null)}</span></div><p className="mt-1.5 line-clamp-1 text-xs font-medium text-stone-800">{run.message}</p></button>)}
-    </div>}
-    {traceView === "trajectory" && <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/70">
-      <div className="border-b border-stone-200/70 px-4 py-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Conversation", "对话")}</p>
-        <h2 className="mt-1 truncate text-sm font-semibold text-stone-800">{trace.title || t("Untitled chat", "未命名对话")}</h2>
-        <p className="mt-1 text-[10px] text-stone-400">{trace.runs.length} {t("turns", "轮")}</p>
-        <label className="mt-2 flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[11px] text-stone-500"><Search className="size-3" /><input aria-label={t("Search turns", "搜索轮次")} value={runFilter} onChange={(event) => setRunFilter(event.target.value)} placeholder={t("Search turns", "搜索轮次")} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-400" /></label>
-      </div>
-      <div className="max-h-[72vh] overflow-y-auto p-2">
-        {visibleRuns.map((run, index) => {
-          const root = run.spans.find((span) => span.kind === "RUN");
-          return <button key={run.runId} type="button" data-conversation-run onClick={() => setSelectedRunId(run.runId)} className={`w-full rounded-xl px-3 py-3 text-left transition ${selectedRun?.runId === run.runId ? "bg-violet-50 ring-1 ring-violet-200" : "hover:bg-stone-50"}`}>
-            <div className="flex items-center gap-2"><span className="text-[10px] font-semibold tabular-nums text-stone-400">#{index + 1}</span><span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${run.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : run.status === "RUNNING" ? "bg-violet-50 text-violet-700" : "bg-rose-50 text-rose-700"}`}>{run.status}</span><span className="ml-auto text-[10px] text-stone-400">{formatDuration(root?.durationMs ?? null)}</span></div>
-            <p className="mt-1.5 line-clamp-2 text-xs font-medium leading-5 text-stone-800">{run.message}</p>
-            {run.assistantMessage && <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-stone-400">{run.assistantMessage}</p>}
-            <p className="mt-1 text-[10px] text-stone-400">{run.spans.length} {t("steps", "个步骤")} · {run.spans.filter((span) => span.kind === "TOOL").length} {t("tool calls", "个工具调用")}</p>
-          </button>;
-        })}
-        {trace.runs.length === 0 && <p className="p-3 text-xs text-stone-500">{t("No turns were recorded for this conversation.", "这个对话还没有记录到轮次。")}</p>}
-      </div>
-      {traceView === "trajectory" && selectedRun && <div className="border-t border-stone-200/70 p-2">
-        <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Steps", "步骤")}</p>
-        <div className="max-h-52 overflow-y-auto">
-          {selectedRun.spans.map((span) => <button key={span.id} type="button" data-trace-step-item onClick={() => setSelectedSpanId(span.id)} className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] ${selectedSpanId === span.id ? "bg-violet-50 text-violet-800" : "text-stone-500 hover:bg-stone-50"}`}><span className={`size-1.5 rounded-full ${span.kind === "LLM" ? "bg-violet-400" : span.kind === "TOOL" ? "bg-sky-400" : "bg-stone-400"}`} /><span className="min-w-0 flex-1 truncate">{span.kind === "RUN" ? t("Agent run", "Agent 运行") : span.name}</span><span className="shrink-0 tabular-nums text-stone-400">{formatDuration(span.durationMs)}</span></button>)}
+    <TraceTimeOverview runs={trace.runs} selectedRunId={selectedRun?.runId ?? null} selectedSpanId={selectedSpanId} onSelect={(runId, spanId) => { setSelectedRunId(runId); setSelectedSpanId(spanId); }} />
+    <section data-conversation-trace className="mt-3 grid gap-3 xl:grid-cols-[280px_minmax(0,1fr)_440px]">
+      <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/70">
+        <div className="border-b border-stone-200/70 px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Conversation", "对话")}</p>
+          <h2 className="mt-1 truncate text-sm font-semibold text-stone-800">{trace.title || t("Untitled chat", "未命名对话")}</h2>
+          <p className="mt-1 text-[10px] text-stone-400">{trace.runs.length} {t("turns", "轮")}</p>
+          <label className="mt-2 flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[11px] text-stone-500"><Search className="size-3" /><input aria-label={t("Search turns", "搜索轮次")} value={runFilter} onChange={(event) => setRunFilter(event.target.value)} placeholder={t("Search turns", "搜索轮次")} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-400" /></label>
         </div>
-      </div>}
-    </div>}
-    <div className={`min-w-0 ${traceView === "graph" ? "lg:col-span-2" : ""}`}>{selectedRun ? <>
-      {traceView === "graph" ? <>
-        <div className="mt-3">{flow.length > 0 ? <FlowGraph nodes={flow} selectedId={selectedSpanId} onSelect={setSelectedSpanId} /> : <div className="rounded-2xl bg-white/60 p-5 text-sm text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</div>}</div>
-      </> : selectedSpan ? <div data-trajectory-inspector className="mt-3"><InspectorPanel span={selectedSpan} schema={schemas[selectedSpan.name]} thinking={selectedRun.thinkingOutput} sourceLabel={trace.runs.findIndex((run) => run.runId === selectedRun.runId) >= 0 ? `${t("Turn", "轮次")} #${trace.runs.findIndex((run) => run.runId === selectedRun.runId) + 1}` : trace.conversationId} /></div> : <p className="mt-3 text-xs text-stone-400">{t("Select a step to inspect.", "选择一个步骤查看详情。")}</p>}
-    </> : <div className="rounded-2xl border border-white/80 bg-white/70 p-5 text-sm text-stone-500">{t("Select a turn to inspect.", "选择一轮查看详情。")}</div>}
-    </div>
-  </section>
+        <div className="max-h-[68vh] overflow-y-auto p-2">
+          {visibleRuns.map((run, index) => {
+            const root = run.spans.find((span) => span.kind === "RUN");
+            return <button key={run.runId} type="button" data-conversation-run onClick={() => setSelectedRunId(run.runId)} className={`mb-1 w-full rounded-xl px-3 py-3 text-left transition ${selectedRun?.runId === run.runId ? "bg-violet-50 ring-1 ring-violet-200" : "hover:bg-stone-50"}`}>
+              <div className="flex items-center gap-2"><span className="text-[10px] font-semibold tabular-nums text-stone-400">#{index + 1}</span><span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${run.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : run.status === "RUNNING" ? "bg-violet-50 text-violet-700" : "bg-rose-50 text-rose-700"}`}>{run.status}</span><span className="ml-auto text-[10px] text-stone-400">{formatDuration(root?.durationMs ?? null)}</span></div>
+              <p className="mt-1.5 line-clamp-2 text-xs font-medium leading-5 text-stone-800">{run.message}</p>
+              {run.assistantMessage && <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-stone-400">{run.assistantMessage}</p>}
+              <p className="mt-1 text-[10px] text-stone-400">{run.spans.length} {t("steps", "个步骤")} · {run.spans.filter((span) => span.kind === "TOOL").length} {t("tool calls", "个工具调用")}</p>
+            </button>;
+          })}
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/70">
+        <div className="flex items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3">
+          <div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Steps", "步骤")}</p><p className="mt-1 text-[10px] text-stone-400">{selectedRun?.spans.length ?? 0} {t("steps", "个步骤")}</p></div>
+          <div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Step view", "步骤视图")}>
+            <button type="button" aria-pressed={stepView === "list"} onClick={() => setStepView("list")} className={`rounded-full px-2.5 py-1 text-[11px] transition ${stepView === "list" ? "bg-[#1d1d1f] text-white" : "text-stone-500"}`}>{t("List", "列表")}</button>
+            <button type="button" aria-pressed={stepView === "graph"} onClick={() => setStepView("graph")} className={`rounded-full px-2.5 py-1 text-[11px] transition ${stepView === "graph" ? "bg-[#1d1d1f] text-white" : "text-stone-500"}`}>{t("Graph", "图")}</button>
+          </div>
+        </div>
+        {stepView === "list" ? <div className="max-h-[62vh] overflow-y-auto p-2">
+          {selectedRun?.spans.map((span) => <button key={span.id} type="button" data-trace-step-item onClick={() => setSelectedSpanId(span.id)} className={`mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs ${selectedSpanId === span.id ? "bg-violet-50 text-violet-800 ring-1 ring-violet-200" : "text-stone-500 hover:bg-stone-50"}`}>
+            <span className={`size-2 shrink-0 rounded-full ${span.kind === "LLM" ? "bg-violet-400" : span.kind === "TOOL" ? "bg-sky-400" : "bg-stone-400"}`} />
+            <span className="min-w-0 flex-1 truncate">{span.kind === "RUN" ? t("Agent run", "Agent 运行") : span.name}</span>
+            <span className="shrink-0 tabular-nums text-[10px] text-stone-400">{formatDuration(span.durationMs)}</span>
+          </button>)}
+        </div> : <div className="max-h-[62vh] overflow-auto p-2">{flow.length > 0 ? <FlowGraph nodes={flow} selectedId={selectedSpanId} onSelect={setSelectedSpanId} /> : <p className="p-3 text-xs text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</p>}</div>}
+      </div>
+      <div className="min-w-0">{selectedSpan ? <InspectorPanel span={selectedSpan} schema={schemas[selectedSpan.name]} thinking={selectedRun?.thinkingOutput} sourceLabel={turnIndex ? `${t("Turn", "轮次")} #${turnIndex}` : trace.conversationId} /> : <div className="rounded-2xl border border-white/80 bg-white/70 p-5 text-sm text-stone-500">{t("Select a step to inspect.", "选择一个步骤查看详情。")}</div>}</div>
+    </section>
   </div>;
 }
-
 function spanStart(span: TraceSpan): number | null {
   const value = new Date(span.startedAt).getTime();
   return Number.isFinite(value) ? value : null;
@@ -607,6 +607,8 @@ function formatDuration(value: number | null) {
   if (!value || value <= 0) return "—";
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(1)} s`;
 }
+
+
 
 
 

@@ -75,3 +75,24 @@ The trace page exposes both visualizations over the same run data:
 Tool schemas come from `GET /api/agent/tools/schemas`, generated from the same
 `@Tool` / `@P` annotations used by LangChain4j. When a field was not recorded,
 the UI labels it unavailable; it never invents timing, schema or usage.
+
+## Unified trace layout
+
+The multi-turn view no longer has separate Graph and Trajectory modes. It has one
+DSH-style layout:
+
+```text
+left   conversation turns
+middle step area (List / Graph toggle)
+right  selected-step inspector
+```
+
+Clicking a graph node and clicking a step row both update the same right-side
+inspector. The graph is scaled to the available middle-panel width, so there is
+no horizontal scrollbar. The top time overview remains a projection of recorded
+start/finish/duration values.
+
+LLM steps use the assistant inspector: Overview / Preview / Raw content. The
+Preview tab renders markdown; the model reasoning output is shown separately and
+labelled, and never mixed into the final answer. Tool steps keep Parameters /
+Result / Schema / Metadata / Timing.

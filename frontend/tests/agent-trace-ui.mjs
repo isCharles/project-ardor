@@ -94,14 +94,12 @@ try {
   await page.goto(`${origin}/app/agent-runs/fixture-run?conversation=fixture-conv`);
   await page.locator("[data-conversation-trace]").waitFor();
   assert.equal(await page.locator("[data-conversation-run]").count(), 2, "Conversation trace lists every turn");
-  await page.getByRole("button", { name: "Graph", exact: true }).waitFor();
-  await page.getByRole("button", { name: "Trajectory", exact: true }).click();
-  await page.locator("[data-trajectory-inspector]").waitFor();
-  assert.equal(await page.locator("[data-trace-node]").count(), 0, "Trajectory mode hides the graph");
+  await page.getByRole("button", { name: "List", exact: true }).waitFor();
   await page.getByRole("button", { name: "Graph", exact: true }).click();
+  assert.ok(await page.locator("[data-trace-node]").count() > 0, "Graph step view renders the flow");
+  await page.getByRole("button", { name: "List", exact: true }).click();
   await page.locator("[data-conversation-run]").nth(1).click();
   await page.getByText("第二轮问题", { exact: true }).first().waitFor();
-  assert.ok(await page.locator("[data-trace-node]").count() > 0, "Selected turn renders its flow");
   await page.screenshot({ path: ".next/agent-trace-conversation.png", fullPage: true });
   await context.close();
   console.log("Agent trace UI: graph nodes, metadata selection, inspector, timeline, multi-turn trace passed.");
@@ -109,6 +107,7 @@ try {
   await browser?.close();
   server.kill();
 }
+
 
 
 
