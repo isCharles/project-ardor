@@ -38,7 +38,7 @@ type Conversation = { id: string; title: string; pinned: boolean; titleManuallyS
 type AgentMemory = { content: string; updatedAt: string | null };
 type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null };
 type RetryFailure = { label: string; detail: string };
-type AgentStreamEvent = ToolMeasurement & { type: "status" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string };
+type AgentStreamEvent = ToolMeasurement & { type: "status" | "phase" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string };
 type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number };
 type AgentRun = { id: string; conversationId: string; message: string; status: "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED"; label: string; errorCode: string | null; errorMessage: string | null; retryable: boolean; createdAt: string; updatedAt: string };
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
@@ -872,6 +872,9 @@ export default function AgentHomePage() {
               setStreamPhase("OUTPUT");
               receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
+            } else if (event.type === "phase" && event.label) {
+              setStreamPhase(event.content ?? "PLAN");
+              setRunSteps((current) => [...current, { key: `phase-${event.content ?? "phase"}-${current.length}`, label: event.label!, elapsedMs: event.elapsedMs ?? 0, done: true }]);
             } else if (event.type === "status" && event.label) {
               setStreamPhase("WAITING_DATA");
               setRunSteps((current) => current.some((step) => step.key === "status") ? current.map((step) => step.key === "status" ? { ...step, label: event.label! } : step) : [...current, { key: "status", label: event.label!, elapsedMs: 0, done: false }]);
@@ -1216,7 +1219,7 @@ export default function AgentHomePage() {
   const terminalInHistory = !!terminalRunId && messages.some((message) => message.role === "ASSISTANT" && message.requestId === terminalRunId);
   const showLiveTrace = !terminalInHistory && !liveAssistant?.runTrace && (runSteps.length > 0 || !!runThinking || busy || !!runningRun || retryFailures.length > 0);
   const phase = runningRun ? streamProgress?.phase : streamPhase;
-  const liveTitle = !(busy || runningRun) ? t("Execution stopped", "执行已停止") : phase === "THINKING" ? t("Thinking", "思考中") : phase === "TOOL" ? t("Using tools", "正在调用工具") : phase === "OUTPUT" ? t("Writing reply", "正在生成回复") : t("Waiting for model", "等待模型回应");
+  const liveTitle = !(busy || runningRun) ? t("Execution stopped", "执行已停止") : phase === "THINKING" ? t("Thinking", "思考中") : phase === "PLAN" ? t("Planning", "正在规划") : phase === "GATHER" ? t("Gathering evidence", "正在收集证据") : phase === "REFLECT" ? t("Reviewing evidence", "正在审查证据") : phase === "ANSWER" ? t("Writing reply", "正在生成回复") : phase === "TOOL" ? t("Using tools", "正在调用工具") : phase === "OUTPUT" ? t("Writing reply", "正在生成回复") : t("Waiting for model", "等待模型回应");
   const liveTrace = showLiveTrace ? <ExecutionTrace title={liveTitle}
     active={(busy || !!runningRun) && phase !== "OUTPUT"}
     elapsed={formatElapsed(runElapsed)} thinking={runThinking} steps={runSteps}

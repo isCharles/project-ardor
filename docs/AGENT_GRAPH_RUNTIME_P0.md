@@ -52,3 +52,8 @@ mvn -o -q -Dtest=AgentGraphRuntimeTests test
 - 写操作、HITL 持久化：P2；
 - 数据库 checkpoint：P1 先使用内存/单次 run 状态，验证行为后再加持久化；
 - 新模型供应商、Temporal、Redis Stream。
+
+## Status
+
+P0 state machine is implemented and tested. P1 real read-only integration is
+documented in [AGENT_GRAPH_RUNTIME_P1.md](AGENT_GRAPH_RUNTIME_P1.md).

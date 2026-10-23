@@ -353,3 +353,10 @@ Idempotency-Key: {key}
 - OpenAI Agents SDK, [Human-in-the-loop](https://openai.github.io/openai-agents-python/human_in_the_loop/)
 - Spring AI Alibaba, [人工介入（Human-in-the-Loop）](https://java2ai.com/docs/frameworks/agent-framework/advanced/human-in-the-loop/)
 - LangGraph4j, [Graph engineering for Java](https://github.com/langgraph4j/langgraph4j)
+
+## Implementation status
+
+- P0 graph state machine: implemented (`AgentGraphRuntime`, tests).
+- P1 explicit read-only complex-task route: implemented behind
+  `app.agent.graph.enabled`, with `phase` SSE events and `THOUGHT` trace spans.
+- P2 durable checkpoint + write HITL: not implemented yet.

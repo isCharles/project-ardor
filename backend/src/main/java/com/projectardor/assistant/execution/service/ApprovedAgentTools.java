@@ -96,12 +96,22 @@ final class ApprovedAgentTools {
             AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
             String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
             UUID conversationId, boolean automation, AgentRunTracer tracer) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
+                executionAudit, conversationId, automation, tracer, null);
+    }
+
+    /** A graph phase may only see an explicit read-only subset of the tool surface. */
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
+            AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
+            String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
+            UUID conversationId, boolean automation, AgentRunTracer tracer, Set<String> allowedTools) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         Map<String, Boolean> attemptedWrites = new java.util.concurrent.ConcurrentHashMap<>();
         AgentExecutionAuditStore.ToolCallContext auditContext =
                 AgentExecutionAuditStore.ToolCallContext.of(userId, conversationId, requestId);
         for (var method : bound.getClass().getMethods()) {
             if (!method.isAnnotationPresent(Tool.class)) continue;
+            if (allowedTools != null && !allowedTools.contains(method.getAnnotation(Tool.class).name())) continue;
             var specification = ToolSpecifications.toolSpecificationFrom(method);
             var delegate = new DefaultToolExecutor(bound, method);
             result.put(specification, (request, memoryId) -> {
@@ -251,3 +261,4 @@ final class ApprovedAgentTools {
         }
     }
 }
+

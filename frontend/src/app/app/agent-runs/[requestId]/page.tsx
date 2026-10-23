@@ -12,7 +12,7 @@ type TraceSpan = {
   id: string;
   runId: string;
   parentSpanId: string | null;
-  kind: "RUN" | "LLM" | "TOOL" | "CONTEXT" | "RETRY" | "ASYNC";
+  kind: "RUN" | "LLM" | "TOOL" | "CONTEXT" | "THOUGHT" | "RETRY" | "ASYNC";
   name: string;
   status: "RUNNING" | "COMPLETED" | "FAILED" | "NOT_EXECUTED" | "UNKNOWN";
   startedAt: string;
@@ -47,6 +47,7 @@ const kindMeta: Record<TraceSpan["kind"], { label: string; color: string; icon: 
   LLM: { label: "LLM", color: "bg-violet-100 text-violet-700", icon: Bot },
   TOOL: { label: "TOOL", color: "bg-sky-100 text-sky-700", icon: Wrench },
   CONTEXT: { label: "CONTEXT", color: "bg-stone-200 text-stone-700", icon: Clock3 },
+  THOUGHT: { label: "THOUGHT", color: "bg-violet-50 text-violet-700", icon: Activity },
   RETRY: { label: "RETRY", color: "bg-amber-100 text-amber-800", icon: CircleAlert },
   ASYNC: { label: "ASYNC", color: "bg-emerald-100 text-emerald-700", icon: Activity },
 };

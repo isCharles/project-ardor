@@ -35,6 +35,7 @@ try {
     totals: { llmCalls: 2, toolCalls: 1, loopRounds: 1, inputTokens: 12000, outputTokens: 180 },
     spans: [
       span("root", null, "RUN", "agent.run", "2026-10-23T08:00:00Z", { durationMs: 2400, attributes: { model: "fixture-model" } }),
+      span("thought", "root", "THOUGHT", "phase.plan", "2026-10-23T08:00:00Z", { durationMs: 40 }),
       span("context", "root", "CONTEXT", "context.load", "2026-10-23T08:00:01Z", { durationMs: 120 }),
       span("llm-1", "root", "LLM", "llm.call.1", "2026-10-23T08:00:02Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 32, attributes: { toolRound: true } }),
       span("tool-1", "root", "TOOL", "list_resumes", "2026-10-23T08:00:03Z", { durationMs: 80 }),
@@ -55,7 +56,7 @@ try {
   const page = await context.newPage();
   await page.goto(`${origin}/app/agent-runs/fixture-run`);
   await page.locator("[data-trace-node]").first().waitFor();
-  assert.equal(await page.locator("[data-trace-node]").count(), 5, "Flow graph renders every span");
+  assert.equal(await page.locator("[data-trace-node]").count(), 6, "Flow graph renders every span including THOUGHT phases");
   await page.getByRole("button", { name: "Flow", exact: true }).waitFor();
   await page.getByRole("button", { name: "Timeline", exact: true }).waitFor();
 
@@ -73,4 +74,5 @@ try {
   await browser?.close();
   server.kill();
 }
+
 

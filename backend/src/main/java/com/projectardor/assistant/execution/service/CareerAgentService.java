@@ -5,6 +5,7 @@ import java.time.ZonedDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -41,7 +42,10 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.TokenStream;
+import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.model.chat.ChatModel;
 import com.projectardor.assistant.conversation.service.AgentConversationStore;
+import com.projectardor.assistant.execution.graph.AgentGraphRuntime;
 import com.projectardor.assistant.execution.service.LangChainModelFactory;
 import com.projectardor.assistant.memory.service.AgentMemoryService;
 import com.projectardor.assistant.memory.service.MemoryEmbeddingService;
@@ -120,6 +124,21 @@ public class CareerAgentService {
     private final java.time.Duration totalTimeout;
     private final ConcurrentHashMap<UUID, ActiveStream> activeStreams = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Semaphore> userLocks = new ConcurrentHashMap<>();
+    @org.springframework.beans.factory.annotation.Value("${app.agent.graph.enabled:true}")
+    private boolean graphEnabled = true;
+    private static final Set<String> READ_ONLY_TOOL_NAMES = java.util.Arrays.stream(CareerAgentTools.BoundCareerTools.class.getMethods())
+            .filter(method -> method.isAnnotationPresent(Tool.class))
+            .map(method -> method.getAnnotation(Tool.class).name())
+            .filter(ToolIntentPolicy::isRead)
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+
+    private static boolean isReadOnlyGraphRequest(String message) {
+        if (message == null) return false;
+        String text = message.toLowerCase(Locale.ROOT);
+        boolean explicitReadOnly = text.contains("只读") || text.contains("read-only") || text.contains("readonly");
+        return explicitReadOnly && (text.contains("盘点") || text.contains("审计") || text.contains("复盘")
+                || text.contains("规划") || text.contains("分析") || text.contains("audit"));
+    }
 
     public void validateQueuedMessage(UUID userId, com.projectardor.assistant.conversation.web.AgentMessageRequest request) {
         normalizeMessage(request.message());
@@ -478,6 +497,52 @@ public class CareerAgentService {
                     .withInterviewAnswerContext(interviewAnswerContext(userId, conversation.getId()))
                     .withInterruptedRequest(interruptedRequest)
                     .withDateCorrectionContext(dateCorrectionContext(userId, conversation.getId(), references, interruptedRequest));
+            if (graphEnabled && isReadOnlyGraphRequest(message)) {
+                try {
+                    ChatModel graphChat = modelFactory.create(runtimeConfig, depth, listeners);
+                    AgentGraphRuntime.Model graphModel = new GraphPhaseModel(graphChat, systemMessage, bound, userId,
+                            requestId, conversation.getId(), lease, toolTimings, tracer);
+                    AgentGraphRuntime.Observer graphObserver = new AgentGraphRuntime.Observer() {
+                        @Override public void phase(AgentGraphRuntime.Node node, String label) {
+                            sink.send(AgentStreamEvent.phase(node.name(), label, elapsedMs(startedAt)));
+                            streamProgress.step(progressId, label, 0, "COMPLETED");
+                            persistedSteps.add(new RunStep(label, 0, "COMPLETED", null, null));
+                        }
+                        @Override public void observation(AgentGraphRuntime.GatherResult result) {
+                            sink.send(AgentStreamEvent.status("已整理证据：" + result.summary(), elapsedMs(startedAt)));
+                        }
+                    };
+                    AgentGraphRuntime.Result result = new AgentGraphRuntime(graphModel, graphObserver, null,
+                            new AgentGraphRuntime.Budget(2, 6)).run(
+                            requestId == null ? UUID.randomUUID().toString() : requestId.toString(), agentInput);
+                    if (!finished.compareAndSet(false, true)) return;
+                    lease.fence();
+                    String answer = result.answer();
+                    sink.send(AgentStreamEvent.delta(answer));
+                    long totalElapsed = elapsedMs(startedAt);
+                    String trace = runTrace(totalElapsed, persistedSteps, bound.pendingConfirmations(),
+                            streamProgress.get(userId, progressId));
+                    List<ConversationMessage> saved = requestId == null
+                            ? store.appendExchange(userId, conversation, message, answer.strip(), trace, references)
+                            : runStore.complete(userId, requestId, conversation, message, answer.strip(), trace, references);
+                    streamProgress.finish(progressId, false);
+                    if (tracer != null) tracer.complete();
+                    recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
+                    sink.send(AgentStreamEvent.done(AgentMessageResponse.from(saved.get(1)), totalElapsed));
+                    sink.complete();
+                } catch (RuntimeException exception) {
+                    if (finished.compareAndSet(false, true)) {
+                        if (tracer != null) tracer.fail("GRAPH_RUN_FAILED");
+                        streamProgress.finish(progressId, true);
+                        try { sendStreamError(sink, classifyStreamFailure(exception), startedAt, userId, persistedRun.get()); }
+                        finally { toolApprovals.close(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
+                    }
+                } finally {
+                    toolApprovals.close(userId, requestId);
+                    if (!finished.get()) lease.stop(() -> { activeStreams.remove(progressId); lock.release(); });
+                }
+                return;
+            }
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(runtimeConfig, depth, lease, listeners))
                     .systemMessage(systemMessage).chatMemory(memory)
@@ -1008,6 +1073,115 @@ public class CareerAgentService {
         return "模型服务连接暂时不稳定";
     }
 
+    /**
+     * P1 adapter: each graph phase is a separate model boundary. GATHER is the only phase
+     * allowed to see tools, and its tool map is filtered to {@link #READ_ONLY_TOOL_NAMES}.
+     */
+    private final class GraphPhaseModel implements AgentGraphRuntime.Model {
+        private final ChatModel chatModel;
+        private final String baseSystem;
+        private final CareerAgentTools.BoundCareerTools bound;
+        private final UUID userId;
+        private final UUID requestId;
+        private final UUID conversationId;
+        private final AgentStreamLease lease;
+        private final AgentToolTimings timings;
+        private final AgentRunTracer tracer;
+
+        private GraphPhaseModel(ChatModel chatModel, String baseSystem, CareerAgentTools.BoundCareerTools bound,
+                UUID userId, UUID requestId, UUID conversationId, AgentStreamLease lease,
+                AgentToolTimings timings, AgentRunTracer tracer) {
+            this.chatModel = chatModel;
+            this.baseSystem = baseSystem;
+            this.bound = bound;
+            this.userId = userId;
+            this.requestId = requestId;
+            this.conversationId = conversationId;
+            this.lease = lease;
+            this.timings = timings;
+            this.tracer = tracer;
+        }
+
+        @Override public String plan(String request) {
+            return traced("plan", () -> phaseChat(baseSystem + "\n\n你是只读求职数据审计的规划器。"
+                    + "只输出 2–4 步执行计划，说明要查哪些模块、按什么顺序；不要调用工具，不要声称已经读到数据。", request));
+        }
+
+        @Override public AgentGraphRuntime.GatherResult gather(String request, String plan, int round) {
+            return traced("gather", () -> {
+                String system = baseSystem + "\n\n当前是只读检索阶段，只能调用读取工具，最多 3 个。"
+                        + "不要调用任何写入、删除、创建、修改工具；不要向用户提问。"
+                        + "工具调用结束后，用 2–4 句输出：已获得哪些证据、还缺什么、失败项。";
+                String input = "用户请求：\n" + request + "\n\n执行计划：\n" + plan + "\n\n这是第 " + round + " 轮检索。";
+                var tools = ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, timings,
+                        ignored -> {}, "", permissionGrants, executionAudit, conversationId, false, tracer,
+                        READ_ONLY_TOOL_NAMES);
+                GraphGatherAssistant assistant = AiServices.builder(GraphGatherAssistant.class)
+                        .chatModel(chatModel).systemMessage(system).tools(tools)
+                        .maxToolCallingRoundTrips(2).maxSequentialToolsInvocations(3)
+                        .toolExecutionErrorHandler(new AgentToolFailureHandler())
+                        .toolArgumentsErrorHandler(new AgentToolArgumentsErrorHandler()).build();
+                String summary = assistant.chat(input);
+                if (summary == null || summary.isBlank()) throw new IllegalStateException("GATHER 没有返回证据摘要");
+                return new AgentGraphRuntime.GatherResult(summary, List.of());
+            });
+        }
+
+        @Override public String reflect(String request, String plan, List<AgentGraphRuntime.GatherResult> gathered, int round) {
+            return traced("reflect", () -> phaseChat(baseSystem + "\n\n你是只读证据审查器。根据计划和已获得的证据判断是否足够。"
+                    + "只输出 SUFFICIENT，或 NEED_MORE + 一句不超过 40 字的原因和下一步要查什么。", buildReflectionInput(request, plan, gathered)));
+        }
+
+        @Override public String answer(String request, String plan, List<AgentGraphRuntime.GatherResult> gathered, String reflection) {
+            return traced("answer", () -> phaseChat(baseSystem + "\n\n你是最终报告生成器。基于已获得的证据回答用户，"
+                    + "说明证据、冲突和不确定性；不要重复内部步骤，不要声称执行了任何写入。", buildAnswerInput(request, plan, gathered, reflection)));
+        }
+
+        private String phaseChat(String system, String input) {
+            GraphPhaseAssistant assistant = AiServices.builder(GraphPhaseAssistant.class)
+                    .chatModel(chatModel).systemMessage(system).build();
+            return assistant.chat(input);
+        }
+
+        private <T> T traced(String phase, java.util.function.Supplier<T> action) {
+            UUID span = tracer == null ? null : tracer.startChild("THOUGHT", "phase." + phase,
+                    java.util.Map.of("phase", phase));
+            try {
+                T value = action.get();
+                if (tracer != null) tracer.finishChild(span, "COMPLETED", null, null, null, null,
+                        java.util.Map.of("phase", phase));
+                return value;
+            } catch (RuntimeException failure) {
+                if (tracer != null) tracer.finishChild(span, "FAILED", failure.getClass().getSimpleName(),
+                        null, null, null, java.util.Map.of("phase", phase));
+                throw failure;
+            }
+        }
+
+        private String buildReflectionInput(String request, String plan, List<AgentGraphRuntime.GatherResult> gathered) {
+            StringBuilder out = new StringBuilder("用户请求：\n").append(request).append("\n\n计划：\n").append(plan)
+                    .append("\n\n已获得证据：\n");
+            for (int i = 0; i < gathered.size(); i++) out.append(i + 1).append(". ").append(gathered.get(i).summary()).append('\n');
+            return out.append("\n判断证据是否足够回答。").toString();
+        }
+
+        private String buildAnswerInput(String request, String plan, List<AgentGraphRuntime.GatherResult> gathered,
+                String reflection) {
+            StringBuilder out = new StringBuilder("用户请求：\n").append(request).append("\n\n计划：\n").append(plan)
+                    .append("\n\n证据：\n");
+            for (int i = 0; i < gathered.size(); i++) out.append(i + 1).append(". ").append(gathered.get(i).summary()).append('\n');
+            return out.append("\n证据审查：").append(reflection).append("\n\n请给出最终回答。").toString();
+        }
+    }
+
+    private interface GraphGatherAssistant {
+        String chat(String userMessage);
+    }
+
+    private interface GraphPhaseAssistant {
+        String chat(String userMessage);
+    }
+
     private interface CareerAssistant {
         String chat(String userMessage);
     }
@@ -1022,3 +1196,8 @@ public class CareerAgentService {
         default void waitingForApproval(boolean waiting) {}
     }
 }
+
+
+
+
+
