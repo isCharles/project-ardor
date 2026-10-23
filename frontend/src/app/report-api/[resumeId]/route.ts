@@ -9,6 +9,9 @@ import { buildLatexReport, type ReportAnalysis } from "@/lib/latex-report";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+let activeCompilations = 0;
+const MAX_COMPILATIONS = 2;
+
 type BackendAnalysis = {
   analysis?: ReportAnalysis;
   originalFilename?: string;
@@ -44,12 +47,13 @@ async function run(command: string, args: string[], cwd: string): Promise<void> 
       stdio: ["ignore", "pipe", "pipe"],
     });
     let output = "";
+    let timedOut = false;
     const append = (chunk: Buffer) => { output = (output + chunk.toString()).slice(-8000); };
     child.stdout.on("data", append);
     child.stderr.on("data", append);
     const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error("LaTeX 编译超时"));
+      timedOut = true;
+      child.kill("SIGKILL");
     }, 90_000);
     child.on("error", (error) => {
       clearTimeout(timer);
@@ -57,7 +61,8 @@ async function run(command: string, args: string[], cwd: string): Promise<void> 
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      if (code === 0) resolve();
+      if (timedOut) reject(new Error("LaTeX 编译超时"));
+      else if (code === 0) resolve();
       else reject(new Error(output.trim() || `LaTeX 编译失败（退出码 ${code}）`));
     });
   });
@@ -65,6 +70,9 @@ async function run(command: string, args: string[], cwd: string): Promise<void> 
 
 export async function GET(request: Request, { params }: { params: Promise<{ resumeId: string }> }) {
   const { resumeId } = await params;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resumeId)) {
+    return Response.json({ message: "简历 ID 格式不正确" }, { status: 400 });
+  }
   const cookie = request.headers.get("cookie") ?? "";
   const headers = { Accept: "application/json", Cookie: cookie };
   const base = backendUrl();
@@ -87,16 +95,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ resu
     filename = resumes.find((item) => item.id === resumeId)?.originalFilename ?? filename;
   }
 
-  const workDir = await mkdtemp(path.join(process.cwd(), ".latex-report-"));
+  if (activeCompilations >= MAX_COMPILATIONS) {
+    return Response.json({ message: "报告导出繁忙，请稍后重试" }, { status: 429, headers: { "Retry-After": "3" } });
+  }
+  activeCompilations++;
+  let workDir: string | undefined;
   try {
+    const scratch = process.env.ARDOR_LATEX_WORK_DIR ?? (process.platform === "win32" ? process.cwd() : tmpdir());
+    workDir = await mkdtemp(path.join(scratch, ".latex-report-"));
     await writeFile(path.join(workDir, "report.tex"), buildLatexReport(filename, analysis), "utf8");
     const engine = latexEngine();
     const isXeLatex = /xelatex(?:\.exe)?$/i.test(engine);
     let compileError: unknown = null;
     try {
       if (isXeLatex) {
-        await run(engine, ["-interaction=nonstopmode", "-halt-on-error", "report.tex"], workDir);
-        await run(engine, ["-interaction=nonstopmode", "-halt-on-error", "report.tex"], workDir);
+        await run(engine, ["-no-shell-escape", "-interaction=nonstopmode", "-halt-on-error", "report.tex"], workDir);
+        await run(engine, ["-no-shell-escape", "-interaction=nonstopmode", "-halt-on-error", "report.tex"], workDir);
       } else {
         await run(engine, ["-X", "compile", "report.tex"], workDir);
       }
@@ -111,8 +125,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ resu
     } catch {
       throw compileError ?? new Error("LaTeX 没有生成 report.pdf");
     }
-    if (pdf.length < 800 || pdf.subarray(0, 4).toString() !== "%PDF") {
+    if (pdf.length < 800 || pdf.subarray(0, 4).toString() !== "%PDF"
+        || !pdf.subarray(-1024).toString("latin1").trimEnd().endsWith("%%EOF")) {
       throw compileError ?? new Error("LaTeX 生成的 PDF 不完整");
+    }
+    if (compileError) {
+      // Preserve only the known Windows Tectonic cache-cleanup exception, never
+      // accept a timeout or a failed XeLaTeX pass merely because a PDF exists.
+      const cleanupOnly = process.platform === "win32" && /tectonic(?:\.exe)?$/i.test(engine)
+        && compileError instanceof Error && /Access is denied|os error 5/i.test(compileError.message);
+      if (!cleanupOnly) throw compileError;
     }
     const safeName = filename.replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|]+/g, "-");
     return new Response(new Uint8Array(pdf), {
@@ -127,6 +149,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ resu
     const message = error instanceof Error ? error.message : "LaTeX 导出失败";
     return Response.json({ message: `LaTeX 导出失败：${message.slice(0, 1200)}` }, { status: 503 });
   } finally {
-    await rm(workDir, { recursive: true, force: true });
+    try {
+      if (workDir) await rm(workDir, { recursive: true, force: true });
+    } finally {
+      activeCompilations--;
+    }
   }
 }

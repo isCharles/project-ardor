@@ -319,7 +319,7 @@ export default function AgentHomePage() {
         if (saved && ["AUTO", "QUICK", "STANDARD", "DEEP"].includes(saved)) setReasoningDepth(saved as ReasoningDepth);
       } finally { setReasoningReady(true); }
       void api<ModelOption[]>("/api/agent/models").then((items) => {
-        if (!active) return;
+        if (!active || !Array.isArray(items)) return;
         setModelOptions(items);
         const saved = window.sessionStorage.getItem(`ardor:model-choice:${account.id}`);
         const initial = items.find((item) => item.id === saved && item.available)

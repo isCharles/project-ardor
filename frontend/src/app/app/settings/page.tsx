@@ -472,7 +472,7 @@ export default function SettingsPage() {
         <div className={category === "agent" ? "space-y-6" : "hidden"}><AgentPermissionsPanel /></div>
         <div className={category === "desktop" ? "space-y-6" : "hidden"}><DesktopSettings /><p className="text-sm text-stone-500">{t("Server connection and updates are available in the Ardor desktop app.", "服务器连接与应用更新在 Ardor 桌面版中可用。")}</p></div>
         <div className={category === "usage" ? "space-y-6" : "hidden"}>
-        {usage && <section className="ardor-panel rounded-[2rem] p-6 md:col-span-2 md:p-8">
+        {usage?.tokens && Array.isArray(usage.plans) && <section className="ardor-panel rounded-[2rem] p-6 md:col-span-2 md:p-8">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">{t("Usage", "使用额度")}</h2><p className="mt-1 text-xs text-muted-foreground">{t("Token usage is the primary budget; module limits still apply together.", "按实际 Token 用量计算主额度，各模块次数限制同时生效。")}</p></div><span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">{usage.plan ? (locale === "en" ? usage.plan.nameEn : usage.plan.nameZh) : usage.tier}</span></div>
           <div className="mt-5 rounded-2xl border border-violet-100 bg-violet-50/45 p-4">
             <div className="flex items-baseline justify-between gap-3"><span className="text-xs font-medium text-violet-900">{t("Monthly tokens", "本月 Token")}</span><span className="text-xs tabular-nums text-violet-700">{formatTokens(usage.tokens.used)} / {usage.tokens.limit > 0 ? formatTokens(usage.tokens.limit) : t("Unlimited", "不限")}</span></div>
@@ -484,7 +484,7 @@ export default function SettingsPage() {
           <form onSubmit={redeemPlan} className="mt-6 rounded-2xl bg-stone-950/[0.03] p-4"><label htmlFor="redeem-code" className="text-sm font-medium">{t("Redeem a plan code", "使用兑换码升级")}</label><div className="mt-2 flex flex-col gap-2 sm:flex-row"><input id="redeem-code" className="field font-mono sm:flex-1" value={redeemCode} onChange={(event) => setRedeemCode(event.target.value.toUpperCase())} placeholder="ARDOR-XXXX-XXXX" maxLength={80} autoComplete="off" /><Button disabled={redeeming || !redeemCode.trim()} className="sm:w-auto">{redeeming ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Gift className="mr-2 size-4" />}{redeeming ? t("Redeeming…", "兑换中…") : t("Redeem", "兑换")}</Button></div><p className="mt-2 text-[11px] text-muted-foreground">{t("Codes are issued by an administrator. Payment channels are not enabled yet.", "兑换码由管理员发放；在线支付通道暂未开放。")}</p>{redeemFeedback && <p role={redeemFeedback.kind === "error" ? "alert" : "status"} className={`mt-2 text-xs ${redeemFeedback.kind === "error" ? "text-red-600" : redeemFeedback.kind === "success" ? "text-emerald-700" : "text-stone-500"}`}>{redeemFeedback.message}</p>}</form>
           <p className="mt-4 text-xs text-muted-foreground">{t("Resets monthly", "每月重置")} · {new Date(usage.resetsAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN")}</p>
         </section>}
-        {!usage && <p className="text-sm text-stone-500">{t("Usage information is currently unavailable.", "暂时无法取得使用额度。")}</p>}
+        {(!usage?.tokens || !Array.isArray(usage.plans)) && <p className="text-sm text-stone-500">{t("Usage information is currently unavailable.", "暂时无法取得使用额度。")}</p>}
         </div>
         <div className={category === "profile" ? "space-y-6" : "hidden"}>
         <section className="ardor-panel rounded-[2rem] p-6 md:p-8">

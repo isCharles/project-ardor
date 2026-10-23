@@ -5,6 +5,8 @@ on:
     paths:
       - "frontend/**"
       - "desktop/**"
+      - "scripts/report-export-smoke.mjs"
+      - "scripts/latex-report-contract.mjs"
       - ".github/workflows/frontend-quality.yml"
   workflow_dispatch:
 
@@ -12,6 +14,53 @@ permissions:
   contents: read
 
 jobs:
+  report-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Build real PDF-capable frontend
+        run: docker build --target runtime -t ardor-pdf-acceptance frontend
+      - name: Start isolated synthetic report environment
+        run: |
+          docker network create ardor-pdf-acceptance
+          docker run --rm -d --name ardor-pdf-fixture --network ardor-pdf-acceptance --network-alias report-backend --mount "type=bind,source=$PWD/scripts/report-export-smoke.mjs,target=/probe.mjs,readonly" node:24-alpine node /probe.mjs fixture
+          docker run --rm -d --name ardor-pdf-frontend --network ardor-pdf-acceptance -p 127.0.0.1:3315:3000 -e ARDOR_BACKEND_URL=http://report-backend:8080 --memory=1536m --cpus=2 ardor-pdf-acceptance
+          for attempt in {1..45}; do
+            if curl --silent --fail http://127.0.0.1:3315/login >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Export and inspect actual Chinese PDF
+        run: |
+          node scripts/latex-report-contract.mjs
+          node scripts/report-export-smoke.mjs http://127.0.0.1:3315 backend/target/report-export
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          pdfinfo backend/target/report-export/synthetic-report.pdf
+          pdftotext -layout backend/target/report-export/synthetic-report.pdf backend/target/report-export/report.txt
+          grep -q '简历诊断报告' backend/target/report-export/report.txt
+          tr -d '[:space:]' < backend/target/report-export/report.txt > backend/target/report-export/normalized.txt
+          grep -q '合成问题9' backend/target/report-export/normalized.txt
+          test "$(docker exec ardor-pdf-frontend id -u)" = 1000
+          test -z "$(docker exec ardor-pdf-frontend find /tmp -maxdepth 1 -name '.latex-report-*' -print)"
+          pdftoppm -scale-to 1000 -png backend/target/report-export/synthetic-report.pdf backend/target/report-export/page
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-report-export
+          path: backend/target/report-export
+          if-no-files-found: ignore
+      - name: Stop only isolated PDF fixtures
+        if: always()
+        run: |
+          docker logs ardor-pdf-frontend --tail 30 || true
+          docker rm -f ardor-pdf-frontend ardor-pdf-fixture || true
+          docker network rm ardor-pdf-acceptance || true
+
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15

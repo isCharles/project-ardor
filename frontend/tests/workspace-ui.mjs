@@ -239,8 +239,8 @@ try {
   await page.getByRole("button", { name: "Add attachments" }).click();
   await page.keyboard.press("Escape");
   assert.equal(await page.getByRole("region", { name: "Attachments", exact: true }).count(), 0);
-  await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
-  const depth = page.getByRole("dialog", { name: "Thinking depth options" });
+  await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
+  const depth = page.getByRole("dialog", { name: "Model and thinking depth options" });
   await depth.getByRole("slider").focus();
   await page.keyboard.press("End");
   assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "DEEP");
@@ -272,9 +272,13 @@ try {
 
   const nav = page.getByRole("navigation", { name: "Workspaces", exact: true });
   await page.getByRole("button", { name: "More workspaces" }).click();
-  assert.equal(await page.getByRole("button", { name: "Customize sidebar", exact: true }).count(), 0,
-    "The fixed workspace rail no longer exposes a customize dialog");
+  await page.getByRole("button", { name: "Customize sidebar", exact: true }).click();
+  const customizeSidebar = page.getByRole("dialog", { name: "Customize sidebar", exact: true });
+  await customizeSidebar.waitFor();
+  assert.ok(await customizeSidebar.getByRole("checkbox").count() > 3,
+    "Sidebar customization must expose the actual module choices");
   await page.keyboard.press("Escape");
+  await customizeSidebar.waitFor({ state: "hidden" });
   await page.screenshot({ path: ".next/workspace-chat.png" });
   await page.reload();
   await nav.getByRole("link", { name: "Chat", exact: true }).waitFor();
@@ -296,9 +300,9 @@ try {
   await page.getByRole("button", { name: "Use your own APIs" }).click();
   await page.locator('#personal-api-primary-llm input[name="model"]').fill("Unsaved model");
   const services = page.getByRole("navigation", { name: "API services" });
-  await services.getByRole("button", { name: "Web search", exact: true }).click();
+  await services.getByRole("button", { name: /^Web search\b/ }).click();
   assert.equal(await page.locator('#personal-api-primary-llm input[name="model"]').isVisible(), false);
-  await services.getByRole("button", { name: "Primary LLM", exact: true }).click();
+  await services.getByRole("button", { name: /^Primary LLM\b/ }).click();
   assert.equal(await page.locator('#personal-api-primary-llm input[name="model"]').inputValue(), "Unsaved model");
   await categories.getByRole("button", { name: "General & sidebar" }).click();
   await page.reload();
@@ -394,9 +398,9 @@ try {
   permissions = [];
   assert.equal(await draftBox.isEnabled(), true);
   await draftBox.fill("Next message draft survives completion");
-  await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
+  await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
   await page.getByRole("button", { name: "Low", exact: true }).click();
-  assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).getAttribute("data-reasoning-depth"), "QUICK");
+  assert.equal(await page.getByRole("button", { name: "Model and thinking depth", exact: true }).getAttribute("data-reasoning-depth"), "QUICK");
   await draftBox.click();
   releaseStream();
   await page.getByText("Synthetic agent reply", { exact: true }).waitFor();
@@ -483,7 +487,7 @@ try {
   assert.equal(steerRequests[0].interruptedRunId, "queued-active-run");
   assert.equal(await page.getByRole("button", { name: "Interrupt and handle now", exact: true }).count(), 0);
   await draftBox.fill("Queued follow-up two");
-  await page.getByRole("button", { name: "Thinking depth", exact: true }).click();
+  await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
   await page.getByRole("button", { name: "Max", exact: true }).click();
   await draftBox.click();
   await Promise.all([
@@ -506,7 +510,7 @@ try {
   await page.getByText("Saved incomplete answer", { exact: true }).waitFor();
   await page.getByText("Execution stopped", { exact: true }).click();
   await page.getByText("Recovered read plans", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Thinking depth", exact: true }).isEnabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Model and thinking depth", exact: true }).isEnabled(), true);
   activeRun = null;
   queueItems = [];
   retryProbe = true;
@@ -526,7 +530,7 @@ try {
   retryProbe = false;
   userId = "different-outbox-owner";
   await page.reload();
-  await page.getByRole("button", { name: "Thinking depth", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Model and thinking depth", exact: true }).waitFor();
   assert.equal(await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).count(), 0);
   learningPlans = [{ id: "delete-fixture", concept: "Synthetic JVM lesson", status: "COMPLETED", sourceType: "MANUAL", scheduledAt: new Date().toISOString(), lesson: { summary: "Fixture" }, exercises: [], lastScore: null, attemptCount: 0 }];
   await page.goto(`${origin}/app/learning`);
@@ -556,7 +560,7 @@ try {
   const draftOwner = userId;
   userId = "another-draft-owner";
   await page.reload();
-  await page.getByRole("button", { name: "Thinking depth", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Model and thinking depth", exact: true }).waitFor();
   assert.equal(await draftBox.inputValue(), "");
   assert.equal(await page.getByRole("button", { name: "Remove attachment", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Change service", exact: true }).count(), 0);
