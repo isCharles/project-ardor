@@ -164,11 +164,18 @@ class MockInterviewApplicationContractTests {
 
     @Test void creationCallsTheModelOutsideATransactionAndSavesInsideOne() {
         var profiles = mock(ProfileService.class);
+        var materials = mock(ResumeService.class);
+        UUID analysisId = UUID.randomUUID();
+        var context = new com.projectardor.materials.resume.service.ResumeAnalysisSnapshot(
+                analysisId, UUID.randomUUID(), Map.of("summary", "Synthetic preparation context"),
+                "fixture", "fixture-v1", null);
+        when(materials.analysisContext(owner, analysisId)).thenReturn(context);
         var profile = mock(UserProfile.class);
         when(profile.getTargetRoles()).thenReturn(List.of("Designer"));
         when(profiles.get(owner)).thenReturn(profile);
         when(llm.completeJson(eq(owner), anyString(), anyString())).thenAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(call.<String>getArgument(2)).contains("Synthetic preparation context");
             return new LlmGateway.LlmResult("""
                 {"questions":[{"questionText":"One"},{"questionText":"Two"},{"questionText":"Three"}]}
                 """, "fixture");
@@ -177,9 +184,13 @@ class MockInterviewApplicationContractTests {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
             return call.getArgument(0);
         });
-        var app = new InterviewService(sessions, questions, answers, evaluations, profiles, mock(ResumeService.class),
+        var app = new InterviewService(sessions, questions, answers, evaluations, profiles, materials,
                 llm, new LlmJsonParser(mapper), mapper, new LocalTransactionManager(), new LeetCodeHot100(), opportunities);
-        assertThat(app.createView(owner, null, InterviewModality.TEXT, null, "Designer", 3, null).status()).isEqualTo(InterviewStatus.IN_PROGRESS);
+        var created = app.createView(owner, analysisId, InterviewModality.TEXT, null, "Designer", 3, null);
+        assertThat(created.status()).isEqualTo(InterviewStatus.IN_PROGRESS);
+        assertThat(created.resumeAnalysisId()).isEqualTo(analysisId);
+        verify(materials).analysisContext(owner, analysisId);
+        verify(materials, never()).getAnalysisById(any(), any());
         assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
     }
 
@@ -211,6 +222,19 @@ class MockInterviewApplicationContractTests {
         @Override protected void doBegin(Object transaction, TransactionDefinition definition) {}
         @Override protected void doCommit(DefaultTransactionStatus status) {}
         @Override protected void doRollback(DefaultTransactionStatus status) {}
+    }
+
+    @Test void foreignResumeContextFailsBeforeModelOrSessionWrite() {
+        var materials = mock(ResumeService.class);
+        var profiles = mock(ProfileService.class);
+        when(profiles.get(owner)).thenReturn(mock(UserProfile.class));
+        UUID analysisId = UUID.randomUUID();
+        when(materials.analysisContext(owner, analysisId)).thenThrow(new ResourceNotFoundException("Not found"));
+        var app = new InterviewService(sessions, questions, answers, evaluations, profiles, materials,
+                llm, new LlmJsonParser(mapper), mapper, new LocalTransactionManager(), new LeetCodeHot100(), opportunities);
+        assertThatThrownBy(() -> app.createView(owner, analysisId, InterviewModality.TEXT, null, "Designer", 3, null))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(llm, sessions, questions);
     }
 
     @Test void foreignRealInterviewFailsBeforeAnyModelOrProfileLookup() {

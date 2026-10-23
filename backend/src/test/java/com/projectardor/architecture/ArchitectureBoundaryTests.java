@@ -24,6 +24,12 @@ import org.junit.jupiter.api.Test;
  */
 class ArchitectureBoundaryTests {
     @Test
+    void mockInterviewReadsResumeThroughMaterialsApplicationContext() throws IOException {
+        assertNoImports("learning/practice/mockinterview/service",
+                Pattern.compile("import com\\.projectardor\\.materials\\.resume\\.(domain|repository)\\..*"));
+    }
+
+    @Test
     void knowledgeApplicationAndAssistantDoNotDependOnKnowledgeWebDtos() throws IOException {
         assertNoImports("materials/knowledge/service",
                 Pattern.compile("import com\\.projectardor\\.materials\\.knowledge\\.web\\..*"));
