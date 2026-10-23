@@ -5,6 +5,7 @@ import java.time.ZonedDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -1106,8 +1107,9 @@ public class CareerAgentService {
         }
 
         @Override public String plan(String request) {
-            String plan = traced("plan", () -> phaseChat(baseSystem + "\n\n你是只读求职数据审计的规划器。"
-                    + "只输出 2–4 步执行计划，说明要查哪些模块、按什么顺序；不要调用工具，不要声称已经读到数据。", request));
+            String plan = traced("plan", request, () -> phaseChat(baseSystem + "\n\n你是只读求职数据审计的规划器。"
+                    + "只输出 2–4 步执行计划，说明要查哪些模块、按什么顺序；不要调用工具，不要声称已经读到数据。", request),
+                    value -> value);
             if (requirePlanApproval && requestId != null) {
                 String arguments = "{\"plan\":\"" + plan.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"}";
                 if (!toolApprovals.await(userId, requestId, "graph.plan", arguments)) {
@@ -1118,11 +1120,11 @@ public class CareerAgentService {
         }
 
         @Override public AgentGraphRuntime.GatherResult gather(String request, String plan, int round) {
-            return traced("gather", () -> {
-                String system = baseSystem + "\n\n当前是只读检索阶段，只能调用读取工具，最多 3 个。"
-                        + "不要调用任何写入、删除、创建、修改工具；不要向用户提问。"
-                        + "工具调用结束后，用 2–4 句输出：已获得哪些证据、还缺什么、失败项。";
-                String input = "用户请求：\n" + request + "\n\n执行计划：\n" + plan + "\n\n这是第 " + round + " 轮检索。";
+            String system = baseSystem + "\n\n当前是只读检索阶段，只能调用读取工具，最多 3 个。"
+                    + "不要调用任何写入、删除、创建、修改工具；不要向用户提问。"
+                    + "工具调用结束后，用 2–4 句输出：已获得哪些证据、还缺什么、失败项。";
+            String input = "用户请求：\n" + request + "\n\n执行计划：\n" + plan + "\n\n这是第 " + round + " 轮检索。";
+            return traced("gather", input, () -> {
                 var tools = ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, timings,
                         ignored -> {}, "", permissionGrants, executionAudit, conversationId, false, tracer,
                         READ_ONLY_TOOL_NAMES);
@@ -1134,17 +1136,21 @@ public class CareerAgentService {
                 String summary = assistant.chat(input);
                 if (summary == null || summary.isBlank()) throw new IllegalStateException("GATHER 没有返回证据摘要");
                 return new AgentGraphRuntime.GatherResult(summary, List.of());
-            });
+            }, result -> result.summary());
         }
 
         @Override public String reflect(String request, String plan, List<AgentGraphRuntime.GatherResult> gathered, int round) {
-            return traced("reflect", () -> phaseChat(baseSystem + "\n\n你是只读证据审查器。根据计划和已获得的证据判断是否足够。"
-                    + "只输出 SUFFICIENT，或 NEED_MORE + 一句不超过 40 字的原因和下一步要查什么。", buildReflectionInput(request, plan, gathered)));
+            String input = buildReflectionInput(request, plan, gathered);
+            return traced("reflect", input, () -> phaseChat(baseSystem + "\n\n你是只读证据审查器。根据计划和已获得的证据判断是否足够。"
+                    + "只输出 SUFFICIENT，或 NEED_MORE + 一句不超过 40 字的原因和下一步要查什么。", input),
+                    value -> value);
         }
 
         @Override public String answer(String request, String plan, List<AgentGraphRuntime.GatherResult> gathered, String reflection) {
-            return traced("answer", () -> phaseChat(baseSystem + "\n\n你是最终报告生成器。基于已获得的证据回答用户，"
-                    + "说明证据、冲突和不确定性；不要重复内部步骤，不要声称执行了任何写入。", buildAnswerInput(request, plan, gathered, reflection)));
+            String input = buildAnswerInput(request, plan, gathered, reflection);
+            return traced("answer", input, () -> phaseChat(baseSystem + "\n\n你是最终报告生成器。基于已获得的证据回答用户，"
+                    + "说明证据、冲突和不确定性；不要重复内部步骤，不要声称执行了任何写入。", input),
+                    value -> value);
         }
 
         private String phaseChat(String system, String input) {
@@ -1153,13 +1159,20 @@ public class CareerAgentService {
             return assistant.chat(input);
         }
 
-        private <T> T traced(String phase, java.util.function.Supplier<T> action) {
-            UUID span = tracer == null ? null : tracer.startChild("THOUGHT", "phase." + phase,
-                    java.util.Map.of("phase", phase));
+        private <T> T traced(String phase, String input, java.util.function.Supplier<T> action,
+                java.util.function.Function<T, String> outputPreview) {
+            Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+            attributes.put("phase", phase);
+            attributes.put("inputPreview", TracePreview.of(input));
+            UUID span = tracer == null ? null : tracer.startChild("THOUGHT", "phase." + phase, attributes);
             try {
                 T value = action.get();
-                if (tracer != null) tracer.finishChild(span, "COMPLETED", null, null, null, null,
-                        java.util.Map.of("phase", phase));
+                if (tracer != null) {
+                    Map<String, Object> finishAttributes = new java.util.LinkedHashMap<>();
+                    finishAttributes.put("phase", phase);
+                    finishAttributes.put("outputPreview", TracePreview.of(outputPreview.apply(value)));
+                    tracer.finishChild(span, "COMPLETED", null, null, null, null, finishAttributes);
+                }
                 return value;
             } catch (RuntimeException failure) {
                 if (tracer != null) tracer.finishChild(span, "FAILED", failure.getClass().getSimpleName(),
@@ -1206,6 +1219,7 @@ public class CareerAgentService {
         default void waitingForApproval(boolean waiting) {}
     }
 }
+
 
 
 

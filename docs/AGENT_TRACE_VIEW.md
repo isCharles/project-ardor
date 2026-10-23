@@ -32,3 +32,17 @@ fully mocked trace and verifies:
 
 The test runs in `frontend-quality.yml`. Update the fixture and assertions when
 the trace view contract changes.
+
+## Bounded input/output previews
+
+Developer trace nodes now include optional `inputPreview`, `outputPreview`,
+`argumentsPreview` and `resultPreview` attributes. These are owner-scoped and
+intentionally bounded to about 900 characters per field by `TracePreview`.
+Secrets are redacted and whitespace is collapsed. They are previews, not the
+full prompt, tool payload, or private chain-of-thought; the UI labels them as
+truncated/redacted.
+
+The model listener records the last user message as input context and the
+assistant text (or requested tool names) as output. Graph phase spans record the
+phase input and the phase conclusion. Tool spans record argument/result previews.
+`THOUGHT` still means a phase summary span, never raw hidden reasoning.

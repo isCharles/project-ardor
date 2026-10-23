@@ -184,16 +184,21 @@ final class ApprovedAgentTools {
                     auditRow = startAudit(executionAudit, auditContext, request, tool, approvalSource);
                 }
                 UUID row = auditRow;
-                UUID traceSpan = tracer == null ? null : tracer.startChild("TOOL", tool, Map.of(
-                        "tool", tool, "approvalSource", approvalSource, "proposal", proposal));
+                Map<String, Object> toolAttributes = new LinkedHashMap<>();
+                toolAttributes.put("tool", tool);
+                toolAttributes.put("approvalSource", approvalSource);
+                toolAttributes.put("proposal", proposal);
+                toolAttributes.put("argumentsPreview", TracePreview.of(request.arguments()));
+                UUID traceSpan = tracer == null ? null : tracer.startChild("TOOL", tool, toolAttributes);
                 if (tracer != null) tracer.recordTool();
                 AtomicBoolean executed = new AtomicBoolean();
                 Supplier<String> call = () -> { executed.set(true); return delegate.execute(request, memoryId); };
                 String outcome = "COMPLETED";
                 String errorCode = null;
                 String auditResult = null;
+                String returned = null;
                 try {
-                    String returned = lease == null ? call.get() : lease.execute(call);
+                    returned = lease == null ? call.get() : lease.execute(call);
                     if (!executed.get()) {
                         // The lease refused a late call after cancel/deadline: it never ran.
                         outcome = "NOT_EXECUTED";
@@ -216,9 +221,12 @@ final class ApprovedAgentTools {
                     if (tracer != null && traceSpan != null) {
                         String spanStatus = "FAILED".equals(outcome) ? "FAILED"
                                 : "NOT_EXECUTED".equals(outcome) ? "NOT_EXECUTED" : "COMPLETED";
-                        tracer.finishChild(traceSpan, spanStatus, errorCode, null, null, null,
-                                Map.of("executed", executed.get(), "proposal", proposal,
-                                        "approvalSource", approvalSource));
+                        Map<String, Object> resultAttributes = new LinkedHashMap<>();
+                        resultAttributes.put("executed", executed.get());
+                        resultAttributes.put("proposal", proposal);
+                        resultAttributes.put("approvalSource", approvalSource);
+                        resultAttributes.put("resultPreview", TracePreview.of(auditResult != null ? auditResult : returned));
+                        tracer.finishChild(traceSpan, spanStatus, errorCode, null, null, null, resultAttributes);
                     }
                 }
             });
