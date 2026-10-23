@@ -16,8 +16,12 @@ This is the user's chosen product term; do not rename the navigation.
 - If ambiguous, ask one short question:
   “你说的课程是 Ardor 里的课程（学习计划），还是学校课表？”
 
-The system prompt carries this glossary and the learning-plan tool descriptions
-repeat it, so the model does not infer “课程” as a recurring calendar meeting.
+The glossary lives in the tool descriptions, not in the global system prompt.
+`list_learning_plans` says “课程（学习计划）”; `list_calendar_tasks` says “学校固定课程”.
+This keeps the system prompt free of product-specific terminology while still giving the
+model the correct mapping. The system prompt only says: if colloquial wording and resource
+names differ, consult the tool/resource descriptions and ask one clarifying question if
+still ambiguous.
 
 ## Why not rename the UI
 
@@ -42,3 +46,4 @@ It is not a plan that merely points at content, and it is not a multi-lesson cou
 Reserve `Course` for a future grouping of several learning units. If the Java type is
 renamed later, prefer `LearningUnit`; do not rename the table, API or agent tool names
 without a versioned compatibility migration.
+

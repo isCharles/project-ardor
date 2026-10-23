@@ -6,7 +6,7 @@ The prompt is deliberately split into three layers:
 
 1. **System prompt** (`CareerAgentService.SYSTEM_PROMPT`)
    - identity;
-   - domain glossary (课程 = learning plan; 学校课程 = calendar series);
+   - generic instruction to reconcile colloquial wording with tool/resource descriptions;
    - read-before-write and confirmation semantics;
    - no-fabrication, time, untrusted-content and memory boundaries;
    - output style.
@@ -27,9 +27,9 @@ The system prompt ends with:
 
 `CareerAgentPromptTests` enforces:
 
-- the static prompt stays under 4,000 characters;
-- it contains the core terms and principles;
-- it does not reintroduce old numbered sub-rules such as `17a` / `23b`.
+- the static prompt stays under 3,000 characters;
+- it contains the core principles;
+- it does not embed domain-specific glossaries or old numbered sub-rules such as `17a` / `23b`.
 
 ## When fixing a behavior
 
@@ -52,3 +52,4 @@ This prevents the prompt from turning into a growing pile of one-off reminders.
 Advice-card requirements, recurring-calendar semantics and untrusted-content handling
 live in the relevant tool descriptions or the static principles, not in a growing
 tail of per-feature reminders.
+

@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class AgentRunTracer {
 
-    public static final String PROMPT_VERSION = "agent-system-v3";
+    public static final String PROMPT_VERSION = "agent-system-v4";
 
     private final AgentTraceStore store;
     private final UUID userId;
@@ -108,5 +108,6 @@ public final class AgentRunTracer {
     public long outputTokens() { return outputTokens.get(); }
     public boolean closed() { return closed.get(); }
 }
+
 
 
