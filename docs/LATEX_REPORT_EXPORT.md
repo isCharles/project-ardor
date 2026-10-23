@@ -41,3 +41,19 @@ Tectonic failed with `Access is denied` when its working directory was the
 Windows `%TEMP%` tree in this environment. The route creates
 `frontend/.latex-report-*` instead and removes it after compilation; that path
 is gitignored.
+
+## UI and CI contract
+
+- The report header action is labelled **Export report / 导出报告**; it must
+  not be named “Export PDF” because that can be mistaken for exporting the
+  original resume.
+- The old client-side canvas screenshot exporter and its dependencies
+  (`html2canvas-pro`, `jspdf`) were removed.
+- `frontend/tests/resume-scoring-ui.mjs` opens the legacy-report entry with
+  **Start analysis / 开始分析**. The report itself has no re-analyze action.
+- The UI regression does not invoke the LaTeX route because CI does not install
+  a TeX engine. The route is still covered by Next.js typecheck, lint, build,
+  and a manual smoke test when an engine is configured.
+- Before changing the button label or report flow, update
+  `frontend/tests/resume-scoring-ui.mjs` and run it with
+  `ARDOR_UI_BROWSER_CHANNEL=msedge` locally if the bundled Chromium is absent.
