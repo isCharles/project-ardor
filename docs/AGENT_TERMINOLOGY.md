@@ -24,3 +24,21 @@ repeat it, so the model does not infer “课程” as a recurring calendar meet
 Renaming 课程 to 学习计划 or 学习 everywhere would make the navigation less
 friendly and would not solve the model ambiguity by itself. The durable fix is
 an explicit domain glossary plus consistent tool descriptions.
+
+## Naming policy
+
+The persisted object behind the product's 「课程」 is `LearningPlan` in Java and
+`learning_plans` in PostgreSQL. That name is historical and is kept for compatibility.
+
+The object is actually a **learning unit / micro-course**:
+
+- one concept;
+- one generated lesson;
+- one exercise set;
+- an assessment, score and review schedule;
+- an optional calendar task.
+
+It is not a plan that merely points at content, and it is not a multi-lesson course.
+Reserve `Course` for a future grouping of several learning units. If the Java type is
+renamed later, prefer `LearningUnit`; do not rename the table, API or agent tool names
+without a versioned compatibility migration.

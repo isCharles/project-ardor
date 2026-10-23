@@ -18,6 +18,12 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
+/**
+ * Legacy persistence name for one Ardor learning unit: a single concept, one generated
+ * lesson, a small exercise set and its assessment/review schedule. The user-facing product
+ * term is 「课程」. This is not a multi-lesson course container and not merely a planning
+ * record; keep the table/API name until a compatibility migration is justified.
+ */
 @Entity
 @Table(name = "learning_plans")
 public class LearningPlan {
@@ -161,3 +167,4 @@ public class LearningPlan {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }
+
