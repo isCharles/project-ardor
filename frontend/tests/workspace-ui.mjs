@@ -168,6 +168,23 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${origin}/app`);
+  async function assertComposerActions(label) {
+    const footer = page.locator("[data-composer-footer]");
+    const actions = footer.locator("[data-composer-actions]");
+    const model = actions.getByRole("button", { name: "Model and thinking depth", exact: true });
+    const voice = actions.getByRole("button", { name: "Voice input", exact: true });
+    const send = actions.getByRole("button", { name: "Send", exact: true });
+    await voice.waitFor();
+    const [footerBox, actionBox, modelBox, voiceBox, sendBox] = await Promise.all(
+      [footer, actions, model, voice, send].map(locator => locator.boundingBox()));
+    assert.ok(modelBox.x + modelBox.width <= voiceBox.x + 1 && voiceBox.x + voiceBox.width <= sendBox.x + 1,
+      `${label}: model, microphone and send must share the same right-hand group`);
+    assert.ok(Math.abs(footerBox.x + footerBox.width - actionBox.x - actionBox.width) <= 12,
+      `${label}: composer actions must stay right aligned`);
+    assert.equal(await page.getByRole("button", { name: "Voice input", exact: true }).count(), 1,
+      `${label}: one microphone must be available`);
+  }
+  await assertComposerActions("Empty conversation");
   const sidebar = page.getByRole("complementary", { name: "Conversations", exact: true });
   assert.equal(await sidebar.getByRole("button", { name: "Notifications", exact: true }).count(), 0, "Background task status lives above the composer, not in the chat header");
   assert.equal(await sidebar.getByRole("button", { name: "Project Ardor", exact: true }).count(), 0);
@@ -416,6 +433,7 @@ try {
   await draftBox.click();
   releaseStream();
   await page.getByText("Synthetic agent reply", { exact: true }).waitFor();
+  await assertComposerActions("Conversation with messages");
   // The live progress card is replaced after completion. Inspect the persisted
   // assistant article so a click cannot land on the soon-to-be-unmounted card.
   const replyArticle = page.getByRole("article").filter({ hasText: "Synthetic agent reply" });
