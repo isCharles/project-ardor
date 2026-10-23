@@ -64,12 +64,20 @@ export default function AgentRunTracePage() {
   useEffect(() => {
     if (!requestId) return;
     let active = true;
-    void api<Trace>(`/api/agent/runs/${requestId}/trace`).then((value) => {
-      if (active) setTrace(value);
-    }).catch((reason) => {
-      if (active) setError(reason instanceof Error ? reason.message : t("Could not load trace", "无法读取执行轨迹"));
-    });
-    return () => { active = false; };
+    let timer: number | undefined;
+    const load = async () => {
+      try {
+        const value = await api<Trace>(`/api/agent/runs/${requestId}/trace`);
+        if (!active) return;
+        setTrace(value);
+        setError("");
+        if (value.status === "RUNNING") timer = window.setTimeout(() => void load(), 2000);
+      } catch (reason) {
+        if (active) setError(reason instanceof Error ? reason.message : t("Could not load trace", "无法读取执行轨迹"));
+      }
+    };
+    void load();
+    return () => { active = false; if (timer) window.clearTimeout(timer); };
   }, [requestId, t]);
 
   const flow = useMemo(() => buildFlow(trace?.spans ?? []), [trace]);
@@ -274,5 +282,6 @@ function formatDuration(value: number | null) {
   if (!value || value <= 0) return "—";
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(1)} s`;
 }
+
 
 
