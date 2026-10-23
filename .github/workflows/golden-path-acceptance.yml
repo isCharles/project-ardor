@@ -146,7 +146,7 @@ jobs:
           ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
         run: node backend/src/test/resources/agent-graph-acceptance.mjs
 
-      - name: Verify modular automation contracts and confirmation boundary
+      - name: Verify automation and calendar advice module contracts and confirmation boundary
         env:
           ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
           ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090

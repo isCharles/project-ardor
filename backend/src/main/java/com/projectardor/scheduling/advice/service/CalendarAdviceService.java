@@ -11,7 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.projectardor.scheduling.advice.domain.CalendarAdvice;
 import com.projectardor.scheduling.advice.domain.CalendarAdvicePayload;
 import com.projectardor.scheduling.advice.repository.CalendarAdviceRepository;
-import com.projectardor.scheduling.advice.web.CalendarAdviceResponse;
 
 @Service
 public class CalendarAdviceService {
@@ -25,18 +24,18 @@ public class CalendarAdviceService {
     }
 
     @Transactional(readOnly = true)
-    public CalendarAdviceResponse get(UUID userId) {
+    public CalendarAdviceView get(UUID userId) {
         CalendarAdvice advice = repository.findById(userId).orElse(null);
-        if (advice == null) return CalendarAdviceResponse.empty();
+        if (advice == null) return CalendarAdviceView.empty();
         CalendarAdvicePayload payload = advice.getPayload() != null
                 ? normalize(advice.getPayload())
                 : legacy(advice);
-        return new CalendarAdviceResponse(payload.headline(), payload.days(), payload.weeks(),
+        return new CalendarAdviceView(payload.headline(), payload.days(), payload.weeks(),
                 payload.months(), advice.getUpdatedAt());
     }
 
     @Transactional
-    public CalendarAdviceResponse save(UUID userId, String headline, List<String> days,
+    public CalendarAdviceView save(UUID userId, String headline, List<String> days,
             List<String> weeks, List<String> months) {
         CalendarAdvicePayload payload = normalize(new CalendarAdvicePayload(headline, days, weeks, months));
         if (payload.days().isEmpty() && payload.weeks().isEmpty() && payload.months().isEmpty()) {
@@ -46,7 +45,7 @@ public class CalendarAdviceService {
                 .map(existing -> { existing.update(payload); return existing; })
                 .orElseGet(() -> CalendarAdvice.create(userId, payload));
         CalendarAdvice saved = repository.save(advice);
-        return new CalendarAdviceResponse(payload.headline(), payload.days(), payload.weeks(),
+        return new CalendarAdviceView(payload.headline(), payload.days(), payload.weeks(),
                 payload.months(), saved.getUpdatedAt());
     }
 

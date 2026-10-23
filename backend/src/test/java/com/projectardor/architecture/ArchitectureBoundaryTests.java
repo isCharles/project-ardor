@@ -24,6 +24,17 @@ import org.junit.jupiter.api.Test;
  */
 class ArchitectureBoundaryTests {
     @Test
+    void toolAdaptersNeverImportDomainHttpDtosAndAdviceUsesApplicationResults() throws IOException {
+        assertNoImports("assistant/tools", Pattern.compile("import com\\.projectardor\\.(?!common\\.web\\.).*\\.web\\..*"));
+        assertNoImports("scheduling/advice/service", Pattern.compile("import com\\.projectardor\\.scheduling\\.advice\\.web\\..*"));
+        assertNoImports("assistant/tools/modules", Pattern.compile("import com\\.projectardor\\.scheduling\\.advice\\.(domain|repository)\\..*"));
+        String host = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
+        for (String name : List.of("get_calendar_advice", "update_calendar_advice", "delete_calendar_advice")) {
+            assertTrue(!host.contains("@Tool(name = \"" + name + "\""), "Advice tools must remain in their module");
+        }
+    }
+
+    @Test
     void automationToolsStayLocalAndConsumeOnlyApplicationViews() throws IOException {
         String host = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
         assertTrue(!host.contains("@Tool(name = \"create_automation\"")
