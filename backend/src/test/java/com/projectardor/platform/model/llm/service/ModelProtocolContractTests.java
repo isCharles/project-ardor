@@ -56,6 +56,19 @@ class ModelProtocolContractTests {
             fixture.server.verify();
         }
     }
+    @Test void anthropicJsonReadsTextAfterReasoningBlocks() {
+        var fixture=fixture(LlmProvider.ANTHROPIC_COMPATIBLE);
+        fixture.server.expect(requestTo(endpoint(LlmProvider.ANTHROPIC_COMPATIBLE)))
+                .andRespond(withSuccess("""
+                        {"model":"fixture-model","stop_reason":"end_turn","content":[
+                          {"type":"thinking","thinking":"private reasoning","signature":"sig"},
+                          {"type":"text","text":"{\\"score\\":85}"}
+                        ]}
+                        """, MediaType.APPLICATION_JSON));
+        var result=fixture.gateway.completeJson(config(LlmProvider.ANTHROPIC_COMPATIBLE),"system","user");
+        assertThat(result.content()).isEqualTo("{\"score\":85}");
+        assertThat(result.model()).isEqualTo("fixture-model");
+    }
     @Test void emptyAndInvalidPayloadsRemainNonRetryableAndDoNotLeakProviderBodies() {
         for(var provider:LlmProvider.values()) for(boolean empty:List.of(true,false)) {
             var fixture=fixture(provider);

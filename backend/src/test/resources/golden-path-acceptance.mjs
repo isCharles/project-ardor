@@ -148,6 +148,20 @@ async function main() {
     method: "POST", expected: 201,
     body: { email: `golden-stranger-${suffix}@ardor.invalid`, password, displayName: "Golden Path Stranger" },
   });
+  const anonymous = new Client();
+  for (const path of ["/api/usage", "/api/agent/models", `/api/agent/runs/${randomUUID()}/trace`]) {
+    await anonymous.request(path, { expected: 401 });
+  }
+  const freeUsage = await stranger.request("/api/usage");
+  assert.equal(freeUsage.tier, "FREE", "Signup must not silently grant a paid plan");
+  assert.equal(freeUsage.tokens.used, 0);
+  assert.ok(freeUsage.plans.some((plan) => plan.code === "PLUS"));
+  assert.ok(freeUsage.plans.some((plan) => plan.code === "PRO"));
+  for (const path of ["/api/admin/plans", "/api/admin/redemption-codes"]) {
+    await stranger.request(path, { expected: 403 });
+  }
+  await stranger.request("/api/admin/redemption-codes", { method: "POST", expected: 403,
+    body: { planTier: "PRO", durationDays: 30, maxUses: 1 } });
   const sidebarOwner = new Client();
   const sidebarUser = await sidebarOwner.request("/api/auth/register", { method: "POST", expected: 201,
     body: { email: `golden-sidebar-${suffix}@ardor.invalid`, password, displayName: "Sidebar sync" } });
@@ -626,6 +640,14 @@ async function main() {
     method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,
       model: "gpt-5-depth-probe", apiKey: "disposable-fake-model-key" },
   });
+  const modelOptions = await depthOwner.request("/api/agent/models");
+  const primaryOption = modelOptions.find((option) => option.id === "PRIMARY");
+  assert.equal(primaryOption?.label, "gpt-5-depth-probe");
+  assert.equal(primaryOption?.available, true);
+  assert.ok(Array.isArray(primaryOption.reasoningLevels) && primaryOption.reasoningLevels.length > 0);
+  assert.ok(!JSON.stringify(modelOptions).includes("disposable-fake-model-key"), "Catalog must not disclose credentials");
+  const strangerOptions = await stranger.request("/api/agent/models");
+  assert.ok(!strangerOptions.some((option) => option.label === "gpt-5-depth-probe"), "Personal model catalog must be owner scoped");
   const depthConversation = await depthOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
   await depthOwner.request("/api/agent/messages", {
     method: "POST", body: { conversationId: depthConversation.id, message: "帮我规划 Redis 面试学习", reasoningDepth: "DEEP" },
@@ -665,6 +687,14 @@ async function main() {
     await sleep(200);
   }
   assert.ok(queuedComplete, "Queued requests must finish sequentially without an open stream");
+  const persistedTrace = await depthOwner.request(`/api/agent/runs/${queuedFirst.requestId}/trace`);
+  assert.equal(persistedTrace.runId, queuedFirst.requestId);
+  assert.equal(persistedTrace.status, "COMPLETED");
+  assert.ok(persistedTrace.spans.some((span) => span.kind === "RUN"));
+  assert.ok(persistedTrace.totals.llmCalls >= 1, "Completed run must retain model call telemetry");
+  await stranger.request(`/api/agent/runs/${queuedFirst.requestId}/trace`, { expected: 404 });
+  await depthOwner.request(`/api/agent/runs/${randomUUID()}/trace`, { expected: 404 });
+  assert.equal((await stranger.request("/api/usage")).tokens.used, 0, "Other users must not inherit this run's usage");
   const queuedHistory = (await depthOwner.request(`/api/agent?conversationId=${depthConversation.id}`)).messages;
   assert.deepEqual(queuedHistory.filter((item) => item.role === "USER" && item.content.startsWith("Queue probe")).map((item) => item.content), ["Queue probe one", "Queue probe two"]);
   await depthOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: modelBase,

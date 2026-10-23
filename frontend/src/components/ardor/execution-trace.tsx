@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckCircle2, ChevronRight } from "lucide-react";
+import { Activity, CheckCircle2, ChevronRight } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, type ReactNode } from "react";
 import { useLocale } from "@/lib/locale";
 import { ToolDuration, type ToolMeasurement } from "./tool-duration";
@@ -14,9 +15,9 @@ export type ExecutionStep = ToolMeasurement & { label: string; elapsedMs: number
  * work is visible; as soon as the run ends it collapses back to a single line.
  * The user can still toggle it manually in between.
  */
-export function ExecutionTrace({ title, elapsed, thinking, steps, children, action, active = false }: {
+export function ExecutionTrace({ title, elapsed, thinking, steps, children, action, active = false, traceHref }: {
   title: string; elapsed: string; thinking?: string | null; steps: ExecutionStep[]; children?: ReactNode;
-  action?: ReactNode; active?: boolean;
+  action?: ReactNode; active?: boolean; traceHref?: string;
 }) {
   const { t } = useLocale();
   const detailsRef = useRef<HTMLDetailsElement>(null);
@@ -41,6 +42,7 @@ export function ExecutionTrace({ title, elapsed, thinking, steps, children, acti
           {children}
         </div>
       </details>
+      {traceHref && <Link href={traceHref} className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] text-stone-400 opacity-60 transition-opacity hover:bg-white hover:text-violet-700 hover:opacity-100 focus-visible:opacity-100" aria-label={t("Open run trace", "查看执行轨迹")}><Activity className="size-3" />{t("Trace", "轨迹")}</Link>}
       {action}
     </div>
   </div>;

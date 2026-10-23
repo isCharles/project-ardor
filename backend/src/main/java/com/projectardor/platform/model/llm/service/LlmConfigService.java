@@ -65,6 +65,18 @@ public class LlmConfigService {
     }
 
     @Transactional(readOnly = true)
+    public String apiKeyForTest(UUID userId, String suppliedApiKey) {
+        String apiKey = suppliedApiKey == null ? "" : suppliedApiKey.strip();
+        if (!apiKey.isBlank()) return apiKey;
+        var existing = repository.findByUserId(userId);
+        if (existing.isPresent()) {
+            return cipher.decrypt(userId, existing.get().getEncryptedApiKey(), existing.get().getApiKeyIv());
+        }
+        return systemConfigService.primaryLlm().map(LlmRuntimeConfig::apiKey)
+                .orElseThrow(() -> new IllegalArgumentException("请填写 API Key 后再获取模型列表"));
+    }
+
+    @Transactional(readOnly = true)
     public LlmRuntimeConfig runtimeConfigForTest(UUID userId, LlmConfigUpdateRequest request) {
         String apiKey = request.apiKey() == null ? "" : request.apiKey().strip();
         if (apiKey.isBlank()) {

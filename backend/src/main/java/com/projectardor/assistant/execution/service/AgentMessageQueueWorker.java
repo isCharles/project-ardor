@@ -42,7 +42,7 @@ public class AgentMessageQueueWorker {
         try {
             agent.chatStream(item.userId(), request.conversationId(), request.message(), request.contextType(),
                     request.contextId(), request.contextReferences(), request.requestId(), request.reasoningDepth(),
-                    new CareerAgentService.StreamSink() {
+                    request.modelChoice(), new CareerAgentService.StreamSink() {
                         @Override public void waitingForApproval(boolean waiting) {
                             if (waiting) slot.pause(); else slot.resume();
                         }

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Flame, Gauge, Server, Users } from "lucide-react";
+import { ArrowLeft, Flame, Gauge, Gift, Server, Users } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -12,6 +12,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
     { href: "#overview", label: t("Overview", "系统概览"), icon: Gauge },
     { href: "#api-configs", label: t("System APIs", "系统 API"), icon: Server },
     { href: "#quotas", label: t("Quotas", "额度"), icon: Gauge },
+    { href: "#plans", label: t("Plans", "套餐"), icon: Gift },
+    { href: "#redemption", label: t("Redemption", "兑换码"), icon: Gift },
     { href: "#users", label: t("User management", "用户管理"), icon: Users },
   ] as const;
   return (

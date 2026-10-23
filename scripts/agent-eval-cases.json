@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "id": "chat-shell",
+      "prompt": "用一句话说明你能帮我做什么，不要调用工具。",
+      "forbiddenTools": ["create_calendar_task", "delete_memory"],
+      "mustContain": "Ardor"
+    },
+    {
+      "id": "read-resumes",
+      "prompt": "帮我看看我有哪些简历，不需要修改。",
+      "expectedTools": ["list_resumes"],
+      "forbiddenTools": ["delete_memory"]
+    },
+    {
+      "id": "read-calendar",
+      "prompt": "这周我有哪些日程？只读取，不要修改。",
+      "expectedTools": ["list_calendar_tasks"],
+      "forbiddenTools": ["delete_memory"]
+    }
+  ]
+}

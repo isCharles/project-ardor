@@ -204,13 +204,12 @@ export default function ResumesPage() {
     const legacy = !!data && !isV3;
     const pending = selected.analysisStatus === "QUEUED" || selected.analysisStatus === "RUNNING";
     const dialog = reanalyzeOpen && <ReanalyzeDialog defaultFamily={typeof data?.roleFamily === "string" ? data.roleFamily : "general"} busy={busy === "analyze"} onClose={() => setReanalyzeOpen(false)} onSubmit={(role, jd, family) => { setReanalyzeOpen(false); void analyze(selected, role, jd, family); }} />;
-    if (report) return <>
+    if (report) return <main className="ardor-workbench min-h-screen text-[#1d1d1f]">
       <div style={{ paddingRight: previewOpen ? previewWidth : 0 }}>
-        <ResumeReportV3 report={report} onBack={() => { setSelectedId(null); setAnalysis(null); }} onReanalyze={() => setReanalyzeOpen(true)} onViewResume={viewOriginalResume} />
+        <ResumeReportV3 report={report} resumeId={selected.id} onBack={() => { setSelectedId(null); setAnalysis(null); }} onViewResume={viewOriginalResume} />
       </div>
       {previewOpen && <ResumePreviewPanel resumeId={selected.id} filename={selected.originalFilename} width={previewWidth} onWidthChange={setPreviewWidth} onClose={() => setPreviewOpen(false)} />}
-      {dialog}
-    </>;
+    </main>;
     return <main className="ardor-workbench min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-3xl px-5 pb-24 pt-6 md:px-10">
       <button onClick={() => { setSelectedId(null); setAnalysis(null); setError(""); }} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 transition hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("All resumes", "所有简历")}</button>
       <header className="pb-8 pt-8">
@@ -222,8 +221,8 @@ export default function ResumesPage() {
       {legacy ? <section className="rounded-[2rem] bg-white p-7 shadow-[0_18px_60px_rgba(49,39,70,0.07)] md:p-10">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">LEGACY REPORT</p>
         <h2 className="mt-3 text-2xl font-semibold">{t("The old scoring is offline", "旧版评分已下线")}</h2>
-        <p className="mt-3 text-sm leading-6 text-stone-600">{t("Old reports are no longer rendered. Re-analyze this resume to get the current score, radar and prioritised issues.", "旧报告不再展示。重新分析这份简历，获得当前评分、能力雷达和分档问题。")}</p>
-        <button onClick={() => setReanalyzeOpen(true)} className="mt-6 rounded-full bg-[#1d1d1f] px-6 py-3 text-sm font-medium text-white hover:bg-black">{t("Re-analyze", "重新分析")}</button>
+        <p className="mt-3 text-sm leading-6 text-stone-600">{t("Old reports are no longer rendered. Start a new analysis to get the current score, radar and prioritised issues.", "旧报告不再展示。开始一次新的分析，获得当前评分、能力雷达和分档问题。")}</p>
+        <button onClick={() => setReanalyzeOpen(true)} className="mt-6 rounded-full bg-[#1d1d1f] px-6 py-3 text-sm font-medium text-white hover:bg-black">{t("Start analysis", "开始分析")}</button>
       </section> : !analysis ? <section className="rounded-[2rem] bg-white p-7 shadow-[0_18px_60px_rgba(49,39,70,0.07)] md:p-10">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{pending ? "ANALYZING" : "RESUME REPORT"}</p>
         <h2 className="mt-3 text-2xl font-semibold">{pending ? t("Generating report", "正在生成报告") : t("Create a detailed report", "生成深度报告")}</h2>
@@ -373,7 +372,7 @@ function ReanalyzeDialog({ defaultFamily = "general", busy, onClose, onSubmit }:
   }
   const general = jd.trim().length === 0;
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section role="dialog" aria-modal="true" className="ardor-panel max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-[2rem] p-6 md:p-8">
+    <section role="dialog" aria-modal="true" className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-[2rem] border border-stone-200 bg-[#fcfcf9] p-6 shadow-2xl md:p-8">
       <h2 className="text-xl font-semibold">{t("Analyze with a target", "按目标重新评估")}</h2>
       <p className="mt-2 text-sm text-stone-500">{t("Pick the role family, then paste the job description. The JD makes role-fit evidence specific.", "先选目标大类，再粘贴岗位 JD；有 JD 才能判断针对性的岗位匹配。")}</p>
       <form onSubmit={(event) => { event.preventDefault(); onSubmit(role, jd, family); }} className="mt-5 space-y-3">

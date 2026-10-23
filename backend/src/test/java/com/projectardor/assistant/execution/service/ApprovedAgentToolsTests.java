@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -29,6 +30,26 @@ class ApprovedAgentToolsTests {
         }
     }
 
+    static class ScopedFakeTools implements ToolIntentScope {
+        private final boolean allow;
+        final AtomicInteger calls = new AtomicInteger();
+
+        ScopedFakeTools(boolean allow) {
+            this.allow = allow;
+        }
+
+        @Override
+        public boolean permitsWrite(String tool) {
+            return allow;
+        }
+
+        @Tool(name = "fake_write", value = "写操作")
+        public String write(@P("值") String value) {
+            calls.incrementAndGet();
+            return "executed:" + value;
+        }
+    }
+
     /** Names registered in ToolCatalog so the audit can resolve module/capability. */
     static class AuditTools {
         @Tool(name = "delete_memory", value = "提议删除记忆")
@@ -39,6 +60,11 @@ class ApprovedAgentToolsTests {
         @Tool(name = "list_memories", value = "读取记忆")
         public String listMemories() {
             return "[]";
+        }
+
+        @Tool(name = "update_calendar_advice", value = "保存日历建议")
+        public String updateCalendarAdvice(@P("建议") String advice) {
+            return "{\"status\":\"SAVED\"}";
         }
     }
 
@@ -58,6 +84,45 @@ class ApprovedAgentToolsTests {
         return ToolExecutionRequest.builder().name("fake_write").arguments("{\"value\":\"hi\"}").build();
     }
 
+    private static ToolExecutor scopedExecutor(ScopedFakeTools tools, AgentToolApprovals approvals,
+            AgentPermissionGrants permissions) {
+        var executors = ApprovedAgentTools.wrap(tools, USER, RUN, approvals, null,
+                new AgentToolTimings(), waiting -> {}, "只读请求", permissions);
+        return executors.entrySet().stream()
+                .filter(entry -> entry.getKey().name().equals("fake_write"))
+                .findFirst().orElseThrow().getValue();
+    }
+
+    @Test
+    void intentScopeBlocksWritesBeforeAutoApproval() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        when(permissions.autoApproves(USER, "fake_write")).thenReturn(true);
+        ScopedFakeTools tools = new ScopedFakeTools(false);
+
+        String result = scopedExecutor(tools, approvals, permissions).execute(writeRequest(), null);
+
+        assertThat(result).contains("TOOL_NOT_PERMITTED");
+        assertThat(tools.calls).hasValue(0);
+        verify(approvals, never()).await(any(), any(), any(), any());
+        verify(permissions, never()).recordAutoApproval(any(), any(), any(), any());
+    }
+
+    @Test
+    void intentScopeAllowsWritesWithinTheCapturedUserRequest() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        when(approvals.await(eq(USER), eq(RUN), eq("fake_write"), any())).thenReturn(true);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        ScopedFakeTools tools = new ScopedFakeTools(true);
+
+        String result = scopedExecutor(tools, approvals, permissions).execute(writeRequest(), null);
+
+        assertThat(result).isEqualTo("executed:hi");
+        assertThat(tools.calls).hasValue(1);
+    }
+
     private static ToolExecutor auditedExecutor(String toolName, AgentToolApprovals approvals,
             AgentPermissionGrants permissions, AgentExecutionAuditStore auditStore, AgentStreamLease lease) {
         var executors = ApprovedAgentTools.wrap(new AuditTools(), USER, RUN, approvals, lease,
@@ -69,6 +134,21 @@ class ApprovedAgentToolsTests {
 
     private static ToolExecutionRequest request(String name, String arguments) {
         return ToolExecutionRequest.builder().id("call-" + name).name(name).arguments(arguments).build();
+    }
+
+    @Test
+    void duplicateIdenticalWriteIsBlockedAfterTheFirstAttempt() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        when(permissions.autoApproves(USER, "fake_write")).thenReturn(true);
+        ScopedFakeTools tools = new ScopedFakeTools(true);
+        ToolExecutor executor = scopedExecutor(tools, approvals, permissions);
+        ToolExecutionRequest request = writeRequest();
+
+        assertThat(executor.execute(request, null)).isEqualTo("executed:hi");
+        assertThat(executor.execute(request, null)).contains("DUPLICATE_WRITE_BLOCKED");
+        assertThat(tools.calls).hasValue(1);
     }
 
     @Test
@@ -141,6 +221,22 @@ class ApprovedAgentToolsTests {
         assertThat(source.getValue()).isEqualTo("DELETE_PROPOSAL");
         verify(auditStore).finishToolCall(eq(row), eq(USER), eq("PROPOSED"), isNull(), isNull());
         verify(auditStore).recordAudit(eq(USER), eq(RUN), eq("delete_memory"), anyString(), eq("DELETE_PROPOSAL"));
+    }
+
+    @Test
+    void trustedAutomationMayPersistAdvisoryWritesWithoutALiveDialog() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        var executors = ApprovedAgentTools.wrap(new AuditTools(), USER, null, approvals, "保存建议", permissions, true);
+        ToolExecutor executor = executors.entrySet().stream()
+                .filter(entry -> entry.getKey().name().equals("update_calendar_advice"))
+                .findFirst().orElseThrow().getValue();
+
+        String result = executor.execute(request("update_calendar_advice", "{\"advice\":\"下一步\"}"), null);
+
+        assertThat(result).contains("SAVED");
+        verify(approvals, never()).await(any(), any(), any(), any());
+        verify(approvals, never()).canPropose(any(), any());
     }
 
     @Test

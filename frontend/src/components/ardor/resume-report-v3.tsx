@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowLeft, ArrowUpRight, FileText, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, Download, FileText, Sparkles } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useState } from "react";
 import { useLocale } from "@/lib/locale";
 
 export type RadarGrade = "S" | "A" | "B" | "C" | "D" | "E" | "F";
@@ -81,10 +82,11 @@ export function Radar({ dimensions }: { dimensions: ResumeDimension[] }) {
       const labelX = center + Math.cos(angle) * (radius + 40), labelY = center + Math.sin(angle) * (radius + 40);
       const anchor = Math.cos(angle) < -0.2 ? "end" : Math.cos(angle) > 0.2 ? "start" : "middle";
       const label = dimensionLabels[dimension.id];
+      const belowMarket = gradeValue[dimension.grade] < gradeValue[dimension.marketGrade];
       return <g key={dimension.id}>
         <circle cx={gradeX} cy={gradeY} r="10" fill={gradeFill[dimension.grade]} stroke="white" strokeWidth="1.5" />
         <text x={gradeX} y={gradeY + 3.5} textAnchor="middle" fill="white" style={{ fontSize: 10, fontWeight: 700 }}>{dimension.grade}</text>
-        <text x={labelX} y={labelY + 4} textAnchor={anchor} className="fill-stone-600" style={{ fontSize: 12, fontWeight: 600 }}>{locale === "en" ? label?.shortEn : label?.shortZh}</text>
+        <text x={labelX} y={labelY + 4} textAnchor={anchor} fill={belowMarket ? "#b91c1c" : "#57534e"} style={{ fontSize: 12, fontWeight: belowMarket ? 750 : 600 }}>{locale === "en" ? label?.shortEn : label?.shortZh}</text>
       </g>;
     })}
   </svg>;
@@ -112,35 +114,68 @@ function MarkdownBlock({ text }: { text: string }) {
 }
 
 function IssueCard({ issue, t }: { issue: ResumeIssue; t: (en: string, zh: string) => string }) {
-  const meta = severityMeta[issue.severity];
-  return <article className={`rounded-2xl border border-white/80 border-l-[3px] ${meta.border} bg-white/85 p-5 shadow-[0_8px_26px_rgba(49,39,70,0.05)]`}>
-    <div className="flex items-start gap-3">
-      <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold ${meta.tag}`}>{issue.severity}</span>
-      <div className="min-w-0 flex-1">
-        <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-500">{issue.category}</span>
-        <div className="mt-1.5 whitespace-pre-wrap text-base font-semibold leading-7 text-stone-900"><InlineMarkdown text={issue.problem} /></div>
-      </div>
+  const line = issue.severity === "A" ? "border-l-rose-400" : issue.severity === "B" ? "border-l-[#f28a2e]" : "border-l-sky-400";
+  return <article className={`issue-card rounded-2xl border border-stone-200/80 border-l-[3px] ${line} bg-white/90 p-6 md:p-8`}>
+    <div className="min-w-0">
+      <span className="inline-flex rounded-md bg-stone-100 px-2.5 py-1 text-xs leading-none text-stone-600">{issue.category}</span>
+      <div className="mt-3 whitespace-pre-wrap text-[19px] font-semibold leading-8 tracking-[-0.01em] text-stone-900 md:text-xl md:leading-9"><InlineMarkdown text={issue.problem} /></div>
+      {issue.why && <p className="mt-2.5 whitespace-pre-wrap text-[15px] leading-7 text-stone-500"><InlineMarkdown text={issue.why} /></p>}
+      {issue.benchmark && <div className="mt-5 flex gap-3.5 border-l-2 border-violet-300/80 py-1 pl-4"><span className="shrink-0 pt-0.5 text-xs font-bold tracking-[.06em] text-violet-700">{t("Target", "目标")}</span><p className="text-[14px] leading-7 text-stone-600"><InlineMarkdown text={issue.benchmark} /></p></div>}
+      {(issue.action || issue.example) && <details className="group mt-5">
+        <summary className="relative flex h-11 w-full cursor-pointer list-none items-center justify-center [&::-webkit-details-marker]:hidden">
+          <span aria-hidden className="absolute inset-x-0 top-1/2 h-[2px] rounded-full bg-[linear-gradient(90deg,rgba(255,94,58,.12),#ff5e3a_14%,#ff5e3a_86%,rgba(255,94,58,.12))] transition-all duration-150 group-hover:h-[3px] group-open:h-[3px] group-open:bg-[#e84521]" />
+          <span className="relative bg-white px-3.5 text-[13px] font-extrabold tracking-[.08em] text-[#e84521]">{t("Fix", "改")}<span className="ml-1 inline-block transition-transform group-open:rotate-90">›</span></span>
+        </summary>
+        <div className="mt-3 grid gap-3.5 rounded-xl border border-[#ffd9cc] bg-[#fff2ec] p-4 md:p-5">
+          {issue.evidence && <div className="rounded-lg border border-stone-200/80 bg-white/70 p-4"><p className="mb-2 text-xs font-extrabold tracking-[.06em] text-stone-500">{t("Resume excerpt", "原文")}</p><blockquote className="whitespace-pre-wrap border-l-2 border-stone-300 pl-3.5 text-[14px] leading-7 text-stone-600"><InlineMarkdown text={issue.evidence} /></blockquote></div>}
+          {issue.action && <div><p className="mb-2 text-xs font-extrabold tracking-[.06em] text-[#d94622]">{t("Suggested fix", "建议改法")}</p><p className="whitespace-pre-wrap text-[15px] leading-7 text-[#574b44]"><InlineMarkdown text={issue.action} /></p></div>}
+          {issue.example && <div className="rounded-lg bg-violet-50 p-4"><p className="mb-2 text-xs font-extrabold tracking-[.06em] text-violet-700">{t("Rewrite example", "改写示例")}</p><p className="whitespace-pre-wrap text-[14px] leading-7 text-violet-950/80"><InlineMarkdown text={issue.example} /></p></div>}
+        </div>
+      </details>}
     </div>
-    {issue.why && <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-stone-500"><InlineMarkdown text={issue.why} /></p>}
-    {issue.benchmark && <div className="mt-3 rounded-xl bg-stone-50/90 px-3.5 py-3 text-sm leading-6 text-stone-600 ring-1 ring-stone-100"><InlineMarkdown text={issue.benchmark} /></div>}
-    {issue.action && <div className="mt-2.5 rounded-xl bg-emerald-50/80 px-3.5 py-3 text-sm leading-6 text-emerald-950 ring-1 ring-emerald-100"><InlineMarkdown text={issue.action} /></div>}
-    {(!!issue.evidence || !!issue.example) && <details className="mt-3 text-sm">
-      <summary className="cursor-pointer text-xs font-medium text-violet-700">{t("Resume evidence and rewrite example", "简历原文与改写示例")}</summary>
-      {!!issue.evidence && <blockquote className="mt-2 border-l-2 border-stone-200 pl-3 text-stone-500">{issue.evidence}</blockquote>}
-      {!!issue.example && <pre className="mt-2 whitespace-pre-wrap rounded-xl bg-stone-50 p-3 text-xs leading-5 text-stone-600">{issue.example}</pre>}
-    </details>}
   </article>;
 }
 
-export function ResumeReportV3({ report, onBack, onReanalyze, onViewResume }: {
+export function ResumeReportV3({ report, resumeId, onBack, onViewResume }: {
   report: ResumeReportV3Data;
+  resumeId?: string;
   onBack?: () => void;
-  onReanalyze?: () => void;
   onViewResume?: () => void;
 }) {
   const { t } = useLocale();
   const issueGroups: IssueSeverity[] = ["A", "B", "C"];
-  return <main className="ardor-workbench min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-6xl px-5 pb-20 pt-6 md:px-10">
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+
+  async function exportReport() {
+    if (!resumeId || exporting) return;
+    setExportError("");
+    setExporting(true);
+    try {
+      const response = await fetch(`/report-api/${encodeURIComponent(resumeId)}`, { credentials: "include", cache: "no-store" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { message?: string };
+        throw new Error(body.message ?? "报告导出失败");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const safeName = report.filename.replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|]+/g, "-");
+      link.href = url;
+      link.download = `Ardor-${safeName}-report.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("LaTeX report export failed", error);
+      setExportError(error instanceof Error ? error.message : t("Could not export the report. Try again.", "报告导出失败，请重试。"));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return <div className="min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-5xl px-5 pb-20 pt-6 md:px-10">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <button type="button" onClick={onBack} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 transition hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("All resumes", "所有简历")}</button>
       <span className="rounded-full border border-white/80 bg-white/60 px-3 py-1.5 text-xs text-stone-500">{report.condition}</span>
@@ -153,13 +188,14 @@ export function ResumeReportV3({ report, onBack, onReanalyze, onViewResume }: {
       </div>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <button type="button" onClick={onViewResume} className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-stone-600 hover:bg-white"><FileText className="size-4" />{t("View original", "查看原简历")}</button>
-        <button type="button" onClick={onReanalyze} className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 font-medium text-white hover:bg-black">{t("Re-analyze", "重新分析")}<ArrowUpRight className="size-3.5" /></button>
+        <button type="button" onClick={() => void exportReport()} disabled={exporting} className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 font-medium text-white hover:bg-black disabled:opacity-50"><Download className="size-4" />{exporting ? t("Exporting…", "导出中…") : t("Export report", "导出报告")}</button>
       </div>
     </header>
+    {exportError && <p role="alert" className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{exportError}</p>}
 
-    {report.general && <p className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">{t("Generalised analysis only: without a JD this report may not reflect a specific role. Add a JD to re-analyze with role-specific evidence.", "本次为通用化分析，可能不具针对性；补充 JD 后重新分析，才能按目标岗位判断匹配度。")}</p>}
+    {report.general && <p className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">{t("Generalised analysis only: without a JD this report may not reflect a specific role. Add a JD when starting a new analysis for role-specific evidence.", "本次为通用化分析，可能不具针对性；如需岗位匹配，请在开始新分析时补充 JD。")}</p>}
 
-    <section className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]">
+    <section className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
       <div className="rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_60px_rgba(49,39,70,0.07)] backdrop-blur-xl md:p-8">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Competitiveness", "当前竞争力")}</p>
         <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-2">
@@ -167,19 +203,21 @@ export function ResumeReportV3({ report, onBack, onReanalyze, onViewResume }: {
           <span className="pb-1.5 text-sm text-stone-400">/ 100</span>
           <span className="mb-1 rounded-full bg-violet-100 px-3 py-1 text-sm font-medium text-violet-800">{report.band}</span>
         </div>
-        <div className="mt-4 border-t border-stone-100 pt-4">
-          <p className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-violet-600">{t("Diagnosis", "简历诊断")}</p>
-          <MarkdownBlock text={[report.summary, report.background].filter(Boolean).join("\n\n")} />
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-stone-400">
-          <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-600" />{t("You", "你")}</span>
-          <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full border border-stone-400 bg-stone-200" />{t("Market requirement", "市场要求")}</span>
+        <div className="mt-5 border-t border-stone-100 pt-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Capability radar", "能力雷达")}</p>
+            <div className="flex flex-wrap gap-3 text-[11px] text-stone-400">
+              <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-600" />{t("You", "你")}</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full border border-stone-400 bg-stone-200" />{t("Market requirement", "市场要求")}</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-center py-2"><Radar dimensions={report.dimensions} /></div>
         </div>
       </div>
 
-      <div className="flex flex-col rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_60px_rgba(49,39,70,0.07)] backdrop-blur-xl md:p-8">
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Capability radar", "能力雷达")}</p>
-        <div className="flex flex-1 items-center justify-center py-2"><Radar dimensions={report.dimensions} /></div>
+      <div className="rounded-[2rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_60px_rgba(49,39,70,0.07)] backdrop-blur-xl md:p-8">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("Diagnosis", "简历诊断")}</p>
+        <MarkdownBlock text={[report.summary, report.background].filter(Boolean).join("\n\n")} />
       </div>
     </section>
 
@@ -189,8 +227,13 @@ export function ResumeReportV3({ report, onBack, onReanalyze, onViewResume }: {
         if (issues.length === 0) return null;
         const meta = severityMeta[severity];
         return <section key={severity} aria-label={t(...meta.label)}>
-          <div className="mb-3 flex flex-wrap items-center gap-2"><span className={`grid size-6 place-items-center rounded-lg text-xs font-semibold ${meta.tag}`}>{severity}</span><h2 className="text-lg font-semibold">{t(...meta.label)}</h2><span className="text-xs text-stone-400">{issues.length} {t("items", "条")}</span></div>
-          <div className="space-y-2.5">{issues.map((issue, index) => <IssueCard key={`${severity}-${index}`} issue={issue} t={t} />)}</div>
+          <div className="mb-3 flex items-baseline gap-2.5 border-b border-stone-200/80 pb-3">
+            <span className={`grid size-6 shrink-0 place-items-center rounded-md text-[11px] font-semibold ${meta.tag}`}>{severity}</span>
+            <h2 className="text-xl font-semibold tracking-[-0.02em]">{t(...meta.label)}</h2>
+            <span className="text-sm text-stone-400">{issues.length} {t("items", "条")}</span>
+            <span aria-hidden className="ml-1 h-px flex-1 bg-gradient-to-r from-stone-200 to-transparent" />
+          </div>
+          <div className="space-y-3">{issues.map((issue, index) => <IssueCard key={`${severity}-${index}`} issue={issue} t={t} />)}</div>
         </section>;
       })}
     </div>
@@ -200,8 +243,10 @@ export function ResumeReportV3({ report, onBack, onReanalyze, onViewResume }: {
       <ul className="mt-3 space-y-1.5 text-sm leading-6 text-stone-700">{report.strengths.map((strength, index) => <li key={index}>· <InlineMarkdown text={strength} /></li>)}</ul>
     </section>}
 
-    <footer className="mt-6 flex justify-end">
-      <button type="button" onClick={onReanalyze} className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-sm text-violet-700 backdrop-blur-xl">{t("Re-analyze", "重新分析")}<Target className="size-4" /></button>
-    </footer>
-  </div></main>;
+    </div>
+  </div>;
 }
+
+
+
+

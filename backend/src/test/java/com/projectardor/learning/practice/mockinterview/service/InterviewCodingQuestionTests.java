@@ -106,6 +106,24 @@ class InterviewCodingQuestionTests {
         verify(llm).completeJson(any(), argThat(prompt -> prompt.contains("不要生成 CODING") && !prompt.contains("占位")), any());
     }
 
+    @Test
+    void duplicateQuestionsAreNotSilentlyAcceptedAsAFullInterview() {
+        UUID userId = UUID.randomUUID();
+        when(profiles.get(userId)).thenReturn(UserProfile.create(userId, "候选人"));
+        when(llm.completeJson(any(), any(), any())).thenReturn(new LlmGateway.LlmResult("""
+                {"questions":[
+                  {"questionText":"项目里最难的问题？","questionType":"PROJECT","evaluationCriteria":[]},
+                  {"questionText":"项目里最难的问题？","questionType":"PROJECT","evaluationCriteria":[]},
+                  {"questionText":"如何设计缓存？","questionType":"TECHNICAL","evaluationCriteria":[]}]}
+                """, "model"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.create(userId, null,
+                        InterviewModality.TEXT, null, "Java 工程师", 3))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("数量不足");
+        org.mockito.Mockito.verifyNoInteractions(sessions, questions);
+    }
+
     @SuppressWarnings("unchecked")
     private List<InterviewQuestion> create(String role, String llmJson) {
         UUID userId = UUID.randomUUID();

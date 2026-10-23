@@ -7,12 +7,14 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { DEFAULT_SERVER_URL, normalizeServerUrl, isTrustedAppUrl, isHealthyBackendStatus } = require("./server-config.cjs");
 const { updateErrorKind } = require("./update-errors.cjs");
+const { isMicrophoneOnly, microphoneGrantFor, allowsRememberedMicrophone } = require("./media-permissions.cjs");
 const { navigationState, navigate, menuTemplate, shortcutAction } = require("./window-chrome.cjs");
 const { normalizeLocale, desktopText, updateStatusMessage, serverErrorKey, serverErrorMessage } = require("./i18n.cjs");
 
 let window;
 let serverUrl = DEFAULT_SERVER_URL;
 let desktopLocale = null;
+let microphoneAllowed = null;
 let updateStatus = { state: "idle", message: desktopText("en", "idle") };
 let updateCheckRunning = false;
 let offline = false;
@@ -21,7 +23,23 @@ const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function configPath() { return path.join(app.getPath("userData"), "server.json"); }
 function localePath() { return path.join(app.getPath("userData"), "locale.json"); }
+function microphonePermissionPath() { return path.join(app.getPath("userData"), "microphone.json"); }
 function currentLocale() { return desktopLocale ?? "en"; }
+
+function readMicrophoneAllowed() {
+  try { return JSON.parse(fs.readFileSync(microphonePermissionPath(), "utf8")); }
+  catch { return null; }
+}
+
+function saveMicrophoneAllowed(origin) {
+  const grant = microphoneGrantFor(origin);
+  const target = microphonePermissionPath();
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temporary = `${target}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify(grant), { encoding: "utf8", mode: 0o600 });
+  fs.renameSync(temporary, target);
+  microphoneAllowed = grant;
+}
 
 function readDesktopLocale() {
   try { return normalizeLocale(JSON.parse(fs.readFileSync(localePath(), "utf8")).locale); }
@@ -232,13 +250,25 @@ if (app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     serverUrl = readServerUrl();
     desktopLocale = readDesktopLocale();
+    microphoneAllowed = readMicrophoneAllowed();
     updateStatus.message = updateStatusMessage(currentLocale(), updateStatus);
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-      if (permission !== "media" || !isTrustedAppUrl(details.requestingUrl, serverUrl) || webContents !== window?.webContents) return callback(false);
+      if (permission !== "media" || !isMicrophoneOnly(details)
+        || !isTrustedAppUrl(details.requestingUrl, serverUrl) || webContents !== window?.webContents) return callback(false);
+      // Remember an explicit grant so chat dictation and voice interviews do not
+      // open the same native dialog on every microphone request.
+      if (allowsRememberedMicrophone(microphoneAllowed, serverUrl)) return callback(true);
+      const requestedServer = serverUrl;
       void dialog.showMessageBox(window, {
         type: "question", buttons: [desktopText(currentLocale(), "deny"), desktopText(currentLocale(), "allow")], defaultId: 0, cancelId: 0,
         title: desktopText(currentLocale(), "microphoneTitle"), message: desktopText(currentLocale(), "microphoneMessage"),
-      }).then(({ response }) => callback(response === 1), () => callback(false));
+      }).then(({ response }) => {
+        if (response !== 1) return callback(false);
+        if (serverUrl !== requestedServer || webContents !== window?.webContents
+          || !isTrustedAppUrl(webContents.getURL(), requestedServer)) return callback(false);
+        try { saveMicrophoneAllowed(requestedServer); } catch { /* The current request can still proceed. */ }
+        callback(true);
+      }, () => callback(false));
     });
     configureUpdater();
     registerIpc();

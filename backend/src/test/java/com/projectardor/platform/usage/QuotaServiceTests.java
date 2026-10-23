@@ -3,6 +3,7 @@ package com.projectardor.platform.usage;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,14 +29,14 @@ class QuotaServiceTests {
         UUID requestId = UUID.randomUUID();
         UsagePolicy policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 8, 120, now);
         when(policies.get(UsageFeature.AGENT_CHAT)).thenReturn(policy);
-        when(memberships.tier(user)).thenReturn(MembershipTier.MEMBER);
-        when(store.consume(user, policy, MembershipTier.MEMBER, requestId, now))
+        when(memberships.tier(user)).thenReturn(MembershipTier.PLUS);
+        when(store.consume(user, policy, MembershipTier.PLUS, requestId, now))
                 .thenReturn(QuotaStore.Decision.DUPLICATE);
 
         service.consume(user, UsageFeature.AGENT_CHAT, requestId);
 
-        verify(store).consume(user, policy, MembershipTier.MEMBER, requestId, now);
-        assertThat(policy.monthlyLimit(MembershipTier.MEMBER)).isEqualTo(500);
+        verify(store).consume(user, policy, MembershipTier.PLUS, requestId, now);
+        assertThat(policy.monthlyLimit(MembershipTier.PLUS)).isEqualTo(500);
     }
 
     @Test
@@ -57,7 +58,7 @@ class QuotaServiceTests {
     @Test
     void snapshotSeparatesLimitsByFeature() {
         UUID user = UUID.randomUUID();
-        when(memberships.tier(user)).thenReturn(MembershipTier.MEMBER);
+        when(memberships.tier(user)).thenReturn(MembershipTier.PLUS);
         when(policies.list()).thenReturn(List.of(
                 new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 8, 120, now),
                 new UsagePolicy(UsageFeature.RESUME_ANALYSIS, 1, 40, 3, 30, now)));
@@ -66,9 +67,34 @@ class QuotaServiceTests {
 
         var snapshot = service.snapshot(user);
 
-        assertThat(snapshot.tier()).isEqualTo(MembershipTier.MEMBER);
+        assertThat(snapshot.tier()).isEqualTo(MembershipTier.PLUS);
         assertThat(snapshot.features()).containsExactly(
                 new QuotaService.FeatureUsage(UsageFeature.AGENT_CHAT, 12, 500),
                 new QuotaService.FeatureUsage(UsageFeature.RESUME_ANALYSIS, 2, 40));
     }
+
+
+    @Test
+    void tokenBudgetBlocksBeforeTheModuleCounter() {
+        var plans = mock(MembershipPlanService.class);
+        var tokens = mock(UsageTokenStore.class);
+        var budgetService = new QuotaService(policies, memberships, store, plans, tokens,
+                Clock.fixed(now, ZoneOffset.UTC));
+        UUID user = UUID.randomUUID();
+        UsagePolicy policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 8, 120, now);
+        when(policies.get(UsageFeature.AGENT_CHAT)).thenReturn(policy);
+        when(memberships.tier(user)).thenReturn(MembershipTier.FREE);
+        when(plans.tokenLimit(MembershipTier.FREE)).thenReturn(100L);
+        when(tokens.usedThisMonth(user, now)).thenReturn(100L);
+
+        assertThatThrownBy(() -> budgetService.consume(user, UsageFeature.AGENT_CHAT, UUID.randomUUID()))
+                .isInstanceOfSatisfying(QuotaExceededException.class, exception -> {
+                    assertThat(exception.reason()).isEqualTo(QuotaStore.Decision.TOKEN_LIMIT);
+                    assertThat(exception.resetAt()).isEqualTo(Instant.parse("2026-11-01T00:00:00Z"));
+                });
+        verify(store, never()).consume(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
 }

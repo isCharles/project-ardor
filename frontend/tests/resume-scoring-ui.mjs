@@ -62,7 +62,7 @@ try {
   assert.equal(await page.getByText("Old report must stay offline", { exact: true }).count(), 0, "Legacy report content must not render");
   assert.equal(await page.getByText("Old recommendation must stay hidden", { exact: true }).count(), 0, "Legacy recommendations must not render");
 
-  await page.getByRole("button", { name: "Re-analyze", exact: true }).first().click();
+  await page.getByRole("button", { name: "Start analysis", exact: true }).click();
   await page.getByRole("combobox", { name: "Role family", exact: true }).waitFor();
   await page.getByText("No JD: this will be a general assessment under General technology", { exact: false }).waitFor();
   await page.getByRole("combobox", { name: "Pick from interview pipeline", exact: true }).selectOption({ label: "Acme · Backend intern" });

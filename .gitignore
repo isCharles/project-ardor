@@ -39,3 +39,6 @@ scripts/dev-up.log
 backend/data/
 # Local runtime data from native backend runs (resumes, uploads) must never enter Git.
 data/
+
+# Temporary LaTeX compile directories created by the report export route.
+frontend/.latex-report-*
