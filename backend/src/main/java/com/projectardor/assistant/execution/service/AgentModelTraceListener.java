@@ -6,6 +6,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.listener.ChatModelErrorContext;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.listener.ChatModelRequestContext;
@@ -39,6 +40,13 @@ public final class AgentModelTraceListener implements ChatModelListener {
         attributes.put("provider", context.modelProvider() == null ? "" : context.modelProvider().name());
         attributes.put("messages", context.chatRequest() == null || context.chatRequest().messages() == null
                 ? 0 : context.chatRequest().messages().size());
+        if (context.chatRequest() != null && context.chatRequest().messages() != null) {
+            String preview = "";
+            for (var message : context.chatRequest().messages()) {
+                if (message instanceof UserMessage userMessage) preview = userMessage.toString();
+            }
+            attributes.put("inputPreview", TracePreview.of(preview));
+        }
         UUID span = tracer.startChild("LLM", "llm.call." + call, attributes);
         if (span != null) context.attributes().put(SPAN_ATTRIBUTE, span);
     }
@@ -58,6 +66,13 @@ public final class AgentModelTraceListener implements ChatModelListener {
         attributes.put("finishReason", response == null || response.metadata() == null
                 || response.metadata().finishReason() == null ? "" : response.metadata().finishReason().name());
         attributes.put("toolRound", toolRound);
+        if (message != null) {
+            attributes.put("outputPreview", TracePreview.of(message.text()));
+            if (message.hasToolExecutionRequests()) {
+                attributes.put("requestedTools", message.toolExecutionRequests().stream()
+                        .map(request -> request.name()).toList());
+            }
+        }
         String actualModel = response == null || response.metadata() == null ? model : response.metadata().modelName();
         tracer.finishChild(span, "COMPLETED", null, actualModel, input, output, attributes);
     }

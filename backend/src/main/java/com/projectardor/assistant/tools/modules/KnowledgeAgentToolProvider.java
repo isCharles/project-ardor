@@ -15,6 +15,7 @@ public final class KnowledgeAgentToolProvider implements AgentToolProvider {
     private final KnowledgeService service;
     public KnowledgeAgentToolProvider(KnowledgeService service) { this.service = service; }
     @Override public Bound bind(AgentToolContext context) { return new Bound(service, context); }
+    @Override public List<Class<?>> toolTypes() { return List.of(Bound.class); }
 
     public static final class Bound {
         private final KnowledgeService service;

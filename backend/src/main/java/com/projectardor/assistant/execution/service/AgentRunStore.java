@@ -139,6 +139,16 @@ public class AgentRunStore {
                 """, Boolean.class, userId, requestId, requestId, userId));
     }
 
+    public List<AgentRun> recentForConversation(UUID userId, UUID conversationId, int limit) {
+        int safeLimit = Math.max(1, Math.min(100, limit));
+        return new java.util.ArrayList<>(jdbc.query("""
+                SELECT id, conversation_id, message, status, label, error_code, error_message,
+                       retryable, tool_started, assistant_message_id, created_at, updated_at
+                FROM agent_runs WHERE user_id = ? AND conversation_id = ?
+                ORDER BY created_at DESC, id DESC LIMIT ?
+                """, RUN_MAPPER, userId, conversationId, safeLimit)).reversed();
+    }
+
     public Optional<AgentRun> latest(UUID userId, UUID conversationId) {
         return jdbc.query("""
                 SELECT id, conversation_id, message, status, label, error_code, error_message,
@@ -380,3 +390,4 @@ public class AgentRunStore {
 
     private record StaleRun(UUID id, UUID userId) {}
 }
+

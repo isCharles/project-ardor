@@ -6,6 +6,7 @@ import java.util.UUID;
 /** Read-only, developer-facing execution trace for one owned Agent run. */
 public record AgentTraceResponse(
         UUID runId,
+        UUID conversationId,
         String status,
         long durationMs,
         Totals totals,
@@ -14,7 +15,7 @@ public record AgentTraceResponse(
     public record Totals(int llmCalls, int toolCalls, int loopRounds, long inputTokens, long outputTokens) {
     }
 
-    public static AgentTraceResponse from(UUID runId, List<AgentTraceSpanResponse> spans) {
+    public static AgentTraceResponse from(UUID runId, UUID conversationId, List<AgentTraceSpanResponse> spans) {
         var root = spans.stream().filter(span -> "RUN".equals(span.kind())).findFirst().orElse(null);
         int llmCalls = 0;
         int toolCalls = 0;
@@ -31,8 +32,9 @@ public record AgentTraceResponse(
                 toolCalls++;
             }
         }
-        return new AgentTraceResponse(runId, root == null ? "UNKNOWN" : root.status(),
+        return new AgentTraceResponse(runId, conversationId, root == null ? "UNKNOWN" : root.status(),
                 root == null || root.durationMs() == null ? 0 : root.durationMs(),
                 new Totals(llmCalls, toolCalls, loopRounds, inputTokens, outputTokens), spans);
     }
 }
+

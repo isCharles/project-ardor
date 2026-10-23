@@ -16,6 +16,8 @@ Spring 发现 `AgentToolProvider` 组件并交给宿主；已有直接构造入�
 
 ## 必须保留的执行合同
 
+开发者轨迹的工具 Schema 也从提供者的 `toolTypes()` 发现，不得恢复只扫描中央类。提供者返回模型实际暴露的绑定类，不需要绑定用户或执行 Service；`AgentToolSchemaCatalog` 复用 LangChain4j 的 `ToolSpecifications` 和固定版本 JSON Schema 转换，保留可选参数、数组子项和枚举。此调用不代表工具授权；权限仍由运行时执行合同决定。升级 LangChain4j 时应运行 Schema 合同测试，核验内部转换辅助方法的兼容性。
+
 1. 写入授权继续由**宿主绑定的可信请求**控制，而不是由被拆出的工具对象自行声明。`ToolIntentScope` 的判断对象仍是根绑定对象。
 2. 全部模块共用同一轮的重复写入防护、审批、运行 lease、取消、计时、追踪与执行审计。不得按模块另建尝试缓存而允许重复副作用。
 3. 资料检索及网页收录结果继续使用 `untrusted_external_content` 包装；材料中的命令不能授权写入。

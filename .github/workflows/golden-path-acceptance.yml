@@ -140,6 +140,12 @@ jobs:
           echo "Backend did not become healthy"
           exit 1
 
+      - name: Verify consecutive graph runs and private trace ownership
+        env:
+          ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
+          ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
+        run: node backend/src/test/resources/agent-graph-acceptance.mjs
+
       - name: Restart backend to verify persisted task and read state
         shell: bash
         run: |
@@ -167,7 +173,7 @@ jobs:
         run: |
           cd frontend
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps --only-shell chromium
           npm run build
           npm run start > "$RUNNER_TEMP/frontend.log" 2>&1 &
           for attempt in {1..45}; do

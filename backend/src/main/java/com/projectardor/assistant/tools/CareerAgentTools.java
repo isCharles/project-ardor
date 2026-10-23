@@ -381,17 +381,17 @@ public class CareerAgentTools {
             return untrustedContent("web-search", tavilySearchService.search(userId, query));
         }
 
-        @Tool(name = "list_learning_plans", value = "列出当前用户的学习计划、状态、日期和 UUID")
+        @Tool(name = "list_learning_plans", value = "列出当前用户的课程（学习计划）、状态、日期和 UUID。用户口语中的“课程”默认指这里，不是学校课表")
         public List<LearningPlanView> listLearningPlans() {
             return learningPlanService.listViews(userId);
         }
 
-        @Tool(name = "get_learning_plan", value = "读取指定学习计划的讲解、练习和最近一次评估")
+        @Tool(name = "get_learning_plan", value = "读取指定课程（学习计划）的讲解、练习和最近一次评估")
         public LearningPlanView getLearningPlan(@P("学习计划 UUID") String planId) {
             return learningPlanService.detail(userId, uuid(planId, "学习计划 ID"));
         }
 
-        @Tool(name = "delete_learning_plan", value = "提议删除当前用户指定的学习计划、练习记录及关联日历任务。先调用 list_learning_plans 定位真实 UUID；只显示确认按钮，用户点击后才删除")
+        @Tool(name = "delete_learning_plan", value = "提议删除当前用户指定的课程（学习计划）、练习记录及关联日历任务。先调用 list_learning_plans 定位真实 UUID；只显示确认按钮，用户点击后才删除")
         public Map<String, Object> deleteLearningPlan(@P("学习计划 UUID") String planId) {
             UUID id = uuid(planId, "学习计划 ID");
             var plan = learningPlanService.get(userId, id);
@@ -399,14 +399,14 @@ public class CareerAgentTools {
                     "删除讲解、练习记录和关联日程，不能撤销", "/api/learning-plans/" + id);
         }
 
-        @Tool(name = "update_learning_plan", value = "修改当前用户学习计划的说明或改期，同步日历；保留讲解、练习和评分。先读取真实计划；不能用改名替换学习主题，换主题应另建计划")
+        @Tool(name = "update_learning_plan", value = "修改当前用户课程（学习计划）的说明或改期，同步日历；保留讲解、练习和评分。先读取真实计划；不能用改名替换学习主题，换主题应另建课程")
         public LearningPlanView updateLearningPlan(@P("学习计划 UUID") String planId,
                 @P(value = "新的说明；不修改传 null，清空传空字符串", required = false) String reason,
                 @P(value = "新的未来安排时间，带时区的 ISO-8601；不修改传 null", required = false) String scheduledAt) {
             return learningPlanService.updateArrangementView(userId, uuid(planId, "学习计划 ID"), reason, nullableInstant(scheduledAt));
         }
 
-        @Tool(name = "begin_learning_plan", value = "将当前用户的学习计划标记为开始学习，不生成新内容、不伪造完成或评分")
+        @Tool(name = "begin_learning_plan", value = "将当前用户的课程（学习计划）标记为开始学习，不生成新内容、不伪造完成或评分")
         public LearningPlanView beginLearningPlan(@P("学习计划 UUID") String planId) {
             return learningPlanService.beginView(userId, uuid(planId, "学习计划 ID"));
         }
@@ -415,7 +415,7 @@ public class CareerAgentTools {
             return createLearningPlan(concept,reason,scheduledAt,sourceType,sourceId,null,null,null);
         }
 
-        @Tool(name = "create_learning_plan", value = "向用户提议一项概念学习计划和日程；只有用户点击确认后才生成，不能声称已创建。originKind 区分整份记录与问题；准备目标必须独立指定，不能把来源面试自动当成目标")
+        @Tool(name = "create_learning_plan", value = "向用户提议一门课程（学习计划）和日程；只有用户点击确认后才生成，不能声称已创建。originKind 区分整份记录与问题；准备目标必须独立指定，不能把来源面试自动当成目标")
         public Map<String, Object> createLearningPlan(
                 @P("简洁明确的学习概念，例如 JVM 或数据库索引") String concept,
                 @P(value = "为什么需要学习；引用用户真实表现，不得虚构", required = false) String reason,
@@ -606,7 +606,7 @@ public class CareerAgentTools {
             return applicationRhythmService.updateAdvice(userId, advice);
         }
 
-        @Tool(name = "list_calendar_tasks", value = "读取当前用户的日历待办。可按 ISO-8601 时间范围过滤；不传范围则返回全部待办。seriesId 不为空的是重复安排的实例（如每周组会、固定课程），属于固定承诺，不是需要补勾的逾期待办；只有 seriesId 为空的一次性待办才可能逾期")
+        @Tool(name = "list_calendar_tasks", value = "读取当前用户的日历待办。可按 ISO-8601 时间范围过滤；不传范围则返回全部待办。seriesId 不为空的是重复安排的实例（如每周组会、学校固定课程），属于固定承诺，不是需要补勾的逾期待办；不要把它和 Ardor 的“课程（学习计划）”混淆；只有 seriesId 为空的一次性待办才可能逾期")
         public List<CalendarTaskView> listCalendarTasks(
                 @P(value = "开始时间，ISO-8601 格式；不限制时传空字符串", required = false) String from,
                 @P(value = "结束时间，ISO-8601 格式；不限制时传空字符串", required = false) String to) {

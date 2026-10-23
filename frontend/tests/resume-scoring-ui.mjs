@@ -72,6 +72,8 @@ try {
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
 
   await page.getByText("42", { exact: true }).waitFor({ timeout: 10000 });
+  await page.getByRole("button", { name: "Export report", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Re-analyze", exact: true }).count(), 0, "Report must not offer a re-analyze action");
   assert.deepEqual(submitted, { targetRole: "Acme · Backend intern", jobDescription: "Build recommendation models", roleFamily: "algorithm" });
   await page.getByText("Must fix first", { exact: true }).waitFor();
   await page.getByText("目标算法岗，但项目全是后端 CRUD", { exact: true }).waitFor();

@@ -153,9 +153,7 @@ public class AgentController {
         AtomicBoolean closed = new AtomicBoolean();
         emitter.onCompletion(() -> closed.set(true));
         emitter.onTimeout(() -> { closed.set(true); emitter.complete(); });
-        agentService.chatStream(principal.userId(), request.conversationId(), request.message(), request.contextType(), request.contextId(),
-                request.contextReferences(), request.requestId(), request.reasoningDepth(), request.modelChoice(),
-                new CareerAgentService.StreamSink() {
+        var sink = new CareerAgentService.StreamSink() {
                     @Override public void send(AgentStreamEvent event) {
                         if (closed.get()) return;
                         try { emitter.send(SseEmitter.event().name(event.type()).data(event)); }
@@ -164,7 +162,20 @@ public class AgentController {
                     @Override public void complete() {
                         if (closed.compareAndSet(false, true)) emitter.complete();
                     }
-                });
+                };
+        // Return the emitter before blocking context/graph work. Otherwise Spring
+        // buffers every send until the controller returns and the UI sees no live progress.
+        java.util.UUID userId = principal.userId();
+        Thread.ofVirtual().name("ardor-agent-request").start(() -> {
+            try {
+                agentService.chatStream(userId, request.conversationId(), request.message(), request.contextType(), request.contextId(),
+                        request.contextReferences(), request.requestId(), request.reasoningDepth(), request.modelChoice(), sink);
+            } catch (RuntimeException unexpected) {
+                sink.send(AgentStreamEvent.error("AGENT_STREAM_FAILED",
+                        "请求未能继续，请查看运行记录后重试", false, 0));
+                sink.complete();
+            }
+        });
         return emitter;
     }
 

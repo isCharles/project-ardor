@@ -23,7 +23,7 @@ const names: Record<string, [string, string]> = {
   update_interview_recap_metadata: ["Change interview notes", "修改面经信息"], create_interview: ["Create a mock interview", "创建模拟面试"],
   submit_interview_answer: ["Submit an interview answer", "提交面试回答"], finish_interview: ["Evaluate this interview", "评估模拟面试"],
   cancel_interview: ["Stop this interview and keep its records", "停止面试并保留记录"], analyze_resume: ["Analyze this resume", "分析简历"],
-  organize_interview_recap: ["Organize interview notes", "整理面经"], research_knowledge_from_web: ["Add researched material to knowledge", "将调研资料加入知识库"],
+  organize_interview_recap: ["Organize interview notes", "整理面经"], research_knowledge_from_web: ["Add researched material to knowledge", "将调研资料加入知识库"], "graph.plan": ["Approve execution plan", "确认执行计划"],
 };
 const fields: Record<string, [string, string]> = {
   title: ["Title", "标题"], scheduledAt: ["Scheduled time", "安排时间"], dueAt: ["Due time", "计划时间"],
