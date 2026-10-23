@@ -70,6 +70,9 @@ try {
   await page.getByRole("button", { name: "Timeline", exact: true }).waitFor();
 
   await page.locator("[data-trace-node]").nth(2).click();
+  const fits = await page.locator("[data-flow-graph]").evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
+  assert.ok(fits, "Graph fits without horizontal scrolling");
+  await page.getByRole("button", { name: "Trajectory", exact: true }).click();
   await page.getByText("Metadata", { exact: true }).waitFor();
   await page.getByText("llm.call.1", { exact: true }).first().waitFor();
   await page.screenshot({ path: ".next/agent-trace-flow.png", fullPage: true });
@@ -106,6 +109,7 @@ try {
   await browser?.close();
   server.kill();
 }
+
 
 
 

@@ -3,7 +3,7 @@
 import { Activity, ArrowLeft, Bot, CheckCircle2, CircleAlert, Clock3, GitBranch, List, LoaderCircle, Search, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
@@ -181,7 +181,7 @@ export default function AgentRunTracePage() {
               <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-stone-400">
                 {(["LLM", "TOOL", "CONTEXT", "ASYNC"] as const).map((kind) => <span key={kind} className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-full ${kind === "LLM" ? "bg-violet-400" : kind === "TOOL" ? "bg-sky-400" : kind === "CONTEXT" ? "bg-stone-400" : "bg-emerald-400"}`} />{kindMeta[kind].label}</span>)}
               </div>
-              {selected ? <SpanDetails span={selected} schema={toolSchemas[selected.name]} /> : <p className="mt-3 text-xs text-stone-400">{t("Select a node to inspect metadata.", "点击节点查看元数据。")}</p>}
+              <p className="mt-3 text-xs text-stone-400">{t("Switch to Trajectory to inspect parameters, results, schema and timing.", "切换到轨迹检查器查看参数、结果、Schema 和计时。")}</p>
             </section>
           : view === "timeline"
           ? <section className="mt-3">{trace.spans.filter((span) => span.kind === "RUN").map((span) => <TraceRow key={span.id} span={span} root />)}<div className="relative ml-5 mt-2 space-y-2 border-l border-stone-200/80 pl-5">{trace.spans.filter((span) => span.kind !== "RUN").map((span) => <TraceRow key={span.id} span={span} />)}</div>{trace.spans.length === 0 && <p className="text-sm text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</p>}</section>
@@ -324,7 +324,7 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
       {[[t("Duration", "时长"), formatDuration(duration)], [t("Turns", "轮次"), trace.runs.length], [t("Model calls", "模型调用"), llmCalls], [t("Tool calls", "工具调用"), toolCalls], [t("Tokens", "Token"), `${inputTokens} / ${outputTokens}`]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/80 bg-white/70 px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{label}</p><p className="mt-1 text-base font-semibold tabular-nums text-stone-800">{value}</p></div>)}
     </div>
     <div className="mt-3 flex items-center justify-between gap-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Trace view", "轨迹视图")}</p><div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Trace view", "轨迹视图")}><button type="button" aria-pressed={traceView === "graph"} onClick={() => setTraceView("graph")} className={`rounded-full px-3 py-1.5 text-xs transition ${traceView === "graph" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}>{t("Graph", "图")}</button><button type="button" aria-pressed={traceView === "trajectory"} onClick={() => setTraceView("trajectory")} className={`rounded-full px-3 py-1.5 text-xs transition ${traceView === "trajectory" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}>{t("Trajectory", "轨迹检查器")}</button></div></div>
-    <TraceTimeOverview runs={trace.runs} selectedRunId={selectedRun?.runId ?? null} selectedSpanId={selectedSpanId} onSelect={(runId, spanId) => { setSelectedRunId(runId); setSelectedSpanId(spanId); }} />
+    {traceView === "trajectory" && <TraceTimeOverview runs={trace.runs} selectedRunId={selectedRun?.runId ?? null} selectedSpanId={selectedSpanId} onSelect={(runId, spanId) => { setSelectedRunId(runId); setSelectedSpanId(spanId); }} />}
     <section data-conversation-trace className="mt-3 grid gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
     <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/70">
       <div className="border-b border-stone-200/70 px-4 py-3">
@@ -353,14 +353,8 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
       </div>}
     </div>
     <div className="min-w-0">{selectedRun ? <>
-      <div className="rounded-2xl border border-white/80 bg-white/80 p-4">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-stone-500"><span className="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700">{t("Turn", "轮次")} #{trace.runs.findIndex((run) => run.runId === selectedRun.runId) + 1}</span><span>{formatDateTime(selectedRun.createdAt)}</span><span>{selectedRun.spans.length} {t("steps", "个步骤")}</span></div>
-        <p className="mt-3 text-sm font-medium text-stone-800">{selectedRun.message}</p>
-        {selectedRun.assistantMessage && <p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-500">{selectedRun.assistantMessage}</p>}
-      </div>
-      {traceView === "graph" ? <> 
+      {traceView === "graph" ? <>
         <div className="mt-3">{flow.length > 0 ? <FlowGraph nodes={flow} selectedId={selectedSpanId} onSelect={setSelectedSpanId} /> : <div className="rounded-2xl bg-white/60 p-5 text-sm text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</div>}</div>
-        {selectedSpan ? <SpanDetails span={selectedSpan} schema={schemas[selectedSpan.name]} /> : <p className="mt-3 text-xs text-stone-400">{t("Select a node to inspect metadata.", "点击节点查看元数据。")}</p>}
       </> : selectedSpan ? <div data-trajectory-inspector className="mt-3"><InspectorPanel span={selectedSpan} schema={schemas[selectedSpan.name]} /></div> : <p className="mt-3 text-xs text-stone-400">{t("Select a step to inspect.", "选择一个步骤查看详情。")}</p>}
     </> : <div className="rounded-2xl border border-white/80 bg-white/70 p-5 text-sm text-stone-500">{t("Select a turn to inspect.", "选择一轮查看详情。")}</div>}
     </div>
@@ -441,11 +435,24 @@ function buildFlow(spans: TraceSpan[]): FlowNode[] {
 
 function FlowGraph({ nodes, selectedId, onSelect }: { nodes: FlowNode[]; selectedId: string | null; onSelect: (id: string) => void }) {
   const { t } = useLocale();
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  useEffect(() => {
+    const element = hostRef.current;
+    if (!element) return;
+    const measure = () => setAvailableWidth(Math.max(0, element.clientWidth - 32));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   if (nodes.length === 0) return <div className="rounded-2xl bg-white/60 p-5 text-sm text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</div>;
   const width = Math.max(720, ...nodes.map((node) => node.x + NODE_WIDTH + 24));
   const height = Math.max(300, ...nodes.map((node) => node.y + NODE_HEIGHT + 24));
-  return <div className="overflow-x-auto rounded-[2rem] border border-white/70 bg-white/55 p-4 shadow-[0_14px_40px_rgba(49,39,70,0.04)]">
-    <div className="relative" style={{ width, height }}>
+  const scale = availableWidth > 0 ? Math.min(1, availableWidth / width) : 1;
+  return <div ref={hostRef} data-flow-graph className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/55 p-4 shadow-[0_14px_40px_rgba(49,39,70,0.04)]">
+    <div style={{ width: width * scale, height: height * scale }}>
+    <div className="relative" style={{ width, height, transform: `scale(${scale})`, transformOrigin: "top left" }}>
       <svg className="pointer-events-none absolute inset-0" width={width} height={height} aria-hidden="true">
         <defs><marker id="trace-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#c4b5fd" /></marker></defs>
         {nodes.slice(1).map((node, index) => {
@@ -462,6 +469,7 @@ function FlowGraph({ nodes, selectedId, onSelect }: { nodes: FlowNode[]; selecte
         })}
       </svg>
       {nodes.map((node, index) => <TraceNode key={node.span.id} node={node} index={index} selected={selectedId === node.span.id} onSelect={onSelect} />)}
+    </div>
     </div>
   </div>;
 }
@@ -570,6 +578,9 @@ function formatDuration(value: number | null) {
   if (!value || value <= 0) return "—";
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(1)} s`;
 }
+
+
+
 
 
 
