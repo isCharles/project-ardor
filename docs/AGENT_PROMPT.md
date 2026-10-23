@@ -41,3 +41,14 @@ Choose the lowest layer that can enforce the fix:
 - If it is a regression → add a test/eval; do not append a numbered example to the system prompt.
 
 This prevents the prompt from turning into a growing pile of one-off reminders.
+
+## Dynamic tail
+
+`systemPrompt()` appends only two dynamic sections:
+
+1. the current time and the user's timezone;
+2. `<user_memory>` retrieved for this turn.
+
+Advice-card requirements, recurring-calendar semantics and untrusted-content handling
+live in the relevant tool descriptions or the static principles, not in a growing
+tail of per-feature reminders.
