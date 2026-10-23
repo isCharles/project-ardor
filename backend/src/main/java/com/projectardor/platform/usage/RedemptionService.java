@@ -65,6 +65,11 @@ public class RedemptionService {
     public Redeemed redeem(UUID userId, String rawCode) {
         String code = normalize(rawCode);
         if (code.length() < 8) throw new IllegalArgumentException("兑换码格式不正确");
+        // Different codes must not concurrently overwrite the same user's paid expiry.
+        // Lock the stable user row first: a new account may have no membership row yet.
+        if (jdbc.queryForList("SELECT id FROM users WHERE id = ? FOR UPDATE", UUID.class, userId).isEmpty()) {
+            throw new ResourceNotFoundException("用户不存在");
+        }
         List<CodeRow> rows = jdbc.query("""
                 SELECT * FROM redemption_codes WHERE code_hash = ? FOR UPDATE
                 """, (row, index) -> new CodeRow(row.getObject("id", UUID.class), row.getString("plan_tier"),

@@ -17,16 +17,13 @@ const SEVERITY_SECTIONS: Array<[string, string]> = [
 
 function escapeLatex(value: unknown): string {
   const text = value == null ? "" : String(value);
-  return text
-    .replace(/\\/g, "\\textbackslash{}")
-    .replace(/([{}])/g, "\\$1")
-    .replace(/\$/g, "\\$")
-    .replace(/&/g, "\\&")
-    .replace(/%/g, "\\%")
-    .replace(/#/g, "\\#")
-    .replace(/_/g, "\\_")
-    .replace(/\^/g, "\\textasciicircum{}")
-    .replace(/~/g, "\\textasciitilde{}");
+  // One pass: never escape braces/backslashes introduced by an earlier replacement.
+  return text.replace(/[\\{}$&%#_^~]/g, (character) => {
+    if (character === "\\") return "\\textbackslash{}";
+    if (character === "^") return "\\textasciicircum{}";
+    if (character === "~") return "\\textasciitilde{}";
+    return "\\" + character;
+  });
 }
 
 function inline(value: unknown): string {

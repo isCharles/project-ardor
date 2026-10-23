@@ -140,6 +140,7 @@ class MockInterviewApplicationContractTests {
         var question = InterviewQuestion.create(owner, entity.getId(), 1, "Question", "TECHNICAL", List.of());
         var answer = InterviewAnswer.create(owner, entity.getId(), question.getId(), "Answer", 12);
         when(sessions.findByIdAndUserId(entity.getId(), owner)).thenReturn(Optional.of(entity));
+        when(sessions.findOwnedForUpdate(entity.getId(), owner)).thenReturn(Optional.of(entity));
         when(questions.findByIdAndUserIdAndInterviewSessionId(question.getId(), owner, entity.getId())).thenReturn(Optional.of(question));
         when(questions.findAllByUserIdAndInterviewSessionIdOrderBySequenceNumber(owner, entity.getId())).thenReturn(List.of(question));
         when(answers.findAllByUserIdAndInterviewSessionId(owner, entity.getId())).thenReturn(List.of(), List.of(answer));
