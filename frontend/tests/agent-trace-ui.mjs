@@ -1,0 +1,76 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+
+import { chromium } from "playwright";
+
+// Isolated developer-trace fixture. Never reads a real run or model payload.
+const origin = "http://127.0.0.1:3104";
+const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", "3104"], { stdio: "pipe" });
+let logs = "";
+server.stdout.on("data", (chunk) => { logs += chunk; });
+server.stderr.on("data", (chunk) => { logs += chunk; });
+let browser;
+
+const span = (id, parentSpanId, kind, name, startedAt, extra = {}) => ({
+  id, runId: "fixture-run", parentSpanId, kind, name, status: "COMPLETED",
+  startedAt, finishedAt: startedAt, durationMs: 100, model: null,
+  promptVersion: null, inputTokens: null, outputTokens: null,
+  errorCode: null, attributes: {}, ...extra,
+});
+
+try {
+  let ready = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (server.exitCode !== null) throw new Error(logs);
+    try { if ((await fetch(origin)).ok) { ready = true; break; } } catch { /* starting */ }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(ready, logs);
+  browser = await chromium.launch({ headless: true, ...(process.env.ARDOR_UI_BROWSER_CHANNEL ? { channel: process.env.ARDOR_UI_BROWSER_CHANNEL } : {}) });
+  const context = await browser.newContext({ viewport: { width: 1400, height: 1100 } });
+  const trace = {
+    runId: "fixture-run",
+    status: "COMPLETED",
+    durationMs: 2400,
+    totals: { llmCalls: 2, toolCalls: 1, loopRounds: 1, inputTokens: 12000, outputTokens: 180 },
+    spans: [
+      span("root", null, "RUN", "agent.run", "2026-10-23T08:00:00Z", { durationMs: 2400, attributes: { model: "fixture-model" } }),
+      span("context", "root", "CONTEXT", "context.load", "2026-10-23T08:00:01Z", { durationMs: 120 }),
+      span("llm-1", "root", "LLM", "llm.call.1", "2026-10-23T08:00:02Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 32, attributes: { toolRound: true } }),
+      span("tool-1", "root", "TOOL", "list_resumes", "2026-10-23T08:00:03Z", { durationMs: 80 }),
+      span("llm-2", "root", "LLM", "llm.call.2", "2026-10-23T08:00:04Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 148 }),
+    ],
+  };
+  await context.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let body = {};
+    if (path === "/api/auth/me") body = { id: "trace-fixture", email: "trace-fixture@ardor.invalid", admin: false };
+    else if (path === "/api/auth/csrf") body = { token: "fixture", headerName: "X-CSRF-TOKEN" };
+    else if (path === "/api/profile/sidebar") body = { userId: "trace-fixture", hrefs: ["/app"], revision: 1, configured: true };
+    else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
+    else if (path === "/api/agent/runs/fixture-run/trace") body = trace;
+    await route.fulfill({ json: body });
+  });
+
+  const page = await context.newPage();
+  await page.goto(`${origin}/app/agent-runs/fixture-run`);
+  await page.locator("[data-trace-node]").first().waitFor();
+  assert.equal(await page.locator("[data-trace-node]").count(), 5, "Flow graph renders every span");
+  await page.getByRole("button", { name: "Flow", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Timeline", exact: true }).waitFor();
+
+  await page.locator("[data-trace-node]").nth(2).click();
+  await page.getByText("Metadata", { exact: true }).waitFor();
+  await page.getByText("llm.call.1", { exact: true }).first().waitFor();
+  await page.screenshot({ path: ".next/agent-trace-flow.png", fullPage: true });
+
+  await page.getByRole("button", { name: "Timeline", exact: true }).click();
+  await page.getByText("Loop rounds", { exact: true }).waitFor();
+  assert.equal(await page.locator("[data-trace-node]").count(), 0, "Timeline does not keep the graph mounted");
+  await context.close();
+  console.log("Agent trace UI: graph nodes, metadata selection, timeline toggle passed.");
+} finally {
+  await browser?.close();
+  server.kill();
+}
+
