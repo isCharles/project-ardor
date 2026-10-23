@@ -17,6 +17,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
+import com.projectardor.assistant.tools.modules.AgentToolBundle;
+import com.projectardor.assistant.tools.modules.AgentToolContext;
+import com.projectardor.assistant.tools.modules.AgentToolProvider;
+import com.projectardor.assistant.tools.modules.KnowledgeAgentToolProvider;
 
 import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
 import com.projectardor.assistant.automation.service.AutomationService;
@@ -78,6 +82,13 @@ public class CareerAgentTools {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(CareerAgentTools.class);
 
     private final ResumeService resumeService;
+    private List<AgentToolProvider> toolProviders;
+
+    /** Spring discovers adapters; direct constructors retain the same default tool set. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureToolProviders(List<AgentToolProvider> providers) {
+        toolProviders = List.copyOf(providers);
+    }
     private final ResumeAnalysisQueueService resumeAnalysisQueueService;
     private final InterviewService interviewService;
     private final ProfileService profileService;
@@ -173,6 +184,7 @@ public class CareerAgentTools {
         this.interviewRecapQueueService = interviewRecapQueueService;
         this.tavilySearchService = tavilySearchService;
         this.knowledgeService = knowledgeService;
+        this.toolProviders = List.of(new KnowledgeAgentToolProvider(knowledgeService));
         this.learningPlanService = learningPlanService;
         this.applicationRhythmService = applicationRhythmService;
         this.automationService = automationService;
@@ -235,7 +247,15 @@ public class CareerAgentTools {
         return new AgentContextReference(type, contextId, label);
     }
 
-    public final class BoundCareerTools implements com.projectardor.assistant.execution.service.ToolIntentScope {
+    public final class BoundCareerTools implements com.projectardor.assistant.execution.service.ToolIntentScope, AgentToolBundle {
+        private final List<Object> moduleTools;
+
+        @Override public List<Object> toolObjects() {
+            var objects = new java.util.ArrayList<Object>();
+            objects.add(this);
+            objects.addAll(moduleTools);
+            return List.copyOf(objects);
+        }
         private final UUID userId;
         private final String trustedUserRequest;
         private final String originalUserMessage;
@@ -257,6 +277,9 @@ public class CareerAgentTools {
             this.trustedUserRequest = trustedUserRequest == null ? "" : trustedUserRequest.strip();
             this.logicalActionId = logicalActionId;
             this.runRequestId = runRequestId;
+            var context = new AgentToolContext(userId, this::propose, this::untrustedContent);
+            moduleTools = toolProviders.stream().map(provider ->
+                    java.util.Objects.requireNonNull(provider.bind(context), "Tool provider returned no bound object")).toList();
         }
 
         public List<PendingConfirmation> pendingConfirmations() {
@@ -356,33 +379,6 @@ public class CareerAgentTools {
         @Tool(name = "search_web", value = "使用 Tavily 搜索公开互联网，返回标题、链接、摘要和相关度。查询最新、当前、近期、官网、新闻、招聘、政策或其他可能变化的信息时必须使用；回答中应保留相关来源链接")
         public String searchWeb(@P("简洁、具体的搜索查询，最多 400 个字符") String query) {
             return untrustedContent("web-search", tavilySearchService.search(userId, query));
-        }
-
-        @Tool(name = "list_knowledge_documents", value = "列出当前用户知识库中的上传文档和联网资料；返回文档 UUID、来源与切块数量")
-        public List<KnowledgeDocumentView> listKnowledgeDocuments() {
-            return knowledgeService.list(userId);
-        }
-
-        @Tool(name = "search_knowledge", value = "从当前用户知识库检索与问题最相关的片段，这是 RAG 的检索步骤。回答知识库问题或从知识库出题前必须调用")
-        public String searchKnowledge(
-                @P("要检索的问题或关键词，最多 400 个字符") String query,
-                @P(value = "返回片段数，1 到 10；通常传 5", required = false) Integer limit) {
-            return untrustedContent("knowledge-search",
-                    knowledgeService.search(userId, query, limit == null ? 5 : limit));
-        }
-
-        @Tool(name = "research_knowledge_from_web", value = "主动联网搜索一个主题，并把可核验的来源摘要保存到当前用户知识库。适合用户要求补充知识库，或当前知识库缺少需要长期复用的资料时；成功后必须告诉用户新增了哪些来源")
-        public String researchKnowledgeFromWeb(
-                @P("明确、可搜索的研究主题，最多 400 个字符") String query) {
-            return untrustedContent("web-research", knowledgeService.researchFromWeb(userId, query));
-        }
-
-        @Tool(name = "delete_knowledge_document", value = "永久删除当前用户指定的一份知识文档及其全部检索切片。仅在用户明确要求删除时使用；先调用 list_knowledge_documents 定位真实 UUID")
-        public Map<String, Object> deleteKnowledgeDocument(@P("知识文档 UUID") String documentId) {
-            UUID id = uuid(documentId, "知识文档 ID");
-            KnowledgeDocumentView document = knowledgeService.get(userId, id);
-            return propose("knowledge_document", id, document.title(),
-                    "连同它的全部检索切片一起删除", "/api/knowledge/documents/" + id);
         }
 
         @Tool(name = "list_learning_plans", value = "列出当前用户的学习计划、状态、日期和 UUID")

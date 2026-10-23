@@ -1,6 +1,7 @@
 package com.projectardor.assistant.execution.service;
 
 import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -10,6 +11,8 @@ import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.projectardor.assistant.tools.modules.AgentToolBundle;
 
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
@@ -100,10 +103,13 @@ final class ApprovedAgentTools {
         Map<String, Boolean> attemptedWrites = new java.util.concurrent.ConcurrentHashMap<>();
         AgentExecutionAuditStore.ToolCallContext auditContext =
                 AgentExecutionAuditStore.ToolCallContext.of(userId, conversationId, requestId);
-        for (var method : bound.getClass().getMethods()) {
+        Set<String> names = new HashSet<>();
+        for (Object toolObject : AgentToolBundle.objects(bound)) {
+        for (var method : toolObject.getClass().getMethods()) {
             if (!method.isAnnotationPresent(Tool.class)) continue;
             var specification = ToolSpecifications.toolSpecificationFrom(method);
-            var delegate = new DefaultToolExecutor(bound, method);
+            if (!names.add(specification.name())) throw new IllegalStateException("工具重复登记：" + specification.name());
+            var delegate = new DefaultToolExecutor(toolObject, method);
             result.put(specification, (request, memoryId) -> {
                 if (!specification.name().equals(request.name())) throw new IllegalArgumentException("工具名称不匹配");
                 String tool = specification.name();
@@ -212,6 +218,7 @@ final class ApprovedAgentTools {
                     }
                 }
             });
+        }
         }
         return result;
     }

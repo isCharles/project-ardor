@@ -255,6 +255,22 @@ http.createServer((request, response) => {
       return;
     }
     const toolResults = payload.messages?.filter((message) => message.role === "tool") ?? [];
+    if (payload.model === "knowledge-module-probe" && isAgentRequest && !probeTool) {
+      const available = new Set(payload.tools.map(tool => tool.function?.name));
+      if (!["list_knowledge_documents", "search_knowledge", "research_knowledge_from_web", "delete_knowledge_document"]
+        .every(name => available.has(name))) {
+        response.writeHead(400);
+        response.end(JSON.stringify({ error: { message: "Knowledge adapter schema missing" } }));
+        return;
+      }
+      const message = toolResults.length === 0
+        ? { role: "assistant", content: null, tool_calls: [{ id: "knowledge-list", type: "function",
+          function: { name: "list_knowledge_documents", arguments: "{}" } }] }
+        : { role: "assistant", content: `Owned knowledge result: ${toolResults.at(-1).content}` };
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ model: payload.model, choices: [{ message }] }));
+      return;
+    }
     if (payload.model === "stream-probe-model" && isAgentRequest) {
       console.log(`stream-probe tools=${payload.tools.map((tool) => tool.function?.name).join(",")}`);
     }

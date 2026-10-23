@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.stereotype.Service;
 
 import com.projectardor.assistant.tools.CareerAgentTools;
+import com.projectardor.assistant.tools.modules.AgentToolBundle;
 import com.projectardor.platform.model.llm.service.LlmCallException;
 import com.projectardor.platform.model.llm.service.LlmConfigService;
 import com.projectardor.platform.model.llm.service.ToolCallingProbe;
@@ -36,8 +37,10 @@ public class AgentToolCallingProbe implements ToolCallingProbe {
         try {
             Map<ToolSpecification, ToolExecutor> schemaProbeTools = new LinkedHashMap<>();
             ToolExecutor noOpExecutor = (request, memoryId) -> "compatibility-schema-ok";
-            ToolSpecifications.toolSpecificationsFrom(careerAgentTools.bind(userId, "连接测试"))
-                    .forEach(specification -> schemaProbeTools.put(specification, noOpExecutor));
+            for (Object target : AgentToolBundle.objects(careerAgentTools.bind(userId, "连接测试"))) {
+                ToolSpecifications.toolSpecificationsFrom(target)
+                        .forEach(specification -> schemaProbeTools.put(specification, noOpExecutor));
+            }
             ToolSpecifications.toolSpecificationsFrom(probe).forEach(specification ->
                     schemaProbeTools.put(specification, (request, memoryId) -> {
                         probe.called.set(true);

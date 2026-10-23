@@ -1054,6 +1054,22 @@ async function main() {
   assert.ok(concurrentSearches.every(hits=>hits.some(hit=>hit.documentId===knowledgeDocument.id)),"Concurrent retrieval must succeed with the CI's two-connection pool");
   assert.equal((await asyncOwner.request(vectorTaskPath)).completionToken,vectorTask.completionToken,"Searching must not create new completed-index notifications");
   assert.ok((await asyncOwner.request("/api/background-tasks/summary")).unreadByModule.knowledge>0);
+  // Exercise the extracted adapter through the actual model/tool loop, not reflection alone.
+  const knowledgeOwner = new Client();
+  await knowledgeOwner.request("/api/auth/register", { method: "POST", expected: 201,
+    body: { email: `golden-knowledge-${suffix}@ardor.invalid`, password, displayName: "Knowledge adapter fixture" } });
+  await knowledgeOwner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE",
+    baseUrl: modelBase, model: "knowledge-module-probe", apiKey: "disposable-fake-model-key" } });
+  const ownedKnowledge = await knowledgeOwner.request("/api/knowledge/documents", {
+    method: "POST", expected: 201, body: libraryUpload });
+  const knowledgeConversation = await knowledgeOwner.request("/api/agent/conversations", { method: "POST", expected: 201 });
+  const knowledgeReply = await knowledgeOwner.request("/api/agent/messages", { method: "POST",
+    body: { conversationId: knowledgeConversation.id, requestId: randomUUID(), message: "列出我的知识库文档" } });
+  assert.ok(knowledgeReply.content.includes(ownedKnowledge.id), "Agent must execute the discovered knowledge adapter");
+  assert.ok(!knowledgeReply.content.includes(knowledgeDocument.id), "Tool result must not include another owner's documents");
+  await stranger.request(`/api/knowledge/documents/${ownedKnowledge.id}`, { method: "DELETE", expected: 404 });
+  assert.ok((await knowledgeOwner.request("/api/knowledge/documents")).some(item => item.id === ownedKnowledge.id),
+    "A foreign delete attempt must leave the owner's document intact");
   const resumeUpload = new FormData();
   resumeUpload.set("file",new Blob([syntheticResumePdf()],{type:"application/pdf"}),"golden-task-resume.pdf");
   const resume = await asyncOwner.request("/api/resumes",{method:"POST",expected:201,body:resumeUpload});
