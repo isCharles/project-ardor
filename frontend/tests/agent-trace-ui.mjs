@@ -42,6 +42,14 @@ try {
       span("llm-2", "root", "LLM", "llm.call.2", "2026-10-23T08:00:04Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 148 }),
     ],
   };
+  const conversation = {
+    conversationId: "fixture-conv",
+    title: "Fixture conversation",
+    runs: [
+      { runId: "run-1", message: "第一轮问题", assistantMessage: "第一轮回答", status: "COMPLETED", createdAt: "2026-10-23T08:00:00Z", updatedAt: "2026-10-23T08:00:02Z", spans: trace.spans },
+      { runId: "run-2", message: "第二轮问题", assistantMessage: "第二轮回答", status: "COMPLETED", createdAt: "2026-10-23T08:01:00Z", updatedAt: "2026-10-23T08:01:02Z", spans: trace.spans.map((item) => ({ ...item, id: `${item.id}-2`, runId: "run-2" })) },
+    ],
+  };
   await context.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body = {};
@@ -50,6 +58,7 @@ try {
     else if (path === "/api/profile/sidebar") body = { userId: "trace-fixture", hrefs: ["/app"], revision: 1, configured: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
     else if (path === "/api/agent/runs/fixture-run/trace") body = trace;
+    else if (path === "/api/agent/conversations/fixture-conv/trace") body = conversation;
     await route.fulfill({ json: body });
   });
 
@@ -65,14 +74,37 @@ try {
   await page.getByText("llm.call.1", { exact: true }).first().waitFor();
   await page.screenshot({ path: ".next/agent-trace-flow.png", fullPage: true });
 
+  await page.getByRole("button", { name: "Inspector", exact: true }).click();
+  await page.locator("[data-trace-inspector]").waitFor();
+  await page.getByRole("tab", { name: "Overview", exact: true }).waitFor();
+  assert.equal(await page.locator("[data-trace-inspector-item]").count(), 6, "Inspector lists every span");
+  await page.getByRole("tab", { name: "Timing", exact: true }).click();
+  await page.getByText("Started at", { exact: true }).waitFor();
+  await page.locator("[data-trace-inspector-item]").filter({ hasText: "list_resumes" }).click();
+  await page.getByRole("tab", { name: "Input", exact: true }).click();
+  await page.screenshot({ path: ".next/agent-trace-inspector.png", fullPage: true });
+
   await page.getByRole("button", { name: "Timeline", exact: true }).click();
   await page.getByText("Loop rounds", { exact: true }).waitFor();
   assert.equal(await page.locator("[data-trace-node]").count(), 0, "Timeline does not keep the graph mounted");
+
+  await page.goto(`${origin}/app/agent-runs/fixture-run?conversation=fixture-conv`);
+  await page.locator("[data-conversation-trace]").waitFor();
+  assert.equal(await page.locator("[data-conversation-run]").count(), 2, "Conversation trace lists every turn");
+  await page.locator("[data-conversation-run]").nth(1).click();
+  await page.getByText("第二轮问题", { exact: true }).first().waitFor();
+  assert.ok(await page.locator("[data-trace-node]").count() > 0, "Selected turn renders its flow");
+  await page.screenshot({ path: ".next/agent-trace-conversation.png", fullPage: true });
   await context.close();
-  console.log("Agent trace UI: graph nodes, metadata selection, timeline toggle passed.");
+  console.log("Agent trace UI: graph nodes, metadata selection, inspector, timeline, multi-turn trace passed.");
 } finally {
   await browser?.close();
   server.kill();
 }
+
+
+
+
+
 
 

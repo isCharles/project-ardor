@@ -1242,7 +1242,7 @@ export default function AgentHomePage() {
   const liveTrace = showLiveTrace ? <ExecutionTrace title={liveTitle}
     active={(busy || !!runningRun) && phase !== "OUTPUT"}
     elapsed={formatElapsed(runElapsed)} thinking={runThinking} steps={runSteps}
-    traceHref={activeLiveRunId ? `/app/agent-runs/${activeLiveRunId}` : undefined}>
+    traceHref={activeLiveRunId ? `/app/agent-runs/${activeLiveRunId}${state?.conversationId ? `?conversation=${state.conversationId}` : ""}` : undefined}>
     {runningRun && <p>{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
     {retryFailures.map((failure, index) => <p key={index} className="text-amber-700">{failure.label} · {failure.detail}</p>)}
     {busy && retryAttempt > 0 && <p>{t(`Reconnecting · retry ${retryAttempt}/${MAX_MESSAGE_RETRIES}`, `正在重新连接 · 第 ${retryAttempt}/${MAX_MESSAGE_RETRIES} 次重试`)}</p>}
@@ -1349,7 +1349,7 @@ export default function AgentHomePage() {
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         {message === liveAssistant && liveTrace}
-                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps} traceHref={message.runId ? `/app/agent-runs/${message.runId}` : undefined}>{proposalResults(message)}</ExecutionTrace>; })()}
+                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps} traceHref={message.runId ? `/app/agent-runs/${message.runId}${message.conversationId ? `?conversation=${message.conversationId}` : ""}` : undefined}>{proposalResults(message)}</ExecutionTrace>; })()}
                         <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 block text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time>
                       </div>
                     )}
@@ -1450,6 +1450,7 @@ export default function AgentHomePage() {
     </main>
   );
 }
+
 
 
 

@@ -46,3 +46,17 @@ The model listener records the last user message as input context and the
 assistant text (or requested tool names) as output. Graph phase spans record the
 phase input and the phase conclusion. Tool spans record argument/result previews.
 `THOUGHT` still means a phase summary span, never raw hidden reasoning.
+
+## Multi-turn inspector
+
+`/app/agent-runs/<runId>?conversation=<conversationId>` loads the whole
+conversation through `GET /api/agent/conversations/{conversationId}/trace`.
+
+The left column lists turns (user message, assistant answer, status, step count).
+Selecting a turn renders that run's flow graph and the span detail inspector.
+The single-run trace page exposes a "多轮轨迹" link; live and saved chat trace
+links carry the conversation id automatically.
+
+The endpoint is owner-scoped and returns only the latest 30 runs. Each run's
+spans are read through the same bounded `AgentTraceStore` used by the single-run
+trace; raw prompts and tool payloads remain out of the trace store.
