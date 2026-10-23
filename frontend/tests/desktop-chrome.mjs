@@ -32,18 +32,36 @@ try {
     const body = path === "/api/auth/me" ? { id: "chrome-fixture", email: "chrome@ardor.invalid", admin: false }
       : path === "/api/agent" ? { conversationId: null, llmConfigured: true, displayName: "Fixture", conversations: [], archivedConversations: [], messages: [], memory: { content: "" } }
       : path === "/api/agent/reasoning" ? { nativeControl: true }
+      : path === "/api/agent/models" ? []
       : path === "/api/agent/permissions" ? { globalLevel: 0, modules: [] }
       : path === "/api/profile" ? { displayName: "Fixture", headline: "", targetRoles: [], timezone: "Asia/Shanghai" }
       : path === "/api/settings/llm" ? { configured: true, provider: "OPENAI_COMPATIBLE", baseUrl: "https://example.com", model: "fixture", configurationSource: "ADMIN", personalOverride: false }
       : path === "/api/settings/web-search" ? { configured: true, provider: "TAVILY", configurationSource: "ADMIN", personalOverride: false }
       : path === "/api/settings/integrations" ? []
-      : path === "/api/usage" ? { tier: "MEMBER", resetsAt: new Date().toISOString(), features: [] }
+      : path === "/api/usage" ? { tier: "PLUS", resetsAt: new Date().toISOString(), features: [] }
       : path === "/api/background-tasks/summary" ? { activeCount: 0, unreadByModule: {} } : {};
     await route.fulfill({ json: body });
   });
   await page.goto("http://127.0.0.1:3101/app");
   const toolbar = page.getByRole("banner", { name: "Window toolbar" });
   await toolbar.waitFor();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    assert.equal(await page.evaluate(async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const count = stream.getAudioTracks().length;
+      stream.getTracks().forEach(track => track.stop());
+      return count;
+    }), 1, "Explicit fake-audio consent and remembered same-origin permission must work");
+  }
+  assert.equal(await app.evaluate(() => globalThis.ardorMicrophonePromptCount), 1);
+  assert.equal(await page.evaluate(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach(track => track.stop());
+      return "unexpected-video-grant";
+    } catch (error) { return error.name; }
+  }), "NotAllowedError", "Remembered microphone permission must not grant fake video");
+  assert.equal(await app.evaluate(() => globalThis.ardorMicrophonePromptCount), 1);
   const toolbarBackground = await toolbar.evaluate(element => {
     const style = getComputedStyle(element);
     return { color: style.backgroundColor, size: style.backgroundSize, repeat: style.backgroundRepeat };
