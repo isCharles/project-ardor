@@ -41,7 +41,7 @@ import tools.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
-import dev.langchain4j.memory.chat.TokenWindowChatMemory;
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.agent.tool.Tool;
@@ -723,7 +723,10 @@ public class CareerAgentService {
             com.projectardor.platform.model.llm.service.LlmConfigService.LlmRuntimeConfig runtimeConfig,
             ReasoningDepth depth) {
         AgentContextCompactor.Prepared prepared = contextCompactor.prepare(userId, conversationId, baseSystem, runtimeConfig, depth);
-        ChatMemory memory = TokenWindowChatMemory.withMaxTokens(8000, prepared.estimator());
+        // Keep the tool-call loop memory message-based. TokenWindowChatMemory can evict
+        // the user message and tool results after a large result, leaving only system
+        // text; the next model round then invents an unrelated task.
+        ChatMemory memory = MessageWindowChatMemory.withMaxMessages(40);
         for (ConversationMessage historyMessage : prepared.recentMessages()) {
             if ("USER".equals(historyMessage.getRole())) memory.add(UserMessage.from(recoveredContextualMessage(userId, historyMessage)));
             else if ("ASSISTANT".equals(historyMessage.getRole())) memory.add(AiMessage.from(historyMessage.getContent()));
@@ -1251,6 +1254,9 @@ public class CareerAgentService {
         default void waitingForApproval(boolean waiting) {}
     }
 }
+
+
+
 
 
 

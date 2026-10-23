@@ -51,10 +51,12 @@ system prompt
   dropping context.
 
 The prompt summary is wrapped in `<conversation_summary version="N">` and injected into the
-system prompt. The recent messages are loaded through
-`TokenWindowChatMemory.withMaxTokens(8000, estimator)`, so the final recent window is also
-token-bounded. OpenAI-compatible models use LangChain4j's local `OpenAiTokenCountEstimator`;
-providers without a local tokenizer use a conservative heuristic.
+system prompt. `MessageWindowChatMemory(40)` remains on the tool-call loop: a token window was tried and
+removed because a large tool result could evict the user message, leaving only the system
+prompt and causing the next model round to hallucinate a different task. Token awareness lives
+in the rolling-summary trigger, not in mutating the live tool loop. OpenAI-compatible models
+use LangChain4j's local `OpenAiTokenCountEstimator`; providers without a local tokenizer use
+a conservative heuristic.
 
 `context.load` trace attributes now include:
 
@@ -88,3 +90,4 @@ app:
   with the conversation.
 - Tool observations are not currently persisted in `messages`; only final assistant answers are.
   Compressing tool evidence therefore needs a separate evidence table/tool-result context layer.
+
