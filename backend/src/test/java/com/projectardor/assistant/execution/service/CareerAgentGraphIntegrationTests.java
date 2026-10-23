@@ -71,7 +71,7 @@ class CareerAgentGraphIntegrationTests {
                     ? "SUFFICIENT" : "Synthetic phase result")).build();
         });
         fixture.run();
-        verify(fixture.bound, times(3)).listResumes();
+        verify(fixture.resumeReads, times(3)).listResumes();
         assertThat(fixture.events.stream().filter(event -> event.type().equals("done"))).hasSize(1);
     }
 
@@ -137,6 +137,11 @@ class CareerAgentGraphIntegrationTests {
         }
     }
 
+    public static class ResumeReads {
+        @dev.langchain4j.agent.tool.Tool(name = "list_resumes", value = "Synthetic module read")
+        public List<String> listResumes() { return List.of(); }
+    }
+
     private static final class Fixture {
         final UUID user = UUID.randomUUID();
         final Conversation conversation = Conversation.create(user, "Synthetic graph");
@@ -145,6 +150,7 @@ class CareerAgentGraphIntegrationTests {
         final AgentStreamProgress progress = mock(AgentStreamProgress.class);
         final AgentContextCompactor compactor = mock(AgentContextCompactor.class);
         final CareerAgentTools.BoundCareerTools bound = mock(CareerAgentTools.BoundCareerTools.class, RETURNS_SELF);
+        final ResumeReads resumeReads = mock(ResumeReads.class);
         final List<AgentStreamEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
         final List<ChatRequest> requests = new java.util.concurrent.CopyOnWriteArrayList<>();
         final ChatModel model = mock(ChatModel.class);
@@ -162,7 +168,7 @@ class CareerAgentGraphIntegrationTests {
                             ConversationMessage.assistant(user, conversation.getId(), call.getArgument(3))));
             var tools = mock(CareerAgentTools.class);
             when(tools.bind(eq(user), anyString(), any(), any())).thenReturn(bound);
-            when(bound.toolObjects()).thenReturn(List.of(bound));
+            when(bound.toolObjects()).thenReturn(List.of(bound, resumeReads));
             var memoryEmbedding = mock(MemoryEmbeddingService.class);
             when(memoryEmbedding.context(eq(user), anyString())).thenReturn("");
             var profiles = mock(ProfileService.class);

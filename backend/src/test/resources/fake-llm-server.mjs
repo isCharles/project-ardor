@@ -184,6 +184,36 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+    if (payload.model === "resume-module-probe" && isAgentRequest) {
+      const names = payload.tools.map(tool => tool.function.name);
+      const required = ["list_resumes", "analyze_resume", "get_resume_analysis_status", "get_resume_analysis", "delete_resume"];
+      const message = String(payload.messages.filter(item => item.role === "user").at(-1)?.content);
+      const mode = ["status", "report", "analyze", "delete"].find(mode => message.includes(`resume-probe-${mode}`)) ?? "list";
+      const id = message.match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0];
+      const output = String(payload.messages.filter(item => item.role === "tool").at(-1)?.content ?? "");
+      let valid = new Set(names).size === names.length && required.every(name => names.includes(name));
+      if (hasToolResult) {
+        try {
+          const result = JSON.parse(output);
+          valid &&= mode === "list" ? Array.isArray(result) && result.length === 2 && result.every(item => Object.keys(item).length === 7)
+              && output.includes("Owner resume fixture.pdf") && !output.includes("Foreign resume fixture.pdf")
+            : mode === "report" ? Object.keys(result).length === 4 && result.resumeId === id && !!result.analysisId && !!result.analysis
+            : mode === "delete" ? result.status === "CONFIRMATION_REQUIRED"
+            : Object.keys(result).length === 7 && result.resumeId === id && result.status === "COMPLETED";
+        } catch { valid = false; }
+      }
+      if (!valid) { response.writeHead(400, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "Resume module contract or ownership failed" } })); return; }
+      const tool = { list: "list_resumes", status: "get_resume_analysis_status", report: "get_resume_analysis", analyze: "analyze_resume", delete: "delete_resume" }[mode];
+      const delta = hasToolResult ? { role: "assistant", content: `Synthetic resume ${mode} verified.` }
+        : { role: "assistant", tool_calls: [{ index: 0, id: "resume-probe", type: "function", function: { name: tool, arguments: JSON.stringify(mode === "list" ? {} : { resumeId: id }) } }] };
+      response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
+      for (const [chunk, finish] of [[delta, null], [{}, hasToolResult ? "stop" : "tool_calls"]]) {
+        response.write(`data: ${JSON.stringify({ id: "resume-probe", object: "chat.completion.chunk", model: payload.model,
+          choices: [{ index: 0, delta: chunk, finish_reason: finish }] })}\n\n`);
+      }
+      response.end("data: [DONE]\n\n"); return;
+    }
     if (payload.model === "calendar-advice-module-probe" && isAgentRequest) {
       const names = payload.tools.map(tool => tool.function.name);
       const expected = ["get_calendar_advice", "update_calendar_advice", "delete_calendar_advice"];

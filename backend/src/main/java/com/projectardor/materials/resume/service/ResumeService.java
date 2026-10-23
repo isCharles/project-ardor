@@ -114,6 +114,25 @@ public class ResumeService {
     }
 
     @Transactional(readOnly = true)
+    public List<ResumeView> listViews(UUID userId) {
+        // Preserve the existing newest-first repository order, including its tie behavior.
+        Map<UUID, ResumeAnalysis> latest = new LinkedHashMap<>();
+        for (var analysis : listAnalyses(userId)) latest.putIfAbsent(analysis.getResumeId(), analysis);
+        return list(userId).stream().map(resume -> ResumeView.from(resume, latest.get(resume.getId()))).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ResumeView detail(UUID userId, UUID resumeId) {
+        return ResumeView.from(get(userId, resumeId), null);
+    }
+
+    @Transactional
+    public ResumeView uploadView(UUID userId, MultipartFile file) {
+        // upload already flushes parse status and lifecycle timestamps before returning.
+        return ResumeView.from(upload(userId, file), null);
+    }
+
+    @Transactional(readOnly = true)
     public Resume get(UUID userId, UUID resumeId) {
         return resumeRepository.findByIdAndUserId(resumeId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("简历不存在"));
@@ -170,6 +189,23 @@ public class ResumeService {
     @Transactional(readOnly = true)
     public ResumeAnalysisSnapshot analysisContext(UUID userId, UUID analysisId) {
         return ResumeAnalysisSnapshot.from(getAnalysisById(userId, analysisId));
+    }
+
+    @Transactional(readOnly = true)
+    public ResumeAnalysisSnapshot analysisForResume(UUID userId, UUID resumeId) {
+        return report(userId, resumeId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public ResumeAnalysisSnapshot report(UUID userId, UUID resumeId, UUID analysisId) {
+        var analysis = analysisId == null ? getAnalysis(userId, resumeId) : getAnalysisById(userId, analysisId);
+        if (!analysis.getResumeId().equals(resumeId)) throw new ResourceNotFoundException("简历分析不存在");
+        return ResumeAnalysisSnapshot.from(analysis);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ResumeAnalysisSnapshot> analysisHistory(UUID userId, UUID resumeId) {
+        return history(userId, resumeId).stream().map(ResumeAnalysisSnapshot::from).toList();
     }
 
     public ResumeAnalysis analyze(UUID userId, UUID resumeId) {

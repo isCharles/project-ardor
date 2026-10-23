@@ -24,6 +24,16 @@ import org.junit.jupiter.api.Test;
  */
 class ArchitectureBoundaryTests {
     @Test
+    void resumeAndLearningContextToolsCannotReadTheirEntitiesOrMoveBackToCentralHost() throws IOException {
+        assertNoImports("assistant/tools", Pattern.compile("import com\\.projectardor\\.materials\\.resume\\.(domain|repository)\\..*"));
+        assertNoImports("assistant/tools", Pattern.compile("import com\\.projectardor\\.learning\\.plan\\.domain\\.LearningPlan;"));
+        assertNoImports("materials/resume/web", Pattern.compile("import com\\.projectardor\\.materials\\.resume\\.domain\\.(Resume|ResumeAnalysis);"));
+        String host = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
+        for (String name : List.of("list_resumes", "analyze_resume", "get_resume_analysis_status", "get_resume_analysis", "delete_resume")) {
+            assertTrue(!host.contains("@Tool(name = \"" + name + "\""), "Resume tools must remain in their module");
+        }
+    }
+    @Test
     void toolAdaptersNeverImportDomainHttpDtosAndAdviceUsesApplicationResults() throws IOException {
         assertNoImports("assistant/tools", Pattern.compile("import com\\.projectardor\\.(?!common\\.web\\.).*\\.web\\..*"));
         assertNoImports("scheduling/advice/service", Pattern.compile("import com\\.projectardor\\.scheduling\\.advice\\.web\\..*"));

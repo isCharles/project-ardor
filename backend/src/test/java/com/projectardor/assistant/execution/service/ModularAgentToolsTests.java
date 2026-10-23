@@ -22,6 +22,8 @@ import com.projectardor.assistant.tools.modules.KnowledgeAgentToolProvider;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.materials.knowledge.domain.KnowledgeSourceType;
 import com.projectardor.materials.knowledge.service.*;
+import com.projectardor.materials.resume.service.*;
+import com.projectardor.assistant.tools.modules.ResumeAgentToolProvider;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.agent.tool.ToolSpecifications;
@@ -269,8 +271,9 @@ class ModularAgentToolsTests {
     @Test
     void taskToolsUseApplicationResultsAndKeepTheirExistingJson() {
         var host = tools();
-        var queue = (com.projectardor.materials.resume.service.ResumeAnalysisQueueService)
-                org.springframework.test.util.ReflectionTestUtils.getField(host, "resumeAnalysisQueueService");
+        var queue = mock(com.projectardor.materials.resume.service.ResumeAnalysisQueueService.class);
+        host.configureToolProviders(List.of(new com.projectardor.assistant.tools.modules.ResumeAgentToolProvider(
+                mock(com.projectardor.materials.resume.service.ResumeService.class), queue)));
         var records = (com.projectardor.jobsearch.record.service.InterviewRecapQueueService)
                 org.springframework.test.util.ReflectionTestUtils.getField(host, "interviewRecapQueueService");
         UUID resumeId = UUID.randomUUID(), jobId = UUID.randomUUID();
@@ -292,6 +295,96 @@ class ModularAgentToolsTests {
         verify(queue, never()).request(any(), any());
         verify(records).list(owner);
         verify(approvals, never()).await(any(), any(), any(), any());
+    }
+
+    @Test
+    void resumeModuleReadsKeepSevenAndFourFieldsAndNeverRequestApproval() {
+        var service = mock(ResumeService.class); var queue = mock(ResumeAnalysisQueueService.class);
+        UUID resume = UUID.randomUUID(), analysis = UUID.randomUUID();
+        var view = new ResumeView(resume, "Owned fixture.pdf", "application/pdf", 100, "hash",
+                com.projectardor.materials.resume.domain.ResumeParseStatus.PARSED, null, analysis, 82);
+        var task = new ResumeAnalysisQueueService.TaskResult(null, resume,
+                com.projectardor.materials.resume.domain.ResumeAnalysisJobStatus.COMPLETED, analysis, 0, null, null);
+        when(service.listViews(owner)).thenReturn(List.of(view));
+        when(queue.statusIfPresent(owner, resume)).thenReturn(java.util.Optional.of(task));
+        when(service.analysisForResume(owner, resume)).thenReturn(new ResumeAnalysisSnapshot(analysis, resume,
+                Map.of("overallScore", 82), "fixture", "fixture", null));
+        var provider = new ResumeAgentToolProvider(service, queue);
+        var host = tools(); host.configureToolProviders(List.of(provider));
+        var executors = wrapped(host.bind(owner, "只查询简历", run), null, null);
+        var json = tools.jackson.databind.json.JsonMapper.builder().findAndAddModules().build();
+        var item = json.readTree(execute(executors, "list_resumes", "{}")).get(0);
+        assertThat(item.propertyNames()).containsExactly("resumeId", "filename", "parseStatus", "analysisId", "analysisStatus", "analysisError", "createdAt");
+        assertThat(item.path("analysisId").asText()).isEqualTo(analysis.toString());
+        var report = json.readTree(execute(executors, "get_resume_analysis", "{\"resumeId\":\"" + resume + "\"}"));
+        assertThat(report.propertyNames()).containsExactly("analysisId", "resumeId", "analysis", "modelName");
+        assertThat(report.path("analysisId").asText()).isEqualTo(analysis.toString());
+        verify(service).listViews(owner); verify(service).analysisForResume(owner, resume);
+        verify(approvals, never()).await(any(), any(), any(), any());
+        verify(queue, never()).request(any(), any());
+        assertThat(new com.projectardor.assistant.tools.AgentToolSchemaCatalog(List.of(provider)).schemas().keySet())
+                .contains("list_resumes", "analyze_resume", "get_resume_analysis_status", "get_resume_analysis", "delete_resume");
+        assertThat(ToolSpecifications.toolSpecificationsFrom(provider.toolTypes().getFirst()).stream().map(ToolSpecification::name))
+                .containsExactlyInAnyOrder("list_resumes", "analyze_resume", "get_resume_analysis_status", "get_resume_analysis", "delete_resume");
+    }
+
+    @Test
+    void resumeModuleRetainsIntentDedupCancellationAndRealDeletionProposals() {
+        var service = mock(ResumeService.class); var queue = mock(ResumeAnalysisQueueService.class);
+        UUID resume = UUID.randomUUID(), missing = UUID.randomUUID();
+        var view = new ResumeView(resume, "Owned fixture.pdf", "application/pdf", 100, "hash",
+                com.projectardor.materials.resume.domain.ResumeParseStatus.PARSED, Instant.now(), null, null);
+        when(service.detail(owner, resume)).thenReturn(view);
+        when(service.detail(owner, missing)).thenThrow(new ResourceNotFoundException("简历不存在"));
+        when(queue.request(owner, resume)).thenReturn(new ResumeAnalysisQueueService.TaskResult(UUID.randomUUID(), resume,
+                com.projectardor.materials.resume.domain.ResumeAnalysisJobStatus.QUEUED, null, 0, null, null));
+        var host = tools(); host.configureToolProviders(List.of(new ResumeAgentToolProvider(service, queue)));
+        String args = "{\"resumeId\":\"" + resume + "\"}";
+        when(permissions.autoApproves(owner, "analyze_resume")).thenReturn(true);
+        assertThat(execute(wrapped(host.bind(owner, "只查看简历", run), null, null), "analyze_resume", args)).contains("TOOL_NOT_PERMITTED");
+        verify(queue, never()).request(any(), any());
+        var bound = host.bind(owner, "分析并删除这份简历", run);
+        var executors = wrapped(bound, null, null);
+        assertThat(execute(executors, "analyze_resume", args)).contains("QUEUED");
+        assertThat(execute(executors, "analyze_resume", args)).contains("DUPLICATE_WRITE_BLOCKED");
+        verify(queue).request(owner, resume);
+        assertThat(execute(executors, "delete_resume", args)).contains("CONFIRMATION_REQUIRED");
+        assertThat(bound.pendingConfirmations()).singleElement().satisfies(card -> {
+            assertThat(card.targetId()).isEqualTo(resume);
+            assertThat(card.label()).isEqualTo(view.originalFilename());
+            assertThat(card.endpoint()).isEqualTo("/api/resumes/" + resume);
+        });
+        assertThat(execute(executors, "delete_resume", "{\"resumeId\":\"" + missing + "\"}")).contains("简历不存在");
+        assertThat(bound.pendingConfirmations()).hasSize(1);
+        assertThat(execute(executors, "get_resume_analysis", "{\"resumeId\":\"bad-id\"}")).contains("简历 ID 格式不正确");
+        var lease = new AgentStreamLease(); lease.fence();
+        assertThat(execute(wrapped(bound, lease, null), "get_resume_analysis", args)).contains("RUN_STOPPED");
+        verify(service, never()).analysisForResume(any(), any());
+        verify(service, never()).delete(any(), any());
+        verify(approvals, never()).await(any(), any(), any(), any());
+    }
+
+    @Test
+    void contextReferencesUseOwnedApplicationViewsAndPropagateMissingTargets() {
+        var host = tools();
+        var resumes = (ResumeService) org.springframework.test.util.ReflectionTestUtils.getField(host, "resumeService");
+        var learning = (com.projectardor.learning.plan.service.LearningPlanService)
+                org.springframework.test.util.ReflectionTestUtils.getField(host, "learningPlanService");
+        UUID resumeId = UUID.randomUUID(), planId = UUID.randomUUID(), missing = UUID.randomUUID();
+        when(resumes.detail(owner, resumeId)).thenReturn(new ResumeView(resumeId, "Owned fixture.pdf", "application/pdf", 100, "hash",
+                com.projectardor.materials.resume.domain.ResumeParseStatus.PARSED, null, null, null));
+        var plan = mock(com.projectardor.learning.plan.service.LearningPlanView.class);
+        when(plan.id()).thenReturn(planId); when(plan.concept()).thenReturn("Owned topic");
+        when(learning.detail(owner, planId)).thenReturn(plan);
+        assertThat(host.contextHint(owner, "RESUME", resumeId)).contains("Owned fixture.pdf", resumeId.toString());
+        assertThat(host.resolveContext(owner, "RESUME", resumeId).label()).isEqualTo("Owned fixture.pdf");
+        assertThat(host.contextHint(owner, "LEARNING", planId)).contains("Owned topic", planId.toString());
+        assertThat(host.resolveContext(owner, "LEARNING", planId).label()).isEqualTo("Owned topic");
+        when(resumes.detail(owner, missing)).thenThrow(new ResourceNotFoundException("简历不存在"));
+        when(learning.detail(owner, missing)).thenThrow(new ResourceNotFoundException("学习计划不存在"));
+        assertThatThrownBy(() -> host.resolveContext(owner, "RESUME", missing)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> host.contextHint(owner, "LEARNING", missing)).isInstanceOf(ResourceNotFoundException.class);
+        verify(resumes, never()).get(any(), any()); verify(learning, never()).get(any(), any());
     }
 
     @Test

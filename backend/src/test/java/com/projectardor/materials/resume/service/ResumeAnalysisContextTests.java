@@ -76,7 +76,6 @@ class ResumeAnalysisContextTests {
                 entity.getAnalysis(), entity.getModelName(), entity.getPromptVersion(), entity.getCreatedAt()));
         assertThat(old.size()).isEqualTo(6);
         assertThat(old.get("createdAt").isNull()).isTrue();
-        assertThat(mapper.<JsonNode>valueToTree(ResumeAnalysisResponse.from(entity))).isEqualTo(old);
         assertThat(mapper.<JsonNode>valueToTree(ResumeAnalysisResponse.fromSnapshot(context))).isEqualTo(old);
         assertThat(service.getClass().getMethod("analysisContext", UUID.class, UUID.class)
                 .getAnnotation(Transactional.class).readOnly()).isTrue();

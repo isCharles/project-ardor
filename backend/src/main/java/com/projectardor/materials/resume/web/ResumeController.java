@@ -23,7 +23,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
-import com.projectardor.materials.resume.domain.ResumeAnalysis;
 import com.projectardor.materials.resume.service.ResumeService;
 import com.projectardor.materials.resume.service.ResumeAnalysisQueueService;
 import com.projectardor.platform.usage.QuotaProtected;
@@ -46,22 +45,16 @@ public class ResumeController {
     public ResumeResponse upload(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @RequestPart("file") MultipartFile file) {
-        var resume = resumeService.upload(principal.userId(), file);
-        return ResumeResponse.from(resume, null, null);
+        var resume = resumeService.uploadView(principal.userId(), file);
+        return ResumeResponse.from(resume, null);
     }
 
     @GetMapping
     public List<ResumeResponse> list(@AuthenticationPrincipal ArdorPrincipal principal) {
-        List<ResumeAnalysis> analyses = resumeService.listAnalyses(principal.userId());
-        return resumeService.list(principal.userId()).stream()
+        return resumeService.listViews(principal.userId()).stream()
                 .map(resume -> ResumeResponse.from(
                         resume,
-                        analyses.stream()
-                                .filter(analysis -> analysis.getResumeId().equals(resume.getId()))
-                                .findFirst()
-                                .orElse(null),
-                        queueService.statusIfPresent(principal.userId(), resume.getId())
-                                .map(ResumeAnalysisTaskResponse::from)
+                        queueService.statusIfPresent(principal.userId(), resume.id())
                                 .orElse(null)))
                 .toList();
     }
@@ -93,15 +86,12 @@ public class ResumeController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID resumeId,
             @RequestParam(required = false) UUID analysisId) {
-        var report = analysisId == null ? resumeService.getAnalysis(principal.userId(), resumeId)
-                : resumeService.getAnalysisById(principal.userId(), analysisId);
-        if (!report.getResumeId().equals(resumeId)) throw new com.projectardor.common.web.ResourceNotFoundException("简历分析不存在");
-        return ResumeAnalysisResponse.from(report);
+        return ResumeAnalysisResponse.fromSnapshot(resumeService.report(principal.userId(), resumeId, analysisId));
     }
 
     @GetMapping("/{resumeId}/analysis/history")
     public List<ResumeAnalysisResponse> history(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID resumeId) {
-        return resumeService.history(principal.userId(), resumeId).stream().map(ResumeAnalysisResponse::from).toList();
+        return resumeService.analysisHistory(principal.userId(), resumeId).stream().map(ResumeAnalysisResponse::fromSnapshot).toList();
     }
 
     @GetMapping("/{resumeId}/file")

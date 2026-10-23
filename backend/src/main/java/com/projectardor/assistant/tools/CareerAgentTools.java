@@ -13,8 +13,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
 import com.projectardor.assistant.tools.modules.AgentToolBundle;
@@ -23,6 +21,7 @@ import com.projectardor.assistant.tools.modules.AgentToolProvider;
 import com.projectardor.assistant.tools.modules.KnowledgeAgentToolProvider;
 import com.projectardor.assistant.tools.modules.AutomationAgentToolProvider;
 import com.projectardor.assistant.tools.modules.CalendarAdviceAgentToolProvider;
+import com.projectardor.assistant.tools.modules.ResumeAgentToolProvider;
 
 import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
 import com.projectardor.assistant.automation.service.AutomationService;
@@ -46,7 +45,6 @@ import com.projectardor.learning.practice.mockinterview.service.MockInterviewPro
 import com.projectardor.learning.practice.mockinterview.service.MockInterviewSessionView;
 import com.projectardor.materials.knowledge.service.KnowledgeService;
 import com.projectardor.materials.knowledge.service.KnowledgeDocumentView;
-import com.projectardor.learning.plan.domain.LearningPlan;
 import com.projectardor.learning.plan.domain.LearningSourceType;
 import com.projectardor.learning.plan.service.LearningPlanService;
 import com.projectardor.learning.plan.service.LearningCreationCommand;
@@ -57,11 +55,9 @@ import com.projectardor.jobsearch.interview.service.InterviewProcessCommands;
 import com.projectardor.jobsearch.interview.service.InterviewProcessView;
 import com.projectardor.platform.identity.profile.domain.UserProfile;
 import com.projectardor.platform.identity.profile.service.ProfileService;
-import com.projectardor.materials.resume.domain.Resume;
-import com.projectardor.materials.resume.domain.ResumeAnalysis;
+import com.projectardor.materials.resume.service.ResumeView;
 import com.projectardor.materials.resume.service.ResumeAnalysisQueueService;
 import com.projectardor.materials.resume.service.ResumeService;
-import com.projectardor.materials.resume.service.ResumeAnalysisQueueService.TaskResult;
 import com.projectardor.learning.review.domain.MemoryCardRating;
 import com.projectardor.learning.review.domain.MemoryCardSource;
 import com.projectardor.jobsearch.record.service.InterviewRecapService;
@@ -89,7 +85,6 @@ public class CareerAgentTools {
     public void configureToolProviders(List<AgentToolProvider> providers) {
         toolProviders = List.copyOf(providers);
     }
-    private final ResumeAnalysisQueueService resumeAnalysisQueueService;
     private final InterviewService interviewService;
     private final ProfileService profileService;
     private final AgentMemoryService memoryService;
@@ -172,7 +167,6 @@ public class CareerAgentTools {
             com.projectardor.platform.jobs.aijobs.AiJobService aiJobs,
             com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit,FlashcardService flashcards) {
         this.resumeService = resumeService;
-        this.resumeAnalysisQueueService = resumeAnalysisQueueService;
         this.interviewService = interviewService;
         this.profileService = profileService;
         this.memoryService = memoryService;
@@ -184,7 +178,8 @@ public class CareerAgentTools {
         this.knowledgeService = knowledgeService;
         this.toolProviders = List.of(new KnowledgeAgentToolProvider(knowledgeService),
                 new AutomationAgentToolProvider(automationService),
-                new CalendarAdviceAgentToolProvider(calendarAdviceService));
+                new CalendarAdviceAgentToolProvider(calendarAdviceService),
+                new ResumeAgentToolProvider(resumeService, resumeAnalysisQueueService));
         this.learningPlanService = learningPlanService;
         this.applicationRhythmService = applicationRhythmService;
         this.opportunityService = opportunityService;
@@ -211,8 +206,8 @@ public class CareerAgentTools {
         return switch (rawType.strip().toUpperCase(java.util.Locale.ROOT)) {
             case "SERVICE" -> com.projectardor.assistant.AgentFeature.require(contextId).hint();
             case "RESUME" -> {
-                Resume resume = resumeService.get(userId, contextId);
-                yield "用户在界面中明确指定了简历：" + resume.getOriginalFilename() + "（简历 ID：" + resume.getId() + "）。需要内容时调用简历工具读取或分析。";
+                ResumeView resume = resumeService.detail(userId, contextId);
+                yield "用户在界面中明确指定了简历：" + resume.originalFilename() + "（简历 ID：" + resume.id() + "）。需要内容时调用简历工具读取或分析。";
             }
             case "RECAP" -> {
                 InterviewRecordView recap = interviewRecapService.detail(userId, contextId);
@@ -224,9 +219,9 @@ public class CareerAgentTools {
                         + "）。需要内容时调用 search_knowledge 检索，不得假装已经阅读全文。";
             }
             case "LEARNING" -> {
-                LearningPlan plan = learningPlanService.get(userId, contextId);
-                yield "用户在界面中明确指定了学习计划：" + plan.getConcept() + "（学习计划 ID："
-                        + plan.getId() + "）。需要内容时调用 get_learning_plan。";
+                LearningPlanView plan = learningPlanService.detail(userId, contextId);
+                yield "用户在界面中明确指定了学习计划：" + plan.concept() + "（学习计划 ID："
+                        + plan.id() + "）。需要内容时调用 get_learning_plan。";
             }
             default -> throw new IllegalArgumentException("不支持的资料类型");
         };
@@ -236,10 +231,10 @@ public class CareerAgentTools {
         String type = rawType == null ? "" : rawType.strip().toUpperCase(Locale.ROOT);
         String label = switch (type) {
             case "SERVICE" -> com.projectardor.assistant.AgentFeature.require(contextId).label();
-            case "RESUME" -> resumeService.get(userId, contextId).getOriginalFilename();
+            case "RESUME" -> resumeService.detail(userId, contextId).originalFilename();
             case "RECAP" -> interviewRecapService.detail(userId, contextId).title();
             case "KNOWLEDGE" -> knowledgeService.get(userId, contextId).title();
-            case "LEARNING" -> learningPlanService.get(userId, contextId).getConcept();
+            case "LEARNING" -> learningPlanService.detail(userId, contextId).concept();
             default -> throw new IllegalArgumentException("不支持的资料类型");
         };
         return new AgentContextReference(type, contextId, label);
@@ -392,8 +387,8 @@ public class CareerAgentTools {
         @Tool(name = "delete_learning_plan", value = "提议删除当前用户指定的课程（学习计划）、练习记录及关联日历任务。先调用 list_learning_plans 定位真实 UUID；只显示确认按钮，用户点击后才删除")
         public Map<String, Object> deleteLearningPlan(@P("学习计划 UUID") String planId) {
             UUID id = uuid(planId, "学习计划 ID");
-            var plan = learningPlanService.get(userId, id);
-            return propose("learning_plan_delete", id, plan.getConcept(),
+            var plan = learningPlanService.detail(userId, id);
+            return propose("learning_plan_delete", id, plan.concept(),
                     "删除讲解、练习记录和关联日程，不能撤销", "/api/learning-plans/" + id);
         }
 
@@ -636,40 +631,6 @@ public class CareerAgentTools {
             return propose("task_series", id, series.getTitle() + "（" + series.summary() + "）",
                     "撤回尚未开始、也没被动过的后续日程；已发生和已完成的记录保留",
                     "/api/calendar/series/" + id);
-        }
-
-        @Tool(name = "list_resumes", value = "列出当前用户的简历、解析状态、分析任务状态和可用分析 ID")
-        public List<ResumeToolView> listResumes() {
-            Map<UUID, ResumeAnalysis> analyses = resumeService.listAnalyses(userId).stream()
-                    .collect(Collectors.toMap(ResumeAnalysis::getResumeId, Function.identity(), (left, right) -> left));
-            return resumeService.list(userId).stream()
-                    .map(resume -> toView(resume, analyses.get(resume.getId())))
-                    .toList();
-        }
-
-        @Tool(name = "analyze_resume", value = "将当前用户已经上传并解析的简历提交到异步分析队列；重复调用会复用已有结果")
-        public TaskResult analyzeResume(@P("简历 UUID") String resumeId) {
-            return resumeAnalysisQueueService.request(userId, uuid(resumeId, "简历 ID"));
-        }
-
-        @Tool(name = "get_resume_analysis_status", value = "查询当前用户某份简历的异步分析状态")
-        public TaskResult getResumeAnalysisStatus(@P("简历 UUID") String resumeId) {
-            return resumeAnalysisQueueService.status(userId, uuid(resumeId, "简历 ID"));
-        }
-
-        @Tool(name = "get_resume_analysis", value = "读取当前用户一份已经完成的结构化简历分析")
-        public ResumeAnalysisView getResumeAnalysis(@P("简历 UUID") String resumeId) {
-            ResumeAnalysis analysis = resumeService.getAnalysis(userId, uuid(resumeId, "简历 ID"));
-            return new ResumeAnalysisView(
-                    analysis.getId(), analysis.getResumeId(), analysis.getAnalysis(), analysis.getModelName());
-        }
-
-        @Tool(name = "delete_resume", value = "从简历库永久删除当前用户指定简历及其分析。只有用户明确要求删除时使用；先调用 list_resumes 确认目标")
-        public Map<String, Object> deleteResume(@P("简历 UUID") String resumeId) {
-            UUID id = uuid(resumeId, "简历 ID");
-            Resume resume = resumeService.get(userId, id);
-            return propose("resume", id, resume.getOriginalFilename(),
-                    "连同它的分析结果一起删除", "/api/resumes/" + id);
         }
 
         @Tool(name = "list_interviews", value = "列出当前用户已有的模拟面试")
@@ -967,16 +928,6 @@ public class CareerAgentTools {
             return item.company() + role;
         }
 
-        private ResumeToolView toView(Resume resume, ResumeAnalysis analysis) {
-            var task = resumeAnalysisQueueService.statusIfPresent(userId, resume.getId()).orElse(null);
-            return new ResumeToolView(
-                    resume.getId(), resume.getOriginalFilename(), resume.getParseStatus().name(),
-                    analysis == null ? null : analysis.getId(),
-                    task == null ? null : task.status().name(),
-                    task == null ? null : task.errorMessage(),
-                    resume.getCreatedAt());
-        }
-
         private String untrustedContent(String source, Object payload) {
             String text = String.valueOf(payload)
                     .replaceAll("(?i)</?untrusted_external_content[^>]*>", "[已移除外部内容标记]");
@@ -1072,23 +1023,6 @@ public class CareerAgentTools {
             try { return Enum.valueOf(type, value.strip().toUpperCase()); }
             catch (RuntimeException exception) { throw new IllegalArgumentException("不支持的类型：" + value); }
         }
-    }
-
-    public record ResumeToolView(
-            UUID resumeId,
-            String filename,
-            String parseStatus,
-            UUID analysisId,
-            String analysisStatus,
-            String analysisError,
-            Instant createdAt) {
-    }
-
-    public record ResumeAnalysisView(
-            UUID analysisId,
-            UUID resumeId,
-            Map<String, Object> analysis,
-            String modelName) {
     }
 
     public record ProfileToolView(
