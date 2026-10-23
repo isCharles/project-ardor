@@ -21,9 +21,6 @@ import com.projectardor.materials.knowledge.domain.KnowledgeDocument;
 import com.projectardor.materials.knowledge.repository.KnowledgeChunkRepository;
 import com.projectardor.materials.knowledge.repository.KnowledgeDocumentRepository;
 import com.projectardor.materials.knowledge.repository.KnowledgeVectorStore;
-import com.projectardor.materials.knowledge.web.KnowledgeDocumentResponse;
-import com.projectardor.materials.knowledge.web.KnowledgeResearchResponse;
-import com.projectardor.materials.knowledge.web.KnowledgeSearchResult;
 import com.projectardor.platform.model.websearch.service.TavilySearchService;
 import com.projectardor.platform.model.websearch.service.WebSearchResult;
 
@@ -78,7 +75,7 @@ public class KnowledgeService {
     }
 
     @Transactional
-    public KnowledgeDocumentResponse upload(UUID userId, MultipartFile file) {
+    public KnowledgeDocumentView upload(UUID userId, MultipartFile file) {
         if (file == null || file.isEmpty()) throw new IllegalArgumentException("请选择知识文档");
         if (file.getSize() > MAX_FILE_SIZE) throw new IllegalArgumentException("知识文档不能超过 10MB");
         String filename = safeFilename(file.getOriginalFilename());
@@ -94,14 +91,14 @@ public class KnowledgeService {
         KnowledgeDocument document = documentRepository.saveAndFlush(KnowledgeDocument.uploaded(
                 userId, titleFromFilename(filename), filename, contentType(extension), content));
         int chunkCount = storeChunks(document);
-        return KnowledgeDocumentResponse.from(document, chunkCount);
+        return KnowledgeDocumentView.from(document, chunkCount);
     }
 
-    public KnowledgeResearchResponse researchFromWeb(UUID userId, String rawQuery) {
+    public KnowledgeResearchView researchFromWeb(UUID userId, String rawQuery) {
         String query = normalizeQuery(rawQuery);
         WebSearchResult search = tavilySearchService.search(userId, query);
-        List<KnowledgeDocumentResponse> imported = transactions.execute(status -> {
-            List<KnowledgeDocumentResponse> saved = new ArrayList<>();
+        List<KnowledgeDocumentView> imported = transactions.execute(status -> {
+            List<KnowledgeDocumentView> saved = new ArrayList<>();
             for (WebSearchResult.ResultItem result : search.results()) {
                 if (result.url() == null || result.url().isBlank()
                         || result.content() == null || result.content().isBlank()) continue;
@@ -111,27 +108,27 @@ public class KnowledgeService {
                     document = documentRepository.saveAndFlush(
                             KnowledgeDocument.fromWeb(userId, title, result.url(), result.content().strip()));
                     int chunkCount = storeChunks(document);
-                    saved.add(KnowledgeDocumentResponse.from(document, chunkCount));
+                    saved.add(KnowledgeDocumentView.from(document, chunkCount));
                 } else {
-                    saved.add(toResponse(userId, document));
+                    saved.add(toView(userId, document));
                 }
             }
             return saved;
         });
         if (imported.isEmpty()) throw new IllegalStateException("联网搜索没有返回可保存的正文摘要");
-        return new KnowledgeResearchResponse(query, imported);
+        return new KnowledgeResearchView(query, imported);
     }
 
     @Transactional(readOnly = true)
-    public List<KnowledgeDocumentResponse> list(UUID userId) {
+    public List<KnowledgeDocumentView> list(UUID userId) {
         return documentRepository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
-                .map(document -> toResponse(userId, document))
+                .map(document -> toView(userId, document))
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public KnowledgeDocumentResponse get(UUID userId, UUID documentId) {
-        return toResponse(userId, requireDocument(userId, documentId));
+    public KnowledgeDocumentView get(UUID userId, UUID documentId) {
+        return toView(userId, requireDocument(userId, documentId));
     }
 
     /**
@@ -144,7 +141,7 @@ public class KnowledgeService {
      * gracefully when one retriever returns nothing, which is exactly what happens before
      * an embedding model is configured.
      */
-    public List<KnowledgeSearchResult> search(UUID userId, String rawQuery, int requestedLimit) {
+    public List<KnowledgeSearchHit> search(UUID userId, String rawQuery, int requestedLimit) {
         String query = normalizeQuery(rawQuery);
         int limit = Math.max(1, Math.min(10, requestedLimit));
 
@@ -153,21 +150,21 @@ public class KnowledgeService {
         indexer.reconcileModel(userId);
         indexer.backfill(userId, CANDIDATE_DEPTH);
 
-        List<KnowledgeSearchResult> lexical = lexicalSearch(userId, query, CANDIDATE_DEPTH);
-        List<KnowledgeSearchResult> dense = denseSearch(userId, query, CANDIDATE_DEPTH);
+        List<KnowledgeSearchHit> lexical = lexicalSearch(userId, query, CANDIDATE_DEPTH);
+        List<KnowledgeSearchHit> dense = denseSearch(userId, query, CANDIDATE_DEPTH);
         return fuse(lexical, dense, limit);
     }
 
-    private List<KnowledgeSearchResult> lexicalSearch(UUID userId, String query, int depth) {
+    private List<KnowledgeSearchHit> lexicalSearch(UUID userId, String query, int depth) {
         return vectorStore.lexicalSearch(userId, List.copyOf(searchTerms(query)), depth).stream()
-                .map(hit -> new KnowledgeSearchResult(
+                .map(hit -> new KnowledgeSearchHit(
                         hit.documentId(), hit.title(), hit.sourceType(), hit.sourceUrl(), hit.content(),
                         Math.round(hit.score() * 100.0) / 100.0))
                 .toList();
     }
 
     /** Embedding-based retrieval; empty when the user has no embedding model configured. */
-    private List<KnowledgeSearchResult> denseSearch(UUID userId, String query, int depth) {
+    private List<KnowledgeSearchHit> denseSearch(UUID userId, String query, int depth) {
         KnowledgeEmbeddingService.EmbeddingVector queryVector;
         try {
             queryVector = embeddingService.embedQuery(userId, query);
@@ -188,7 +185,7 @@ public class KnowledgeService {
                 .map(hit -> {
                     KnowledgeDocument document = documents.get(hit.documentId());
                     if (document == null) return null;
-                    return new KnowledgeSearchResult(
+                    return new KnowledgeSearchHit(
                             document.getId(), document.getTitle(), document.getSourceType(),
                             document.getSourceUrl(), hit.content(),
                             Math.round(hit.similarity() * 10000.0) / 10000.0);
@@ -201,13 +198,13 @@ public class KnowledgeService {
      * Reciprocal rank fusion. A chunk appearing in both lists outranks one that is only
      * strong in a single retriever, which is what makes hybrid better than either alone.
      */
-    private List<KnowledgeSearchResult> fuse(
-            List<KnowledgeSearchResult> lexical, List<KnowledgeSearchResult> dense, int limit) {
+    private List<KnowledgeSearchHit> fuse(
+            List<KnowledgeSearchHit> lexical, List<KnowledgeSearchHit> dense, int limit) {
         Map<String, Double> fusedScore = new java.util.LinkedHashMap<>();
-        Map<String, KnowledgeSearchResult> byKey = new java.util.LinkedHashMap<>();
-        for (List<KnowledgeSearchResult> ranking : List.of(dense, lexical)) {
+        Map<String, KnowledgeSearchHit> byKey = new java.util.LinkedHashMap<>();
+        for (List<KnowledgeSearchHit> ranking : List.of(dense, lexical)) {
             for (int rank = 0; rank < ranking.size(); rank++) {
-                KnowledgeSearchResult result = ranking.get(rank);
+                KnowledgeSearchHit result = ranking.get(rank);
                 String key = result.documentId() + "#" + result.content().hashCode();
                 fusedScore.merge(key, 1.0 / (RRF_K + rank + 1), Double::sum);
                 byKey.putIfAbsent(key, result);
@@ -217,8 +214,8 @@ public class KnowledgeService {
                 .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                 .limit(limit)
                 .map(entry -> {
-                    KnowledgeSearchResult base = byKey.get(entry.getKey());
-                    return new KnowledgeSearchResult(
+                    KnowledgeSearchHit base = byKey.get(entry.getKey());
+                    return new KnowledgeSearchHit(
                             base.documentId(), base.title(), base.sourceType(), base.sourceUrl(),
                             base.content(), Math.round(entry.getValue() * 100000.0) / 100000.0);
                 })
@@ -251,8 +248,8 @@ public class KnowledgeService {
                 .orElseThrow(() -> new ResourceNotFoundException("知识文档不存在"));
     }
 
-    private KnowledgeDocumentResponse toResponse(UUID userId, KnowledgeDocument document) {
-        return KnowledgeDocumentResponse.from(
+    private KnowledgeDocumentView toView(UUID userId, KnowledgeDocument document) {
+        return KnowledgeDocumentView.from(
                 document, chunkRepository.countByDocumentIdAndUserId(document.getId(), userId));
     }
 

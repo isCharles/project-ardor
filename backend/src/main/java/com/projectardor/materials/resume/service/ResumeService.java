@@ -166,6 +166,12 @@ public class ResumeService {
                 .orElseThrow(() -> new ResourceNotFoundException("简历分析不存在"));
     }
 
+    /** Cross-domain preparation reads stay authorized and detached within materials. */
+    @Transactional(readOnly = true)
+    public ResumeAnalysisSnapshot analysisContext(UUID userId, UUID analysisId) {
+        return ResumeAnalysisSnapshot.from(getAnalysisById(userId, analysisId));
+    }
+
     public ResumeAnalysis analyze(UUID userId, UUID resumeId) {
         return analyze(userId, resumeId, ResumeScoringContext.freeze("", ""));
     }

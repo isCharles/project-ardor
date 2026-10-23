@@ -24,6 +24,27 @@ import org.junit.jupiter.api.Test;
  */
 class ArchitectureBoundaryTests {
     @Test
+    void mockInterviewReadsResumeThroughMaterialsApplicationContext() throws IOException {
+        assertNoImports("learning/practice/mockinterview/service",
+                Pattern.compile("import com\\.projectardor\\.materials\\.resume\\.(domain|repository)\\..*"));
+    }
+
+    @Test
+    void knowledgeApplicationAndAssistantDoNotDependOnKnowledgeWebDtos() throws IOException {
+        assertNoImports("materials/knowledge/service",
+                Pattern.compile("import com\\.projectardor\\.materials\\.knowledge\\.web\\..*"));
+        assertNoImports("assistant",
+                Pattern.compile("import com\\.projectardor\\.materials\\.knowledge\\.web\\..*"));
+    }
+
+    @Test
+    void mockInterviewApplicationAndToolsDoNotDependOnWebDtos() throws IOException {
+        assertNoImports("learning/practice/mockinterview/service", Pattern.compile("import com\\.projectardor\\.learning\\.practice\\.mockinterview\\.web\\..*"));
+        String tools = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
+        assertTrue(!tools.contains("com.projectardor.learning.practice.mockinterview.web."),
+                "Mock-interview tools must use owned application views");
+    }
+    @Test
     void memoryAndApplicationActivityUseOwnedApplicationResults() throws IOException {
         assertNoImports("assistant/memory/service", Pattern.compile("import com\\.projectardor\\.assistant\\.memory\\.web\\..*"));
         assertNoImports("jobsearch/applicationactivity/service", Pattern.compile("import com\\.projectardor\\.jobsearch\\.applicationactivity\\.web\\..*"));

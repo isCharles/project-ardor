@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import com.projectardor.learning.practice.mockinterview.domain.InterviewStatus;
 import com.projectardor.learning.practice.mockinterview.service.InterviewService.InterviewProgress;
+import com.projectardor.learning.practice.mockinterview.service.MockInterviewProgressView;
 
 public record InterviewProgressResponse(
         UUID sessionId,
@@ -14,12 +15,13 @@ public record InterviewProgressResponse(
         InterviewQuestionResponse nextQuestion) {
 
     public static InterviewProgressResponse from(InterviewProgress progress) {
+        return fromView(MockInterviewProgressView.from(progress));
+    }
+
+    public static InterviewProgressResponse fromView(MockInterviewProgressView progress) {
         return new InterviewProgressResponse(
-                progress.session().getId(), progress.session().getStatus(),
+                progress.sessionId(), progress.status(),
                 progress.answeredCount(), progress.totalQuestions(),
-                progress.session().getStatus() == InterviewStatus.IN_PROGRESS
-                        && progress.nextQuestion() == null
-                        && progress.totalQuestions() > 0,
-                InterviewQuestionResponse.from(progress.nextQuestion()));
+                progress.readyToFinish(), InterviewQuestionResponse.fromView(progress.nextQuestion()));
     }
 }

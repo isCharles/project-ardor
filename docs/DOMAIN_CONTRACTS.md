@@ -23,7 +23,13 @@
 
 普通日程与重复规则的 HTTP、Agent 读写共享日程应用层 `CalendarTaskView` / `TaskSeriesView`，不以 Web DTO 作为工具输出合同；沿用原有用户限定查询、GENERAL 修改限制及删除提案确认。写操作在实体生命周期回调刷新后生成不可变快照，保留旧字段、时间戳与 actionPath；重复规则保留更新/保留实例计数，以及按用户和规则查出的实际实例日期，不另生成虚拟日程。实体接口继续为现有领域安排维护方提供兼容入口。
 
+模拟面试的 HTTP 与 Agent 入口共享 `MockInterviewSessionView` / `MockInterviewProgressView` / `MockInterviewEvaluationView`，Web Response 只映射原有 JSON 字段，工具不再依赖模拟面试 Web 类型。问题视图保留 Hot 100 编程题元数据及原 readiness 条件，评价 JSON 递归快照保留 null；取消和回答写入在返回视图前刷新。`createView` / `finishView` 不建立外层事务，模型调用仍在既有短写事务之外。原实体方法供现有领域协作者兼容使用，本批不修改数据库、API URL、scope 或授权语义。
+
 ## 2. 路径兼容，不改变身份
+
+模拟训练通过资料应用层 `ResumeService.analysisContext(userId, analysisId)` 获取 `ResumeAnalysisSnapshot`，不再读取简历分析实体。快照保留分析 ID、简历 ID、分析正文、模型、提示词版本和时间，嵌套 JSON 递归只读；资料层仍按分析 ID 与当前用户一起授权。旧报告响应适配相同快照，六个 JSON 字段不变；读取不会启动新分析、读取简历文件或写入记录。其他助手简历实体读取尚未在该边界批次消除。
+
+知识资料的应用服务与 Agent 共用 `KnowledgeDocumentView` / `KnowledgeResearchView` / `KnowledgeSearchHit`，HTTP 层仅适配原有文档、收录结果与检索字段。资料服务不再依赖自身 Web DTO；检索正文仍是不可信来源材料，不因类型变更获得执行权限。原有用户限定读取、混合检索排序、嵌入失败的词法降级、提交后索引与删除确认保持不变。文件上传暂仍接收 Spring `MultipartFile`，不宣称完全脱离传输框架。
 
 投递节奏返回 `ApplicationRhythmView`，HTTP 保留 `ApplicationRhythmResponse` 映射；每天 40 份仍是一个计数，不创建岗位实体。长期记忆服务、整理器与工具使用 `AgentMemoryView` / `AgentMemoryItemView`；HTTP 仍适配原字段，当前摘要与含失效项的历史列表保持不同含义。此次类型迁移不改变来源校验、可信度、自动维护、去重、有效期或删除确认，不迁移表、不改写数据。
 

@@ -29,7 +29,7 @@ import com.projectardor.learning.practice.mockinterview.repository.InterviewSess
 import com.projectardor.platform.model.llm.service.LlmGateway;
 import com.projectardor.platform.identity.profile.domain.UserProfile;
 import com.projectardor.platform.identity.profile.service.ProfileService;
-import com.projectardor.materials.resume.domain.ResumeAnalysis;
+import com.projectardor.materials.resume.service.ResumeAnalysisSnapshot;
 import com.projectardor.materials.resume.service.ResumeService;
 
 import tools.jackson.core.JacksonException;
@@ -87,6 +87,51 @@ public class InterviewService {
         this.opportunities = opportunities;
     }
 
+    // Model calls in create/finish must remain outside an outer transaction.
+    public MockInterviewSessionView createView(UUID userId, UUID resumeAnalysisId, InterviewModality modality,
+            String company, String role, int count, UUID processId) {
+        return MockInterviewSessionView.from(create(userId, resumeAnalysisId, modality, company, role, count, processId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<MockInterviewSessionView> listViews(UUID userId) {
+        return list(userId).stream().map(MockInterviewSessionView::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public MockInterviewSessionView getView(UUID userId, UUID sessionId) {
+        return MockInterviewSessionView.from(get(userId, sessionId));
+    }
+
+    @Transactional(readOnly = true)
+    public MockInterviewProgressView nextQuestionView(UUID userId, UUID sessionId) {
+        return MockInterviewProgressView.from(getNextQuestion(userId, sessionId));
+    }
+
+    @Transactional
+    public MockInterviewProgressView submitAnswerView(UUID userId, UUID sessionId, UUID questionId,
+            String answer, Integer durationSeconds) {
+        var result = submitAnswer(userId, sessionId, questionId, answer, durationSeconds);
+        sessionRepository.flush();
+        return MockInterviewProgressView.from(result);
+    }
+
+    public MockInterviewEvaluationView finishView(UUID userId, UUID sessionId) {
+        return MockInterviewEvaluationView.from(finish(userId, sessionId));
+    }
+
+    @Transactional(readOnly = true)
+    public MockInterviewEvaluationView evaluationView(UUID userId, UUID sessionId) {
+        return MockInterviewEvaluationView.from(getEvaluation(userId, sessionId));
+    }
+
+    @Transactional
+    public MockInterviewSessionView cancelView(UUID userId, UUID sessionId) {
+        var result = cancel(userId, sessionId);
+        sessionRepository.flush();
+        return MockInterviewSessionView.from(result);
+    }
+
     public InterviewSession create(
             UUID userId,
             UUID resumeAnalysisId,
@@ -122,15 +167,15 @@ public class InterviewService {
         String normalizedCompany = normalizeNullable(targetCompany);
         if (jobOpportunityId != null) opportunities.detail(userId, jobOpportunityId);
         UserProfile profile = profileService.get(userId);
-        ResumeAnalysis resumeAnalysis = resumeAnalysisId == null
+        ResumeAnalysisSnapshot resumeAnalysis = resumeAnalysisId == null
                 ? null
-                : resumeService.getAnalysisById(userId, resumeAnalysisId);
+                : resumeService.analysisContext(userId, resumeAnalysisId);
 
         String context = toJson(Map.of(
                 "profile", Map.of(
                         "headline", profile.getHeadline() == null ? "" : profile.getHeadline(),
                         "targetRoles", profile.getTargetRoles()),
-                "resumeAnalysis", resumeAnalysis == null ? Map.of() : resumeAnalysis.getAnalysis(),
+                "resumeAnalysis", resumeAnalysis == null ? Map.of() : resumeAnalysis.analysis(),
                 "targetCompany", normalizedCompany == null ? "" : normalizedCompany,
                 "targetRole", normalizedRole,
                 "questionCount", questionCount));
