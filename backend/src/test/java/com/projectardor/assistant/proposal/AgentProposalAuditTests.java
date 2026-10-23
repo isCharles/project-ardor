@@ -75,9 +75,9 @@ class AgentProposalAuditTests {
         UUID run = UUID.randomUUID();
         UUID conversation = UUID.randomUUID();
         UUID planId = UUID.randomUUID();
-        var plan = mock(com.projectardor.learning.plan.domain.LearningPlan.class);
-        when(plan.getConcept()).thenReturn("JVM");
-        when(plans.get(user, planId)).thenReturn(plan);
+        var plan = mock(com.projectardor.learning.plan.service.LearningPlanView.class);
+        when(plan.concept()).thenReturn("JVM");
+        when(plans.detail(user, planId)).thenReturn(plan);
 
         var bound = tools.bind(user, "删除 JVM 学习", run).withConversationId(conversation);
         assertThat(bound.deleteLearningPlan(planId.toString())).containsEntry("status", "CONFIRMATION_REQUIRED");

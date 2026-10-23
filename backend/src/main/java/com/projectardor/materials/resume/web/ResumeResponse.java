@@ -3,8 +3,8 @@ package com.projectardor.materials.resume.web;
 import java.time.Instant;
 import java.util.UUID;
 
-import com.projectardor.materials.resume.domain.Resume;
-import com.projectardor.materials.resume.domain.ResumeAnalysis;
+import com.projectardor.materials.resume.service.ResumeView;
+import com.projectardor.materials.resume.service.ResumeAnalysisQueueService.TaskResult;
 import com.projectardor.materials.resume.domain.ResumeParseStatus;
 
 public record ResumeResponse(
@@ -21,20 +21,13 @@ public record ResumeResponse(
         Integer overallScore) {
 
     public static ResumeResponse from(
-            Resume resume,
-            ResumeAnalysis analysis,
-            ResumeAnalysisTaskResponse task) {
-        Integer score = null;
-        if (analysis != null) {
-            Object value = analysis.getAnalysis().get("overallScore");
-            if (value instanceof Number number) score = Math.max(0, Math.min(100, number.intValue()));
-        }
+            ResumeView resume, TaskResult task) {
         return new ResumeResponse(
-                resume.getId(), resume.getOriginalFilename(), resume.getContentType(),
-                resume.getSizeBytes(), resume.getChecksumSha256(), resume.getParseStatus(),
-                resume.getCreatedAt(), analysis == null ? null : analysis.getId(),
+                resume.id(), resume.originalFilename(), resume.contentType(),
+                resume.sizeBytes(), resume.checksumSha256(), resume.parseStatus(),
+                resume.createdAt(), resume.analysisId(),
                 task == null ? null : task.status().name(),
                 task == null ? null : task.errorMessage(),
-                score);
+                resume.overallScore());
     }
 }
