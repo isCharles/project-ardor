@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const id = "20000000-0000-4000-8000-000000000001";
@@ -39,6 +39,14 @@ if (process.argv[2] === "fixture") {
   const base = process.argv[2];
   const output = process.argv[3];
   assert.ok(base && output, "usage: node report-export-smoke.mjs fixture | <frontend-url> <output-directory>");
+  const icons = (await readdir(new URL("../frontend/public/model-icons/", import.meta.url))).filter(name => name.endsWith(".svg"));
+  assert.ok(icons.length > 0, "Model icon fixtures must exist");
+  for (const icon of icons) {
+    const response = await fetch(`${base}/model-icons/${icon}`, { signal: AbortSignal.timeout(10_000) });
+    assert.equal(response.status, 200, `Runtime model icon missing: ${icon}`);
+    assert.match(response.headers.get("content-type"), /image\/svg\+xml/);
+    assert.match(await response.text(), /<svg\b/);
+  }
   const request = (resource, cookie) => fetch(`${base}/report-api/${resource}`, {
     headers: cookie ? { Cookie: `report_fixture=${cookie}` } : {}, signal: AbortSignal.timeout(100_000),
   });
