@@ -66,7 +66,7 @@ public class AgentContextCompactor {
         TokenCountEstimator estimator = estimator(config);
         String currentSummary = previous.map(ConversationSummaryStore.Summary::content).orElse("");
         boolean overBudget = estimateTokens(estimator, currentSummary, older, recent) > maxHistoryTokens;
-        boolean enoughToCompact = older.size() >= 8;
+        boolean enoughToCompact = older.size() >= 8 || visible.size() > maxRawMessages;
         List<ConversationMessage> effectiveRecent = recent;
         if (!older.isEmpty() && (overBudget || enoughToCompact)) {
             CompactionResult compacted = compact(userId, conversationId, config, depth, previous, older, estimator);
@@ -180,6 +180,7 @@ public class AgentContextCompactor {
         }
     }
 }
+
 
 
 
