@@ -134,13 +134,16 @@ function buildFlow(spans: TraceSpan[]): FlowNode[] {
     .filter((span) => span.kind !== "RUN")
     .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
   const ordered = root ? [root, ...children] : children;
+  if (ordered.length === 0) return [];
+  const perRow = children.length > 4 ? 5 : Math.max(1, children.length);
+  const firstChildY = START_Y + NODE_HEIGHT + 42;
   return ordered.map((span, index) => {
     if (index === 0) return { span, x: START_X, y: START_Y };
     const childIndex = index - 1;
     return {
       span,
-      x: START_X + 204 + childIndex * (NODE_WIDTH + NODE_GAP),
-      y: START_Y + (childIndex % 2 === 0 ? 42 : 158),
+      x: START_X + (childIndex % perRow) * (NODE_WIDTH + NODE_GAP),
+      y: firstChildY + Math.floor(childIndex / perRow) * (NODE_HEIGHT + 42),
     };
   });
 }
@@ -221,4 +224,5 @@ function formatDuration(value: number | null) {
   if (!value || value <= 0) return "—";
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(1)} s`;
 }
+
 
