@@ -360,3 +360,10 @@ Idempotency-Key: {key}
 - P1 explicit read-only complex-task route: implemented behind
   `app.agent.graph.enabled`, with `phase` SSE events and `THOUGHT` trace spans.
 - P2 durable checkpoint + write HITL: not implemented yet.
+
+## P2 status
+
+Live PLAN approval is implemented through the existing operation approval UI.
+Durable checkpoint/interrupt persistence and resume across process restarts are
+still a separate P2 increment; the live gate is intentionally not presented as
+durable.

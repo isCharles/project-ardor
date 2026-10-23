@@ -501,7 +501,8 @@ public class CareerAgentService {
                 try {
                     ChatModel graphChat = modelFactory.create(runtimeConfig, depth, listeners);
                     AgentGraphRuntime.Model graphModel = new GraphPhaseModel(graphChat, systemMessage, bound, userId,
-                            requestId, conversation.getId(), lease, toolTimings, tracer);
+                            requestId, conversation.getId(), lease, toolTimings, tracer,
+                            message.contains("确认计划") || message.contains("计划确认") || message.contains("先确认"));
                     AgentGraphRuntime.Observer graphObserver = new AgentGraphRuntime.Observer() {
                         @Override public void phase(AgentGraphRuntime.Node node, String label) {
                             sink.send(AgentStreamEvent.phase(node.name(), label, elapsedMs(startedAt)));
@@ -1087,10 +1088,11 @@ public class CareerAgentService {
         private final AgentStreamLease lease;
         private final AgentToolTimings timings;
         private final AgentRunTracer tracer;
+        private final boolean requirePlanApproval;
 
         private GraphPhaseModel(ChatModel chatModel, String baseSystem, CareerAgentTools.BoundCareerTools bound,
                 UUID userId, UUID requestId, UUID conversationId, AgentStreamLease lease,
-                AgentToolTimings timings, AgentRunTracer tracer) {
+                AgentToolTimings timings, AgentRunTracer tracer, boolean requirePlanApproval) {
             this.chatModel = chatModel;
             this.baseSystem = baseSystem;
             this.bound = bound;
@@ -1100,11 +1102,19 @@ public class CareerAgentService {
             this.lease = lease;
             this.timings = timings;
             this.tracer = tracer;
+            this.requirePlanApproval = requirePlanApproval;
         }
 
         @Override public String plan(String request) {
-            return traced("plan", () -> phaseChat(baseSystem + "\n\n你是只读求职数据审计的规划器。"
+            String plan = traced("plan", () -> phaseChat(baseSystem + "\n\n你是只读求职数据审计的规划器。"
                     + "只输出 2–4 步执行计划，说明要查哪些模块、按什么顺序；不要调用工具，不要声称已经读到数据。", request));
+            if (requirePlanApproval && requestId != null) {
+                String arguments = "{\"plan\":\"" + plan.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"}";
+                if (!toolApprovals.await(userId, requestId, "graph.plan", arguments)) {
+                    throw new IllegalStateException("用户没有批准执行计划，本次只读图未继续执行");
+                }
+            }
+            return plan;
         }
 
         @Override public AgentGraphRuntime.GatherResult gather(String request, String plan, int round) {

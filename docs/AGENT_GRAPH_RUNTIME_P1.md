@@ -90,3 +90,19 @@ ARDOR_UI_BROWSER_CHANNEL=msedge node tests/agent-trace-ui.mjs
 - 对普通任务开启图模式。
 
 P2 会把现有 `AgentToolApprovals` / confirmation UI 映射为 `AWAIT_HUMAN` 中断，并加入 `agent_run_interrupts` 和 resume API。
+
+## Live human approval gate
+
+The P1 graph also supports a live plan-approval interrupt when the user asks to
+confirm the plan, for example:
+
+```text
+请做一次只读盘点审计，并在开始前让我确认计划……
+```
+
+After PLAN is generated, the graph calls the existing `AgentToolApprovals`
+flow with `graph.plan`. The current `OperationPermissions` card shows the plan;
+approving resumes execution, rejecting aborts the read-only graph. The approval
+is live-process state, not yet a durable checkpoint/interrupt: a process restart
+still loses the pending approval. Durable `agent_graph_interrupts` + resume API
+remain the next P2 increment.
