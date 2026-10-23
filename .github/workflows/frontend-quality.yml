@@ -87,7 +87,7 @@ jobs:
       - name: Build production frontend
         run: npm run build
       - name: Install test browser
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps --only-shell chromium
       - name: Workspace UI regression (mock APIs)
         run: node tests/workspace-ui.mjs
       - name: Resume scoring UI regression (mock APIs)
