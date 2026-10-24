@@ -102,6 +102,8 @@ jobs:
         run: node tests/learning-operation-ui.mjs
       - name: Learning feedback and status groups UI regression (mock APIs)
         run: node tests/learning-feedback-ui.mjs
+      - name: Desktop update sidebar UI (synthetic bridge)
+        run: node tests/desktop-update-ui.mjs
       - name: Learning source and target UI regression (mock APIs)
         run: node tests/learning-context-ui.mjs
       - name: Interview pipeline UI regression (mock APIs)
