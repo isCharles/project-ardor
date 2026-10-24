@@ -5,7 +5,8 @@ import org.junit.jupiter.api.Test;
 
 class MethodValidationResponseTests {
     @Test void invalidMethodParametersUseAStableErrorWithoutEchoingInputs() {
-        var error = new ApiExceptionHandler().methodValidation();
+        var error = new ApiExceptionHandler().methodValidation().getBody();
+        assertThat(error).isNotNull();
         assertThat(error.code()).isEqualTo("VALIDATION_ERROR");
         assertThat(error.message()).isEqualTo("请检查请求参数");
     }

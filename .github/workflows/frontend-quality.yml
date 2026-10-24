@@ -84,6 +84,8 @@ jobs:
         run: npm run lint
       - name: Navigation catalog compatibility contract
         run: node tests/navigation-catalog.mjs
+      - name: Streaming error and proxy compatibility contract
+        run: node tests/stream-error-contract.mjs
       - name: Build production frontend
         run: npm run build
       - name: Install test browser

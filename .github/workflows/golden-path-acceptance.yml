@@ -130,6 +130,9 @@ jobs:
               # New users are now Free, not gifted paid members. These synthetic workflow
               # fixtures exercise repeated business paths; quota denial has separate tests.
               test "$ARDOR_ACCEPTANCE_DISPOSABLE_DB" = true
+              # Explicit deny fixture before enabling larger synthetic workflow quotas.
+              docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET free_monthly_limit=0 WHERE feature='AGENT_CHAT'"
+              ARDOR_ACCEPTANCE_EXPECT_QUOTA=true node backend/src/test/resources/stream-error-acceptance.mjs
               docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET free_monthly_limit=GREATEST(free_monthly_limit,plus_monthly_limit)"
               node backend/src/test/resources/interview-minutes-acceptance.mjs
               node backend/src/test/resources/golden-path-acceptance.mjs
@@ -208,6 +211,11 @@ jobs:
           done
           echo "Frontend did not become healthy"
           exit 1
+
+      - name: Verify pre-stream validation through frontend proxy
+        env:
+          ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:3000
+        run: node backend/src/test/resources/stream-error-acceptance.mjs
 
       - name: Verify pre-migration login session through frontend proxy
         working-directory: backend
