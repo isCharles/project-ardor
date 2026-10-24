@@ -16,6 +16,7 @@ import com.projectardor.assistant.tools.modules.CalendarAdviceAgentToolProvider;
 import com.projectardor.assistant.tools.modules.KnowledgeAgentToolProvider;
 import com.projectardor.assistant.tools.modules.ResumeAgentToolProvider;
 import com.projectardor.assistant.tools.modules.SchedulingAgentToolProvider;
+import com.projectardor.assistant.tools.modules.LearningAgentToolProvider;
 
 class ToolCatalogTests {
 
@@ -28,7 +29,8 @@ class ToolCatalogTests {
                 mock(AutomationAgentToolProvider.class, CALLS_REAL_METHODS),
                 mock(CalendarAdviceAgentToolProvider.class, CALLS_REAL_METHODS),
                 mock(ResumeAgentToolProvider.class, CALLS_REAL_METHODS),
-                mock(SchedulingAgentToolProvider.class, CALLS_REAL_METHODS))).schemas().keySet();
+                mock(SchedulingAgentToolProvider.class, CALLS_REAL_METHODS),
+                mock(LearningAgentToolProvider.class, CALLS_REAL_METHODS))).schemas().keySet();
 
         assertThat(tools).hasSizeGreaterThan(50);
         assertThat(tools).allSatisfy(tool -> assertThat(ToolCatalog.describe(tool))

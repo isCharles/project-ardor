@@ -173,6 +173,12 @@ jobs:
           docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET user_minute_limit=GREATEST(user_minute_limit,30) WHERE feature='AGENT_CHAT'"
           node backend/src/test/resources/profile-calendar-acceptance.mjs
 
+      - name: Verify learning tool module and host proposal contracts
+        env:
+          ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
+          ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
+        run: node backend/src/test/resources/learning-module-acceptance.mjs
+
       - name: Restart backend to verify persisted task and read state
         shell: bash
         run: |

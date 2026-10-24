@@ -91,10 +91,10 @@ class CareerAgentToolsTests {
         when(service.beginView(owner, entity.getId())).thenReturn(view);
         when(service.updateArrangementView(owner, entity.getId(), "updated", null)).thenReturn(view);
         var bound = tools.bind(owner, "读取学习计划并修改说明", UUID.randomUUID());
-        assertThat(bound.listLearningPlans()).containsExactly(view);
-        assertThat(bound.getLearningPlan(entity.getId().toString())).isSameAs(view);
-        assertThat(bound.beginLearningPlan(entity.getId().toString())).isSameAs(view);
-        assertThat(bound.updateLearningPlan(entity.getId().toString(), "updated", null)).isSameAs(view);
+        assertThat(learning(bound).listLearningPlans()).containsExactly(view);
+        assertThat(learning(bound).getLearningPlan(entity.getId().toString())).isSameAs(view);
+        assertThat(learning(bound).beginLearningPlan(entity.getId().toString())).isSameAs(view);
+        assertThat(learning(bound).updateLearningPlan(entity.getId().toString(), "updated", null)).isSameAs(view);
         verify(service).listViews(owner);
         verify(service).detail(owner, entity.getId());
         verify(service).beginView(owner, entity.getId());
@@ -133,7 +133,7 @@ class CareerAgentToolsTests {
         when(plan.concept()).thenReturn("JVM");
         when(service.detail(userId, planId)).thenReturn(plan);
         var bound = tools.bind(userId, "删除 JVM 学习");
-        assertThat(bound.deleteLearningPlan(planId.toString())).containsEntry("status", "CONFIRMATION_REQUIRED");
+        assertThat(learning(bound).deleteLearningPlan(planId.toString())).containsEntry("status", "CONFIRMATION_REQUIRED");
         verify(service).detail(userId, planId);
         verify(service, never()).delete(userId, planId);
         assertThat(bound.pendingConfirmations()).singleElement().satisfies(pending -> {
@@ -142,7 +142,7 @@ class CareerAgentToolsTests {
         });
         UUID missing = UUID.randomUUID();
         when(service.detail(userId, missing)).thenThrow(new com.projectardor.common.web.ResourceNotFoundException("学习计划不存在"));
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> bound.deleteLearningPlan(missing.toString()))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> learning(bound).deleteLearningPlan(missing.toString()))
                 .isInstanceOf(com.projectardor.common.web.ResourceNotFoundException.class);
         assertThat(bound.pendingConfirmations()).hasSize(1);
     }
@@ -161,7 +161,7 @@ class CareerAgentToolsTests {
         UUID questionId = UUID.randomUUID();
         var bound = tools.bind(userId, "帮我复习 Redis", runId);
 
-        Map<String, Object> result = bound.createLearningPlan(
+        Map<String, Object> result = learning(bound).createLearningPlan(
                 "Redis 持久化", "面试中没有说明 AOF", null, "RECAP", questionId.toString());
 
         verifyNoInteractions(learningPlanService);
@@ -174,7 +174,7 @@ class CareerAgentToolsTests {
             assertThat(pending.learningPlan().requestId()).isNotNull();
         });
         var again = tools.bind(userId, "帮我复习 Redis", runId);
-        again.createLearningPlan("Redis 持久化", "面试中没有说明 AOF", null, "RECAP", questionId.toString());
+        learning(again).createLearningPlan("Redis 持久化", "面试中没有说明 AOF", null, "RECAP", questionId.toString());
         assertThat(again.pendingConfirmations().getFirst().learningPlan().requestId())
                 .isEqualTo(bound.pendingConfirmations().getFirst().learningPlan().requestId());
     }
@@ -425,7 +425,7 @@ class CareerAgentToolsTests {
         var tools=toolsFor(mock(OpportunityService.class),mock(InterviewRecapQueueService.class));
         UUID user=UUID.randomUUID(),run=UUID.randomUUID(),question=UUID.randomUUID(),target=UUID.randomUUID(),round=UUID.randomUUID();
         var bound=tools.bind(user,"请建议学习计划",run);
-        bound.createLearningPlan("JVM","Synthetic gap",null,null,question.toString(),"INTERVIEW_QUESTION",target.toString(),round.toString());
+        learning(bound).createLearningPlan("JVM","Synthetic gap",null,null,question.toString(),"INTERVIEW_QUESTION",target.toString(),round.toString());
         var input=bound.pendingConfirmations().getFirst().learningPlan();
         assertThat(input.originKind()).isEqualTo(com.projectardor.learning.plan.domain.LearningOriginKind.INTERVIEW_QUESTION);
         assertThat(input.sourceType()).isEqualTo(com.projectardor.learning.plan.domain.LearningSourceType.RECAP);
@@ -433,7 +433,7 @@ class CareerAgentToolsTests {
         assertThat(input.targetInterviewId()).isEqualTo(target);
         assertThat(input.targetRoundId()).isEqualTo(round);
         var changed=tools.bind(user,"请建议学习计划",run);
-        changed.createLearningPlan("JVM","Synthetic gap",null,null,question.toString(),"INTERVIEW_QUESTION",UUID.randomUUID().toString(),null);
+        learning(changed).createLearningPlan("JVM","Synthetic gap",null,null,question.toString(),"INTERVIEW_QUESTION",UUID.randomUUID().toString(),null);
         assertThat(changed.pendingConfirmations().getFirst().learningPlan().requestId()).isNotEqualTo(input.requestId());
     }
 
@@ -503,4 +503,13 @@ class CareerAgentToolsTests {
         verify(interviews).submitAnswerView(user, id, question, "Synthetic answer", null);
         verify(interviews, never()).submitAnswer(any(), any(), any(), any(), any());
     }
+
+    private static com.projectardor.assistant.tools.modules.LearningAgentToolProvider.Bound learning(
+            CareerAgentTools.BoundCareerTools host) {
+        return host.toolObjects().stream()
+                .filter(com.projectardor.assistant.tools.modules.LearningAgentToolProvider.Bound.class::isInstance)
+                .map(com.projectardor.assistant.tools.modules.LearningAgentToolProvider.Bound.class::cast)
+                .findFirst().orElseThrow();
+    }
+
 }
