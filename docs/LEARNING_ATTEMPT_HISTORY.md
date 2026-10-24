@@ -35,7 +35,7 @@
 | `answers` | 本次提交的答案数组（字符串，按题目顺序） |
 | `score` | 0–100；`legacy` 行可空 |
 | `evaluation` | 本轮评价 JSONB：feedback、questionFeedback、strengths、gaps、nextFocus、score、contentVersion、exercisesVersion，以及选择题判定 `choices` |
-| `model_name`、`prompt_version` | 评分模型与评价提示版本；当前为 `learning-evaluation-v1`。`legacy` 行为 NULL |
+| `model_name`、`prompt_version` | 评分模型与评价提示版本；新提交为 `learning-evaluation-v2`，历史 v1 保留原标识。`legacy` 行为 NULL |
 | `legacy` | 由旧投影回填、字段无法证明时为 TRUE，不伪造 rubric/model/prompt |
 | `submitted_at`、`created_at` | 提交时间与落库时间；旧投影缺失提交时间时为 NULL |
 
@@ -93,7 +93,7 @@
     "evaluation": {"feedback": "...", "strengths": [], "gaps": [], "nextFocus": "...",
                    "questionFeedback": [], "contentVersion": 1, "exercisesVersion": 1,
                    "choices": [{"exerciseId": "...", "selected": "...", "correctOption": "...", "correct": true}]},
-    "modelName": "...", "promptVersion": "learning-evaluation-v1",
+    "modelName": "...", "promptVersion": "learning-evaluation-v2",
     "legacy": false, "submittedAt": "..."
   }
 ]
@@ -101,6 +101,14 @@
 
 - 旧 `LearningPlanResponse.lastEvaluation.attempts` 保留原形状并继续截断为最近 20 轮，仅用于旧客户端兼容；新历史不会被截断，读取方应以本接口为准。
 - 评分后的 rubric、选择题判定和评价模型可见；未评分内容不通过该接口泄露。
+
+### 逐题反馈身份与兼容展示
+
+v2 提示要求每项 `questionFeedback` 原样返回输入的 `exerciseId`。新提交的旧客户端兼容投影 `attempts[].items` 同时保留实际题目 ID，每轮投影保存自己的 strengths/gaps/nextFocus，避免把后来一轮的总结套到旧尝试上；完整尝试表的原快照和身份不变。没有 schema 迁移，不回写历史答案、分数或提示版本。
+
+界面先按稳定 ID 关联，再对没有 ID 的旧反馈按唯一的原题文本关联；不按数组位置或模型改写的题干猜测，不剥离可能改变语义的标点。显式 ID 不匹配、重复 ID／题干等无法唯一关联的有效评语在“待对应反馈”完整展示，不能静默隐藏。逐题批改先于本轮总结与下一步／知识补强；旧投影缺少分轮总结时，仅最新一轮可以使用原有最新总结兜底。历史 v1 数据保留兼容阅读，不重评、不伪造 ID。
+
+学习轨道按待巩固、学习中、待学习分组，已掌握使用单独可展开的归档区；这只是现有状态的导航展示，不增加归档状态、不移动或删除数据。旧 `?id=` 链接、手动删除确认、练习草稿和计划身份保持。
 
 ## 4. 回填规则（V52）
 
@@ -233,3 +241,12 @@ bash backend/src/test/resources/interview-round-upgrade.sh attempts
 - 已执行迁移不得编辑或删除。若 V52 需要修正，只能新增后续迁移。
 - 已知限制：同步 attempts 的 409 版本围栏在配额保护之后执行，被拒绝的陈旧提交仍可能消耗一次 `LEARNING_ATTEMPT` 额度（既有 `QuotaAspect` 顺序），本批不改变配额顺序；异步入口不接受 `exercisesVersion`。
 - 未完成/后续项：尚无「重新生成讲解」接口，`content_version` 目前只在创建时为 1；历史计划题目不会补造 exerciseId；前端尚未消费尝试历史接口（接口合同先落地，页面在后续批次接入）。
+
+## 7. 逐题反馈修复验收（2026-10-24）
+
+- 真实问题只读诊断：该课程的 6 条评语均已保存，其中第 1、4、5 题的历史题干不一致，旧页面的精确题干过滤将它们隐藏。未修改用户答案、分数或历史 JSON。
+- 新评分契约通过原始 exerciseId 关联；旧记录只有题干时仅允许唯一精确匹配，无法可靠对应的评语完整显示在“待对应反馈”。不依数组位置、模糊相似度或模型猜测补造历史身份。
+- 展示顺序为逐题回答与批改、待对应反馈、本轮总结、下一步与知识补强。学习轨道按现有状态分组，已掌握单独折叠归档；不改变业务状态与删除规则。
+- Java 21 全量：736 项，0 失败、0 错误、1 项环境门控跳过。真实隔离 HTTP 验收覆盖原题 ID、倒序且改写题干的模型反馈、不可变历史及跨用户归属。
+- 前端类型检查、构建、关联契约、学习操作回归通过；Edge 在 1440/900/390 宽度验证逐题关联、旧反馈可见、区块顺序、状态分组及归档展开。上述浏览器样例使用合成 API 数据，未调用真实模型。
+- 本批没有 schema 迁移。代码验证不代表已合并或已部署；交付状态以对应 PR 和实际运行版本核验为准。

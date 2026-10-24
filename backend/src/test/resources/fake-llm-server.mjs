@@ -114,12 +114,17 @@ function completionFor(payload) {
       if (attempts === 1) return { score: -1, feedback: "invalid score" };
     }
     const improved = input.includes("二轮修订");
+    const gradingInput = payload.messages?.filter(message => message.role === "user" && typeof message.content === "string")
+      .map(message => message.content).findLast(content => content.includes("练习与回答："));
+    const gradedItems = gradingInput ? JSON.parse(gradingInput.slice(gradingInput.indexOf("练习与回答：") + "练习与回答：".length)) : [];
     return {
       score: improved ? 85 : 65,
       feedback: improved ? "已经说明关键取舍。" : "还需要解释恢复目标。",
       strengths: ["能区分快照与日志"],
       gaps: improved ? [] : ["缺少恢复目标"],
-      questionFeedback: [{ question: "如何选择 RDB 与 AOF？", feedback: "结合恢复目标说明即可。" }],
+      // Deliberately paraphrase/reorder: the product must associate by stable ID, not title/index.
+      questionFeedback: gradedItems.map((item, index) => ({ exerciseId: item.exerciseId,
+        question: `Synthetic paraphrased question ${index + 1}`, feedback: "结合恢复目标说明即可。" })).reverse(),
       nextFocus: improved ? "保持练习" : "恢复时间与数据丢失窗口",
       nextExercises: improved ? [] : [
         { question: "选择恢复策略时首先明确什么？", type: "MULTIPLE_CHOICE", options: ["允许的数据丢失窗口", "固定使用快照", "无需考虑性能"], correctOption: 0, rubric: ["允许的数据丢失窗口"] },

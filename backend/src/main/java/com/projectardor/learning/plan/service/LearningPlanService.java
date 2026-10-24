@@ -39,7 +39,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class LearningPlanService {
     /** Versioned identity of the evaluation contract persisted with every graded attempt. */
-    static final String EVALUATION_PROMPT_VERSION = "learning-evaluation-v1";
+    static final String EVALUATION_PROMPT_VERSION = "learning-evaluation-v2";
 
     private final LearningPlanRepository repository;
     private final LearningAttemptRepository attempts;
@@ -335,6 +335,7 @@ public class LearningPlanService {
         for (int index = 0; index < answers.size(); index++) {
             Map<String, Object> exercise = exercises.get(index);
             Map<String, Object> item = new LinkedHashMap<>();
+            if (exercise.get("exerciseId") != null) item.put("exerciseId", exercise.get("exerciseId"));
             item.put("question", exercise.get("question"));
             item.put("type", exercise.getOrDefault("type", "SHORT_ANSWER"));
             item.put("options", exercise.getOrDefault("options", List.of()));
@@ -348,6 +349,9 @@ public class LearningPlanService {
         recordedAttempt.put("submittedAt", Instant.now().toString());
         recordedAttempt.put("feedback", node.path("feedback").asText(""));
         recordedAttempt.put("questionFeedback", modelEvaluation.getOrDefault("questionFeedback", List.of()));
+        recordedAttempt.put("strengths", modelEvaluation.getOrDefault("strengths", List.of()));
+        recordedAttempt.put("gaps", modelEvaluation.getOrDefault("gaps", List.of()));
+        recordedAttempt.put("nextFocus", modelEvaluation.getOrDefault("nextFocus", ""));
         history.add(recordedAttempt);
         projection.put("attempts", history);
         List<Map<String, Object>> followUps = score >= 80 ? List.of() : optionalExercises(node.path("nextExercises"));
@@ -503,7 +507,7 @@ public class LearningPlanService {
         return """
                 你是严格但有建设性的中文技术教练。只输出 JSON 对象，不要用代码围栏包住 JSON。
                 格式：{"score":0,"feedback":"总体反馈","strengths":["..."],"gaps":["..."],
-                "questionFeedback":[{"question":"原题","feedback":"针对该回答的解释"}],
+                "questionFeedback":[{"exerciseId":"输入题目的原始 exerciseId","question":"原题","feedback":"针对该回答的解释"}],
                 "nextFocus":"下一步重点","nextExercises":[{"question":"新题",
                 "type":"SHORT_ANSWER 或 MULTIPLE_CHOICE 或 SCENARIO",
                 "options":["选项一","选项二","选项三"],"rubric":["评分要点"]}]}。
@@ -512,6 +516,8 @@ public class LearningPlanService {
                 带 choiceCorrect 的题必须以它为准，答对就按满分计，答错指出正确选项即可；
                 不得因为用户没有解释选项、没有补充理由而扣分，也不要要求用户说明选择理由。
                 其余题型按评分要点评估。
+                questionFeedback 必须覆盖每一道题；逐项原样返回输入的 exerciseId，不得改写或捏造。
+                question 保留原题，不能用题干改写或数组位置代替 exerciseId 关联。
                 feedback 和 questionFeedback.feedback 可用 Markdown 分点并加粗关键结论，避免冗长段落。
                 如果得分低于 80，必须根据薄弱点出 3 到 5 道不同于原题的新题，题型要混合：
                 至少一道 MULTIPLE_CHOICE（带 options 和 correctOption）、可以有 TRUE_FALSE（带 correctAnswer 布尔值），
