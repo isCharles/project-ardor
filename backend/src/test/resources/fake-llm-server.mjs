@@ -184,6 +184,25 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+    if (payload.model === "learning-module-probe" && isAgentRequest) {
+      const required = ["list_learning_plans", "get_learning_plan", "create_learning_plan", "update_learning_plan", "begin_learning_plan", "delete_learning_plan"];
+      const message = String(payload.messages.filter(item => item.role === "user").at(-1)?.content);
+      const match = message.match(/learning-call:(\w+) learning-args:(\{.*\})/s);
+      const tool = { list: "list_learning_plans", get: "get_learning_plan", create: "create_learning_plan",
+        update: "update_learning_plan", begin: "begin_learning_plan", delete: "delete_learning_plan" }[match?.[1]];
+      if (!tool || !required.every(name => payload.tools.some(item => item.function.name === name))) {
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "Learning module tool discovery failed" } })); return;
+      }
+      const output = String(payload.messages.filter(item => item.role === "tool").at(-1)?.content ?? "");
+      const delta = hasToolResult ? { role: "assistant", content: `Learning tool result: ${output}` }
+        : { role: "assistant", tool_calls: [{ index: 0, id: "learning-module", type: "function",
+          function: { name: tool, arguments: match[2] } }] };
+      response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
+      for (const [chunk, finish] of [[delta, null], [{}, hasToolResult ? "stop" : "tool_calls"]]) response.write(`data: ${JSON.stringify({ id: "learning-module", object: "chat.completion.chunk", model: payload.model,
+        choices: [{ index: 0, delta: chunk, finish_reason: finish }] })}\n\n`);
+      response.end("data: [DONE]\n\n"); return;
+    }
     if (payload.model === "profile-calendar-probe" && isAgentRequest) {
       const message = String(payload.messages.filter(item => item.role === "user").at(-1)?.content);
       const mode = ["create-task", "update-task", "list-tasks", "create-rule", "update-rule", "list-rules", "task", "rule"]

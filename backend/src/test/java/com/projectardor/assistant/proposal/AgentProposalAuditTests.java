@@ -41,14 +41,14 @@ class AgentProposalAuditTests {
         UUID conversation = UUID.randomUUID();
 
         var bound = tools.bind(user, "帮我复习 Redis", run).withConversationId(conversation);
-        bound.createLearningPlan("Redis 持久化", "面试中没有说明 AOF", null, "RECAP", UUID.randomUUID().toString());
+        learning(bound).createLearningPlan("Redis 持久化", "面试中没有说明 AOF", null, "RECAP", UUID.randomUUID().toString());
         var pending = bound.pendingConfirmations().getFirst();
 
         assertThat(pending.proposalId()).isNotNull();
         assertThat(pending.learningPlan()).isNotNull();
         // Re-reading the same run rebuilds the same stable proposal identity.
         var retried = tools.bind(user, "帮我复习 Redis", run).withConversationId(conversation);
-        retried.createLearningPlan("Redis 持久化", "面试中没有说明 AOF", null, "RECAP",
+        learning(retried).createLearningPlan("Redis 持久化", "面试中没有说明 AOF", null, "RECAP",
                 pending.learningPlan().sourceId() == null ? null : pending.learningPlan().sourceId().toString());
         assertThat(retried.pendingConfirmations()).hasSize(1);
         assertThat(retried.pendingConfirmations().getFirst().proposalId()).isEqualTo(pending.proposalId());
@@ -80,7 +80,7 @@ class AgentProposalAuditTests {
         when(plans.detail(user, planId)).thenReturn(plan);
 
         var bound = tools.bind(user, "删除 JVM 学习", run).withConversationId(conversation);
-        assertThat(bound.deleteLearningPlan(planId.toString())).containsEntry("status", "CONFIRMATION_REQUIRED");
+        assertThat(learning(bound).deleteLearningPlan(planId.toString())).containsEntry("status", "CONFIRMATION_REQUIRED");
 
         var pending = bound.pendingConfirmations().getFirst();
         ArgumentCaptor<AgentExecutionAuditStore.ProposalRecord> recorded =
@@ -100,7 +100,7 @@ class AgentProposalAuditTests {
         UUID user = UUID.randomUUID();
         // No durable run identity (legacy sync chat): the card stays usable, no audit row is invented.
         var bound = tools.bind(user, "帮我复习 Redis").withConversationId(UUID.randomUUID());
-        bound.createLearningPlan("Redis 持久化", null, null, "AGENT", null);
+        learning(bound).createLearningPlan("Redis 持久化", null, null, "AGENT", null);
         assertThat(bound.pendingConfirmations()).singleElement()
                 .satisfies(pending -> assertThat(pending.proposalId()).isNotNull());
         verify(audit, never()).recordProposal(any());
@@ -119,4 +119,13 @@ class AgentProposalAuditTests {
                 mock(ApplicationRhythmService.class), mock(OpportunityService.class),
                 mock(com.projectardor.platform.jobs.aijobs.AiJobService.class), audit, mock(com.projectardor.learning.review.service.FlashcardService.class));
     }
+
+    private static com.projectardor.assistant.tools.modules.LearningAgentToolProvider.Bound learning(
+            CareerAgentTools.BoundCareerTools host) {
+        return host.toolObjects().stream()
+                .filter(com.projectardor.assistant.tools.modules.LearningAgentToolProvider.Bound.class::isInstance)
+                .map(com.projectardor.assistant.tools.modules.LearningAgentToolProvider.Bound.class::cast)
+                .findFirst().orElseThrow();
+    }
+
 }

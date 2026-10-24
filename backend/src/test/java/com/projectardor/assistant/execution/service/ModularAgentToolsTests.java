@@ -25,6 +25,8 @@ import com.projectardor.materials.knowledge.service.*;
 import com.projectardor.materials.resume.service.*;
 import com.projectardor.assistant.tools.modules.ResumeAgentToolProvider;
 import com.projectardor.assistant.tools.modules.SchedulingAgentToolProvider;
+import com.projectardor.assistant.tools.modules.LearningAgentToolProvider;
+import com.projectardor.learning.plan.service.LearningPlanService;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.agent.tool.ToolSpecifications;
@@ -37,6 +39,7 @@ class ModularAgentToolsTests {
     private final com.projectardor.scheduling.service.TaskSeriesService series = mock(com.projectardor.scheduling.service.TaskSeriesService.class);
     private final AgentToolApprovals approvals = mock(AgentToolApprovals.class);
     private final AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+    private final LearningPlanService learning = mock(LearningPlanService.class);
 
     private CareerAgentTools tools() {
         return new CareerAgentTools(
@@ -49,7 +52,7 @@ class ModularAgentToolsTests {
                 mock(com.projectardor.jobsearch.record.service.InterviewRecapService.class),
                 mock(com.projectardor.jobsearch.record.service.InterviewRecapQueueService.class),
                 mock(com.projectardor.platform.model.websearch.service.TavilySearchService.class),
-                knowledge, mock(com.projectardor.learning.plan.service.LearningPlanService.class),
+                knowledge, learning,
                 mock(com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService.class),
                 mock(com.projectardor.jobsearch.interview.service.OpportunityService.class),
                 mock(com.projectardor.platform.jobs.aijobs.AiJobService.class),
@@ -496,6 +499,8 @@ class ModularAgentToolsTests {
             context.registerBean(com.projectardor.scheduling.service.CalendarTaskService.class, () -> calendar);
             context.registerBean(com.projectardor.scheduling.service.TaskSeriesService.class, () -> series);
             context.register(SchedulingAgentToolProvider.class);
+            context.registerBean(LearningPlanService.class, () -> learning);
+            context.register(LearningAgentToolProvider.class);
             context.registerBean("extraAdapter", AgentToolProvider.class,
                     () -> ignored -> new ApprovedAgentToolsTests.FakeTools());
             context.registerBean(CareerAgentTools.class, this::tools);
@@ -504,7 +509,65 @@ class ModularAgentToolsTests {
             var names = wrapped(host.bind(owner, "", run), null, null).keySet().stream()
                     .map(ToolSpecification::name).toList();
             assertThat(names).doesNotHaveDuplicates().contains("fake_write", "search_knowledge", "delete_knowledge_document",
-                    "list_calendar_tasks", "update_recurring_task");
+                    "list_calendar_tasks", "update_recurring_task", "create_learning_plan", "list_learning_plans");
         }
+    }
+
+    @Test
+    void learningSchemasAndReadsKeepOwnerWithoutApproval() {
+        var provider = new LearningAgentToolProvider(learning);
+        var names = List.of("list_learning_plans", "get_learning_plan", "create_learning_plan",
+                "delete_learning_plan", "update_learning_plan", "begin_learning_plan");
+        assertThat(ToolSpecifications.toolSpecificationsFrom(provider.toolTypes().getFirst()).stream()
+                .map(ToolSpecification::name)).containsExactlyInAnyOrderElementsOf(names);
+        assertThat(new com.projectardor.assistant.tools.AgentToolSchemaCatalog(List.of(provider)).schemas().keySet())
+                .containsAll(names);
+        var executors = wrapped(tools().bind(owner, "只查看学习计划", run), null, null);
+        UUID plan = UUID.randomUUID();
+        execute(executors, "list_learning_plans", "{}");
+        execute(executors, "get_learning_plan", "{\"planId\":\"" + plan + "\"}");
+        verify(learning).listViews(owner); verify(learning).detail(owner, plan);
+        verifyNoInteractions(permissions);
+        verify(approvals, never()).await(any(), any(), any(), any());
+    }
+
+    @Test
+    void learningCreationSharesHostPendingCardsRequestIdentityAndCancellation() {
+        var host = tools();
+        var bound = host.bind(owner, "帮我生成学习计划", run);
+        var executors = wrapped(bound, null, null);
+        String args = "{\"concept\":\"JVM\",\"originKind\":\"AGENT\"}";
+        assertThat(execute(executors, "create_learning_plan", args)).contains("CONFIRMATION_REQUIRED");
+        assertThat(execute(executors, "create_learning_plan", args)).contains("CONFIRMATION_REQUIRED");
+        assertThat(bound.pendingConfirmations()).hasSize(2).allSatisfy(card -> {
+            assertThat(card.kind()).isEqualTo("learning_plan");
+            assertThat(card.learningPlan().concept()).isEqualTo("JVM");
+        });
+        assertThat(bound.pendingConfirmations().get(0).learningPlan().requestId())
+                .isEqualTo(bound.pendingConfirmations().get(1).learningPlan().requestId());
+        var lease = new AgentStreamLease(); lease.fence();
+        assertThat(execute(wrapped(bound, lease, null), "create_learning_plan", args)).contains("RUN_STOPPED");
+        assertThat(bound.pendingConfirmations()).hasSize(2);
+        verifyNoInteractions(learning);
+        verify(approvals, never()).await(any(), any(), any(), any());
+    }
+
+    @Test
+    void learningUpdatesKeepTrustedIntentPermissionAndStoppedRunBoundary() {
+        UUID plan = UUID.randomUUID();
+        String args = "{\"planId\":\"" + plan + "\",\"scheduledAt\":\"2028-04-01T09:00:00+08:00\"}";
+        assertThat(execute(wrapped(tools().bind(owner, "只查看学习计划，不要修改", run), null, null),
+                "update_learning_plan", args)).contains("TOOL_NOT_PERMITTED");
+        verifyNoInteractions(learning, permissions);
+        when(permissions.autoApproves(owner, "update_learning_plan")).thenReturn(true);
+        var bound = tools().bind(owner, "修改学习计划日期", run);
+        var executors = wrapped(bound, null, null);
+        assertThat(execute(executors, "update_learning_plan", args)).doesNotContain("TOOL_NOT_PERMITTED", "RUN_STOPPED");
+        verify(learning).updateArrangementView(owner, plan, null, Instant.parse("2028-04-01T01:00:00Z"));
+        assertThat(execute(executors, "update_learning_plan", args)).contains("DUPLICATE_WRITE_BLOCKED");
+        var lease = new AgentStreamLease(); lease.fence();
+        assertThat(execute(wrapped(bound, lease, null), "update_learning_plan", args)).contains("RUN_STOPPED");
+        verifyNoMoreInteractions(learning);
+        verify(approvals, never()).await(any(), any(), any(), any());
     }
 }
