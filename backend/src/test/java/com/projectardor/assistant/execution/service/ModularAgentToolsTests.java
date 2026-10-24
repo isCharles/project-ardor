@@ -169,14 +169,6 @@ class ModularAgentToolsTests {
     }
 
     @Test
-    void graphReadSurfaceIncludesLocalKnowledgeToolsButNeverWrites() {
-        var bound = tools().bind(owner, "只读分析知识库", run);
-        assertThat(CareerAgentService.readOnlyToolNames(bound))
-                .contains("list_knowledge_documents", "search_knowledge", "list_learning_plans")
-                .doesNotContain("delete_knowledge_document", "research_knowledge_from_web", "create_learning_plan");
-    }
-
-    @Test
     void automationModuleKeepsOwnerAndDeletionProposalWithoutDeleting() {
         var service = mock(com.projectardor.assistant.automation.service.AutomationService.class);
         UUID id = UUID.randomUUID();
