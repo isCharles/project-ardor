@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   headers.delete("host");
   headers.delete("content-length");
   headers.delete("connection");
-  headers.set("accept", "text/event-stream");
+  headers.set("accept", "text/event-stream, application/json");
 
   const upstream = await fetch(`${backendUrl}/api/agent/messages/stream`, {
     method: "POST",

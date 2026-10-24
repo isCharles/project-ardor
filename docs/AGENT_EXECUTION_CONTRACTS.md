@@ -95,6 +95,16 @@ PROPOSED ──运行取消/超时/失败──► CANCELLED
 
 ## 5. 兼容与回退
 
+### 流开始前的错误响应
+
+`/api/agent/messages/stream` 成功响应仍为 SSE。流开始前的额度拒绝、请求校验、资源缺失和现有已分类异常，使用原 `ApiError` JSON 与原 HTTP 状态，不包装为成功 SSE，也不因客户端只接受 SSE 再退化成空白 500。公共异常处理器显式设置 JSON Content-Type，兼容旧客户端；新前端客户端和同站流式代理同时接受 `text/event-stream, application/json`。
+
+额度/限流保持 429、`QUOTA_EXCEEDED`、原 message/retryable，以及 fields 中的 feature/dimension/resetAt 与 Retry-After。代理透传状态、JSON、Cookie/CSRF 和取消 signal，不将拒绝当作可自动重发的模型调用。拒绝请求不创建消息或模型运行；额度数值、权限、请求幂等键和成功流协议均不改变。已开始 SSE 后的运行失败仍走既有 error 事件，不试图改写已提交的 HTTP 状态。未知异常、所有错误码统一及真实供应商故障仍须各自验证，不能将本项当作完整 E3 交付。无迁移，前后端可回退；新后端也兼容旧的仅 SSE Accept。
+
+终止错误必须在输入框上方直接可见，不能因工作记录中保存了相同原因就把外部提示去掉；工作记录默认折叠，仍保留完整尝试历史。自动重试期间继续使用原退避与取消规则，不将额度拒绝标成重连；失败不锁定后续输入，空状态也不重复展示同一条终止原因。
+
+### 数据与客户端兼容
+
 - V53 只新增列、表和索引，并回填可证明的关联；未改已执行迁移、旧字段、旧 API 语义或删除级联。
 - 旧客户端忽略新增 JSON 字段，继续用旧卡片 key 与 `proposal_resolutions`；旧写入者不写 `approval_source` 时默认 `AUTO`。
 - 回退仅回退应用版本，保留 V53 的增量 schema、已写入审计事实和 Flyway 记录；旧应用忽略新增对象即可。不要执行 V53 文件末尾的历史手动删表/删列示例：它会丢失审计数据，且 Flyway 已执行记录仍在，后续新版不会重新创建这些对象。若确需清理，必须另行批准、备份并使用新的前向迁移；不得改写已执行 V53 或手动删除其历史记录。
@@ -103,7 +113,7 @@ PROPOSED ──运行取消/超时/失败──► CANCELLED
 ## 6. 未验证项与限制
 
 - 删除/创建卡片的真正业务结果仍由客户端决定后调用原认证接口；服务端只记录卡片生成与客户端上报的决定，无法证明业务写入是否成功。
-- 未修改前端展示；新 ID 字段仅由 API 输出，页面仍按旧 key 工作。
-- Golden Path/acceptance 脚本与 workflow 接入由 Lead 统一完成；本 PR 未改 `.github/workflows/golden-path-acceptance.yml` 与升级探针。
+- E2 首批未修改前端展示，新 ID 字段仅由 API 输出；后续前端与兼容投影以当前实现为准，不将本条当作全程无前端改动。
+- E2 首批的 Golden Path/acceptance 接入曾单独交接，后续 workflow 与验收结果见 `REFACTOR_STATUS.md`，不能用初始批次的未接入说明覆盖已完成验收。
 - 真实模型供应商对 `tool_call_id` 的提供情况未逐一验证；缺失时该列为 null，不影响其它关联。
 - 多实例部署下的执行归属与审计补写竞争未验证。

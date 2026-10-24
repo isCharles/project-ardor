@@ -82,7 +82,7 @@ export async function streamApi<T>(
   onEvent: (event: T) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const headers = new Headers({ "Content-Type": "application/json", Accept: "text/event-stream" });
+  const headers = new Headers({ "Content-Type": "application/json", Accept: "text/event-stream, application/json" });
   Object.entries(await csrfHeaders()).forEach(([name, value]) => headers.set(name, value));
   // Stop during CSRF setup must not dispatch a new model request. Once sent,
   // keep reading until the server acknowledges cancellation (disconnect != stop).

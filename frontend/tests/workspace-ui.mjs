@@ -39,6 +39,8 @@ try {
   let calendarWrites = 0;
   let retryProbe = false;
   let retryProbeCalls = 0;
+  let quotaProbe = false;
+  let quotaProbeCalls = 0;
   let learningPlans = [];
   let learningDeleteCalls = 0;
   let learningDeleteFails = false;
@@ -69,6 +71,10 @@ try {
       body = path.endsWith("/series") ? [{ id: "series-fixture", title: "Weekly sync", summary: "Every Thursday 07:00", status: "ACTIVE", upcoming: [] }] : [];
     }
     else if (path === "/api/agent/messages/stream") {
+      if (quotaProbe) {
+        quotaProbeCalls++;
+        return route.fulfill({ status: 429, json: { code: "QUOTA_EXCEEDED", message: "Synthetic quota limit reached", retryable: false } });
+      }
       if (retryProbe) {
         retryProbeCalls++;
         return route.fulfill({ status: 503, json: { message: "Synthetic retryable failure", retryable: true } });
@@ -87,7 +93,8 @@ try {
       if (failRename) return route.fulfill({ status: 503, json: { message: "Synthetic save failure" } });
       conversation = { ...conversation, ...route.request().postDataJSON(), titleManuallySet: true }; body = conversation;
     }
-    else if (path === "/api/agent/conversations") body = [conversation, { ...conversation, id: "chat-two", title: "Second preview chat" }];
+    else if (path === "/api/agent/conversations") body = route.request().method() === "POST"
+      ? conversation : [conversation, { ...conversation, id: "chat-two", title: "Second preview chat" }];
     else if (path === "/api/agent/messages/steer" && route.request().method() === "POST") {
       const request = route.request().postDataJSON();
       steerRequests.push(request);
@@ -134,7 +141,7 @@ try {
     else if (path.endsWith("/progress") && activeRun) body = activeRun.status === "FAILED"
       ? { phase: "FAILED", label: "Stopped", thinkingOutput: "Saved public reasoning", answerPartial: "Saved incomplete answer", elapsedMs: 1200, steps: [{ label: "Recovered read plans", elapsedMs: 4, status: "COMPLETED" }] }
       : { phase: activeRun?.progressPhase ?? "WAITING_DATA", label: "Waiting", thinkingOutput: activeRun?.progressPhase === "THINKING" ? "Provider supplied reasoning" : "", answerPartial: "", silentSeconds: 40 };
-    else if (path.startsWith("/api/agent/runs")) return route.fulfill(retryProbe ? { status: 404, json: { message: "Not accepted" } } : { status: 204 });
+    else if (path.startsWith("/api/agent/runs")) return route.fulfill(retryProbe || quotaProbe ? { status: 404, json: { message: "Not accepted" } } : { status: 204 });
     else if (path === "/api/agent/reasoning") body = { nativeControl: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
     else if (path === "/api/background-tasks") {
@@ -673,8 +680,31 @@ try {
   activeRun = { ...activeRun, status: "COMPLETED" };
   await deletionDock.waitFor({ state: "hidden" });
   assert.equal(await deletionDock.count(), 0, "A durable remote decision must take precedence over in-memory pending state");
+  activeRun = null;
+  displayedMessages = [];
+  quotaProbe = true;
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.goto(`${origin}/app?conversation=${conversation.id}`);
+  const quotaInput = page.getByRole("textbox", { name: "Message Ardor", exact: true });
+  await quotaInput.fill("Synthetic quota request");
+  const quotaResponse = page.waitForResponse(response => response.url().endsWith("/api/agent/messages/stream"));
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  assert.equal((await quotaResponse).status(), 429);
+  try {
+    await page.getByText("Synthetic quota limit reached", { exact: true }).waitFor({ timeout: 5000 });
+  } catch (error) {
+    console.error(JSON.stringify({ quotaProbeCalls, url: page.url(), alerts: await page.getByRole("alert").allTextContents(),
+      content: (await page.locator("main").innerText()).slice(-4000) }));
+    await page.screenshot({ path: ".next/quota-error-failure.png" });
+    throw error;
+  }
+  await page.waitForTimeout(2200);
+  assert.equal(quotaProbeCalls, 1, "Quota denial must not automatically resend the model request");
+  assert.equal(await quotaInput.isEnabled(), true, "A rejected request must not lock the composer");
+  await quotaInput.fill("Editable follow-up draft");
+  assert.equal(await quotaInput.inputValue(), "Editable follow-up draft");
   assert.deepEqual(errors, []);
-  console.log("Workspace UI: rename, retry, sidebar persistence/isolation, categorized settings and draft retention passed.");
+  console.log("Workspace UI: rename, retry, sidebar persistence/isolation, settings, drafts and visible non-retried quota rejection passed.");
 } finally {
   await browser?.close();
   server.kill();
