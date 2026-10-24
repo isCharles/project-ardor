@@ -105,7 +105,7 @@ const history=await a.request(attemptsPath);
 assert.equal(history.length,1,"One graded round must become one attempt row");
 const attempt=history[0];
 assert.equal(attempt.attemptNo,1);assert.equal(attempt.legacy,false);
-assert.equal(attempt.modelName,"golden-path-model");assert.equal(attempt.promptVersion,"learning-evaluation-v2");
+assert.equal(attempt.modelName,"golden-path-model");assert.equal(attempt.promptVersion,"learning-evaluation-v3");
 assert.deepEqual(attempt.answers,attemptAnswers);
 assert.deepEqual(attempt.exercises.map(item=>item.exerciseId),generatedExerciseIds,
   "The attempt snapshot must keep the ids of the exercise set that was actually answered");
@@ -114,6 +114,8 @@ assert.deepEqual(graded.lastEvaluation.attempts[0].items.map(item=>item.exercise
 assert.deepEqual(attempt.evaluation.questionFeedback.map(item=>item.exerciseId),[...generatedExerciseIds].reverse(),
   "Paraphrased/reordered model feedback retains stable IDs through the real scoring pipeline");
 assert.deepEqual(graded.lastEvaluation.attempts[0].questionFeedback,attempt.evaluation.questionFeedback);
+assert.ok(attempt.evaluation.questionFeedback.some(item=>typeof item.referenceAnswer==="string"&&item.referenceAnswer.length>20),
+  "Submitted short/scenario answers retain an independently readable reference answer");
 assert.deepEqual(graded.lastEvaluation.attempts[0].gaps,attempt.evaluation.gaps);
 assert.equal(attempt.score,65);
 assert.ok(Array.isArray(attempt.exercises[0].rubric)&&attempt.exercises[0].rubric.length>0,"Attempt snapshot keeps the rubric");

@@ -39,7 +39,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class LearningPlanService {
     /** Versioned identity of the evaluation contract persisted with every graded attempt. */
-    static final String EVALUATION_PROMPT_VERSION = "learning-evaluation-v2";
+    static final String EVALUATION_PROMPT_VERSION = "learning-evaluation-v3";
 
     private final LearningPlanRepository repository;
     private final LearningAttemptRepository attempts;
@@ -507,7 +507,7 @@ public class LearningPlanService {
         return """
                 你是严格但有建设性的中文技术教练。只输出 JSON 对象，不要用代码围栏包住 JSON。
                 格式：{"score":0,"feedback":"总体反馈","strengths":["..."],"gaps":["..."],
-                "questionFeedback":[{"exerciseId":"输入题目的原始 exerciseId","question":"原题","feedback":"针对该回答的解释"}],
+                "questionFeedback":[{"exerciseId":"输入题目的原始 exerciseId","question":"原题","feedback":"针对该回答的解释","referenceAnswer":"简答题或场景题的参考答案"}],
                 "nextFocus":"下一步重点","nextExercises":[{"question":"新题",
                 "type":"SHORT_ANSWER 或 MULTIPLE_CHOICE 或 SCENARIO",
                 "options":["选项一","选项二","选项三"],"rubric":["评分要点"]}]}。
@@ -518,6 +518,8 @@ public class LearningPlanService {
                 其余题型按评分要点评估。
                 questionFeedback 必须覆盖每一道题；逐项原样返回输入的 exerciseId，不得改写或捏造。
                 question 保留原题，不能用题干改写或数组位置代替 exerciseId 关联。
+                简答题和场景题必须返回 referenceAnswer：给出能够独立阅读的参考回答，包含关键原理、步骤和必要取舍，不能只列评分点或重复用户答案。
+                选择题和判断题不需要 referenceAnswer。参考答案只属于提交后的批改，不得写入下一轮题干。
                 feedback 和 questionFeedback.feedback 可用 Markdown 分点并加粗关键结论，避免冗长段落。
                 如果得分低于 80，必须根据薄弱点出 3 到 5 道不同于原题的新题，题型要混合：
                 至少一道 MULTIPLE_CHOICE（带 options 和 correctOption）、可以有 TRUE_FALSE（带 correctAnswer 布尔值），

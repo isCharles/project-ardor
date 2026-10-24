@@ -124,7 +124,8 @@ function completionFor(payload) {
       gaps: improved ? [] : ["缺少恢复目标"],
       // Deliberately paraphrase/reorder: the product must associate by stable ID, not title/index.
       questionFeedback: gradedItems.map((item, index) => ({ exerciseId: item.exerciseId,
-        question: `Synthetic paraphrased question ${index + 1}`, feedback: "结合恢复目标说明即可。" })).reverse(),
+        question: `Synthetic paraphrased question ${index + 1}`, feedback: "结合恢复目标说明即可。",
+        ...(["SHORT_ANSWER", "SCENARIO"].includes(item.type) ? { referenceAnswer: "先明确允许的数据丢失窗口和恢复时间，再结合写入成本选择持久化与备份策略，并通过恢复演练验证。" } : {}) })).reverse(),
       nextFocus: improved ? "保持练习" : "恢复时间与数据丢失窗口",
       nextExercises: improved ? [] : [
         { question: "选择恢复策略时首先明确什么？", type: "MULTIPLE_CHOICE", options: ["允许的数据丢失窗口", "固定使用快照", "无需考虑性能"], correctOption: 0, rubric: ["允许的数据丢失窗口"] },

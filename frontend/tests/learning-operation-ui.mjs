@@ -52,6 +52,14 @@ try {
     else if (path === "/api/ai-jobs") body = job ? [job] : [];
     await route.fulfill({ json: body });
   });
+  const empty = await context.newPage();
+  await empty.route("**/api/agent**", route => new URL(route.request().url()).pathname === "/api/agent"
+    ? route.fulfill({ json: { conversationId: null, llmConfigured: true, memory: { content: "" }, conversations: [], archivedConversations: [], messages: [] } })
+    : route.fallback());
+  await empty.goto(`${origin}/app`);
+  await empty.getByRole("heading", { name: "What would you like to work on today?", exact: true }).waitFor();
+  assert.equal(await empty.getByRole("heading", { name: /What should we build/ }).count(), 0);
+  await empty.close();
   const page = await context.newPage(), errors = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(`${origin}/app`);

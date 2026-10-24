@@ -89,7 +89,8 @@ try {
 
   await page.getByRole("link", { name: /Open lesson|打开学习/ }).click();
   await page.waitForURL(new RegExp(`${createdPlanPath.replace("?", "\\?")}$`));
-  await page.getByRole("button", { name: /^(Start learning|开始学习)$/ }).click();
+  assert.equal(await page.getByRole("button", { name: /^(Start learning|开始学习)$/ }).count(), 0,
+    "Opening the unit starts learning without a separate confirmation");
   await page.getByRole("heading", { name: "恢复取舍" }).waitFor();
   assert.equal(await page.locator('.ardor-markdown strong').filter({ hasText: "RDB" }).count(), 1);
   await page.getByRole("radio", { name: "记录写命令" }).check();

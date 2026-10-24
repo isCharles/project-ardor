@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownToLine, LoaderCircle, RotateCw } from "lucide-react";
+import { ArrowDownToLine, LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocale } from "@/lib/locale";
 
@@ -32,31 +32,23 @@ export function DesktopUpdateButton() {
 
   if (!packaged || !status) return null;
   const downloading = status.state === "downloading";
-  const pending = busy || status.state === "checking" || downloading;
+  const pending = busy || downloading;
   const ready = status.state === "ready";
+  if (!downloading && !ready) return null;
   const percent = typeof status.percent === "number" && Number.isFinite(status.percent)
     ? Math.min(100, Math.max(0, Math.round(status.percent))) : null;
   const label = ready ? t("Install and restart", "安装并重启")
-    : downloading ? percent === null ? t("Downloading update…", "正在下载更新…") : t(`Downloading update: ${percent}%`, `正在下载更新：${percent}%`)
-    : status.state === "checking" ? t("Checking for updates…", "正在检查更新…")
-    : status.state === "current" ? t("Up to date. Check again", "已是最新版本，点击重新检查")
-    : status.state === "error" ? t("Update failed. Retry", "更新失败，点击重试")
-    : t("Check for updates", "检查更新");
+    : percent === null ? t("Downloading update…", "正在下载更新…") : t(`Downloading update: ${percent}%`, `正在下载更新：${percent}%`);
 
   async function activate() {
     const bridge = window.ardorDesktop;
-    if (!bridge || pending) return;
+    if (!bridge || pending || !ready) return;
     setBusy(true); setNotice("");
     try {
-      if (ready) {
-        const result = await bridge.installUpdate();
-        if (!result.installed) {
-          setStatus((await bridge.getInfo()).updateStatus);
-          setNotice(t("Update is not ready yet. Check again.", "更新尚未就绪，请重新检查。"));
-        }
-      } else setStatus(await bridge.checkForUpdates());
+      const result = await bridge.installUpdate();
+      if (!result.installed) setStatus((await bridge.getInfo()).updateStatus);
     } catch {
-      setNotice(ready ? t("Could not install. Try again.", "安装失败，请重试。") : t("Could not check for updates. Try again.", "检查更新失败，请重试。"));
+      setNotice(t("Could not install. Try again.", "安装失败，请重试。"));
     } finally { setBusy(false); }
   }
 
@@ -69,11 +61,11 @@ export function DesktopUpdateButton() {
           <circle cx="22" cy="22" r="18" fill="none" stroke="currentColor" strokeWidth="2" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - percent} strokeLinecap="round" className="transition-[stroke-dashoffset] duration-300 motion-reduce:transition-none" />
         </svg><span className="text-[10px] font-semibold tabular-nums">{percent}%</span>
       </> : pending ? <LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" aria-hidden />
-        : ready ? <ArrowDownToLine className="size-5" aria-hidden /> : <RotateCw className="size-5" aria-hidden />}
+        : <ArrowDownToLine className="size-5" aria-hidden />}
       {ready && <span className="absolute right-1 top-1 size-2 rounded-full bg-violet-600 ring-2 ring-white" aria-hidden />}
     </button>
     <span role="status" className={`${notice ? "block" : "hidden group-hover:block group-focus-within:block"} absolute bottom-1 left-14 z-50 w-max max-w-64 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs text-stone-700 shadow-lg`}>
-      {notice || label}{ready && status.version ? ` · ${status.version}` : ""}
+      {notice || label}{!notice && ready && status.version ? ` · ${status.version}` : ""}
     </span>
   </div>;
 }

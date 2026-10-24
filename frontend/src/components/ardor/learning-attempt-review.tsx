@@ -23,7 +23,13 @@ export function LearningAttemptReview({ items, questionFeedback, summary }: {
         <div className="mt-3 border-l-2 border-violet-300 pl-4">
           <h4 className="text-xs font-semibold text-violet-700">{t("Feedback", "批改意见")}</h4>
           {typeof item.choiceCorrect === "boolean" && <p className="mt-2 text-sm font-medium">{item.choiceCorrect ? t("System check: correct", "系统判定：正确") : t("System check: incorrect", "系统判定：错误")}</p>}
-          {perQuestion[index].length ? perQuestion[index].map((entry, i) => <MarkdownContent key={i} className="mt-2 text-sm leading-7 text-stone-700">{entry.feedback}</MarkdownContent>)
+          {perQuestion[index].length ? perQuestion[index].map((entry, i) => <div key={i}>
+            <MarkdownContent className="mt-2 text-sm leading-7 text-stone-700">{entry.feedback}</MarkdownContent>
+            {entry.referenceAnswer && ["SHORT_ANSWER", "SCENARIO"].includes(item.type ?? "") && <div className="mt-4 border-t border-violet-100 pt-3">
+              <h4 className="text-xs font-semibold text-stone-600">{t("Reference answer", "参考答案")}</h4>
+              <MarkdownContent className="mt-2 text-sm leading-7 text-stone-700">{entry.referenceAnswer}</MarkdownContent>
+            </div>}
+          </div>)
             : <p className="mt-2 text-sm leading-6 text-stone-500">{unmatched.length
               ? t("Feedback could not be reliably linked to this question. See the unassigned feedback below.", "反馈未能可靠对应到这道题，请查看下方“待对应反馈”。")
               : t("No linked feedback was returned for this question.", "本次评估未返回可对应到这道题的批改意见。")}</p>}
@@ -36,6 +42,7 @@ export function LearningAttemptReview({ items, questionFeedback, summary }: {
       <div className="mt-3 divide-y divide-amber-200/70">{unmatched.map((entry, index) => <div key={index} className="py-3">
         {entry.question && <p className="text-sm font-medium leading-7 text-stone-800">{entry.question}</p>}
         <MarkdownContent className="mt-2 text-sm leading-7 text-stone-700">{entry.feedback}</MarkdownContent>
+        {entry.referenceAnswer && <div className="mt-3"><h4 className="text-xs font-semibold text-stone-600">{t("Reference answer", "参考答案")}</h4><MarkdownContent className="mt-2 text-sm leading-7 text-stone-700">{entry.referenceAnswer}</MarkdownContent></div>}
       </div>)}</div>
     </section>}
     {(summary.feedback || strengths.length > 0) && <section aria-label={t("Round summary", "本轮总结")} className="border-t border-stone-200 pt-5">
