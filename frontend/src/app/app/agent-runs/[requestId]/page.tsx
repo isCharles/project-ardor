@@ -188,10 +188,10 @@ function AgentRunTraceContent() {
             {t("Execution flow", "执行流转")}
             <span className="text-xs font-normal text-stone-400">{flow.length} {t("steps", "个步骤")}</span>
           </div>
-          <div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Trace view", "轨迹视图")}>
-            <button type="button" aria-pressed={view === "flow"} onClick={() => setView("flow")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${view === "flow" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}><GitBranch className="size-3.5" />{t("Flow", "流程图")}</button>
+          <div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Trace visualization", "观测视图")}>
+            <button type="button" aria-pressed={view === "flow"} onClick={() => setView("flow")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${view === "flow" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}><GitBranch className="size-3.5" />{t("Flow graph", "流程图")}</button>
             <button type="button" aria-pressed={view === "timeline"} onClick={() => setView("timeline")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${view === "timeline" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}><List className="size-3.5" />{t("Timeline", "时间线")}</button>
-            <button type="button" aria-pressed={view === "inspector"} onClick={() => setView("inspector")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${view === "inspector" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}><Search className="size-3.5" />{t("Trajectory", "轨迹检查器")}</button>
+            <button type="button" aria-pressed={view === "inspector"} onClick={() => setView("inspector")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition ${view === "inspector" ? "bg-[#1d1d1f] text-white" : "text-stone-500 hover:text-stone-800"}`}><Search className="size-3.5" />{t("Inspector", "检查器")}</button>
           </div>
         </div>
 
@@ -365,6 +365,7 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
     <div data-trace-overview className="grid grid-cols-2 gap-3 sm:grid-cols-5">
       {[[t("Duration", "时长"), formatDuration(duration)], [t("Turns", "轮次"), trace.runs.length], [t("Model calls", "模型调用"), llmCalls], [t("Tool calls", "工具调用"), toolCalls], [t("Tokens", "Token"), `${inputTokens} / ${outputTokens}`]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/80 bg-white/70 px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{label}</p><p className="mt-1 text-base font-semibold tabular-nums text-stone-800">{value}</p></div>)}
     </div>
+    <p className="mt-2 text-[11px] text-stone-400">{t("Observation only; it does not change how the chat runs.", "仅用于观测，不改变对话的执行方式。")}</p>
     <TraceTimeOverview runs={trace.runs} selectedRunId={selectedRun?.runId ?? null} selectedSpanId={selectedSpanId} onSelect={(runId, spanId) => setSelection({ runId, spanId })} />
     <section data-conversation-trace data-step-view={stepView} className={`mt-3 grid min-w-0 gap-3 ${stepView === "graph" ? "xl:grid-cols-[280px_minmax(0,1fr)]" : "xl:grid-cols-[280px_minmax(0,1fr)_440px]"}`}>
       <div data-trace-turns className={`min-w-0 overflow-hidden rounded-2xl border border-white/80 bg-white/70 ${stepView === "graph" ? "order-2" : ""}`}>
@@ -389,9 +390,9 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
       <div data-trace-steps className={`min-w-0 overflow-hidden rounded-2xl border border-white/80 bg-white/70 ${stepView === "graph" ? "order-1 xl:col-span-2" : ""}`}>
         <div className="flex items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3">
           <div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Steps", "步骤")}</p><p className="mt-1 text-[10px] text-stone-400">{selectedRun?.spans.length ?? 0} {t("steps", "个步骤")}</p></div>
-          <div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Step view", "步骤视图")}>
+          <div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Step visualization", "步骤观测")}>
             <button type="button" aria-pressed={stepView === "list"} onClick={() => setStepView("list")} className={`rounded-full px-2.5 py-1 text-[11px] transition ${stepView === "list" ? "bg-[#1d1d1f] text-white" : "text-stone-500"}`}>{t("List", "列表")}</button>
-            <button type="button" aria-pressed={stepView === "graph"} onClick={() => setStepView("graph")} className={`rounded-full px-2.5 py-1 text-[11px] transition ${stepView === "graph" ? "bg-[#1d1d1f] text-white" : "text-stone-500"}`}>{t("Graph", "图")}</button>
+            <button type="button" aria-pressed={stepView === "graph"} onClick={() => setStepView("graph")} className={`rounded-full px-2.5 py-1 text-[11px] transition ${stepView === "graph" ? "bg-[#1d1d1f] text-white" : "text-stone-500"}`}>{t("Flow graph", "流程图")}</button>
           </div>
         </div>
         {stepView === "list" ? <div className="max-h-[62vh] overflow-y-auto p-2">

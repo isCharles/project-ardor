@@ -25,6 +25,7 @@ try {
   const cardFront = `PRIVATE_CARD_BODY_${"do-not-render-this-question".repeat(80)}`;
   recaps.push({ ...recaps[0], id: "linked", title: longTitle, jobOpportunityId: "process-one", questions: [{ id: "question-one" }] });
   const opportunities = [{ id: "process-one", company: "Fixture company", targetRole: "Backend intern", platform: "Fixture", status: "AWAITING_RESULT", currentRound: 1,
+    createdAt: "2026-10-01T01:00:00Z", updatedAt: "2026-10-02T01:00:00Z",
     rounds: [{ id: "round-one", roundNumber: 1, stage: "TECHNICAL", scheduledAt: "2026-10-20T01:00:00Z", occurredAt: null, durationMinutes: 60, note: null }] }];
   opportunities.push({ ...opportunities[0], id: "process-two", company: "Preparation employer", rounds: [] });
   let slowJob = false, jobPolls = 0;
@@ -50,6 +51,17 @@ try {
   });
   const page = await context.newPage(), errors = [];
   page.on("pageerror", error => errors.push(error.message));
+  for (const path of ["/app/interviews", "/app/learning/practice/mock-interviews"]) {
+    await page.goto(`${origin}${path}`);
+    await page.getByRole("heading", { name: "Mock interviews", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "New mock interview", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Past mock interviews", exact: true }).waitFor();
+    assert.equal(await page.locator('main a[href^="/app/recaps"], main a[href^="/app/applications"]').count(), 0,
+      "Real interview notes and application rhythm must not be children of mock interviews");
+  }
+  await page.goto(`${origin}/app/job-search`);
+  await page.getByRole("heading", { name: "Job search", exact: true }).waitFor();
+  await page.locator('main a[href="/app/applications"]').waitFor();
   await page.goto(`${origin}/app/recaps`);
   await page.getByRole("link", { name: /Fixture alpha/ }).click();
   await page.getByRole("heading", { name: "Fixture alpha", exact: true }).waitFor();

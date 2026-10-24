@@ -2,7 +2,7 @@
 
 import { useReadVisibleResult } from "@/lib/background-tasks";
 
-import { BookOpen, CheckCircle2, ExternalLink, Keyboard, MessageSquareText, Mic, Play, Send, Target, Trash2 } from "lucide-react";
+import { CheckCircle2, ExternalLink, Keyboard, MessageSquareText, Mic, Play, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -220,19 +220,15 @@ export default function InterviewsPage() {
 
       <header className="mx-auto max-w-6xl pb-6 pt-10">
         <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">{t("Mock interviews", "模拟面试")}</h1>
-        <p className="mt-3 text-muted-foreground">{t("Choose a role to start or continue an interview.", "选择目标岗位，开始或继续一场面试。")}</p>
+        <p className="mt-3 text-muted-foreground">{t("Choose a role to start or continue a mock interview.", "选择目标岗位，开始或继续一场模拟面试。")}</p>
       </header>
-      <div className="mx-auto mb-6 grid max-w-6xl gap-3 sm:grid-cols-2">
-        <Link href="/app/recaps" className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/70 px-5 py-4 text-sm transition hover:bg-white"><span className="flex items-center gap-2 font-medium"><BookOpen className="size-4 text-violet-600" />{t("Interview notes", "面试记录")}</span><span className="text-right text-xs text-stone-400">{t("Normalise one interview and find weak spots", "整理一份面试经过，找出薄弱点")}</span></Link>
-        <Link href="/app/applications" className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/70 px-5 py-4 text-sm transition hover:bg-white"><span className="flex items-center gap-2 font-medium"><Target className="size-4 text-violet-600" />{t("Application rhythm", "投递节奏")}</span><span className="text-right text-xs text-stone-400">{t("Record volume, don't log every application", "只记录数量，不填流水")}</span></Link>
-      </div>
 
       {error && <div className="mx-auto mb-6 max-w-6xl rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
 
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[0.8fr_1.2fr]">
         <div className="space-y-6">
           <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
-            <div className="flex items-center gap-3"><Play className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("New interview", "创建面试")}</h2></div>
+            <div className="flex items-center gap-3"><Play className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("New mock interview", "创建模拟面试")}</h2></div>
             <Link href={agentCreationHref("INTERVIEWS", locale)} className="mt-6 inline-flex items-center rounded-full bg-violet-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-violet-700">{t("Plan with Ardor", "让 Ardor 准备")}</Link>
             <details className="mt-5"><summary className="cursor-pointer text-sm text-muted-foreground">{t("Set up manually", "手动设置")}</summary>
             <form className="mt-6 space-y-4" onSubmit={createInterview}>
@@ -253,7 +249,7 @@ export default function InterviewsPage() {
           </section>
 
           <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
-            <h2 className="text-xl font-semibold">{t("Past interviews", "历史面试")}</h2>
+            <h2 className="text-xl font-semibold">{t("Past mock interviews", "模拟面试历史")}</h2>
             <div className="mt-5 space-y-3">
               {sessions.length === 0 && <p className="text-sm text-muted-foreground">{t("No interviews yet.", "还没有模拟面试。")}</p>}
               {sessions.map((session) => <div key={session.id} className="flex items-stretch gap-2"><button className="min-w-0 flex-1 rounded-2xl border p-4 text-left transition hover:bg-muted" onClick={() => openSession(session)} disabled={busy}><span className="block truncate font-medium">{session.targetCompany ? `${session.targetCompany} · ` : ""}{session.targetRole}</span><span className="mt-1 block text-xs text-muted-foreground">{session.modality === "VOICE" ? t("Voice", "语音") : t("Text", "文字")} · {session.status === "COMPLETED" ? t("Completed", "已完成") : session.status === "CANCELLED" ? t("Cancelled", "已取消") : t("In progress", "进行中")}</span></button><button aria-label={t(`Delete ${session.targetRole}`, `删除 ${session.targetRole}`)} title={t("Delete permanently", "永久删除")} className="rounded-2xl border px-3 text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" onClick={() => void deleteInterview(session)} disabled={busy}><Trash2 className="size-4" /></button></div>)}
@@ -262,8 +258,8 @@ export default function InterviewsPage() {
         </div>
 
         <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
-          <div className="flex items-center gap-3"><MessageSquareText className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("Interview", "面试区")}</h2></div>
-          {!progress && !evaluation && <p className="mt-4 text-sm text-muted-foreground">{t("Start a new interview or continue one from history.", "创建一场新面试，或从历史记录继续。")}</p>}
+          <div className="flex items-center gap-3"><MessageSquareText className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("Mock interview session", "模拟面试区")}</h2></div>
+          {!progress && !evaluation && <p className="mt-4 text-sm text-muted-foreground">{t("Start a new mock interview or continue one from history.", "创建一场模拟面试，或从模拟面试历史继续。")}</p>}
           {progress?.nextQuestion && <div className="mt-7">
             <p className="text-sm font-medium text-primary">{t(`Question ${progress.nextQuestion.sequenceNumber}`, `第 ${progress.nextQuestion.sequenceNumber} 题`)} · {questionTypeLabels[progress.nextQuestion.questionType] ?? progress.nextQuestion.questionType}</p>
             {progress.nextQuestion.leetcode ? <>
