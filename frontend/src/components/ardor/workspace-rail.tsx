@@ -14,6 +14,7 @@ import { type TaskSummary } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 import { AppDialog } from "@/components/ui/app-dialog";
 import { ChatRailLink } from "./chat-rail-link";
+import { DesktopUpdateButton } from "./desktop-update-button";
 import { Button } from "@/components/ui/button";
 
 const icons = { home: Home, briefcase: Briefcase, target: Target, "file-search": FileSearch, book: BookOpenText, graduation: GraduationCap, message: MessageSquareText, users: UsersRound, stack: SquareStack, trend: TrendingUp, calendar: CalendarDays, clock: Clock3 };
@@ -383,6 +384,7 @@ export function WorkspaceRail() {
       </nav>
 
       <div className="mt-2 flex w-full shrink-0 flex-col items-center border-t border-stone-200/70 px-2 pt-3">
+        <DesktopUpdateButton />
         <button
           type="button"
           aria-label={t("Account", "个人账户")}
