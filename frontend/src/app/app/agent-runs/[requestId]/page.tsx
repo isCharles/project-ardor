@@ -366,8 +366,8 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
       {[[t("Duration", "时长"), formatDuration(duration)], [t("Turns", "轮次"), trace.runs.length], [t("Model calls", "模型调用"), llmCalls], [t("Tool calls", "工具调用"), toolCalls], [t("Tokens", "Token"), `${inputTokens} / ${outputTokens}`]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/80 bg-white/70 px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{label}</p><p className="mt-1 text-base font-semibold tabular-nums text-stone-800">{value}</p></div>)}
     </div>
     <TraceTimeOverview runs={trace.runs} selectedRunId={selectedRun?.runId ?? null} selectedSpanId={selectedSpanId} onSelect={(runId, spanId) => setSelection({ runId, spanId })} />
-    <section data-conversation-trace className="mt-3 grid gap-3 xl:grid-cols-[280px_minmax(0,1fr)_440px]">
-      <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/70">
+    <section data-conversation-trace data-step-view={stepView} className={`mt-3 grid min-w-0 gap-3 ${stepView === "graph" ? "xl:grid-cols-[280px_minmax(0,1fr)]" : "xl:grid-cols-[280px_minmax(0,1fr)_440px]"}`}>
+      <div data-trace-turns className={`min-w-0 overflow-hidden rounded-2xl border border-white/80 bg-white/70 ${stepView === "graph" ? "order-2" : ""}`}>
         <div className="border-b border-stone-200/70 px-4 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Conversation", "对话")}</p>
           <h2 className="mt-1 truncate text-sm font-semibold text-stone-800">{trace.title || t("Untitled chat", "未命名对话")}</h2>
@@ -386,7 +386,7 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
           })}
         </div>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-white/80 bg-white/70">
+      <div data-trace-steps className={`min-w-0 overflow-hidden rounded-2xl border border-white/80 bg-white/70 ${stepView === "graph" ? "order-1 xl:col-span-2" : ""}`}>
         <div className="flex items-center justify-between gap-2 border-b border-stone-200/70 px-4 py-3">
           <div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Steps", "步骤")}</p><p className="mt-1 text-[10px] text-stone-400">{selectedRun?.spans.length ?? 0} {t("steps", "个步骤")}</p></div>
           <div className="inline-flex rounded-full border border-stone-200 bg-white/65 p-1" role="group" aria-label={t("Step view", "步骤视图")}>
@@ -402,7 +402,7 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
           </button>)}
         </div> : <div className="max-h-[62vh] overflow-auto p-2">{flow.length > 0 ? <FlowGraph nodes={flow} selectedId={selectedSpanId} onSelect={setSelectedSpanId} /> : <p className="p-3 text-xs text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</p>}</div>}
       </div>
-      <div className="min-w-0">{selectedSpan ? <InspectorPanel key={selectedSpan.id} span={selectedSpan} schema={schemas[selectedSpan.name]} thinking={selectedRun?.thinkingOutput} sourceLabel={turnIndex ? `${t("Turn", "轮次")} #${turnIndex}` : trace.conversationId} /> : <div className="rounded-2xl border border-white/80 bg-white/70 p-5 text-sm text-stone-500">{t("Select a step to inspect.", "选择一个步骤查看详情。")}</div>}</div>
+      <div data-trace-selection className={`min-w-0 ${stepView === "graph" ? "order-3" : ""}`}>{selectedSpan ? <InspectorPanel key={selectedSpan.id} span={selectedSpan} schema={schemas[selectedSpan.name]} thinking={selectedRun?.thinkingOutput} sourceLabel={turnIndex ? `${t("Turn", "轮次")} #${turnIndex}` : trace.conversationId} /> : <div className="rounded-2xl border border-white/80 bg-white/70 p-5 text-sm text-stone-500">{t("Select a step to inspect.", "选择一个步骤查看详情。")}</div>}</div>
     </section>
   </div>;
 }
