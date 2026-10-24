@@ -23,6 +23,14 @@ import org.junit.jupiter.api.Test;
  * edges should be added here as their contracts are completed.</p>
  */
 class ArchitectureBoundaryTests {
+    @Test void schedulingToolsStayInTheirApplicationAdapter() throws IOException {
+        String host = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
+        for (String name : List.of("list_calendar_tasks", "create_calendar_task", "update_calendar_task", "delete_calendar_task",
+                "list_recurring_tasks", "create_recurring_task", "update_recurring_task", "delete_recurring_task")) {
+            assertTrue(!host.contains("@Tool(name = \"" + name + "\""), "Scheduling tools belong in their local adapter");
+        }
+        assertNoImports("assistant/tools/modules", Pattern.compile("import com\\.projectardor\\.scheduling\\.(repository|web)\\..*"));
+    }
     @Test void profileAndCalendarReadAdaptersCannotReintroduceOwnedEntities() throws IOException {
         for (String root : List.of("assistant", "learning", "jobsearch", "scheduling")) {
             assertNoImports(root, Pattern.compile("import com\\.projectardor\\.platform\\.identity\\.profile\\.(domain|repository)\\..*"));

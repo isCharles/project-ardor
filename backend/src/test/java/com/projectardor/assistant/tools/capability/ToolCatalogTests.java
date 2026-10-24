@@ -2,24 +2,33 @@ package com.projectardor.assistant.tools.capability;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.lang.reflect.Method;
-import java.util.Arrays;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mock;
+
+import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 
-import dev.langchain4j.agent.tool.Tool;
-import com.projectardor.assistant.tools.CareerAgentTools;
+import com.projectardor.assistant.tools.AgentToolSchemaCatalog;
+import com.projectardor.assistant.tools.modules.AutomationAgentToolProvider;
+import com.projectardor.assistant.tools.modules.CalendarAdviceAgentToolProvider;
+import com.projectardor.assistant.tools.modules.KnowledgeAgentToolProvider;
+import com.projectardor.assistant.tools.modules.ResumeAgentToolProvider;
+import com.projectardor.assistant.tools.modules.SchedulingAgentToolProvider;
 
 class ToolCatalogTests {
 
     @Test
     void everyAgentToolIsRegistered() {
-        Set<String> tools = Arrays.stream(CareerAgentTools.BoundCareerTools.class.getMethods())
-                .filter(method -> method.isAnnotationPresent(Tool.class))
-                .map(method -> method.getAnnotation(Tool.class).name())
-                .collect(Collectors.toSet());
+        // Schema discovery must include local adapters, not just the shrinking host.
+        // toolTypes() is schema-only: these mocks have no application services to execute.
+        Set<String> tools = new AgentToolSchemaCatalog(List.of(
+                mock(KnowledgeAgentToolProvider.class, CALLS_REAL_METHODS),
+                mock(AutomationAgentToolProvider.class, CALLS_REAL_METHODS),
+                mock(CalendarAdviceAgentToolProvider.class, CALLS_REAL_METHODS),
+                mock(ResumeAgentToolProvider.class, CALLS_REAL_METHODS),
+                mock(SchedulingAgentToolProvider.class, CALLS_REAL_METHODS))).schemas().keySet();
 
         assertThat(tools).hasSizeGreaterThan(50);
         assertThat(tools).allSatisfy(tool -> assertThat(ToolCatalog.describe(tool))

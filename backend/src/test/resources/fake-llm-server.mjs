@@ -186,21 +186,34 @@ http.createServer((request, response) => {
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
     if (payload.model === "profile-calendar-probe" && isAgentRequest) {
       const message = String(payload.messages.filter(item => item.role === "user").at(-1)?.content);
-      const mode = message.includes("profile-calendar-task") ? "task" : message.includes("profile-calendar-rule") ? "rule" : "profile";
+      const mode = ["create-task", "update-task", "list-tasks", "create-rule", "update-rule", "list-rules", "task", "rule"]
+        .find(value => message.includes(`profile-calendar-${value}`)) ?? "profile";
       const id = message.match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0];
       const output = String(payload.messages.filter(item => item.role === "tool").at(-1)?.content ?? "");
-      const tool = mode === "profile" ? "get_profile" : mode === "task" ? "delete_calendar_task" : "delete_recurring_task";
+      const calls = {
+        profile: ["get_profile", {}], task: ["delete_calendar_task", { taskId: id }], rule: ["delete_recurring_task", { seriesId: id }],
+        "list-tasks": ["list_calendar_tasks", {}], "list-rules": ["list_recurring_tasks", {}],
+        "create-task": ["create_calendar_task", { title: "Agent task fixture", dueAt: "2028-04-01T09:00:00+08:00", priority: "HIGH" }],
+        "update-task": ["update_calendar_task", { taskId: id, title: "Revised agent task", description: "Updated", dueAt: "2028-04-02T09:00:00+08:00", priority: "LOW", status: "TODO" }],
+        "create-rule": ["create_recurring_task", { title: "Agent rule fixture", frequency: "DAILY", timeOfDay: "10:00",
+          startDate: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10), occurrenceLimit: 3 }],
+        "update-rule": ["update_recurring_task", { seriesId: id, title: "Revised agent rule", timeOfDay: "11:00" }],
+      };
+      const [tool, args] = calls[mode];
       let valid = payload.tools.some(item => item.function.name === tool);
       if (hasToolResult) {
         try { const result = JSON.parse(output);
           valid &&= mode === "profile" ? Object.keys(result).length === 3 && result.displayName === "Owner Profile Fixture" && !output.includes("Foreign Profile Fixture")
-            : result.status === "CONFIRMATION_REQUIRED";
+            : ["task", "rule"].includes(mode) ? result.status === "CONFIRMATION_REQUIRED"
+            : mode.startsWith("list-") ? Array.isArray(result)
+            : mode === "update-rule" ? result.updatedOccurrences === 3 && result.preservedOccurrences === 0
+            : typeof result.id === "string" && !result.status?.includes("PERMITTED");
         } catch { valid = false; }
       }
       if (!valid) { response.writeHead(400, { "content-type": "application/json" }); response.end(JSON.stringify({ error: { message: "Profile/calendar contract failed" } })); return; }
       const delta = hasToolResult ? { role: "assistant", content: `Synthetic ${mode} verified.` }
         : { role: "assistant", tool_calls: [{ index: 0, id: "profile-calendar", type: "function",
-          function: { name: tool, arguments: JSON.stringify(mode === "profile" ? {} : mode === "task" ? { taskId: id } : { seriesId: id }) } }] };
+          function: { name: tool, arguments: JSON.stringify(args) } }] };
       response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
       for (const [chunk, finish] of [[delta, null], [{}, hasToolResult ? "stop" : "tool_calls"]]) response.write(`data: ${JSON.stringify({ id: "profile-calendar", object: "chat.completion.chunk", model: payload.model,
         choices: [{ index: 0, delta: chunk, finish_reason: finish }] })}\n\n`);

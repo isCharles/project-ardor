@@ -24,6 +24,7 @@ import com.projectardor.materials.knowledge.domain.KnowledgeSourceType;
 import com.projectardor.materials.knowledge.service.*;
 import com.projectardor.materials.resume.service.*;
 import com.projectardor.assistant.tools.modules.ResumeAgentToolProvider;
+import com.projectardor.assistant.tools.modules.SchedulingAgentToolProvider;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.agent.tool.ToolSpecifications;
@@ -32,6 +33,8 @@ import dev.langchain4j.service.tool.ToolExecutor;
 class ModularAgentToolsTests {
     private final UUID owner = UUID.randomUUID(), run = UUID.randomUUID();
     private final KnowledgeService knowledge = mock(KnowledgeService.class);
+    private final com.projectardor.scheduling.service.CalendarTaskService calendar = mock(com.projectardor.scheduling.service.CalendarTaskService.class);
+    private final com.projectardor.scheduling.service.TaskSeriesService series = mock(com.projectardor.scheduling.service.TaskSeriesService.class);
     private final AgentToolApprovals approvals = mock(AgentToolApprovals.class);
     private final AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
 
@@ -42,8 +45,7 @@ class ModularAgentToolsTests {
                 mock(com.projectardor.learning.practice.mockinterview.service.InterviewService.class),
                 mock(com.projectardor.platform.identity.profile.service.ProfileService.class),
                 mock(com.projectardor.assistant.memory.service.AgentMemoryService.class),
-                mock(com.projectardor.scheduling.service.CalendarTaskService.class),
-                mock(com.projectardor.scheduling.service.TaskSeriesService.class),
+                calendar, series,
                 mock(com.projectardor.jobsearch.record.service.InterviewRecapService.class),
                 mock(com.projectardor.jobsearch.record.service.InterviewRecapQueueService.class),
                 mock(com.projectardor.platform.model.websearch.service.TavilySearchService.class),
@@ -391,10 +393,6 @@ class ModularAgentToolsTests {
         var host = tools();
         var profiles = (com.projectardor.platform.identity.profile.service.ProfileService)
                 org.springframework.test.util.ReflectionTestUtils.getField(host, "profileService");
-        var calendar = (com.projectardor.scheduling.service.CalendarTaskService)
-                org.springframework.test.util.ReflectionTestUtils.getField(host, "calendarTaskService");
-        var series = (com.projectardor.scheduling.service.TaskSeriesService)
-                org.springframework.test.util.ReflectionTestUtils.getField(host, "taskSeriesService");
         when(profiles.view(owner)).thenReturn(new com.projectardor.platform.identity.profile.service.ProfileView("Owner", null, List.of("Backend"), "UTC"));
         UUID taskId = UUID.randomUUID(), ruleId = UUID.randomUUID(), missing = UUID.randomUUID();
         var task = mock(com.projectardor.scheduling.service.CalendarTaskView.class);
@@ -426,10 +424,78 @@ class ModularAgentToolsTests {
     }
 
     @Test
+    void schedulingReadsAndSchemasKeepOwnerRangesAndNeverAwaitApproval() {
+        var provider = new SchedulingAgentToolProvider(calendar, series);
+        var host = tools(); host.configureToolProviders(List.of(provider));
+        var executors = wrapped(host.bind(owner, "只查看日程和固定安排", run), null, null);
+        var names = List.of("list_calendar_tasks", "create_calendar_task", "update_calendar_task", "delete_calendar_task",
+                "list_recurring_tasks", "create_recurring_task", "update_recurring_task", "delete_recurring_task");
+        assertThat(ToolSpecifications.toolSpecificationsFrom(provider.toolTypes().getFirst()).stream()
+                .map(ToolSpecification::name)).containsExactlyInAnyOrderElementsOf(names);
+        assertThat(new com.projectardor.assistant.tools.AgentToolSchemaCatalog(List.of(provider)).schemas().keySet())
+                .containsAll(names);
+        assertThat(executors.keySet().stream().map(ToolSpecification::name).toList()).doesNotHaveDuplicates().containsAll(names);
+        names.forEach(name -> assertThat(ToolCatalog.describe(name)).isNotNull());
+        execute(executors, "list_calendar_tasks", "{\"from\":\"2028-04-01T09:00:00+08:00\",\"to\":\"2028-04-02T09:00:00+08:00\"}");
+        execute(executors, "list_recurring_tasks", "{}");
+        verify(calendar).listViews(owner, Instant.parse("2028-04-01T01:00:00Z"), Instant.parse("2028-04-02T01:00:00Z"));
+        verify(series).listViews(owner, 4);
+        verify(approvals, never()).await(any(), any(), any(), any());
+        verifyNoInteractions(permissions);
+    }
+
+    @Test
+    void schedulingCreateRetainsIntentAuditDedupAndCancellation() {
+        var host = tools();
+        String args = "{\"title\":\"Review\",\"dueAt\":\"2028-04-01T09:00:00+08:00\"}";
+        when(permissions.autoApproves(owner, "create_calendar_task")).thenReturn(true);
+        assertThat(execute(wrapped(host.bind(owner, "只查看日历，不要修改", run), null, null), "create_calendar_task", args))
+                .contains("TOOL_NOT_PERMITTED");
+        verifyNoInteractions(calendar);
+        var audit = mock(AgentExecutionAuditStore.class);
+        UUID row = UUID.randomUUID();
+        when(audit.startToolCall(any(), any(), any(), any(), any())).thenReturn(row);
+        var bound = host.bind(owner, "创建日历待办", run);
+        var executors = wrapped(bound, null, audit);
+        assertThat(execute(executors, "create_calendar_task", args)).doesNotContain("TOOL_NOT_PERMITTED", "RUN_STOPPED");
+        assertThat(execute(executors, "create_calendar_task", args)).contains("DUPLICATE_WRITE_BLOCKED");
+        verify(calendar, times(1)).createView(owner, "Review", null, Instant.parse("2028-04-01T01:00:00Z"),
+                com.projectardor.scheduling.domain.CalendarTaskPriority.MEDIUM,
+                com.projectardor.scheduling.domain.CalendarTaskSource.AGENT, null);
+        verify(audit).finishToolCall(eq(row), eq(owner), eq("COMPLETED"), any(), eq(null));
+        var lease = new AgentStreamLease(); lease.fence();
+        assertThat(execute(wrapped(bound, lease, null), "create_calendar_task", args)).contains("RUN_STOPPED");
+        verifyNoMoreInteractions(calendar);
+        verify(approvals, never()).await(any(), any(), any(), any());
+    }
+
+    @Test
+    void schedulingUpdatesCannotBypassReadIntentOrStoppedRun() {
+        var bound = tools().bind(owner, "只查看日历和重复安排", run);
+        UUID id = UUID.randomUUID();
+        String task = "{\"taskId\":\"" + id + "\",\"title\":\"Review\",\"description\":\"\",\"dueAt\":\"\",\"priority\":\"HIGH\",\"status\":\"TODO\"}";
+        String rule = "{\"seriesId\":\"" + id + "\",\"timeOfDay\":\"10:00\"}";
+        var executors = wrapped(bound, null, null);
+        assertThat(execute(executors, "update_calendar_task", task)).contains("TOOL_NOT_PERMITTED");
+        assertThat(execute(executors, "update_recurring_task", rule)).contains("TOOL_NOT_PERMITTED");
+        verifyNoInteractions(calendar, series, permissions);
+        when(permissions.autoApproves(owner, "update_calendar_task")).thenReturn(true);
+        when(permissions.autoApproves(owner, "update_recurring_task")).thenReturn(true);
+        var lease = new AgentStreamLease(); lease.fence();
+        var stopped = wrapped(tools().bind(owner, "修改日历和重复安排", run), lease, null);
+        assertThat(execute(stopped, "update_calendar_task", task)).contains("RUN_STOPPED");
+        assertThat(execute(stopped, "update_recurring_task", rule)).contains("RUN_STOPPED");
+        verifyNoInteractions(calendar, series);
+    }
+
+    @Test
     void springDiscoversLocalAdaptersWithoutReplacingTheKnowledgeModule() {
         try (var context = new AnnotationConfigApplicationContext()) {
             context.registerBean(KnowledgeService.class, () -> knowledge);
             context.register(KnowledgeAgentToolProvider.class);
+            context.registerBean(com.projectardor.scheduling.service.CalendarTaskService.class, () -> calendar);
+            context.registerBean(com.projectardor.scheduling.service.TaskSeriesService.class, () -> series);
+            context.register(SchedulingAgentToolProvider.class);
             context.registerBean("extraAdapter", AgentToolProvider.class,
                     () -> ignored -> new ApprovedAgentToolsTests.FakeTools());
             context.registerBean(CareerAgentTools.class, this::tools);
@@ -437,7 +503,8 @@ class ModularAgentToolsTests {
             var host = context.getBean(CareerAgentTools.class);
             var names = wrapped(host.bind(owner, "", run), null, null).keySet().stream()
                     .map(ToolSpecification::name).toList();
-            assertThat(names).contains("fake_write", "search_knowledge", "delete_knowledge_document");
+            assertThat(names).doesNotHaveDuplicates().contains("fake_write", "search_knowledge", "delete_knowledge_document",
+                    "list_calendar_tasks", "update_recurring_task");
         }
     }
 }
