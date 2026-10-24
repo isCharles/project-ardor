@@ -14,11 +14,13 @@ import { useLocale } from "@/lib/locale";
 import { agentCreationHref } from "@/lib/agent-features";
 import { AppDialog } from "@/components/ui/app-dialog";
 import { LearningContext, type PlanContext } from "@/components/ardor/learning-context";
+import { LearningAttemptReview } from "@/components/ardor/learning-attempt-review";
+import type { LearningReviewSummary, QuestionFeedback } from "@/lib/learning-feedback";
 
 type Lesson = { summary?: string; keyPoints?: string[]; explanation?: string; example?: string; pitfalls?: string[] };
-type Exercise = { question: string; type?: "SHORT_ANSWER" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SCENARIO"; options?: string[] };
-type LearningAttempt = { requestId?: string; items: Array<Exercise & { answer: string }>; score: number; submittedAt: string; feedback?: string; questionFeedback?: Array<{ question: string; feedback: string }> };
-type Evaluation = { feedback?: string; strengths?: string[]; gaps?: string[]; nextFocus?: string; questionFeedback?: Array<{ question: string; feedback: string }>; attempts?: LearningAttempt[] };
+type Exercise = { exerciseId?: string; question: string; type?: "SHORT_ANSWER" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SCENARIO"; options?: string[] };
+type LearningAttempt = LearningReviewSummary & { requestId?: string; items: Array<Exercise & { answer: string }>; score: number; submittedAt: string; questionFeedback?: QuestionFeedback[] };
+type Evaluation = LearningReviewSummary & { questionFeedback?: QuestionFeedback[]; attempts?: LearningAttempt[] };
 type LearningPlan = PlanContext & {
   id: string;
   requestId: string | null;
@@ -378,7 +380,17 @@ export default function LearningPage() {
               <aside className="ardor-soft-panel h-fit rounded-[2rem] p-3">
                 <div className="flex items-center justify-between px-3 pb-3 pt-2"><h2 className="text-sm font-semibold">{t("Learning path", "学习轨道")}</h2><span className="text-xs text-stone-500">{t(`${activeCount} active`, `${activeCount} 项进行中`)}</span></div>
                 <nav aria-label={t("Learning plans", "学习计划")} className="space-y-1">
-                  {orderedPlans.map((plan) => <button key={plan.id} type="button" aria-pressed={plan.id === selectedId} onClick={() => selectPlan(plan)} className={`w-full rounded-2xl p-4 text-left transition ${plan.id === selectedId ? "bg-white shadow-sm" : "hover:bg-white/65"}`}><div className="flex items-center gap-2"><span className={`size-2 shrink-0 rounded-full ${plan.status === "COMPLETED" ? "bg-emerald-500" : plan.status === "NEEDS_REVIEW" ? "bg-amber-500" : "bg-violet-500"}`} /><strong className="min-w-0 flex-1 truncate text-sm">{plan.concept}</strong>{plan.lastScore !== null && <span className="text-xs tabular-nums text-stone-500">{plan.lastScore}</span>}</div><p className="mt-2 pl-4 text-xs text-stone-500">{t(statusLabel[plan.status].en, statusLabel[plan.status].zh)} · {planDate(plan.completedAt ?? plan.nextReviewAt ?? plan.scheduledAt, locale)}</p></button>)}
+                  {(["NEEDS_REVIEW", "IN_PROGRESS", "SCHEDULED"] as const).map((status) => {
+                    const group = orderedPlans.filter((plan) => plan.status === status);
+                    return group.length > 0 && <section key={status} aria-label={t(statusLabel[status].en, statusLabel[status].zh)} className="py-2">
+                      <h3 className="px-3 py-2 text-xs font-semibold text-stone-500">{t(statusLabel[status].en, statusLabel[status].zh)} · {group.length}</h3>
+                      {group.map((plan) => <button key={plan.id} type="button" aria-pressed={plan.id === selectedId} onClick={() => selectPlan(plan)} className={`w-full rounded-2xl p-4 text-left transition ${plan.id === selectedId ? "bg-white shadow-sm" : "hover:bg-white/65"}`}><div className="flex items-center gap-2"><span className={`size-2 shrink-0 rounded-full ${plan.status === "COMPLETED" ? "bg-emerald-500" : plan.status === "NEEDS_REVIEW" ? "bg-amber-500" : "bg-violet-500"}`} /><strong className="min-w-0 flex-1 truncate text-sm">{plan.concept}</strong>{plan.lastScore !== null && <span className="text-xs tabular-nums text-stone-500">{plan.lastScore}</span>}</div><p className="mt-2 pl-4 text-xs text-stone-500">{t(statusLabel[plan.status].en, statusLabel[plan.status].zh)} · {planDate(plan.completedAt ?? plan.nextReviewAt ?? plan.scheduledAt, locale)}</p></button>)}
+                    </section>;
+                  })}
+                  {orderedPlans.some((plan) => plan.status === "COMPLETED") && <details open={selected?.status === "COMPLETED"} className="mt-3 border-t border-stone-200 pt-3">
+                    <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-emerald-700">{t("Mastered archive", "已掌握归档")} · {orderedPlans.filter((plan) => plan.status === "COMPLETED").length}</summary>
+                    <div className="mt-2">{orderedPlans.filter((plan) => plan.status === "COMPLETED").map((plan) => <button key={plan.id} type="button" aria-pressed={plan.id === selectedId} onClick={() => selectPlan(plan)} className={`w-full rounded-2xl p-4 text-left transition ${plan.id === selectedId ? "bg-white shadow-sm" : "hover:bg-white/65"}`}><div className="flex items-center gap-2"><span className={`size-2 shrink-0 rounded-full ${plan.status === "COMPLETED" ? "bg-emerald-500" : plan.status === "NEEDS_REVIEW" ? "bg-amber-500" : "bg-violet-500"}`} /><strong className="min-w-0 flex-1 truncate text-sm">{plan.concept}</strong>{plan.lastScore !== null && <span className="text-xs tabular-nums text-stone-500">{plan.lastScore}</span>}</div><p className="mt-2 pl-4 text-xs text-stone-500">{t(statusLabel[plan.status].en, statusLabel[plan.status].zh)} · {planDate(plan.completedAt ?? plan.nextReviewAt ?? plan.scheduledAt, locale)}</p></button>)}</div>
+                  </details>}
                 </nav>
               </aside>
 
@@ -398,16 +410,12 @@ export default function LearningPage() {
                   <div className="flex items-end justify-between gap-4"><h2 id="practice-title" className="text-2xl font-semibold">{t("Practice", "检验理解")}</h2>{selected.lastScore !== null && <strong className="text-3xl tracking-tight">{selected.lastScore}<span className="text-base text-stone-400"> / 100</span></strong>}</div>
                   {previousAttempts.length > 0 && <div className="mt-5 space-y-2">{[...previousAttempts].reverse().map((attempt, index) => <details key={`${attempt.submittedAt}-${index}`} open={index === 0} className="rounded-2xl border border-stone-200/75 bg-white/60 p-4">
                     <summary className="cursor-pointer text-sm font-medium">{t(`Attempt ${previousAttempts.length - index} · ${attempt.score} points`, `第 ${previousAttempts.length - index} 次回答 · ${attempt.score} 分`)}</summary>
-                    <div className="mt-4 space-y-4">{attempt.feedback && <MarkdownContent className="text-sm leading-6 text-stone-700">{attempt.feedback}</MarkdownContent>}
-                      {index === 0 && (selected.lastEvaluation?.nextFocus || (selected.lastEvaluation?.gaps?.length ?? 0) > 0) && <div className="rounded-xl bg-amber-50/70 px-3 py-2 text-sm text-stone-700">
-                        {selected.lastEvaluation?.nextFocus && <p><span className="font-medium">{t("Next focus", "下一步")}：</span>{selected.lastEvaluation.nextFocus}</p>}
-                        {selected.lastEvaluation?.gaps && selected.lastEvaluation.gaps.length > 0 && <div className={selected.lastEvaluation?.nextFocus ? "mt-2" : ""}>
-                          <span className="font-medium">{t("Gaps", "薄弱点")}：</span>
-                          <ul className="mt-1 list-disc space-y-1 pl-5">{selected.lastEvaluation.gaps.map((gap, gapIndex) => <li key={gapIndex}><MarkdownContent>{gap}</MarkdownContent></li>)}</ul>
-                        </div>}
-                      </div>}
-                      {attempt.items.map((item, itemIndex) => <div key={itemIndex} className="text-sm"><p className="font-medium">{itemIndex + 1}. {item.question}</p><p className="mt-1 whitespace-pre-wrap leading-6 text-stone-600">{t("Your answer", "你的回答")}：{item.answer}</p>{attempt.questionFeedback?.filter((feedback) => feedback.question === item.question).map((feedback, feedbackIndex) => <MarkdownContent key={feedbackIndex} className="mt-2 rounded-xl bg-violet-50/70 px-3 py-2 leading-6 text-violet-900">{feedback.feedback}</MarkdownContent>)}</div>)}
-                    </div></details>)}</div>}
+                    <LearningAttemptReview items={attempt.items} questionFeedback={attempt.questionFeedback} summary={{
+                      feedback: attempt.feedback,
+                      strengths: attempt.strengths ?? (index === 0 ? selected.lastEvaluation?.strengths : undefined),
+                      gaps: attempt.gaps ?? (index === 0 ? selected.lastEvaluation?.gaps : undefined),
+                      nextFocus: attempt.nextFocus ?? (index === 0 ? selected.lastEvaluation?.nextFocus : undefined),
+                    }} /></details>)}</div>}
                   {selected.status !== "COMPLETED" && previousAttempts.length > 0 && <p className="mt-7 text-sm font-medium text-violet-700">{t("Next practice", "下一轮练习")}</p>}
                   {selected.status === "COMPLETED" ? <div className="mt-7 flex items-center gap-3 rounded-2xl bg-emerald-50/75 p-5 text-sm text-emerald-800"><CheckCircle2 className="size-5" />{t("Topic complete. The calendar task is complete too.", "本次学习已完成，日历任务也已同步完成。")}</div> : <form onSubmit={submit} className="mt-7 space-y-6">
                     {selected.exercises.map((exercise, index) => <fieldset key={`${exercise.question}-${index}`} disabled={busy || assessing} className="block disabled:opacity-75">

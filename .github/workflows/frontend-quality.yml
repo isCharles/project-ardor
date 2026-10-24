@@ -86,6 +86,8 @@ jobs:
         run: node tests/navigation-catalog.mjs
       - name: Streaming error and proxy compatibility contract
         run: node tests/stream-error-contract.mjs
+      - name: Learning feedback identity and legacy preservation contract
+        run: node tests/learning-feedback-contract.mjs
       - name: Build production frontend
         run: npm run build
       - name: Install test browser
@@ -98,6 +100,8 @@ jobs:
         run: node tests/agent-trace-ui.mjs
       - name: Learning operation UI regression (mock APIs)
         run: node tests/learning-operation-ui.mjs
+      - name: Learning feedback and status groups UI regression (mock APIs)
+        run: node tests/learning-feedback-ui.mjs
       - name: Learning source and target UI regression (mock APIs)
         run: node tests/learning-context-ui.mjs
       - name: Interview pipeline UI regression (mock APIs)
