@@ -387,6 +387,44 @@ class ModularAgentToolsTests {
         verify(resumes, never()).get(any(), any()); verify(learning, never()).get(any(), any());
     }
 
+    @Test void profileAndDeletionReferencesUseOwnedSnapshotsAndKeepLegacyCards() {
+        var host = tools();
+        var profiles = (com.projectardor.platform.identity.profile.service.ProfileService)
+                org.springframework.test.util.ReflectionTestUtils.getField(host, "profileService");
+        var calendar = (com.projectardor.scheduling.service.CalendarTaskService)
+                org.springframework.test.util.ReflectionTestUtils.getField(host, "calendarTaskService");
+        var series = (com.projectardor.scheduling.service.TaskSeriesService)
+                org.springframework.test.util.ReflectionTestUtils.getField(host, "taskSeriesService");
+        when(profiles.view(owner)).thenReturn(new com.projectardor.platform.identity.profile.service.ProfileView("Owner", null, List.of("Backend"), "UTC"));
+        UUID taskId = UUID.randomUUID(), ruleId = UUID.randomUUID(), missing = UUID.randomUUID();
+        var task = mock(com.projectardor.scheduling.service.CalendarTaskView.class);
+        when(task.title()).thenReturn("Owned task");
+        when(calendar.detail(owner, taskId)).thenReturn(task);
+        var rule = mock(com.projectardor.scheduling.service.TaskSeriesView.class);
+        when(rule.title()).thenReturn("Owned rule"); when(rule.summary()).thenReturn("Weekly");
+        when(series.metadata(owner, ruleId)).thenReturn(rule);
+        when(calendar.detail(owner, missing)).thenThrow(new ResourceNotFoundException("日程不存在"));
+        var bound = host.bind(owner, "读取个人资料并删除指定日程和重复安排", run);
+        var executors = wrapped(bound, null, null);
+        var json = tools.jackson.databind.json.JsonMapper.builder().build();
+        var profile = json.readTree(execute(executors, "get_profile", "{}"));
+        assertThat(profile.propertyNames()).containsExactly("displayName", "headline", "targetRoles");
+        assertThat(execute(executors, "delete_calendar_task", "{\"taskId\":\"" + taskId + "\"}")).contains("CONFIRMATION_REQUIRED");
+        assertThat(execute(executors, "delete_recurring_task", "{\"seriesId\":\"" + ruleId + "\"}")).contains("CONFIRMATION_REQUIRED");
+        assertThat(bound.pendingConfirmations()).hasSize(2).anySatisfy(card -> {
+            assertThat(card.label()).isEqualTo("Owned task"); assertThat(card.detail()).isEqualTo("未安排时间");
+            assertThat(card.endpoint()).isEqualTo("/api/calendar/tasks/" + taskId);
+        }).anySatisfy(card -> {
+            assertThat(card.label()).isEqualTo("Owned rule（Weekly）");
+            assertThat(card.endpoint()).isEqualTo("/api/calendar/series/" + ruleId);
+        });
+        assertThat(execute(executors, "delete_calendar_task", "{\"taskId\":\"" + missing + "\"}")).contains("日程不存在");
+        assertThat(bound.pendingConfirmations()).hasSize(2);
+        verify(calendar, never()).delete(any(), any()); verify(series, never()).cancel(any(), any());
+        verify(calendar, never()).get(any(), any()); verify(series, never()).get(any(), any());
+        verify(approvals, never()).await(any(), any(), any(), any());
+    }
+
     @Test
     void springDiscoversLocalAdaptersWithoutReplacingTheKnowledgeModule() {
         try (var context = new AnnotationConfigApplicationContext()) {

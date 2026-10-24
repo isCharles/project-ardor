@@ -19,6 +19,18 @@ import com.projectardor.scheduling.web.TaskSeriesResponse;
 import tools.jackson.databind.json.JsonMapper;
 
 class TaskSeriesViewTests {
+    @Test void deletionMetadataDoesNotQueryOrMaterializeOccurrences() {
+        var rule = weekly();
+        when(rules.findByIdAndUserId(rule.getId(), owner)).thenReturn(Optional.of(rule));
+        var view = service.metadata(owner, rule.getId());
+        assertThat(view.id()).isEqualTo(rule.getId());
+        assertThat(view.title()).isEqualTo(rule.getTitle());
+        assertThat(view.summary()).isEqualTo(rule.summary());
+        assertThat(view.upcoming()).isEmpty();
+        assertThatThrownBy(() -> service.metadata(UUID.randomUUID(), rule.getId())).isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(tasks, profiles);
+        verify(rules, never()).save(any()); verify(rules, never()).flush();
+    }
     private final UUID owner = UUID.randomUUID();
     private final TaskSeriesRepository rules = mock(TaskSeriesRepository.class);
     private final CalendarTaskRepository tasks = mock(CalendarTaskRepository.class);
@@ -51,7 +63,7 @@ class TaskSeriesViewTests {
 
     @Test void listUsesOwnedRulesAndMaterializedOwnedDates() {
         var series = weekly();
-        when(profiles.get(owner)).thenReturn(UserProfile.create(owner, "Fixture"));
+        when(profiles.view(owner)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(owner, "Fixture")));
         when(rules.findAllByUserIdOrderByCreatedAtDesc(owner)).thenReturn(List.of(series));
         when(tasks.findAllBySeriesIdAndUserId(series.getId(), owner)).thenReturn(List.of(
                 CalendarTask.createOccurrence(series, start.plusDays(3)), CalendarTask.createOccurrence(series, start)));
@@ -63,7 +75,7 @@ class TaskSeriesViewTests {
 
     @Test void updateKeepsCountsAndOwnershipAndFlushesBeforeSnapshot() {
         var series = weekly();
-        when(profiles.get(owner)).thenReturn(UserProfile.create(owner, "Fixture"));
+        when(profiles.view(owner)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(owner, "Fixture")));
         when(rules.findOwnedForUpdate(series.getId(), owner)).thenReturn(Optional.of(series));
         when(tasks.findSeriesForUpdate(series.getId(), owner)).thenReturn(List.of());
         var result = service.updateDetailsView(owner, series.getId(), "Revised", null, null, null, 4);
@@ -78,7 +90,7 @@ class TaskSeriesViewTests {
     }
 
     @Test void creationSnapshotsAfterPersistenceAndDoesNotExpandAgainForTheView() {
-        when(profiles.get(owner)).thenReturn(UserProfile.create(owner, "Fixture"));
+        when(profiles.view(owner)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(owner, "Fixture")));
         var saved = new AtomicReference<TaskSeries>();
         when(rules.save(any(TaskSeries.class))).thenAnswer(call -> {saved.set(call.getArgument(0)); return saved.get();});
         Instant created = Instant.parse("2026-10-21T00:00:00Z");

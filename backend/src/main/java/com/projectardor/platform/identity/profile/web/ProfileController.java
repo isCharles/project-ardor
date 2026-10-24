@@ -24,14 +24,14 @@ public class ProfileController {
 
     @GetMapping
     ProfileResponse get(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return ProfileResponse.from(profileService.get(principal.userId()));
+        return ProfileResponse.from(profileService.view(principal.userId()));
     }
 
     @PutMapping
     ProfileResponse update(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody ProfileUpdateRequest request) {
-        return ProfileResponse.from(profileService.update(
+        return ProfileResponse.from(profileService.updateView(
                 principal.userId(),
                 request.displayName(),
                 request.headline(),

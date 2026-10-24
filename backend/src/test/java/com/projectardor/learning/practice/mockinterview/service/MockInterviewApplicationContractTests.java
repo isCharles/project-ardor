@@ -171,9 +171,8 @@ class MockInterviewApplicationContractTests {
                 analysisId, UUID.randomUUID(), Map.of("summary", "Synthetic preparation context"),
                 "fixture", "fixture-v1", null);
         when(materials.analysisContext(owner, analysisId)).thenReturn(context);
-        var profile = mock(UserProfile.class);
-        when(profile.getTargetRoles()).thenReturn(List.of("Designer"));
-        when(profiles.get(owner)).thenReturn(profile);
+        var profile = new com.projectardor.platform.identity.profile.service.ProfileView(null, null, List.of("Designer"), null);
+        when(profiles.view(owner)).thenReturn(profile);
         when(llm.completeJson(eq(owner), anyString(), anyString())).thenAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             assertThat(call.<String>getArgument(2)).contains("Synthetic preparation context");
@@ -228,7 +227,7 @@ class MockInterviewApplicationContractTests {
     @Test void foreignResumeContextFailsBeforeModelOrSessionWrite() {
         var materials = mock(ResumeService.class);
         var profiles = mock(ProfileService.class);
-        when(profiles.get(owner)).thenReturn(mock(UserProfile.class));
+        when(profiles.view(owner)).thenReturn(new com.projectardor.platform.identity.profile.service.ProfileView(null, null, List.of(), null));
         UUID analysisId = UUID.randomUUID();
         when(materials.analysisContext(owner, analysisId)).thenThrow(new ResourceNotFoundException("Not found"));
         var app = new InterviewService(sessions, questions, answers, evaluations, profiles, materials,

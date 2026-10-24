@@ -184,6 +184,28 @@ http.createServer((request, response) => {
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+    if (payload.model === "profile-calendar-probe" && isAgentRequest) {
+      const message = String(payload.messages.filter(item => item.role === "user").at(-1)?.content);
+      const mode = message.includes("profile-calendar-task") ? "task" : message.includes("profile-calendar-rule") ? "rule" : "profile";
+      const id = message.match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0];
+      const output = String(payload.messages.filter(item => item.role === "tool").at(-1)?.content ?? "");
+      const tool = mode === "profile" ? "get_profile" : mode === "task" ? "delete_calendar_task" : "delete_recurring_task";
+      let valid = payload.tools.some(item => item.function.name === tool);
+      if (hasToolResult) {
+        try { const result = JSON.parse(output);
+          valid &&= mode === "profile" ? Object.keys(result).length === 3 && result.displayName === "Owner Profile Fixture" && !output.includes("Foreign Profile Fixture")
+            : result.status === "CONFIRMATION_REQUIRED";
+        } catch { valid = false; }
+      }
+      if (!valid) { response.writeHead(400, { "content-type": "application/json" }); response.end(JSON.stringify({ error: { message: "Profile/calendar contract failed" } })); return; }
+      const delta = hasToolResult ? { role: "assistant", content: `Synthetic ${mode} verified.` }
+        : { role: "assistant", tool_calls: [{ index: 0, id: "profile-calendar", type: "function",
+          function: { name: tool, arguments: JSON.stringify(mode === "profile" ? {} : mode === "task" ? { taskId: id } : { seriesId: id }) } }] };
+      response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
+      for (const [chunk, finish] of [[delta, null], [{}, hasToolResult ? "stop" : "tool_calls"]]) response.write(`data: ${JSON.stringify({ id: "profile-calendar", object: "chat.completion.chunk", model: payload.model,
+        choices: [{ index: 0, delta: chunk, finish_reason: finish }] })}\n\n`);
+      response.end("data: [DONE]\n\n"); return;
+    }
     if (payload.model === "resume-module-probe" && isAgentRequest) {
       const names = payload.tools.map(tool => tool.function.name);
       const required = ["list_resumes", "analyze_resume", "get_resume_analysis_status", "get_resume_analysis", "delete_resume"];

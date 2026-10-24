@@ -476,7 +476,7 @@ public class LearningPlanService {
     }
 
     private Instant tomorrowMorning(UUID userId) {
-        ZoneId zone = ZoneId.of(profileService.get(userId).getTimezone());
+        ZoneId zone = ZoneId.of(profileService.view(userId).timezone());
         return LocalDate.now(zone).plusDays(1).atTime(LocalTime.of(9, 0)).atZone(zone).toInstant();
     }
 

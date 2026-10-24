@@ -49,9 +49,8 @@ class FlashcardSourceTests {
         when(questions.findByIdAndUserId(questionId, userId)).thenReturn(Optional.of(source));
         when(cards.findByUserIdAndRecapQuestionId(userId, questionId)).thenReturn(Optional.empty());
         when(cards.save(any())).thenAnswer(call -> call.getArgument(0));
-        UserProfile profile = mock(UserProfile.class);
-        when(profile.getTimezone()).thenReturn("Asia/Shanghai");
-        when(profiles.get(userId)).thenReturn(profile);
+        var profile = new com.projectardor.platform.identity.profile.service.ProfileView(null, null, List.of(), "Asia/Shanghai");
+        when(profiles.view(userId)).thenReturn(profile);
 
         FlashcardView card = service.createCard(userId, MemoryCardSource.INTERVIEW, "面经", null,
                 "解释 JVM 内存模型", "回答框架", List.of("JVM"), Instant.now(), questionId);

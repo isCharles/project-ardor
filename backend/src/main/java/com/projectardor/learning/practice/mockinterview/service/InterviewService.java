@@ -27,7 +27,7 @@ import com.projectardor.learning.practice.mockinterview.repository.InterviewEval
 import com.projectardor.learning.practice.mockinterview.repository.InterviewQuestionRepository;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewSessionRepository;
 import com.projectardor.platform.model.llm.service.LlmGateway;
-import com.projectardor.platform.identity.profile.domain.UserProfile;
+import com.projectardor.platform.identity.profile.service.ProfileView;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.materials.resume.service.ResumeAnalysisSnapshot;
 import com.projectardor.materials.resume.service.ResumeService;
@@ -166,15 +166,15 @@ public class InterviewService {
         String normalizedRole = normalizeRequired(targetRole, "目标岗位不能为空");
         String normalizedCompany = normalizeNullable(targetCompany);
         if (jobOpportunityId != null) opportunities.detail(userId, jobOpportunityId);
-        UserProfile profile = profileService.get(userId);
+        ProfileView profile = profileService.view(userId);
         ResumeAnalysisSnapshot resumeAnalysis = resumeAnalysisId == null
                 ? null
                 : resumeService.analysisContext(userId, resumeAnalysisId);
 
         String context = toJson(Map.of(
                 "profile", Map.of(
-                        "headline", profile.getHeadline() == null ? "" : profile.getHeadline(),
-                        "targetRoles", profile.getTargetRoles()),
+                        "headline", profile.headline() == null ? "" : profile.headline(),
+                        "targetRoles", profile.targetRoles()),
                 "resumeAnalysis", resumeAnalysis == null ? Map.of() : resumeAnalysis.analysis(),
                 "targetCompany", normalizedCompany == null ? "" : normalizedCompany,
                 "targetRole", normalizedRole,

@@ -66,6 +66,12 @@ public class TaskSeriesService {
                 .map(series -> TaskSeriesView.from(series, upcoming(userId, series.getId(), upcomingLimit))).toList();
     }
 
+    /** Rule metadata for an owned deletion target; never queries or materializes occurrences. */
+    @Transactional(readOnly = true)
+    public TaskSeriesView metadata(UUID userId, UUID seriesId) {
+        return TaskSeriesView.from(get(userId, seriesId), List.of());
+    }
+
     @Transactional
     public TaskSeriesView createView(UUID userId, String title, String description,
             CalendarTaskPriority priority, CalendarTaskSource source, RecurrenceFrequency frequency,
@@ -267,7 +273,7 @@ public class TaskSeriesService {
     }
 
     private ZoneId zoneOf(UUID userId) {
-        return ZoneId.of(profileService.get(userId).getTimezone());
+        return ZoneId.of(profileService.view(userId).timezone());
     }
 
     private Set<DayOfWeek> normalizeWeekdays(

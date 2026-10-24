@@ -21,14 +21,20 @@ public class ProfileService {
         this.profileRepository = profileRepository;
     }
 
-    @Transactional(readOnly = true)
-    public UserProfile get(UUID userId) {
+    private UserProfile get(UUID userId) {
         return profileRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalStateException("用户资料不存在"));
     }
 
+    @Transactional(readOnly = true)
+    public ProfileView view(UUID userId) { return ProfileView.from(get(userId)); }
+
     @Transactional
-    public UserProfile update(UUID userId, String displayName, String headline, List<String> targetRoles, String timezone) {
+    public ProfileView updateView(UUID userId, String displayName, String headline, List<String> targetRoles, String timezone) {
+        return ProfileView.from(update(userId, displayName, headline, targetRoles, timezone));
+    }
+
+    private UserProfile update(UUID userId, String displayName, String headline, List<String> targetRoles, String timezone) {
         UserProfile profile = profileRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalStateException("用户资料不存在"));
         profile.update(

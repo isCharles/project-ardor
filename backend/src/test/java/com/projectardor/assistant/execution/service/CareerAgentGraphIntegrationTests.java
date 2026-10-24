@@ -172,7 +172,7 @@ class CareerAgentGraphIntegrationTests {
             var memoryEmbedding = mock(MemoryEmbeddingService.class);
             when(memoryEmbedding.context(eq(user), anyString())).thenReturn("");
             var profiles = mock(ProfileService.class);
-            when(profiles.get(user)).thenReturn(UserProfile.create(user, "Synthetic owner"));
+            when(profiles.view(user)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(user, "Synthetic owner")));
             when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any()))
                     .thenReturn(new AgentContextCompactor.Prepared("Synthetic system", List.of(
                             ConversationMessage.user(user, conversation.getId(), "Earlier user instruction")), 0, 0, 10, null));

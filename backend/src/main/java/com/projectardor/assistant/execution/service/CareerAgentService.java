@@ -167,7 +167,7 @@ public class CareerAgentService {
 
     public AgentStateResponse state(UUID userId, UUID requestedConversationId) {
         boolean configured = llmConfigService.get(userId).configured();
-        String displayName = profileService.get(userId).getDisplayName();
+        String displayName = profileService.view(userId).displayName();
         var conversations = store.list(userId);
         var summaries = conversations.stream().map(AgentConversationResponse::from).toList();
         var archivedSummaries = store.listArchived(userId).stream()
@@ -1037,7 +1037,7 @@ public class CareerAgentService {
     private String systemPrompt(UUID userId, String userMessage) {
         String memory = memoryEmbedding.context(userId, userMessage);
         String memorySection = memory.isBlank() ? "暂无长期记忆。" : memory;
-        ZoneId userZone = ZoneId.of(profileService.get(userId).getTimezone());
+        ZoneId userZone = ZoneId.of(profileService.view(userId).timezone());
         String currentTime = ZonedDateTime.now(userZone).toString();
         return SYSTEM_PROMPT + """
 
