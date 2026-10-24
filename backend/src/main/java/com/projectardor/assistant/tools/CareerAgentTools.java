@@ -30,9 +30,7 @@ import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmV
 import com.projectardor.learning.practice.mockinterview.service.InterviewService;
 import com.projectardor.scheduling.domain.CalendarTaskPriority;
 import com.projectardor.scheduling.domain.CalendarTaskSource;
-import com.projectardor.scheduling.domain.CalendarTask;
 import com.projectardor.scheduling.domain.RecurrenceFrequency;
-import com.projectardor.scheduling.domain.TaskSeries;
 import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.scheduling.service.TaskSeriesService;
 import com.projectardor.scheduling.service.CalendarTaskView;
@@ -53,7 +51,7 @@ import com.projectardor.assistant.conversation.AgentContextReference;
 import com.projectardor.jobsearch.interview.service.OpportunityService;
 import com.projectardor.jobsearch.interview.service.InterviewProcessCommands;
 import com.projectardor.jobsearch.interview.service.InterviewProcessView;
-import com.projectardor.platform.identity.profile.domain.UserProfile;
+import com.projectardor.platform.identity.profile.service.ProfileView;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 import com.projectardor.materials.resume.service.ResumeView;
 import com.projectardor.materials.resume.service.ResumeAnalysisQueueService;
@@ -364,9 +362,9 @@ public class CareerAgentTools {
 
         @Tool(name = "get_profile", value = "读取当前用户的称呼、当前定位和目标岗位")
         public ProfileToolView getProfile() {
-            UserProfile profile = profileService.get(userId);
+            ProfileView profile = profileService.view(userId);
             return new ProfileToolView(
-                    profile.getDisplayName(), profile.getHeadline(), profile.getTargetRoles());
+                    profile.displayName(), profile.headline(), profile.targetRoles());
         }
 
         @Tool(name = "search_web", value = "使用 Tavily 搜索公开互联网，返回标题、链接、摘要和相关度。查询最新、当前、近期、官网、新闻、招聘、政策或其他可能变化的信息时必须使用；回答中应保留相关来源链接")
@@ -560,9 +558,9 @@ public class CareerAgentTools {
         @Tool(name = "delete_calendar_task", value = "永久删除当前用户指定的一条日历待办。必须先调用 list_calendar_tasks 获取真实 UUID；只有用户明确要求删除或取消该待办时使用，目标不唯一时必须先追问")
         public Map<String, Object> deleteCalendarTask(@P("日历待办 UUID") String taskId) {
             UUID id = uuid(taskId, "日历待办 ID");
-            CalendarTask task = calendarTaskService.get(userId, id);
-            return propose("calendar_task", id, task.getTitle(),
-                    task.getDueAt() == null ? "未安排时间" : task.getDueAt().toString(),
+            CalendarTaskView task = calendarTaskService.detail(userId, id);
+            return propose("calendar_task", id, task.title(),
+                    task.dueAt() == null ? "未安排时间" : task.dueAt().toString(),
                     "/api/calendar/tasks/" + id);
         }
 
@@ -627,8 +625,8 @@ public class CareerAgentTools {
         @Tool(name = "delete_recurring_task", value = "停止一条重复安排，并撤回它尚未开始、也没被用户动过的后续日程；已经发生或已完成的记录会保留。必须先调用 list_recurring_tasks 获取真实 UUID；只有用户明确要求取消该固定安排时使用，目标不唯一时必须先追问")
         public Map<String, Object> deleteRecurringTask(@P("重复安排 UUID") String seriesId) {
             UUID id = uuid(seriesId, "重复安排 ID");
-            TaskSeries series = taskSeriesService.get(userId, id);
-            return propose("task_series", id, series.getTitle() + "（" + series.summary() + "）",
+            TaskSeriesView series = taskSeriesService.metadata(userId, id);
+            return propose("task_series", id, series.title() + "（" + series.summary() + "）",
                     "撤回尚未开始、也没被动过的后续日程；已发生和已完成的记录保留",
                     "/api/calendar/series/" + id);
         }

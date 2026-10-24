@@ -18,6 +18,10 @@ import com.projectardor.common.web.ResourceNotFoundException;
 
 @Service
 public class CalendarTaskService {
+    @Transactional(readOnly = true)
+    public CalendarTaskView detail(UUID userId, UUID taskId) {
+        return CalendarTaskView.from(get(userId, taskId));
+    }
     private final CalendarTaskRepository repository;
 
     public CalendarTaskService(CalendarTaskRepository repository) {

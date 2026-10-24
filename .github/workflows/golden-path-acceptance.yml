@@ -158,6 +158,12 @@ jobs:
           ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
         run: node backend/src/test/resources/resume-module-acceptance.mjs
 
+      - name: Verify owned profile and calendar deletion reference contracts
+        env:
+          ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
+          ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
+        run: node backend/src/test/resources/profile-calendar-acceptance.mjs
+
       - name: Restart backend to verify persisted task and read state
         shell: bash
         run: |

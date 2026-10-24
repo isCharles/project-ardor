@@ -242,7 +242,7 @@ class CareerAgentToolsTests {
         UUID taskId = UUID.randomUUID();
         CalendarTask task = CalendarTask.create(userId, "组会", null, Instant.parse("2026-09-10T01:00:00Z"),
                 CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT);
-        when(calendarTaskService.get(userId, taskId)).thenReturn(task);
+        when(calendarTaskService.detail(userId, taskId)).thenReturn(com.projectardor.scheduling.service.CalendarTaskView.from(task));
 
         var bound = tools.bind(userId, "删掉周四那个组会");
         Map<String, Object> result = bound.deleteCalendarTask(taskId.toString());

@@ -159,7 +159,7 @@ public class ApplicationRhythmService {
     }
 
     private ZoneId zone(UUID userId) {
-        return ZoneId.of(profiles.get(userId).getTimezone());
+        return ZoneId.of(profiles.view(userId).timezone());
     }
 
     record Settings(int weeklyGoal, boolean reminderEnabled, LocalTime reminderTime,

@@ -2,14 +2,14 @@ package com.projectardor.platform.identity.profile.web;
 
 import java.util.List;
 
-import com.projectardor.platform.identity.profile.domain.UserProfile;
+import com.projectardor.platform.identity.profile.service.ProfileView;
 
 public record ProfileResponse(String displayName, String headline, List<String> targetRoles, String timezone) {
 
-    public static ProfileResponse from(UserProfile profile) {
+    public static ProfileResponse from(ProfileView profile) {
         return new ProfileResponse(
-                profile.getDisplayName(),
-                profile.getHeadline(),
-                profile.getTargetRoles(), profile.getTimezone());
+                profile.displayName(),
+                profile.headline(),
+                profile.targetRoles(), profile.timezone());
     }
 }

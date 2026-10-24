@@ -140,7 +140,7 @@ public class FlashcardService {
 
     private LocalDate localDate(UUID userId, Instant value) { return value.atZone(userZone(userId)).toLocalDate(); }
 
-    private ZoneId userZone(UUID userId) { return ZoneId.of(profileService.get(userId).getTimezone()); }
+    private ZoneId userZone(UUID userId) { return ZoneId.of(profileService.view(userId).timezone()); }
 
     private List<String> normalizeTags(List<String> tags) {
         if (tags == null) return List.of();

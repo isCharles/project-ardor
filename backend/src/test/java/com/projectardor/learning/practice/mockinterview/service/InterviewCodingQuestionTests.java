@@ -109,7 +109,7 @@ class InterviewCodingQuestionTests {
     @Test
     void duplicateQuestionsAreNotSilentlyAcceptedAsAFullInterview() {
         UUID userId = UUID.randomUUID();
-        when(profiles.get(userId)).thenReturn(UserProfile.create(userId, "候选人"));
+        when(profiles.view(userId)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(userId, "候选人")));
         when(llm.completeJson(any(), any(), any())).thenReturn(new LlmGateway.LlmResult("""
                 {"questions":[
                   {"questionText":"项目里最难的问题？","questionType":"PROJECT","evaluationCriteria":[]},
@@ -127,7 +127,7 @@ class InterviewCodingQuestionTests {
     @SuppressWarnings("unchecked")
     private List<InterviewQuestion> create(String role, String llmJson) {
         UUID userId = UUID.randomUUID();
-        when(profiles.get(userId)).thenReturn(UserProfile.create(userId, "候选人"));
+        when(profiles.view(userId)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(userId, "候选人")));
         when(llm.completeJson(any(), any(), any())).thenReturn(new LlmGateway.LlmResult(llmJson, "model"));
         when(hot100.random()).thenReturn(LRU);
         when(sessions.save(any())).thenAnswer(invocation -> invocation.getArgument(0));

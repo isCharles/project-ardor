@@ -339,7 +339,7 @@ class LearningPlanServiceTests {
             });
             when(attempts.findAllByUserIdAndPlanIdOrderByAttemptNoAsc(any(), any()))
                     .thenAnswer(call -> List.copyOf(saved));
-            when(profiles.get(userId)).thenReturn(UserProfile.create(userId, "Learning Owner"));
+            when(profiles.view(userId)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(userId, "Learning Owner")));
             PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
             when(transactions.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
             ObjectMapper mapper = new ObjectMapper();

@@ -29,7 +29,7 @@ class FlashcardLifecycleTests {
         return card;
     }
     private void timezone() {
-        var profile=mock(UserProfile.class);when(profile.getTimezone()).thenReturn("Asia/Shanghai");when(profiles.get(owner)).thenReturn(profile);
+        var profile=new com.projectardor.platform.identity.profile.service.ProfileView(null,null,java.util.List.of(),"Asia/Shanghai");when(profiles.view(owner)).thenReturn(profile);
     }
     @Test void autonomousCardsNeedNoInterviewButKeepOwnedCalendarCoordination() {
         timezone();when(cards.save(any())).thenAnswer(call->call.getArgument(0));

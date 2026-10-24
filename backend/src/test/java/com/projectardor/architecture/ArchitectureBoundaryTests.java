@@ -23,6 +23,12 @@ import org.junit.jupiter.api.Test;
  * edges should be added here as their contracts are completed.</p>
  */
 class ArchitectureBoundaryTests {
+    @Test void profileAndCalendarReadAdaptersCannotReintroduceOwnedEntities() throws IOException {
+        for (String root : List.of("assistant", "learning", "jobsearch", "scheduling")) {
+            assertNoImports(root, Pattern.compile("import com\\.projectardor\\.platform\\.identity\\.profile\\.(domain|repository)\\..*"));
+        }
+        assertNoImports("assistant/tools", Pattern.compile("import com\\.projectardor\\.scheduling\\.domain\\.(CalendarTask|TaskSeries);"));
+    }
     @Test
     void resumeAndLearningContextToolsCannotReadTheirEntitiesOrMoveBackToCentralHost() throws IOException {
         assertNoImports("assistant/tools", Pattern.compile("import com\\.projectardor\\.materials\\.resume\\.(domain|repository)\\..*"));

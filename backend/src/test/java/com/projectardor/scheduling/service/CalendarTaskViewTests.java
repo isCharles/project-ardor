@@ -19,6 +19,16 @@ import com.projectardor.scheduling.web.CalendarTaskResponse;
 import tools.jackson.databind.json.JsonMapper;
 
 class CalendarTaskViewTests {
+    @Test void deletionTargetDetailUsesOwnedReadWithoutWriting() {
+        var task = task();
+        when(repository.findByIdAndUserId(task.getId(), owner)).thenReturn(Optional.of(task));
+        var view = service.detail(owner, task.getId());
+        assertThat(view.id()).isEqualTo(task.getId());
+        assertThat(view.title()).isEqualTo(task.getTitle());
+        assertThat(view.dueAt()).isEqualTo(task.getDueAt());
+        assertThatThrownBy(() -> service.detail(UUID.randomUUID(), task.getId())).isInstanceOf(ResourceNotFoundException.class);
+        verify(repository, never()).save(any()); verify(repository, never()).flush();
+    }
     private final UUID owner = UUID.randomUUID();
     private final Instant due = Instant.parse("2027-01-01T09:00:00Z");
     private final CalendarTaskRepository repository = mock(CalendarTaskRepository.class);
