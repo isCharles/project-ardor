@@ -109,7 +109,45 @@ try {
   await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "llm.call.1" }).waitFor();
   await page.getByRole("button", { name: "Graph", exact: true }).click();
   assert.ok(await page.locator("[data-trace-node]").count() > 0, "Graph step view renders the flow");
+  const graphLayout = await page.locator("[data-conversation-trace]").evaluate((element) => {
+    const section = element.getBoundingClientRect();
+    const steps = element.querySelector("[data-trace-steps]").getBoundingClientRect();
+    const turns = element.querySelector("[data-trace-turns]").getBoundingClientRect();
+    const inspector = element.querySelector("[data-trace-selection]").getBoundingClientRect();
+    return { width: section.width, graphWidth: steps.width, graphBottom: steps.bottom, turnsTop: turns.top, inspectorTop: inspector.top };
+  });
+  assert.ok(graphLayout.graphWidth >= graphLayout.width - 2, "Graph occupies the entire trace width");
+  assert.ok(graphLayout.turnsTop >= graphLayout.graphBottom && graphLayout.inspectorTop >= graphLayout.graphBottom,
+    "Conversation turns and inspector move below the full-width graph");
+  await page.screenshot({ path: ".next/agent-trace-conversation-graph.png", fullPage: true });
+  await page.locator("[data-trace-node]").nth(3).click();
+  await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "llm.call.1" }).waitFor();
+  for (const width of [900, 390]) {
+    await page.setViewportSize({ width, height: 1100 });
+    await page.waitForFunction(() => {
+      const graph = document.querySelector("[data-flow-graph]");
+      return graph && graph.scrollWidth <= graph.clientWidth + 1;
+    });
+    const layoutFits = await page.locator("[data-conversation-trace]").evaluate((element) => {
+      const steps = element.querySelector("[data-trace-steps]").getBoundingClientRect();
+      const turns = element.querySelector("[data-trace-turns]").getBoundingClientRect();
+      const inspector = element.querySelector("[data-trace-selection]").getBoundingClientRect();
+      return steps.width >= element.clientWidth - 2 && turns.top >= steps.bottom && inspector.top >= steps.bottom
+        && document.documentElement.scrollWidth <= window.innerWidth + 1;
+    });
+    assert.ok(layoutFits, `Full-width graph and lower panels fit at ${width}px`);
+  }
+  await page.screenshot({ path: ".next/agent-trace-conversation-graph-mobile.png", fullPage: true });
+  await page.setViewportSize({ width: 1400, height: 1100 });
   await page.getByRole("button", { name: "List", exact: true }).click();
+  const listLayout = await page.locator("[data-conversation-trace]").evaluate((element) => {
+    const steps = element.querySelector("[data-trace-steps]").getBoundingClientRect();
+    const turns = element.querySelector("[data-trace-turns]").getBoundingClientRect();
+    const inspector = element.querySelector("[data-trace-selection]").getBoundingClientRect();
+    return { stepsTop: steps.top, turnsTop: turns.top, inspectorTop: inspector.top };
+  });
+  assert.equal(listLayout.stepsTop, listLayout.turnsTop, "List restores the compact three-column structure");
+  assert.equal(listLayout.stepsTop, listLayout.inspectorTop);
   await page.locator("[data-conversation-run]").nth(1).click();
   await page.getByText("第二轮问题", { exact: true }).first().waitFor();
   await page.screenshot({ path: ".next/agent-trace-conversation.png", fullPage: true });
