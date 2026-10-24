@@ -73,18 +73,18 @@ try {
   await page.locator("[data-trace-node]").first().waitFor();
   assert.ok(traceRequests >= 2, "An initial not-found race must retry without requiring a page reload");
   assert.equal(await page.locator("[data-trace-node]").count(), 6, "Flow graph renders every span including THOUGHT phases");
-  await page.getByRole("button", { name: "Flow", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Flow graph", exact: true }).waitFor();
   await page.getByRole("button", { name: "Timeline", exact: true }).waitFor();
 
   await page.locator("[data-trace-node]").nth(2).click();
   const fits = await page.locator("[data-flow-graph]").evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
   assert.ok(fits, "Graph fits without horizontal scrolling");
-  await page.getByRole("button", { name: "Trajectory", exact: true }).click();
+  await page.getByRole("button", { name: "Inspector", exact: true }).click();
   await page.getByText("Metadata", { exact: true }).waitFor();
   await page.getByText("llm.call.1", { exact: true }).first().waitFor();
   await page.screenshot({ path: ".next/agent-trace-flow.png", fullPage: true });
 
-  await page.getByRole("button", { name: "Trajectory", exact: true }).click();
+  await page.getByRole("button", { name: "Inspector", exact: true }).click();
   await page.locator("[data-trace-inspector]").waitFor();
   await page.getByRole("tab", { name: "Overview", exact: true }).waitFor();
   assert.equal(await page.locator("[data-trace-inspector-item]").count(), 6, "Inspector lists every span");
@@ -107,7 +107,7 @@ try {
   await page.getByRole("button", { name: "List", exact: true }).waitFor();
   await page.locator('[data-trace-lane][title^="llm.call.1"]').first().click();
   await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "llm.call.1" }).waitFor();
-  await page.getByRole("button", { name: "Graph", exact: true }).click();
+  await page.getByRole("button", { name: "Flow graph", exact: true }).click();
   assert.ok(await page.locator("[data-trace-node]").count() > 0, "Graph step view renders the flow");
   const graphLayout = await page.locator("[data-conversation-trace]").evaluate((element) => {
     const section = element.getBoundingClientRect();

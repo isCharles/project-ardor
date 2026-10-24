@@ -96,3 +96,14 @@ LLM steps use the assistant inspector: Overview / Preview / Raw content. The
 Preview tab renders markdown; the model reasoning output is shown separately and
 labelled, and never mixed into the final answer. Tool steps keep Parameters /
 Result / Schema / Metadata / Timing.
+
+## Observation, not a chat mode
+
+There is no user-selectable Graph chat mode. The composer always sends a normal
+chat request. A read-only graph runtime may be selected automatically for an
+explicit read-only audit/planning request, but that is an execution policy, not a
+button the user chooses while chatting.
+
+The trace page's "Flow graph / List / Timeline / Inspector" controls only change
+how the recorded run is displayed. They do not rerun, alter or select the Agent
+runtime. The UI labels this as "observation only".
