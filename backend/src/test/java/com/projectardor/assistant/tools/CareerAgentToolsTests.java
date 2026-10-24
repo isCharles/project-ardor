@@ -197,7 +197,9 @@ class CareerAgentToolsTests {
         when(calendar.createView(user, "Fixture", "", null, CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT, null)).thenReturn(view);
         when(calendar.updateGeneralView(user, task.getId(), "Fixture", "", null, CalendarTaskPriority.MEDIUM,
                 com.projectardor.scheduling.domain.CalendarTaskStatus.TODO)).thenReturn(view);
-        var bound = tools.bind(user, "Fixture");
+        var bound = (com.projectardor.assistant.tools.modules.SchedulingAgentToolProvider.Bound)
+                com.projectardor.assistant.tools.modules.AgentToolBundle.objects(tools.bind(user, "Fixture")).stream()
+                        .filter(com.projectardor.assistant.tools.modules.SchedulingAgentToolProvider.Bound.class::isInstance).findFirst().orElseThrow();
         assertThat(bound.listCalendarTasks("", "")).containsExactly(view);
         assertThat(bound.createCalendarTask("Fixture", "", "", "MEDIUM", "")).isSameAs(view);
         assertThat(bound.updateCalendarTask(task.getId().toString(), "Fixture", "", "", "MEDIUM", "TODO")).isSameAs(view);
@@ -245,7 +247,10 @@ class CareerAgentToolsTests {
         when(calendarTaskService.detail(userId, taskId)).thenReturn(com.projectardor.scheduling.service.CalendarTaskView.from(task));
 
         var bound = tools.bind(userId, "删掉周四那个组会");
-        Map<String, Object> result = bound.deleteCalendarTask(taskId.toString());
+        var calendarTools = (com.projectardor.assistant.tools.modules.SchedulingAgentToolProvider.Bound)
+                com.projectardor.assistant.tools.modules.AgentToolBundle.objects(bound).stream()
+                        .filter(com.projectardor.assistant.tools.modules.SchedulingAgentToolProvider.Bound.class::isInstance).findFirst().orElseThrow();
+        Map<String, Object> result = calendarTools.deleteCalendarTask(taskId.toString());
 
         // Nothing is destroyed by the model; the user gets a button instead.
         verify(calendarTaskService, never()).delete(userId, taskId);

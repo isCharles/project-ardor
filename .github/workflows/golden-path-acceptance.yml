@@ -158,11 +158,17 @@ jobs:
           ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
         run: node backend/src/test/resources/resume-module-acceptance.mjs
 
-      - name: Verify owned profile and calendar deletion reference contracts
+      - name: Verify owned profile and all scheduling tool contracts
         env:
           ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
           ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
-        run: node backend/src/test/resources/profile-calendar-acceptance.mjs
+        shell: bash
+        run: |
+          # This dense synthetic flow makes nine agent turns; rate-limit rejection
+          # has separate tests. Never apply this fixture policy to a daily database.
+          test "$ARDOR_ACCEPTANCE_DISPOSABLE_DB" = true
+          docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET user_minute_limit=GREATEST(user_minute_limit,30) WHERE feature='AGENT_CHAT'"
+          node backend/src/test/resources/profile-calendar-acceptance.mjs
 
       - name: Restart backend to verify persisted task and read state
         shell: bash

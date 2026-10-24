@@ -57,6 +57,29 @@ async function turn(message) {
   return events;
 }
 await turn("读取我的个人资料 profile-calendar-read");
+// Real wrapped tools use the existing permission settings; do not bypass the host policy.
+await owner.request("/api/agent/permissions/*", { method: "PUT", expected: 204, body: { level: 3 } });
+for (const message of ["读取日程 profile-calendar-list-tasks", "读取重复安排 profile-calendar-list-rules",
+  "创建日程 profile-calendar-create-task", "创建重复安排 profile-calendar-create-rule"]) await turn(message);
+const agentTask = (await owner.request("/api/calendar/tasks")).find(item => item.title === "Agent task fixture");
+assert.ok(agentTask?.id); assert.equal(agentTask.priority, "HIGH");
+assert.equal(Date.parse(agentTask.dueAt), Date.parse("2028-04-01T01:00:00Z"));
+await turn(`修改日程 ${agentTask.id} profile-calendar-update-task`);
+const revisedTask = (await owner.request("/api/calendar/tasks")).find(item => item.id === agentTask.id);
+assert.equal(revisedTask.title, "Revised agent task"); assert.equal(revisedTask.priority, "LOW");
+assert.equal(Date.parse(revisedTask.dueAt), Date.parse("2028-04-02T01:00:00Z"));
+const agentRule = (await owner.request("/api/calendar/series")).find(item => item.title === "Agent rule fixture");
+assert.ok(agentRule?.id); assert.equal(agentRule.timezone, "UTC");
+const agentOccurrences = (await owner.request("/api/calendar/tasks")).filter(item => item.seriesId === agentRule.id);
+assert.equal(agentOccurrences.length, 3);
+await turn(`修改重复安排 ${agentRule.id} profile-calendar-update-rule`);
+const revisedRule = (await owner.request("/api/calendar/series")).find(item => item.id === agentRule.id);
+assert.equal(revisedRule.title, "Revised agent rule"); assert.equal(revisedRule.timeOfDay.slice(0, 5), "11:00");
+const revisedOccurrences = (await owner.request("/api/calendar/tasks")).filter(item => item.seriesId === agentRule.id);
+assert.deepEqual(revisedOccurrences.map(item => item.id).sort(), agentOccurrences.map(item => item.id).sort());
+assert.ok(revisedOccurrences.every(item => item.title === "Revised agent rule" && new Date(item.dueAt).getUTCHours() === 11));
+await foreign.request(`/api/calendar/tasks/${agentTask.id}`, { method: "PUT", expected: 404,
+  body: { title: "Foreign overwrite", description: "", dueAt: revisedTask.dueAt, priority: "LOW", status: "TODO" } });
 const taskEvents = await turn(`删除这个日程 ${task.id} profile-calendar-task`);
 const taskCard = taskEvents.find(event => event.type === "confirm")?.confirmation;
 assert.equal(taskCard?.label, task.title); assert.equal(taskCard?.detail, "未安排时间");
@@ -77,4 +100,4 @@ assert.deepEqual(tasks.filter(item => item.seriesId === rule.id).map(item => [it
 assert.equal((await foreign.request("/api/calendar/series")).find(item => item.id === foreignRule.id).status, "ACTIVE");
 assert.ok((await foreign.request("/api/calendar/tasks")).some(item => item.id === foreignTask.id));
 assert.equal((await foreign.request("/api/profile")).displayName, "Foreign Profile Fixture");
-console.log("Profile/calendar: stable profile JSON and ownership, timezone propagation, real deletion proposals and preserved completed recurrence passed.");
+console.log("Profile/calendar: stable profile JSON, eight wrapped scheduling tools, owned updates preserving occurrence IDs, timezone propagation, deletion proposals and preserved completed recurrence passed.");
