@@ -52,7 +52,9 @@ for (let index = 0; index < 2; index++) {
     "Read-only keywords must not dispatch a separate PLAN/GATHER/REFLECT runtime");
   assert.ok(events.some(event => event.type === "delta" && event.content), "Ordinary model output remains streamed");
   const contextEvents = events.filter(event => event.type === "context").map(event => event.contextUsage);
-  assert.deepEqual(contextEvents.map(item => item.state), ["PREPARING", "READY"]);
+  assert.equal(contextEvents[0].state, "PREPARING");
+  assert.ok(contextEvents.length >= 3, "Publish assembly plus the actual request measurement");
+  assert.ok(contextEvents.slice(1).every(item => item.state === "READY"));
   const contextUsage = contextEvents.at(-1);
   assert.ok(contextUsage.estimatedTokens > 0, "The prompt estimate must be measured by the builder");
   assert.equal(contextUsage.modelWindowTokens, null, "Unknown model windows must not be guessed");
@@ -62,7 +64,10 @@ for (let index = 0; index < 2; index++) {
   assert.equal(trace.conversationId, conversation.id);
   assert.equal(trace.status, "COMPLETED");
   assert.equal(trace.totals.llmCalls, 1, "No extra phase calls are injected by keywords");
-  assert.equal(trace.spans.find(span => span.name === "context.load").attributes.assembledEstimatedTokens, contextUsage.estimatedTokens);
+  const assembled = trace.spans.find(span => span.name === "context.load").attributes.assembledEstimatedTokens;
+  assert.ok(contextEvents.some(item => item.estimatedTokens > assembled), "Actual request includes tool definitions omitted by initial assembly");
+  const llm = trace.spans.find(span => span.name === "llm.call.1");
+  if (llm.inputTokens > 0) assert.equal(contextUsage.estimatedTokens, llm.inputTokens, "Final usage is this provider request, not cumulative billing");
   const progress = await owner.request(`/api/agent/runs/${requestId}/progress`);
   assert.deepEqual(progress.contextUsage, contextUsage, "Progress snapshots and SSE use the same measured context");
   await other.request(`/api/agent/runs/${requestId}/progress`, { expected: 404 });

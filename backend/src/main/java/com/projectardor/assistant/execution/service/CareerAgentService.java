@@ -396,7 +396,10 @@ public class CareerAgentService {
             streamProgress.begin(userId, progressId);
             if (finished.get()) { streamProgress.finish(progressId, true); return; }
             sink.send(AgentStreamEvent.status("正在整理对话上下文", elapsedMs(startedAt)));
+            var latestContext = new java.util.concurrent.atomic.AtomicReference<AgentContextUsage>();
             java.util.function.Consumer<AgentContextUsage> contextObserver = usage -> {
+                if (finished.get() || lease.stopped()) return;
+                latestContext.set(usage);
                 streamProgress.context(progressId, usage);
                 sink.send(AgentStreamEvent.context(usage));
             };
@@ -413,8 +416,10 @@ public class CareerAgentService {
             }
             AgentModelTraceListener traceListener = tracer == null ? null
                     : new AgentModelTraceListener(tracer, runtimeConfig.model());
+            var requestContextListener = new AgentRequestContextListener(promptContext.estimator(), latestContext.get(),
+                    contextObserver, () -> !finished.get() && !lease.stopped());
             java.util.List<dev.langchain4j.model.chat.listener.ChatModelListener> listeners =
-                    traceListener == null ? java.util.List.of() : java.util.List.of(traceListener);
+                    traceListener == null ? java.util.List.of(requestContextListener) : java.util.List.of(traceListener, requestContextListener);
             ConcurrentHashMap<String, Long> toolStarts = new ConcurrentHashMap<>();
             toolApprovals.begin(userId, requestId);
             if (finished.get()) {

@@ -32,6 +32,10 @@ try {
       body = { id: "context-run", conversationId: conversation.id, message: "Synthetic request", status: "RUNNING", label: "Working", createdAt: conversation.createdAt };
     } else if (path.endsWith("/context-run/progress")) body = { phase: "WAITING", label: "Preparing", thinkingOutput: "", answerPartial: "", steps: [], contextUsage: usage };
     else if (path === "/api/agent/permissions") body = { mode: "CUSTOM", globalLevel: 1, modules: [] };
+    else if (path === "/api/agent/models") body = [
+      { id: "PRIMARY", label: "synthetic-model", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
+      { id: "FALLBACK:other-model", label: "other-model", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
+    ];
     else if (path === "/api/settings/llm" || path === "/api/settings/web-search") body = { configured: false };
     else if (path === "/api/usage") body = null;
     return route.fulfill({ json: body });
@@ -46,19 +50,36 @@ try {
   await page.locator('[data-context-state="READY"]').waitFor();
   await indicator.hover();
   const tooltip = page.getByRole("tooltip");
-  await tooltip.getByText("Model window: unknown", { exact: true }).waitFor();
-  assert.match(await tooltip.innerText(), /1,800 tokens/);
-  assert.match(await tooltip.innerText(), /12,000 tokens/);
+  await tooltip.getByText("Capacity unknown", { exact: true }).waitFor();
+  assert.match(await tooltip.innerText(), /≈1.8K \/ — tokens/);
+  assert.equal(await tooltip.locator("p").count(), 3);
+  assert.doesNotMatch(await tooltip.innerText(), /12,000|summary|schemas|synthetic-model/i);
   assert.doesNotMatch(await indicator.innerText(), /%/);
+  assert.equal(await indicator.locator("svg").getAttribute("data-context-fill"), "unknown");
+  for (const [tokens, fill] of [[25000, 0.25], [75000, 0.75], [150000, 1]]) {
+    usage = { ...usage, estimatedTokens: tokens, modelWindowTokens: 100000 };
+    await page.reload();
+    await page.locator('[data-context-state="READY"]').waitFor();
+    assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), fill);
+    await indicator.hover();
+    await tooltip.getByText(`${Math.round(tokens / 100000 * 100)}% full`, { exact: true }).waitFor();
+  }
+  await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
+  await page.getByTitle("other-model", { exact: true }).click();
+  assert.equal(await indicator.getAttribute("data-context-state"), "UNKNOWN", "Never show the previous model's percentage for a newly selected model");
+  await page.getByTitle("synthetic-model", { exact: true }).click();
+  await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
+  await page.locator('[data-context-state="READY"]').waitFor();
   running = true;
   usage = { ...usage, state: "COMPACTING", estimatedTokens: null };
   await page.reload();
   await page.locator('[data-context-state="COMPACTING"]').waitFor();
-  assert.match(await indicator.innerText(), /Compacting context/);
+  await indicator.hover();
+  await tooltip.getByText("Compacting context", { exact: true }).waitFor();
   usage = { ...usage, state: "COMPACTION_FAILED", estimatedTokens: 1800 };
   await page.locator('[data-context-state="COMPACTION_FAILED"]').waitFor();
   await indicator.focus();
-  await tooltip.getByText("Original messages retained; not successfully compacted.", { exact: true }).waitFor();
+  await tooltip.getByText("Compaction deferred", { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await indicator.click();
   await tooltip.waitFor();

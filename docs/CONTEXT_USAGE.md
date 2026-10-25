@@ -1,18 +1,28 @@
 # 上下文用量与压缩提示
 
-状态：PR #204 已合并并部署本机；CI、实际镜像及回归证据见 [交付状态](REFACTOR_STATUS.md)。
+状态：PR #204 首版已部署，但用户要求返工；当前分支尚未部署。首版证据见 [交付状态](REFACTOR_STATUS.md)。
 
-输入框的上下文图标展示最近一次组装的提示 Token 估算，悬停、聚焦或点击可看详情。
-窄屏只显示图标；提示框放在视口内，支持 Escape/外部点击关闭。
+输入框在模型旁显示实际比例环，宽窄屏均只显示图标；悬停、聚焦或点击显示三行提示：
+上下文窗口、已用百分比、约用量/容量。未知容量不画虚假进度，压缩中显示旋转状态。
+提示框保持在视口内，支持 Escape/外部点击关闭。切换模型后不套用上一模型的占比。
 
 ## 数值口径
 
-- `estimatedTokens`：由统一 `AgentContextBuilder` 的 tokenizer/估算器计算，包括系统提示、长期记忆、
-  摘要、选中的近期消息、恢复的中断指令和展开的引用及当前输入。不是计费 Token，不包含工具定义、
-  后续工具返回和输出预留；草稿或模型变化后，要等下一次实际组装才有新估算。
+- `estimatedTokens`：初始组装后，由独立于 trace 开关的 `AgentRequestContextListener` 在每次实际
+  模型请求前更新，包含该请求的系统提示、记忆、摘要、近期消息、引用、当前输入、工具定义、
+  已返回工具结果与响应格式。使用现有 tokenizer；无对应 tokenizer 时按字符回退估算，工具 schema
+  按 SDK 的结构化对象文本估算，不能承诺等同供应商的序列化/tokenizer。
+  收到供应商本次请求的有效 input Token 后用该值校准；不累计历史调用、输出 Token 或缓存命中率。
+  同一工具循环中每次调用都会更新，迟到的上一调用和结束后的回调不能覆盖新结果。
+  草稿未发送前不预测其用量；显示的是最近一次请求输入，不含输出预留。
 - `compressionBudgetTokens`：现有应用压缩软目标，默认 12000；不是模型上下文窗口。
-- `modelWindowTokens`：仅在有可信容量来源时才能填写。当前不从模型名或厂商别名猜容量，因此为 null，
-  界面显示未知，不显示虚假占用百分比。百分比仅适用于已知模型容量。
+- `modelWindowTokens`：`ModelContextCapacity` 只用明确配置或核实过的精确模型/官方 endpoint 组合。
+  当前内置 `api.deepseek.com` 的 `deepseek-v4-flash`，容量 1048576；依据
+  [官方容量文档](https://api-docs.deepseek.com/quick_start/pricing/) 和
+  [官方模型配置](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash/blob/main/config.json)，核实于 2026-10-25。
+  其他模型和中转别名默认未知，不进行前缀猜测。部署方可在 Spring 配置中用
+  `app.agent.context.windows.<精确模型ID>=<正整数Token数>` 明确覆盖（同 ID 在此部署内共用）。
+  配置 0、负数或非整数时保持未知；不把应用 12K 压缩预算当容量，不改模型调用参数。
 - `summaryVersion`、`compactedMessages`：来自实际摘要结果，表示当前摘要版本和本次纳入摘要的消息数。
 
 ## 状态、刷新和兼容
@@ -32,6 +42,9 @@ JSON 验证新版读取；没有改动 Jackson 的全局解析规则。
 
 ## 验证入口
 
+- `AgentRequestContextListenerTests`：分别验证工具 schema、工具返回增量、单次供应商用量校准、
+  下一次短请求用量降低、上一调用迟到响应及停止后回调栅栏。
+- `ModelContextCapacityTests`：精确官方组合、中转未知、配置覆盖及非法配置。
 - `AgentContextCompactorTests`：压缩开始和失败状态，以及失败后历史保留。
 - `AgentContextBuilderTests`：估算与 trace 属性一致，未知窗口、摘要版本及失败标记。
 - `AgentStreamProgressTests` / `AgentContextProgressPostgresTests`：新旧 JSON、重启、双用户隔离、旧快照及迟到事件。
@@ -39,7 +52,18 @@ JSON 验证新版读取；没有改动 Jackson 的全局解析规则。
 - `agent-runtime-acceptance.mjs`：真实 HTTP 的 SSE、trace、进度、重新加载消息及其他用户 404；使用合成模型。
 - `context-usage-ui.mjs`：旧记录未知、持久化估算、实时压缩/失败、窄屏边界和页面溢出，使用合成 API。
 
-完整百轮语义质量、所有供应商 tokenizer 精度及真实模型窗口目录不由这些测试证明。
+完整百轮语义质量、所有供应商 tokenizer 精度及完整模型窗口目录不由这些测试证明。
+
+## 当前返工验证
+
+本地 Java 21 全套 731 项：0 failures、0 errors、1 显式门控跳过。
+隔离合成模型的真实 HTTP 验收通过：每次请求更新、SSE/进度/存档一致、其他用户 404、9 轮触发
+真实摘要并保留原消息。前端 lint/build 通过（2 条既有 warning），Edge 上下文比例 25%/75%/溢出、
+三行提示、模型切换、刷新、压缩/失败和窄屏回归通过；工作区与权限控件回归通过。
+首次新增单测因 mock 嵌套 stubbing 出错，修正夹具后通过；一次回归脚本名输错未执行，
+改为现有 `agent-approval-ui.mjs` 后通过。CI、PR 合并与本机部署尚待完成。
+
+## 首版历史验证（不代表返工已验收）
 
 本批本机 Java 21 全套 729 项：0 failures、0 errors、1 显式门控跳过；包括真实 PostgreSQL
 进度快照的其他用户拒绝与 revision 栅栏。首次新增存档断言因旧运行时夹具 mock 掉进度而失败，
