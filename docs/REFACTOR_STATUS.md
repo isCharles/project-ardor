@@ -2,10 +2,19 @@
 
 ## 当前进度入口（2026-10-25，覆盖下方历史快照）
 
-当前工作分支补上下文用量与实际压缩状态，详细口径和证据见 [上下文观测](CONTEXT_USAGE.md)。
+上下文用量与实际压缩状态已由 [PR #204](https://github.com/isCharles/project-ardor/pull/204) 合并并部署，
+合并提交 `62851938933d4cdfa19c214293879f7a4d372c2e`。详细口径和证据见 [上下文观测](CONTEXT_USAGE.md)。
 本机后端 729 项（0 失败/错误、1 门控跳过）、真实 PostgreSQL、9 轮合成对话触发摘要的 HTTP
 及四组前端浏览器回归通过。模型窗口未知时不编百分比；尚未据此宣称百轮验收完成。
-本批的 PR、CI 与日常部署待分别核对；当前运行镜像仍是下述 #202 后端/#203 前端。
+全部 CI 通过：`40193820707`、Golden Path `40193820658`（8m8s）。本机前后端
+`ardor-*-context-usage:651fe71`，revision `651fe710f018a8992cfe4bdfc5c73bd94f62c264`。
+实际 JAR 摘要与已测试包一致，前端 BUILD_ID `QFHRLrDxAeXTslN5kWAKI`；login 200、health UP、V65。
+实际 3000 端口的四组 Edge 回归通过（API 为合成夹具），原数据库、Redis 与卷保留。
+部署前五类活动任务数为零；仓库外 `../backups/20261025-before-context-usage-651fe71/` 保留完整备份、
+镜像回退配置和摘要。下方 #202/#203 是前一部署，不覆盖本节。
+
+下一分支仅修面试记录日期右对齐、关联课程自然状态/配色及冗余操作文案；来源与准备目标关联不变。
+这批界面修复尚未提交或部署，测试与 PR 证据另行补记。
 
 最新 UI 已由 [PR #203](https://github.com/isCharles/project-ardor/pull/203) 合并，提交
 `51a3d785409b956aa399428826a359a792d5e385`。权限控件图标化、菜单精简、英文
