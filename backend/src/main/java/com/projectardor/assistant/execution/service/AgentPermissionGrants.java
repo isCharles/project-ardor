@@ -19,7 +19,8 @@ import com.projectardor.assistant.tools.capability.ToolModule;
 /**
  * Agent grants live in one row per module plus one global row ({@code *}).
  * A module row overrides the global default; without one the module follows it.
- * Level 0 preserves the original behaviour: every write asks for confirmation.
+ * CUSTOM level 0 preserves the original behaviour: every write asks for confirmation.
+ * Presets are stored separately, so selecting one never overwrites custom grants.
  * Deleting is never auto-approved regardless of level.
  */
 @Service
@@ -33,17 +34,36 @@ public class AgentPermissionGrants {
         this.jdbc = jdbc;
     }
 
-    public record Permissions(int globalLevel, Map<ToolModule, Integer> modules) {}
+    public record Permissions(int globalLevel, Map<ToolModule, Integer> modules, AgentApprovalMode mode) {}
 
     /** Effective levels plus each module's override state for the settings page. */
     public Permissions permissions(UUID userId) {
         Map<String, Integer> stored = storedLevels(userId);
-        int global = stored.getOrDefault(GLOBAL_MODULE, 0);
+        AgentApprovalMode mode = mode(userId);
+        int global = mode == AgentApprovalMode.CUSTOM ? stored.getOrDefault(GLOBAL_MODULE, 0) : mode.legacyLevel();
         Map<ToolModule, Integer> modules = new EnumMap<>(ToolModule.class);
         for (ToolModule module : ToolModule.values()) {
-            modules.put(module, stored.getOrDefault(module.key(), global));
+            modules.put(module, mode == AgentApprovalMode.CUSTOM ? stored.getOrDefault(module.key(), global) : global);
         }
-        return new Permissions(global, modules);
+        return new Permissions(global, modules, mode);
+    }
+
+    public AgentApprovalMode mode(UUID userId) {
+        String value = jdbc.query("SELECT mode FROM agent_approval_preferences WHERE user_id = ?",
+                result -> result.next() ? result.getString(1) : null, userId);
+        return value == null ? AgentApprovalMode.CUSTOM : AgentApprovalMode.valueOf(value);
+    }
+
+    public void setMode(UUID userId, AgentApprovalMode mode) {
+        java.util.Objects.requireNonNull(mode, "Approval mode is required");
+        jdbc.update("""
+                INSERT INTO agent_approval_preferences(user_id, mode) VALUES (?, ?)
+                ON CONFLICT (user_id) DO UPDATE SET mode = EXCLUDED.mode, updated_at = CURRENT_TIMESTAMP
+                """, userId, mode.name());
+    }
+
+    public boolean requiresConfirmationForBatch(UUID userId, int writeOrdinal) {
+        return writeOrdinal > 3 && mode(userId) == AgentApprovalMode.AUTO;
     }
 
     private Map<String, Integer> storedLevels(UUID userId) {
@@ -72,17 +92,23 @@ public class AgentPermissionGrants {
         return moduleOverride(userId, module).orElseGet(() -> globalLevel(userId));
     }
 
+    @org.springframework.transaction.annotation.Transactional
     public void setGlobalLevel(UUID userId, int level) {
         write(userId, GLOBAL_MODULE, level);
+        setMode(userId, AgentApprovalMode.CUSTOM);
     }
 
+    @org.springframework.transaction.annotation.Transactional
     public void setModuleLevel(UUID userId, ToolModule module, int level) {
         write(userId, module.key(), level);
+        setMode(userId, AgentApprovalMode.CUSTOM);
     }
 
     /** Removes the module override so the module follows the global level again. */
+    @org.springframework.transaction.annotation.Transactional
     public void clearModuleLevel(UUID userId, ToolModule module) {
         jdbc.update("DELETE FROM agent_permission_grants WHERE user_id = ? AND module = ?", userId, module.key());
+        setMode(userId, AgentApprovalMode.CUSTOM);
     }
 
     private void write(UUID userId, String module, int level) {
@@ -98,6 +124,8 @@ public class AgentPermissionGrants {
     public boolean autoApproves(UUID userId, String tool) {
         ToolCatalog.Risk risk = ToolCatalog.describe(tool);
         if (risk == null || risk.capability().requiresProposal()) return false;
+        AgentApprovalMode mode = mode(userId);
+        if (mode != AgentApprovalMode.CUSTOM) return mode.permitsAutomatically(tool);
         return level(userId, risk.module()) >= risk.capability().minimumLevel();
     }
 

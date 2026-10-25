@@ -94,6 +94,25 @@ class ApprovedAgentToolsTests {
     }
 
     @Test
+    void automaticWriteBudgetAsksBeforeTheFourthDistinctWrite() {
+        var approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        var permissions = mock(AgentPermissionGrants.class);
+        when(permissions.autoApproves(USER, "fake_write")).thenReturn(true);
+        when(permissions.requiresConfirmationForBatch(eq(USER), org.mockito.ArgumentMatchers.anyInt()))
+                .thenAnswer(call -> (int) call.getArgument(1) > 3);
+        var tools = new ScopedFakeTools(true);
+        var executor = scopedExecutor(tools, approvals, permissions);
+        for (int index = 1; index <= 4; index++) {
+            var request = ToolExecutionRequest.builder().name("fake_write").arguments("{\"value\":\"" + index + "\"}").build();
+            assertThat(executor.execute(request, null)).contains(index <= 3 ? "executed:" : "PERMISSION_NOT_GRANTED");
+        }
+        assertThat(tools.calls).hasValue(3);
+        verify(approvals).await(eq(USER), eq(RUN), eq("fake_write"), eq("{\"value\":\"4\"}"));
+        verify(permissions, org.mockito.Mockito.times(3)).recordAutoApproval(eq(USER), eq(RUN), eq("fake_write"), any());
+    }
+
+    @Test
     void declinedConfirmationIsRecordedAsUnexecutedTool() {
         var approvals = mock(AgentToolApprovals.class);
         when(approvals.canPropose(USER, RUN)).thenReturn(true);

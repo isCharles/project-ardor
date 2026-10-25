@@ -5,9 +5,10 @@ import { ShieldCheck } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
+import { approvalModes, type ApprovalMode } from "@/lib/approval-modes";
 
 type ModuleGrant = { module: string; level: number; overridden: boolean };
-type Permissions = { globalLevel: number; modules: ModuleGrant[] };
+type Permissions = { globalLevel: number; modules: ModuleGrant[]; mode?: ApprovalMode };
 
 const levelLabels: Array<[string, string]> = [
   ["View only", "仅查看"], ["View & add", "查 + 增"], ["View, add & edit", "查 + 增 + 改"], ["Full access", "完全权限"],
@@ -55,11 +56,26 @@ export function AgentPermissionsPanel() {
     } finally { setSaving(null); }
   }
 
+  async function chooseMode(mode: ApprovalMode) {
+    if (!data) return;
+    const previous = data;
+    setSaving("mode"); setError(""); setData({ ...data, mode });
+    try {
+      await api<void>("/api/agent/permissions/mode", { method: "PUT", body: JSON.stringify({ mode }) });
+      setData(await api<Permissions>("/api/agent/permissions"));
+    } catch (reason) {
+      setData(previous);
+      setError(reason instanceof Error ? reason.message : t("Could not save permissions", "权限保存失败"));
+    } finally { setSaving(null); }
+  }
+
   return <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
     <div className="flex items-center gap-3"><ShieldCheck className="size-5 text-violet-500" /><h2 className="text-xl font-semibold">{t("Agent permissions", "Agent 权限")}</h2></div>
-    <p className="mt-2 text-sm leading-6 text-stone-500">{t("Choose what Ardor may do without asking. Anything above the granted level still asks first, and deleting always asks.", "选择 Ardor 可以不经询问直接执行的范围。超出等级的操作仍会先询问；删除始终需要确认。")}</p>
+    <p className="mt-2 text-sm leading-6 text-stone-500">{t("Choose when Ardor asks for approval. Reads run directly; deletion and proposal-only actions still require confirmation.", "选择 Ardor 何时询问。查询直接执行，删除与建议卡操作仍须确认。")}</p>
     {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
     {!data ? <p className="mt-6 text-sm text-stone-400">{t("Loading…", "加载中…")}</p> : <>
+      <div className="mt-6 space-y-2" role="group" aria-label={t("Approval mode", "权限模式")}>{approvalModes.map(option => <button key={option.mode} type="button" disabled={saving !== null} aria-pressed={(data.mode ?? "CUSTOM") === option.mode} onClick={() => void chooseMode(option.mode)} className={`block w-full rounded-2xl border px-4 py-3 text-left transition ${(data.mode ?? "CUSTOM") === option.mode ? "border-violet-200 bg-violet-50/70" : "border-transparent hover:bg-white/70"}`}><span className="text-sm font-medium">{t(...option.label)}</span><span className="mt-1 block text-xs leading-5 text-stone-500">{t(...option.description)}</span></button>)}</div>
+      {(data.mode ?? "CUSTOM") === "CUSTOM" && <>
       <div className="mt-6 rounded-2xl bg-white/70 p-4">
         <p className="text-sm font-medium">{t("Default for all modules", "全局默认")}</p>
         <div className="mt-3 flex flex-wrap gap-2">{levelLabels.map(([en, zh], level) =>
@@ -79,6 +95,7 @@ export function AgentPermissionsPanel() {
           </div>;
         })}
       </div>
+      </>}
     </>}
   </section>;
 }

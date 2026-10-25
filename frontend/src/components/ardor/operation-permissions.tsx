@@ -81,6 +81,7 @@ export function OperationPermissions({ runId, onConfirming, onConfirmed, onFaile
       // A persistent module grant is optional; the one-off decision still stands if it fails.
       if (allow && remember && item.module && typeof item.suggestedLevel === "number" && item.suggestedLevel >= 0) {
         await api<void>(`/api/agent/permissions/${encodeURIComponent(item.module)}`, { method: "PUT", body: JSON.stringify({ level: item.suggestedLevel }) })
+          .then(() => window.dispatchEvent(new Event("ardor:permissions-changed")))
           .catch(() => undefined);
       }
       await api<void>(`/api/agent/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify({ allow }) });
@@ -142,7 +143,7 @@ function Operation({ item, disabled, onDecision }: { item: Approval; disabled: b
     <dl className="mt-3 space-y-2 text-xs">{entries.map(([key, value]) => { const label = fields[key] ?? [key, key]; return <div key={key}><dt className="text-stone-500">{t(label[0], label[1])}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-stone-800">{text(value)}</dd></div>; })}</dl>
     {item.tool === "update_learning_plan" && <p className="mt-2 text-xs text-stone-500">{t("Lesson content and practice records are preserved.", "讲解内容和练习记录保持不变。")}</p>}
     <details className="mt-2 text-xs text-stone-400"><summary>{t("Technical details", "技术详情")}</summary><pre className="mt-2 whitespace-pre-wrap break-all">{item.arguments}</pre></details>
-    {canRemember && <label className="mt-3 flex items-start gap-2 text-xs text-stone-600"><input type="checkbox" checked={remember} disabled={disabled} onChange={(event) => setRemember(event.target.checked)} className="mt-0.5 size-3.5" /><span>{t(`Always allow changes to ${moduleName[0]}`, `以后都允许 Ardor 修改「${moduleName[1]}」`)}<span className="block text-stone-400">{t("You can change this later in settings. Deleting still asks.", "可在设置中随时改回；删除仍然需要确认。")}</span></span></label>}
+    {canRemember && <label className="mt-3 flex items-start gap-2 text-xs text-stone-600"><input type="checkbox" checked={remember} disabled={disabled} onChange={(event) => setRemember(event.target.checked)} className="mt-0.5 size-3.5" /><span>{t(`Always allow changes to ${moduleName[0]}`, `以后都允许 Ardor 修改「${moduleName[1]}」`)}<span className="block text-stone-400">{t("Switches to Custom, keeping your other saved module settings. Deleting still asks.", "切换至自定义，其他模块沿用保存的设置；删除仍须确认。")}</span></span></label>}
     <div className="mt-3 flex justify-end gap-2"><button type="button" disabled={disabled} onClick={() => onDecision(false)} className="rounded-full px-4 py-2 text-xs text-stone-600 hover:bg-stone-100 disabled:opacity-50">{t("Reject", "拒绝")}</button><button type="button" disabled={disabled || needsTarget && !target} onClick={() => onDecision(true, remember)} className="rounded-full bg-violet-600 px-4 py-2 text-xs text-white hover:bg-violet-700 disabled:opacity-50">{disabled ? t("Submitting…", "提交中…") : t("Confirm", "确认")}</button></div>
   </article>;
 }
