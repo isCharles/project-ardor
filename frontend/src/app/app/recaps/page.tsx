@@ -107,9 +107,9 @@ function RecapsContent() {
           {recaps.length === 0 ? <div className="px-6 py-16 text-center">
             <p className="text-sm text-stone-500">{t("No interview notes yet.", "还没有面试记录。")}</p>
             <button type="button" onClick={() => setShowForm(true)} className="mt-5 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white">{t("Organize the first one", "整理第一份")}</button>
-          </div> : recaps.map(recap => <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`} className="flex w-full items-center justify-between gap-3 border-b border-stone-100 px-5 py-4 text-left last:border-b-0 hover:bg-violet-50/40">
+          </div> : recaps.map(recap => <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`} className="grid w-full grid-cols-[minmax(0,1fr)_auto_1rem] items-center gap-3 border-b border-stone-100 px-5 py-4 text-left last:border-b-0 hover:bg-violet-50/40">
             <span className="min-w-0 truncate text-sm font-medium">{recap.title}</span>
-            <span className="shrink-0 text-xs text-stone-400">{new Date(recap.createdAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "short", day: "numeric" })}</span>
+            <time data-recap-date dateTime={recap.createdAt} className="text-right text-xs tabular-nums text-stone-400">{new Date(recap.createdAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "short", day: "numeric" })}</time>
             <ArrowRight className="size-4 shrink-0 text-stone-300" />
           </Link>)}
         </section>

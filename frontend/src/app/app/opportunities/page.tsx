@@ -42,6 +42,13 @@ type RelatedPlan = LearningPlanRef & { relation: "TARGET" | "SOURCE" };
 
 const STATUSES = ["SCHEDULED", "AWAITING_RESULT", "NEXT_ROUND", "REJECTED"];
 
+const COURSE_STATUS: Record<string, { en: string; zh: string; row: string; badge: string }> = {
+  COMPLETED: { en: "Completed", zh: "已完成", row: "bg-emerald-50 text-emerald-900 hover:bg-emerald-100", badge: "bg-emerald-100 text-emerald-700" },
+  IN_PROGRESS: { en: "In progress", zh: "学习中", row: "bg-violet-50 text-violet-900 hover:bg-violet-100", badge: "bg-violet-100 text-violet-700" },
+  NEEDS_REVIEW: { en: "Needs review", zh: "待巩固", row: "bg-amber-50 text-amber-900 hover:bg-amber-100", badge: "bg-amber-100 text-amber-700" },
+  SCHEDULED: { en: "Scheduled", zh: "待学习", row: "bg-stone-50 text-stone-800 hover:bg-stone-100", badge: "bg-stone-100 text-stone-600" },
+};
+
 const STATUS_STYLE: Record<string, string> = {
   SCHEDULED: "bg-violet-100 text-violet-700",
   AWAITING_RESULT: "bg-amber-100 text-amber-800",
@@ -413,7 +420,6 @@ export default function OpportunitiesPage() {
                                 <GraduationCap className="size-4 shrink-0 text-amber-600" />
                                 <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-amber-600">{t("Courses", "课程")}</span>
                                 <span className="min-w-0 flex-1 truncate">{t(`${plansFor(item).length} related course${plansFor(item).length > 1 ? "s" : ""}`, `${plansFor(item).length} 门相关课程`)}</span>
-                                <span className="shrink-0 text-xs text-amber-700">{t("Choose", "选择")}</span>
                               </button>
                             )}
                             {(item.jdContent || item.inviteContent) && (
@@ -429,7 +435,6 @@ export default function OpportunitiesPage() {
                                 <FileSearch className="size-4 shrink-0 text-stone-500" />
                                 <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t("Other", "其他")}</span>
                                 <span className="min-w-0 flex-1">{t("JD, invite email", "JD、约面邮件")}</span>
-                                <span className="shrink-0 text-xs text-stone-600">{t("Open", "查看")}</span>
                               </button>
                             )}
                             {recapsFor(item).length === 0 && cardsFor(item).length === 0 && plansFor(item).length === 0
@@ -449,15 +454,17 @@ export default function OpportunitiesPage() {
       </div>
       {planPicker && (
         <AppDialog title={t("Courses", "课程")} onClose={() => setPlanPicker(null)}>
-          <div className="space-y-2">{planPicker.map((plan) => (
+          <div className="space-y-2">{planPicker.map((plan) => {
+            const status = COURSE_STATUS[plan.status] ?? { en: "Status unavailable", zh: "状态未知", row: "bg-stone-50 text-stone-800 hover:bg-stone-100", badge: "bg-stone-100 text-stone-600" };
+            return (
             <Link key={plan.id} href={`/app/learning?id=${plan.id}`} onClick={() => setPlanPicker(null)}
-              className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900 transition hover:bg-amber-100">
-              <GraduationCap className="size-4 shrink-0 text-amber-600" />
-              <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-amber-600">{plan.relation === "TARGET" ? t("Preparation", "面试准备") : t("Learning from here", "来源于此")}</span>
+              className={`flex w-full min-w-0 items-center gap-3 rounded-2xl px-4 py-3 text-sm transition ${status.row}`}>
+              <GraduationCap className="size-4 shrink-0" />
+              {plan.relation === "TARGET" && <span className="shrink-0 text-[11px] font-semibold">{t("Preparation", "面试准备")}</span>}
               <span className="min-w-0 flex-1 truncate" title={plan.concept}>{plan.concept}</span>
-              <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{plan.status}</span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${status.badge}`}>{t(status.en, status.zh)}</span>
             </Link>
-          ))}</div>
+          ); })}</div>
         </AppDialog>
       )}
       {preview && (
