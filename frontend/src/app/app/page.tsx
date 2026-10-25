@@ -18,6 +18,7 @@ import { ChatNotifications } from "@/components/ardor/chat-notifications";
 import { ChatVoiceButton } from "@/components/ardor/chat-voice-button";
 import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
 import { ReasoningControl, type ModelOption } from "@/components/ardor/reasoning-control";
+import { ContextUsageIndicator, type ContextUsage } from "@/components/ardor/context-usage";
 import { ServicePicker } from "@/components/ardor/service-picker";
 import { type ToolMeasurement } from "@/components/ardor/tool-duration";
 import { ExecutionTrace } from "@/components/ardor/execution-trace";
@@ -39,8 +40,8 @@ type Conversation = { id: string; title: string; pinned: boolean; titleManuallyS
 type AgentMemory = { content: string; updatedAt: string | null };
 type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null };
 type RetryFailure = { label: string; detail: string };
-type AgentStreamEvent = ToolMeasurement & { type: "status" | "phase" | "phase_end" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string };
-type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number };
+type AgentStreamEvent = ToolMeasurement & { type: "context" | "status" | "phase" | "phase_end" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string; contextUsage?: ContextUsage | null };
+type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number; contextUsage?: ContextUsage | null };
 type AgentRun = { id: string; conversationId: string; message: string; status: "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED"; label: string; errorCode: string | null; errorMessage: string | null; retryable: boolean; createdAt: string; updatedAt: string };
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
    button, and pressing it is an ordinary authenticated DELETE from here — the
@@ -72,7 +73,7 @@ function formatElapsed(milliseconds: number) {
 
 function savedRunTrace(raw?: string | null) {
   if (!raw) return null;
-  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<ToolMeasurement & { label: string; elapsedMs: number; status: string }>; proposals?: AgentConfirmation[]; thinkingOutput?: string; firstOutputMs?: number }; }
+  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<ToolMeasurement & { label: string; elapsedMs: number; status: string }>; proposals?: AgentConfirmation[]; thinkingOutput?: string; firstOutputMs?: number; contextUsage?: ContextUsage }; }
   catch { return null; }
 }
 
@@ -237,6 +238,7 @@ export default function AgentHomePage() {
   const [runSteps, setRunSteps] = useState<RunStep[]>([]);
   const [runThinking, setRunThinking] = useState("");
   const [streamProgress, setStreamProgress] = useState<StreamProgress | null>(null);
+  const [liveContext, setLiveContext] = useState<{ conversationId: string; usage: ContextUsage } | null>(null);
   const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const [runElapsed, setRunElapsed] = useState(0);
   const [leavingEmptyState, setLeavingEmptyState] = useState(false);
@@ -470,6 +472,7 @@ export default function AgentHomePage() {
       }
     }
     setState(result);
+    setLiveContext(null);
     // A committed response owns its process record. Discard the transient copy.
     setRunSteps([]); setRunThinking(""); setStreamProgress(null); setRetryFailures([]); setRunElapsed(0);
     const outgoing = readOutgoing(reasoningAccount.current, result.conversationId);
@@ -888,7 +891,9 @@ export default function AgentHomePage() {
               void stopRunOnce(requestId).catch((reason) => setError(reason instanceof Error ? reason.message : t("Could not confirm stop request", "暂时无法确认停止请求")));
             }
             if (event.type !== "error") setStreamAccepted(true);
-            if (event.type === "thinking" && event.content) {
+            if (event.type === "context" && event.contextUsage) {
+              setLiveContext({ conversationId: activeConversationId!, usage: event.contextUsage });
+            } else if (event.type === "thinking" && event.content) {
               setStreamPhase("THINKING");
               setRunThinking((current) => (current + event.content).slice(0, 32_000));
             } else if (event.type === "delta" && event.content) {
@@ -1235,12 +1240,13 @@ export default function AgentHomePage() {
   }
 
   function composerFooter() {
-    return <div data-composer-footer className="flex items-center justify-between gap-2 px-2 pb-1">
+    return <div data-composer-footer className="flex flex-wrap items-center justify-between gap-2 px-2 pb-1">
       <div className="flex min-w-0 items-center gap-2">
         {attachmentPicker()}{permissionPicker()}
         {draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}
       </div>
       <div data-composer-actions className="flex shrink-0 items-center gap-1.5">
+        <ContextUsageIndicator usage={liveContext?.conversationId === state?.conversationId ? liveContext?.usage : streamProgress?.contextUsage ?? messages.slice().reverse().map(item => savedRunTrace(item.runTrace)?.contextUsage).find(Boolean)} />
         {reasoningPicker()}
         <ChatVoiceButton disabled={!state?.llmConfigured} onTranscript={(text) => { setDraft((current) => current.trim() ? `${current.trim()} ${text}` : text); setError(""); }} onError={setError} />
         {isRunning && !draft.trim() ? <Button type="button" aria-label={t("Stop", "停止")} disabled={cancelPending} onClick={() => void cancelExecution()} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800 disabled:opacity-50"><Square className="size-3 fill-current" /></Button> : <Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button>}

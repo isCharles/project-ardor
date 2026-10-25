@@ -23,6 +23,26 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.model.TokenCountEstimator;
 
 class AgentContextBuilderTests {
+    @Test void observedContextReportsFailureAndMeasuredPromptWithoutInventingModelCapacity() {
+        var f = new Fixture();
+        when(f.compactor.prepare(eq(f.owner), eq(f.conversation), anyString(), eq(f.config), any(), anyList(), any(), anyString(), any()))
+                .thenAnswer(call -> {
+                    java.util.function.Consumer<String> observer = call.getArgument(8);
+                    observer.accept("COMPACTING"); observer.accept("COMPACTION_FAILED");
+                    return f.compactor.prepare(f.owner, f.conversation, call.getArgument(2), f.config,
+                            ReasoningDepth.AUTO, List.of(), () -> true, "current");
+                });
+        var updates = new java.util.ArrayList<AgentContextUsage>();
+        var result = f.builder.prepare(f.owner, f.conversation, "Current", "Current", f.config,
+                ReasoningDepth.AUTO, null, null, List.of(), updates::add);
+        assertThat(updates).extracting(AgentContextUsage::state).containsExactly("COMPACTING", "COMPACTION_FAILED", "COMPACTION_FAILED");
+        var measured = updates.getLast();
+        assertThat(measured.estimatedTokens()).isEqualTo(result.attributes().get("assembledEstimatedTokens"));
+        assertThat(measured.modelWindowTokens()).isNull();
+        assertThat(measured.compressionBudgetTokens()).isEqualTo(12000);
+        assertThat(measured.summaryVersion()).isEqualTo(2);
+    }
+
     @Test void memorySummaryReferencesAndInterruptedInstructionsKeepTheirRoles() {
         var f = new Fixture();
         var reference = new AgentContextReference("LEARNING", UUID.randomUUID(), "Owned course");

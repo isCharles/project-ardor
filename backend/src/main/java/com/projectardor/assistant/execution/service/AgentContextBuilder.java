@@ -61,12 +61,28 @@ public class AgentContextBuilder {
     public Prepared prepare(UUID userId, UUID conversationId, String message, String currentInput,
             LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth,
             AgentRunTracer tracer, AgentStreamLease lease, List<HistoryTurn> interruptedTurns) {
+        return prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, interruptedTurns, null);
+    }
+
+    public Prepared prepare(UUID userId, UUID conversationId, String message, String currentInput,
+            LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth,
+            AgentRunTracer tracer, AgentStreamLease lease, List<HistoryTurn> interruptedTurns,
+            java.util.function.Consumer<AgentContextUsage> observer) {
         String baseSystem = systemPrompt(userId, message) + depth.guidance();
         var listeners = tracer == null ? List.<dev.langchain4j.model.chat.listener.ChatModelListener>of()
                 : List.<dev.langchain4j.model.chat.listener.ChatModelListener>of(new AgentModelTraceListener(tracer, runtimeConfig.model()));
-        var prepared = contextCompactor.prepare(userId, conversationId, baseSystem, runtimeConfig, depth,
-                listeners, () -> lease == null || !lease.stopped(), currentInput + "\n" + interruptedTurns.stream()
-                        .map(HistoryTurn::content).collect(java.util.stream.Collectors.joining("\n")));
+        String pending = currentInput + "\n" + interruptedTurns.stream()
+                .map(HistoryTurn::content).collect(java.util.stream.Collectors.joining("\n"));
+        var failed = new java.util.concurrent.atomic.AtomicBoolean();
+        var prepared = observer == null
+                ? contextCompactor.prepare(userId, conversationId, baseSystem, runtimeConfig, depth,
+                        listeners, () -> lease == null || !lease.stopped(), pending)
+                : contextCompactor.prepare(userId, conversationId, baseSystem, runtimeConfig, depth,
+                        listeners, () -> lease == null || !lease.stopped(), pending, state -> {
+                            if ("COMPACTION_FAILED".equals(state)) failed.set(true);
+                            observer.accept(new AgentContextUsage(state, runtimeConfig.model(), null,
+                                    contextCompactor.budgetTokens(), null, 0, 0));
+                        });
         List<HistoryTurn> history = new java.util.ArrayList<>(prepared.recentMessages().stream()
                 .map(item -> new HistoryTurn(item.getRole(), item.getContent(), item.getContextReferences(), item.getCreatedAt())).toList());
         history.addAll(interruptedTurns);
@@ -96,6 +112,9 @@ public class AgentContextBuilder {
         }
         attributes.put("compactedMessages", prepared.compactedMessages());
         attributes.put("summaryVersion", prepared.summaryVersion());
+        if (observer != null) observer.accept(new AgentContextUsage(failed.get() ? "COMPACTION_FAILED" : "READY",
+                runtimeConfig.model(), attributes.get("assembledEstimatedTokens") instanceof Number count ? count.longValue() : null,
+                contextCompactor.budgetTokens(), null, prepared.summaryVersion(), prepared.compactedMessages()));
         return new Prepared(prepared.systemPrompt(), memory, java.util.Collections.unmodifiableMap(attributes));
     }
 

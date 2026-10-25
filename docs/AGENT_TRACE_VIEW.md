@@ -34,10 +34,15 @@ state validation, cancellation fencing and duplicate-write protection remain
 independent checks. A denied confirmation is recorded as a `NOT_EXECUTED` tool
 span rather than disappearing from the execution view.
 
-This does not change the stored 0–3 grant contract or introduce the proposed
-Ask / Auto / Full / Custom modes yet. Existing proposal-only adapters still
-return proposal cards. These changes require separate permission-mode and UI
-acceptance work before claiming that redesign complete.
+The stored 0–3 custom grant contract remains compatible. Ask / Auto / Full /
+Custom modes were delivered separately in #202; proposal-only adapters still
+return proposal cards. See [approval modes](AGENT_APPROVAL_MODES.md).
+
+The context indicator consumes measured prompt-assembly metadata and real
+compaction events, with persistent progress/message fallback. Its app compression
+target is not the model window. Unknown model capacity is shown as unknown,
+without a guessed percentage; see [context usage](CONTEXT_USAGE.md) for the exact
+estimate exclusions and candidate acceptance status.
 
 The developer trace page lives at `/app/agent-runs/{requestId}`. It is an
 owner-scoped, read-only view over `GET /api/agent/runs/{requestId}/trace`.

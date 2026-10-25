@@ -75,6 +75,13 @@ public class AgentContextCompactor {
             LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
             List<dev.langchain4j.model.chat.listener.ChatModelListener> listeners,
             java.util.function.BooleanSupplier active, String pendingContext) {
+        return prepare(userId, conversationId, systemPrompt, config, depth, listeners, active, pendingContext, state -> {});
+    }
+
+    public Prepared prepare(UUID userId, UUID conversationId, String systemPrompt,
+            LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
+            List<dev.langchain4j.model.chat.listener.ChatModelListener> listeners,
+            java.util.function.BooleanSupplier active, String pendingContext, java.util.function.Consumer<String> status) {
         List<ConversationMessage> visible = conversations.allMessages(userId, conversationId).stream()
                 .filter(message -> !message.isHidden())
                 .toList();
@@ -93,6 +100,7 @@ public class AgentContextCompactor {
         List<ConversationMessage> effectiveRecent = visible.subList(covered, visible.size());
         int compactedCount = 0;
         if (!older.isEmpty() && (overBudget || enoughToCompact)) {
+            status.accept("COMPACTING");
             CompactionResult compacted = compact(userId, conversationId, config, depth, previous, older, estimator, listeners, active);
             if (compacted != null) {
                 currentSummary = compacted.content();
@@ -100,7 +108,7 @@ public class AgentContextCompactor {
                 int newCovered = coveredIndex(visible, compacted.summary().coveredMessageId());
                 compactedCount = newCovered - covered;
                 effectiveRecent = visible.subList(newCovered, visible.size());
-            }
+            } else status.accept("COMPACTION_FAILED");
         }
         // Generated text is data, never interpolated into the system instruction.
         String summaryContext = currentSummary.isBlank() ? "" :

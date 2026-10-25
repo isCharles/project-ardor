@@ -27,6 +27,13 @@ public class AgentStreamProgress {
     public void begin(UUID userId, UUID requestId) { entries.put(requestId, new Entry(userId, clock.instant())); }
     public void thinking(UUID requestId, String text) { observe(requestId, "THINKING", text); }
     public void answer(UUID requestId, String text) { observe(requestId, "OUTPUT", text); }
+    public void context(UUID requestId, AgentContextUsage usage) {
+        Entry entry = entries.get(requestId);
+        if (entry != null) synchronized (entry) {
+            if (entry.finishedAt != null) return;
+            entry.contextUsage = usage; entry.revision++;
+        }
+    }
     public void tool(UUID requestId, String label) {
         Entry entry = entries.get(requestId);
         if (entry != null) synchronized (entry) {
@@ -87,7 +94,7 @@ public class AgentStreamProgress {
             String phase = terminal ? saved.status() : !view.phase().equals("TOOL") && silence >= 30 ? "WAITING_DATA" : view.phase();
             return new View(phase, terminal ? "COMPLETED".equals(phase) ? "已完成" : "执行已结束，查看保留的记录" : view.label(),
                     view.thinkingOutput(), view.answerPartial(), view.firstThinkingMs(), view.firstOutputMs(), silence,
-                    view.truncated(), view.steps(), terminal ? saved.elapsedMs() : Math.max(0, Duration.between(snapshot.startedAt(), clock.instant()).toMillis()));
+                    view.truncated(), view.steps(), terminal ? saved.elapsedMs() : Math.max(0, Duration.between(snapshot.startedAt(), clock.instant()).toMillis()), view.contextUsage());
         }
         if (entry == null || !entry.userId.equals(userId)) throw new ResourceNotFoundException("执行进度不存在");
         synchronized (entry) {
@@ -104,7 +111,7 @@ public class AgentStreamProgress {
             };
             return new View(phase, label, entry.thinking.toString(), entry.answer.toString(),
                     entry.firstThinkingMs, entry.firstOutputMs, silentSeconds, entry.truncated, List.copyOf(entry.steps),
-                    Math.max(0, Duration.between(entry.startedAt, entry.finishedAt == null ? clock.instant() : entry.finishedAt).toMillis()));
+                    Math.max(0, Duration.between(entry.startedAt, entry.finishedAt == null ? clock.instant() : entry.finishedAt).toMillis()), entry.contextUsage);
         }
     }
     @Scheduled(fixedDelay = 1000)
@@ -130,7 +137,13 @@ public class AgentStreamProgress {
         entries.entrySet().removeIf(item -> item.getValue().startedAt.isBefore(cutoff));
     }
     public record View(String phase, String label, String thinkingOutput, String answerPartial,
-                       Long firstThinkingMs, Long firstOutputMs, long silentSeconds, boolean truncated, List<Step> steps, long elapsedMs) {}
+                       Long firstThinkingMs, Long firstOutputMs, long silentSeconds, boolean truncated, List<Step> steps, long elapsedMs,
+                       AgentContextUsage contextUsage) {
+        public View(String phase, String label, String thinkingOutput, String answerPartial,
+                Long firstThinkingMs, Long firstOutputMs, long silentSeconds, boolean truncated, List<Step> steps, long elapsedMs) {
+            this(phase, label, thinkingOutput, answerPartial, firstThinkingMs, firstOutputMs, silentSeconds, truncated, steps, elapsedMs, null);
+        }
+    }
     public record Step(String label, long elapsedMs, String status, Long approvalWaitMs, Long businessMs) {}
     public record Snapshot(long revision, Instant startedAt, Instant lastData, View view) {}
     private static final class Entry {
@@ -145,6 +158,7 @@ public class AgentStreamProgress {
         Long firstThinkingMs;
         Long firstOutputMs;
         boolean truncated;
+        AgentContextUsage contextUsage;
         long revision = 1;
         long savedRevision;
         final List<Step> steps = new ArrayList<>();
