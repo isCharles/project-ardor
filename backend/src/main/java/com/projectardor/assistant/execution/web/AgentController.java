@@ -203,9 +203,17 @@ public class AgentController {
         var permissions = permissionGrants.permissions(principal.userId());
         var modules = java.util.Arrays.stream(com.projectardor.assistant.tools.capability.ToolModule.values())
                 .map(module -> new AgentModuleGrant(module.key(), permissions.modules().getOrDefault(module, 0),
-                        permissionGrants.moduleOverride(principal.userId(), module).isPresent()))
+                        permissions.mode() == com.projectardor.assistant.execution.service.AgentApprovalMode.CUSTOM
+                                && permissionGrants.moduleOverride(principal.userId(), module).isPresent()))
                 .toList();
-        return new AgentPermissionsResponse(permissions.globalLevel(), modules);
+        return new AgentPermissionsResponse(permissions.globalLevel(), modules, permissions.mode());
+    }
+
+    @PutMapping("/permissions/mode")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void updateApprovalMode(@AuthenticationPrincipal ArdorPrincipal principal,
+            @Valid @RequestBody AgentApprovalModeRequest request) {
+        permissionGrants.setMode(principal.userId(), request.mode());
     }
 
     @PutMapping("/permissions/{module}")

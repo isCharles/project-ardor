@@ -143,6 +143,8 @@ jobs:
           echo "Backend did not become healthy"
           exit 1
 
+      - name: Verify approval mode ownership and legacy grant compatibility
+        run: node backend/src/test/resources/approval-mode-acceptance.mjs
       - name: Verify unified streaming entry and private trace ownership
         env:
           ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080

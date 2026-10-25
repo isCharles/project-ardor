@@ -110,6 +110,7 @@ final class ApprovedAgentTools {
             UUID conversationId, boolean automation, AgentRunTracer tracer, Set<String> allowedTools) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         Map<String, Boolean> attemptedWrites = new java.util.concurrent.ConcurrentHashMap<>();
+        var automaticWriteOrdinal = new java.util.concurrent.atomic.AtomicInteger();
         AgentExecutionAuditStore.ToolCallContext auditContext =
                 AgentExecutionAuditStore.ToolCallContext.of(userId, conversationId, requestId);
         Set<String> names = new HashSet<>();
@@ -145,7 +146,8 @@ final class ApprovedAgentTools {
                                 : automationWrite || approvals.canPropose(userId, requestId));
                 boolean autoApproved = false;
                 if (allowed && !proposal && !read && !automationWrite && permissions != null
-                        && permissions.autoApproves(userId, tool)) {
+                        && permissions.autoApproves(userId, tool)
+                        && !permissions.requiresConfirmationForBatch(userId, automaticWriteOrdinal.incrementAndGet())) {
                     autoApproved = true;
                     // A permission level skips the dialog, never the audit trail.
                     permissions.recordAutoApproval(userId, requestId, tool, request.arguments());

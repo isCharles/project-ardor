@@ -10,6 +10,7 @@ import { FormEvent, KeyboardEvent, useCallback, useEffect, useEffectEvent, useRe
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { type AiJob } from "@/lib/ai-jobs";
+import { approvalModes, type ApprovalMode } from "@/lib/approval-modes";
 
 import { Button } from "@/components/ui/button";
 import { AppDialog } from "@/components/ui/app-dialog";
@@ -190,7 +191,8 @@ export default function AgentHomePage() {
   }, [feedback]);
   const [reasoningDepth, setReasoningDepth] = useState<ReasoningDepth>("AUTO");
   // Global quick level: what Ardor may do without asking. Module overrides live in settings.
-  const [permissionLevel, setPermissionLevel] = useState(0);
+  const [permissionMode, setPermissionMode] = useState<ApprovalMode>("CUSTOM");
+  const [permissionSaving, setPermissionSaving] = useState(false);
   const [permissionOpen, setPermissionOpen] = useState(false);
   const [nativeReasoning, setNativeReasoning] = useState(false);
   const reasoningAccount = useRef<string | null>(null);
@@ -332,9 +334,11 @@ export default function AgentHomePage() {
         }
       }).catch(() => undefined);
     }).catch(() => undefined);
-    void api<{ globalLevel: number }>("/api/agent/permissions")
-      .then((result) => { if (active) setPermissionLevel(result.globalLevel ?? 0); }).catch(() => undefined);
-    return () => { active = false; };
+    const reloadPermissions = () => { void api<{ mode?: ApprovalMode }>("/api/agent/permissions")
+      .then((result) => { if (active) setPermissionMode(result.mode ?? "CUSTOM"); }).catch(() => undefined); };
+    reloadPermissions();
+    window.addEventListener("ardor:permissions-changed", reloadPermissions);
+    return () => { active = false; window.removeEventListener("ardor:permissions-changed", reloadPermissions); };
   }, []);
 
   useEffect(() => {
@@ -385,25 +389,26 @@ export default function AgentHomePage() {
       }} />;
   }
 
-  async function choosePermission(level: number) {
-    const previous = permissionLevel;
-    setPermissionLevel(level);
+  async function choosePermission(mode: ApprovalMode) {
+    const previous = permissionMode;
+    setPermissionMode(mode); setPermissionSaving(true);
     setPermissionOpen(false);
-    try { await api<void>("/api/agent/permissions/*", { method: "PUT", body: JSON.stringify({ level }) }); }
-    catch { setPermissionLevel(previous); }
+    try { await api<void>("/api/agent/permissions/mode", { method: "PUT", body: JSON.stringify({ mode }) }); }
+    catch (reason) { setPermissionMode(previous); setError(reason instanceof Error ? reason.message : t("Could not save permissions", "权限保存失败")); }
+    finally { setPermissionSaving(false); }
   }
 
   function permissionPicker() {
-    const labels = [t("View only", "仅查看"), t("View & add", "查 + 增"), t("View, add & edit", "查 + 增 + 改"), t("Full access", "完全权限")];
+    const current = approvalModes.find(option => option.mode === permissionMode) ?? approvalModes[3];
     return <div className="relative">
-      <button type="button" aria-haspopup="menu" aria-expanded={permissionOpen} onClick={() => setPermissionOpen((value) => !value)} title={t("What Ardor may do without asking", "Ardor 可以不经询问直接执行的范围")} className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs text-stone-500 transition hover:bg-stone-100">
-        <ShieldCheck className="size-3.5" aria-hidden="true" />{labels[permissionLevel] ?? labels[0]}<ChevronDown className="size-3.5" aria-hidden="true" />
+      <button type="button" disabled={permissionSaving} aria-haspopup="menu" aria-expanded={permissionOpen} onClick={() => setPermissionOpen((value) => !value)} title={t("What Ardor may do without asking", "Ardor 可以不经询问直接执行的范围")} className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs text-stone-500 transition hover:bg-stone-100">
+        <ShieldCheck className="size-3.5" aria-hidden="true" />{t(...current.label)}<ChevronDown className="size-3.5" aria-hidden="true" />
       </button>
       {permissionOpen && <>
         <button type="button" aria-label={t("Close permission menu", "关闭权限菜单")} className="fixed inset-0 z-10 cursor-default bg-transparent" onClick={() => setPermissionOpen(false)} />
-        <div role="menu" className="absolute bottom-full left-0 z-20 mb-2 w-56 rounded-2xl border border-stone-200 bg-white p-1 shadow-xl">
-          {labels.map((label, level) => <button key={level} role="menuitemradio" aria-checked={permissionLevel === level} type="button" onClick={() => void choosePermission(level)} className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition ${permissionLevel === level ? "bg-violet-50 font-medium text-violet-700" : "hover:bg-stone-50"}`}><span>{label}</span>{permissionLevel === level && <Check className="size-3.5" />}</button>)}
-          <p className="px-3 pb-1 pt-2 text-[11px] leading-4 text-stone-400">{t("Anything above this level still asks first; deleting always asks.", "超出该等级的操作仍会先询问；删除始终需要确认。")}</p>
+        <div role="menu" className="absolute bottom-full left-0 z-20 mb-2 w-80 max-w-[85vw] rounded-2xl border border-stone-200 bg-white p-1 shadow-xl">
+          {approvalModes.map(option => <button key={option.mode} role="menuitemradio" aria-checked={permissionMode === option.mode} type="button" onClick={() => void choosePermission(option.mode)} className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-xs transition ${permissionMode === option.mode ? "bg-violet-50 text-violet-700" : "hover:bg-stone-50"}`}><span><span className="block font-medium">{t(...option.label)}</span><span className="mt-1 block text-[11px] leading-4 text-stone-500">{t(...option.description)}</span></span>{permissionMode === option.mode && <Check className="mt-0.5 size-3.5 shrink-0" />}</button>)}
+          <Link href="/app/settings" className="block px-3 py-2 text-[11px] text-stone-500 hover:text-violet-600">{t("Manage custom permissions in settings", "在设置中管理自定义权限")}</Link>
         </div>
       </>}
     </div>;

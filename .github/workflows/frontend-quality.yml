@@ -100,6 +100,8 @@ jobs:
         run: node tests/agent-trace-ui.mjs
       - name: Learning operation UI regression (mock APIs)
         run: node tests/learning-operation-ui.mjs
+      - name: Agent approval modes UI regression (mock APIs)
+        run: node tests/agent-approval-ui.mjs
       - name: Learning feedback and status groups UI regression (mock APIs)
         run: node tests/learning-feedback-ui.mjs
       - name: Desktop update sidebar UI (synthetic bridge)

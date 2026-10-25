@@ -2,5 +2,6 @@ package com.projectardor.assistant.execution.web;
 
 import java.util.List;
 
-/** Global quick level plus the effective level of every module. */
-public record AgentPermissionsResponse(int globalLevel, List<AgentModuleGrant> modules) {}
+/** Approval mode plus legacy numeric projections; custom grants remain stored separately. */
+public record AgentPermissionsResponse(int globalLevel, List<AgentModuleGrant> modules,
+        com.projectardor.assistant.execution.service.AgentApprovalMode mode) {}
