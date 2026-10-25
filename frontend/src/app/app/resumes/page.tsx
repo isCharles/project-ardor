@@ -46,7 +46,8 @@ function familyLabel(id: string, t: (en: string, zh: string) => string) {
   return t(family.en, family.zh);
 }
 function cleanIssueText(text: string): string {
-  return text.replace(/^(\*\*)?(100\s*分标准|顶级标准|满分标准|为什么是问题|怎么改|修改建议|建议)(\*\*)?\s*[:：]\s*/, "").trim();
+  return text.replace(/^(\*\*)?(100\s*分标准|顶级标准|满分标准|为什么是问题|怎么改|修改建议|建议)(\*\*)?\s*[:：]\s*/, "")
+    .replace(/100\s*分标准|满分标准|顶级标准/g, "目标岗位要求").trim();
 }
 
 function buildReport(resume: ResumeItem, data: Record<string, unknown>, t: (en: string, zh: string) => string): ResumeReportV3Data {

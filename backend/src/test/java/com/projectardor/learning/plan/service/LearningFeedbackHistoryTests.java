@@ -45,7 +45,7 @@ class LearningFeedbackHistoryTests {
         when(repository.save(any(LearningPlan.class))).thenAnswer(call -> call.getArgument(0));
         when(llm.completeJson(any(), any(), any())).thenReturn(new LlmGateway.LlmResult("""
                 {"score":85,"feedback":"理解到位","strengths":["内存模型"],"gaps":["类加载"],"nextFocus":"复习加载",
-                 "questionFeedback":[{%s"question":"介绍 JVM","feedback":"内存区域说明准确，补充类加载即可。"}],
+                 "questionFeedback":[{%s"question":"介绍 JVM","feedback":"内存区域说明准确，补充类加载即可。","referenceAnswer":"JVM 执行字节码，负责运行时内存管理、类加载和垃圾回收。"}],
                  "nextExercises":[]}
                 """.formatted(identifiedFeedback ? "\"exerciseId\":\"exercise-one\"," : ""), "test-model"));
         ObjectMapper mapper = new ObjectMapper();
@@ -64,8 +64,8 @@ class LearningFeedbackHistoryTests {
         Map<String, Object> attempt = (Map<String, Object>) ((List<?>) updated.getLastEvaluation()
                 .get("attempts")).getFirst();
         assertThat(attempt.get("questionFeedback")).isEqualTo(List.of(identifiedFeedback
-                ? Map.of("exerciseId", "exercise-one", "question", "介绍 JVM", "feedback", "内存区域说明准确，补充类加载即可。")
-                : Map.of("question", "介绍 JVM", "feedback", "内存区域说明准确，补充类加载即可。")));
+                ? Map.of("exerciseId", "exercise-one", "question", "介绍 JVM", "feedback", "内存区域说明准确，补充类加载即可。", "referenceAnswer", "JVM 执行字节码，负责运行时内存管理、类加载和垃圾回收。")
+                : Map.of("question", "介绍 JVM", "feedback", "内存区域说明准确，补充类加载即可。", "referenceAnswer", "JVM 执行字节码，负责运行时内存管理、类加载和垃圾回收。")));
         assertThat(attempt).containsEntry("strengths", List.of("内存模型"))
                 .containsEntry("gaps", List.of("类加载")).containsEntry("nextFocus", "复习加载");
         assertThat(attempt.get("items").toString()).contains("JVM 管理内存并执行字节码")

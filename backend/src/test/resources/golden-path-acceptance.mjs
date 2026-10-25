@@ -1091,7 +1091,7 @@ async function main() {
   await asyncOwner.request("/api/background-tasks/modules/resumes/read",{method:"POST",expected:204});
   assert.equal((await asyncOwner.request(`/api/background-tasks/RESUME_ANALYSIS/${resumeJob.jobId}`)).unread,false);
   const firstScore = await asyncOwner.request(`/api/resumes/${resume.id}/analysis`);
-  assert.equal(firstScore.promptVersion,"resume-analysis-v6");
+  assert.equal(firstScore.promptVersion,"resume-analysis-v7");
   assert.equal(firstScore.analysis.rubricVersion,"ardor-resume-rubric-v3");
   assert.ok(firstScore.analysis.dimensionRatings.every(item=>item.level===0));
   assert.equal(firstScore.analysis.rubricDimensions.length,6);

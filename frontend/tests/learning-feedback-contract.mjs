@@ -15,6 +15,8 @@ const identified = items.map((item, i) => ({ ...item, exerciseId: `q-${i}` }));
 const shuffled = identified.map((item, i) => ({ exerciseId: item.exerciseId, question: "Model paraphrase", feedback: `Comment ${i + 1}` })).reverse();
 assert.deepEqual(match(identified, shuffled).perQuestion.map(rows => rows[0].feedback), legacy.map(row => row.feedback));
 assert.equal(match(identified, shuffled).unmatched.length, 0);
+assert.equal(match(identified, [{ exerciseId: "q-0", feedback: "Comment", referenceAnswer: "Independent reference answer" }]).perQuestion[0][0].referenceAnswer,
+  "Independent reference answer", "Reference answers follow question identity, not returned array order");
 assert.equal(match(identified, [{ exerciseId: "unknown", question: items[0].question, feedback: "Wrong ID" }]).unmatched.length, 1,
   "An explicit wrong ID cannot fall back to text");
 assert.equal(match([{ ...items[0], exerciseId: "same" }, { ...items[1], exerciseId: "same" }], [{ exerciseId: "same", feedback: "Ambiguous" }]).unmatched.length, 1);

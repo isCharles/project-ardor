@@ -29,28 +29,33 @@ try {
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   await page.addInitScript(() => {
     let listener;
-    window.updateProbe = { installs: 0, checks: 0, installResult: true, failCheck: false, status: { state: "idle", message: "" } };
+    window.updateProbe = { installs: 0, checks: 0, installResult: true, failInstall: false, status: { state: "idle", message: "" } };
     window.emitUpdate = status => { window.updateProbe.status = status; listener?.(status); };
     window.ardorDesktop = {
       getInfo: async () => ({ packaged: true, version: "0.0.1", locale: null, serverUrl: location.origin, updateStatus: window.updateProbe.status }),
       onUpdateStatus: callback => { listener = callback; return () => { listener = null; }; },
       checkForUpdates: async () => {
         window.updateProbe.checks++;
-        if (window.updateProbe.failCheck) throw new Error("authorization: synthetic-secret-must-not-render");
         return window.updateProbe.status;
       },
-      installUpdate: async () => { window.updateProbe.installs++; return { installed: window.updateProbe.installResult }; },
+      installUpdate: async () => {
+        window.updateProbe.installs++;
+        if (window.updateProbe.failInstall) throw new Error("authorization: synthetic-secret-must-not-render");
+        return { installed: window.updateProbe.installResult };
+      },
     };
   });
   await page.goto(`${origin}/app/learning`);
   const update = page.locator("[data-desktop-update]");
-  await update.waitFor();
   const account = page.getByRole("button", { name: "Account", exact: true });
-  assert.ok((await update.boundingBox()).y < (await account.boundingBox()).y, "Update belongs above the account avatar");
-  await update.click();
-  assert.equal(await page.evaluate(() => window.updateProbe.checks), 1);
+  await account.waitFor();
+  for (const state of ["idle", "checking", "current", "error", "unavailable"]) {
+    await page.evaluate(state => window.emitUpdate({ state, message: "" }), state);
+    await page.waitForFunction(() => !document.querySelector("[data-desktop-update]"));
+  }
   await page.evaluate(() => window.emitUpdate({ state: "downloading", percent: 42, message: "" }));
   await page.getByRole("progressbar", { name: "Update download" }).waitFor();
+  assert.ok((await update.boundingBox()).y < (await account.boundingBox()).y, "Update belongs above the account avatar");
   assert.equal(await update.isDisabled(), true);
   assert.equal(await page.getByRole("progressbar").getAttribute("aria-valuenow"), "42");
   assert.equal(await update.innerText(), "42%");
@@ -63,10 +68,11 @@ try {
   // A stale ready state must not claim that installation happened.
   await page.evaluate(() => { window.updateProbe.installResult = false; window.updateProbe.status = { state: "idle", message: "" }; });
   await update.click();
-  await page.getByText("Update is not ready yet. Check again.", { exact: true }).waitFor();
-  await page.evaluate(() => { window.updateProbe.failCheck = true; });
+  await page.waitForFunction(() => !document.querySelector("[data-desktop-update]"));
+  await page.evaluate(() => { window.updateProbe.failInstall = true; window.emitUpdate({ state: "ready", version: "9.9.9", message: "" }); });
   await update.click();
-  await page.getByText("Could not check for updates. Try again.", { exact: true }).waitFor();
+  await page.getByText("Could not install. Try again.", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => window.updateProbe.checks), 0, "Sidebar notifications must not initiate extra update checks");
   assert.equal(await page.getByText("synthetic-secret-must-not-render", { exact: false }).count(), 0);
   assert.deepEqual(errors, []);
   await context.close();
