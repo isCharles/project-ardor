@@ -500,7 +500,13 @@ http.createServer((request, response) => {
       })}\n\n`);
       events.push(`data: ${JSON.stringify({ id: "stream-test-1", object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: payload.model, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`);
       events.push("data: [DONE]\n\n");
-      if (payload.model === "stream-probe-model") {
+      if (payload.model === "runtime-live-probe") {
+        setTimeout(() => {
+          if (response.destroyed) return;
+          events.slice(0, -1).forEach(event => response.write(event));
+          response.end(events.at(-1));
+        }, 3000);
+      } else if (payload.model === "stream-probe-model") {
         let index = 0;
         const timer = setInterval(() => {
           if (index < events.length - 1) response.write(events[index++]);
@@ -524,8 +530,7 @@ http.createServer((request, response) => {
       pendingLearningResponses.push(respond);
       if (pendingLearningResponses.length === 2) releaseLearningResponses();
       else learningFallbackTimer = setTimeout(releaseLearningResponses, 5000);
-    } else if (payload.model === "graph-live-probe") setTimeout(respond, 1500);
-    else if (restartAssessment) setTimeout(respond,restartRequests===1 ? 45000 : 1500);
+    } else if (restartAssessment) setTimeout(respond,restartRequests===1 ? 45000 : 1500);
     else if (delayedReplay || payload.model === "async-evaluation-probe") setTimeout(respond, 1500);
     else respond();
   });

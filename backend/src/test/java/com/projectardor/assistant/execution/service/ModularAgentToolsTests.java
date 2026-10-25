@@ -99,11 +99,12 @@ class ModularAgentToolsTests {
     }
 
     @Test
-    void rootIntentStillRejectsModuleWritesBeforeAutoPermission() {
+    void moduleWriteWithoutAutoPermissionRequestsConfirmation() {
         var bound = tools().bind(owner, "查询知识库", run);
         String result = execute(wrapped(bound, null, null), "research_knowledge_from_web", "{\"query\":\"Redis\"}");
-        assertThat(result).contains("TOOL_NOT_PERMITTED");
-        verifyNoInteractions(knowledge, permissions);
+        assertThat(result).contains("PERMISSION_NOT_GRANTED");
+        verifyNoInteractions(knowledge);
+        verify(approvals).await(eq(owner), eq(run), eq("research_knowledge_from_web"), any());
     }
 
     @Test
@@ -169,14 +170,6 @@ class ModularAgentToolsTests {
     }
 
     @Test
-    void graphReadSurfaceIncludesLocalKnowledgeToolsButNeverWrites() {
-        var bound = tools().bind(owner, "只读分析知识库", run);
-        assertThat(CareerAgentService.readOnlyToolNames(bound))
-                .contains("list_knowledge_documents", "search_knowledge", "list_learning_plans")
-                .doesNotContain("delete_knowledge_document", "research_knowledge_from_web", "create_learning_plan");
-    }
-
-    @Test
     void automationModuleKeepsOwnerAndDeletionProposalWithoutDeleting() {
         var service = mock(com.projectardor.assistant.automation.service.AutomationService.class);
         UUID id = UUID.randomUUID();
@@ -203,18 +196,19 @@ class ModularAgentToolsTests {
     }
 
     @Test
-    void automationWritesRetainIntentApprovalAndDuplicateWriteFences() {
+    void automationWritesRetainApprovalAndDuplicateWriteFences() {
         var service = mock(com.projectardor.assistant.automation.service.AutomationService.class);
         var host = tools();
         host.configureToolProviders(List.of(new com.projectardor.assistant.tools.modules.AutomationAgentToolProvider(service)));
         String args = "{\"title\":\"Daily\",\"prompt\":\"Synthetic prompt\",\"cronExpression\":\"0 0 9 * * *\"}";
         assertThat(execute(wrapped(host.bind(owner, "只查询自动化，不要修改", run), null, null), "create_automation", args))
-                .contains("TOOL_NOT_PERMITTED");
+                .contains("PERMISSION_NOT_GRANTED");
         verifyNoInteractions(service);
         when(permissions.autoApproves(owner, "create_automation")).thenReturn(true);
         when(service.createView(owner, "Daily", "Synthetic prompt", "0 0 9 * * *", null))
                 .thenReturn(new com.projectardor.assistant.automation.service.AutomationView(UUID.randomUUID(), "Created", "Synthetic prompt",
                         "0 0 9 * * *", "Asia/Shanghai", true, Instant.now(), null, null, null, Instant.now(), Instant.now()));
+        clearInvocations(approvals);
         var executors = wrapped(host.bind(owner, "每天创建自动化任务", run), null, null);
         assertThat(execute(executors, "create_automation", args)).contains("Created");
         assertThat(execute(executors, "create_automation", args)).contains("DUPLICATE_WRITE_BLOCKED");
@@ -254,8 +248,9 @@ class ModularAgentToolsTests {
         assertThat(execute(executors, "get_calendar_advice", "{}")).contains("Owned advice");
         String args = "{\"headline\":\"Owned advice\",\"days\":[\"One action\"]}";
         assertThat(execute(wrapped(host.bind(owner, "只查看日历建议", run), null, null), "update_calendar_advice", args))
-                .contains("TOOL_NOT_PERMITTED");
+                .contains("PERMISSION_NOT_GRANTED");
         verify(service, never()).save(any(), any(), any(), any(), any());
+        clearInvocations(approvals);
         when(permissions.autoApproves(owner, "update_calendar_advice")).thenReturn(true);
         assertThat(execute(executors, "update_calendar_advice", args)).contains("Owned advice");
         assertThat(execute(executors, "update_calendar_advice", args)).contains("DUPLICATE_WRITE_BLOCKED");
@@ -334,7 +329,7 @@ class ModularAgentToolsTests {
     }
 
     @Test
-    void resumeModuleRetainsIntentDedupCancellationAndRealDeletionProposals() {
+    void resumeModuleRetainsApprovalDedupCancellationAndRealDeletionProposals() {
         var service = mock(ResumeService.class); var queue = mock(ResumeAnalysisQueueService.class);
         UUID resume = UUID.randomUUID(), missing = UUID.randomUUID();
         var view = new ResumeView(resume, "Owned fixture.pdf", "application/pdf", 100, "hash",
@@ -345,9 +340,11 @@ class ModularAgentToolsTests {
                 com.projectardor.materials.resume.domain.ResumeAnalysisJobStatus.QUEUED, null, 0, null, null));
         var host = tools(); host.configureToolProviders(List.of(new ResumeAgentToolProvider(service, queue)));
         String args = "{\"resumeId\":\"" + resume + "\"}";
-        when(permissions.autoApproves(owner, "analyze_resume")).thenReturn(true);
-        assertThat(execute(wrapped(host.bind(owner, "只查看简历", run), null, null), "analyze_resume", args)).contains("TOOL_NOT_PERMITTED");
+        assertThat(execute(wrapped(host.bind(owner, "只查看简历", run), null, null), "analyze_resume", args)).contains("PERMISSION_NOT_GRANTED");
         verify(queue, never()).request(any(), any());
+        verify(approvals).await(eq(owner), eq(run), eq("analyze_resume"), any());
+        clearInvocations(approvals);
+        when(permissions.autoApproves(owner, "analyze_resume")).thenReturn(true);
         var bound = host.bind(owner, "分析并删除这份简历", run);
         var executors = wrapped(bound, null, null);
         assertThat(execute(executors, "analyze_resume", args)).contains("QUEUED");
@@ -427,6 +424,25 @@ class ModularAgentToolsTests {
     }
 
     @Test
+    void fullCalendarPermissionAcceptsContextualWordingWithoutKeywordAuthorization() {
+        when(permissions.autoApproves(owner, "create_calendar_task")).thenReturn(true);
+        when(permissions.autoApproves(owner, "update_calendar_task")).thenReturn(true);
+        UUID task = UUID.randomUUID();
+        var host = tools();
+        var wordings = List.of("帮我定个合适的时间", "OK", "再试一次", "就按刚才那个方案办");
+        for (String wording : wordings) {
+            var executors = wrapped(host.bind(owner, wording, run), null, null);
+            execute(executors, "create_calendar_task", "{\"title\":\"Synthetic review\",\"dueAt\":\"2028-04-01T09:00:00+08:00\"}");
+            execute(executors, "update_calendar_task", "{\"taskId\":\"" + task + "\",\"dueAt\":\"2028-04-02T09:00:00+08:00\"}");
+        }
+        verify(calendar, times(wordings.size())).createView(eq(owner), eq("Synthetic review"), any(),
+                eq(Instant.parse("2028-04-01T01:00:00Z")), any(), any(), any());
+        verify(calendar, times(wordings.size())).updateGeneralView(eq(owner), eq(task), any(), any(),
+                eq(Instant.parse("2028-04-02T01:00:00Z")), any(), any());
+        verify(approvals, never()).await(any(), any(), any(), any());
+    }
+
+    @Test
     void schedulingReadsAndSchemasKeepOwnerRangesAndNeverAwaitApproval() {
         var provider = new SchedulingAgentToolProvider(calendar, series);
         var host = tools(); host.configureToolProviders(List.of(provider));
@@ -448,19 +464,21 @@ class ModularAgentToolsTests {
     }
 
     @Test
-    void schedulingCreateRetainsIntentAuditDedupAndCancellation() {
+    void schedulingCreateRetainsApprovalAuditDedupAndCancellation() {
         var host = tools();
         String args = "{\"title\":\"Review\",\"dueAt\":\"2028-04-01T09:00:00+08:00\"}";
-        when(permissions.autoApproves(owner, "create_calendar_task")).thenReturn(true);
         assertThat(execute(wrapped(host.bind(owner, "只查看日历，不要修改", run), null, null), "create_calendar_task", args))
-                .contains("TOOL_NOT_PERMITTED");
+                .contains("PERMISSION_NOT_GRANTED");
         verifyNoInteractions(calendar);
+        verify(approvals).await(eq(owner), eq(run), eq("create_calendar_task"), any());
+        clearInvocations(approvals);
+        when(permissions.autoApproves(owner, "create_calendar_task")).thenReturn(true);
         var audit = mock(AgentExecutionAuditStore.class);
         UUID row = UUID.randomUUID();
         when(audit.startToolCall(any(), any(), any(), any(), any())).thenReturn(row);
         var bound = host.bind(owner, "创建日历待办", run);
         var executors = wrapped(bound, null, audit);
-        assertThat(execute(executors, "create_calendar_task", args)).doesNotContain("TOOL_NOT_PERMITTED", "RUN_STOPPED");
+        assertThat(execute(executors, "create_calendar_task", args)).doesNotContain("PERMISSION_NOT_GRANTED", "RUN_STOPPED");
         assertThat(execute(executors, "create_calendar_task", args)).contains("DUPLICATE_WRITE_BLOCKED");
         verify(calendar, times(1)).createView(owner, "Review", null, Instant.parse("2028-04-01T01:00:00Z"),
                 com.projectardor.scheduling.domain.CalendarTaskPriority.MEDIUM,
@@ -473,15 +491,17 @@ class ModularAgentToolsTests {
     }
 
     @Test
-    void schedulingUpdatesCannotBypassReadIntentOrStoppedRun() {
+    void schedulingUpdatesRequirePermissionAndRespectStoppedRun() {
         var bound = tools().bind(owner, "只查看日历和重复安排", run);
         UUID id = UUID.randomUUID();
         String task = "{\"taskId\":\"" + id + "\",\"title\":\"Review\",\"description\":\"\",\"dueAt\":\"\",\"priority\":\"HIGH\",\"status\":\"TODO\"}";
         String rule = "{\"seriesId\":\"" + id + "\",\"timeOfDay\":\"10:00\"}";
         var executors = wrapped(bound, null, null);
-        assertThat(execute(executors, "update_calendar_task", task)).contains("TOOL_NOT_PERMITTED");
-        assertThat(execute(executors, "update_recurring_task", rule)).contains("TOOL_NOT_PERMITTED");
-        verifyNoInteractions(calendar, series, permissions);
+        assertThat(execute(executors, "update_calendar_task", task)).contains("PERMISSION_NOT_GRANTED");
+        assertThat(execute(executors, "update_recurring_task", rule)).contains("PERMISSION_NOT_GRANTED");
+        verifyNoInteractions(calendar, series);
+        verify(approvals).await(eq(owner), eq(run), eq("update_calendar_task"), any());
+        verify(approvals).await(eq(owner), eq(run), eq("update_recurring_task"), any());
         when(permissions.autoApproves(owner, "update_calendar_task")).thenReturn(true);
         when(permissions.autoApproves(owner, "update_recurring_task")).thenReturn(true);
         var lease = new AgentStreamLease(); lease.fence();
@@ -553,16 +573,18 @@ class ModularAgentToolsTests {
     }
 
     @Test
-    void learningUpdatesKeepTrustedIntentPermissionAndStoppedRunBoundary() {
+    void learningUpdatesKeepPermissionAndStoppedRunBoundary() {
         UUID plan = UUID.randomUUID();
         String args = "{\"planId\":\"" + plan + "\",\"scheduledAt\":\"2028-04-01T09:00:00+08:00\"}";
         assertThat(execute(wrapped(tools().bind(owner, "只查看学习计划，不要修改", run), null, null),
-                "update_learning_plan", args)).contains("TOOL_NOT_PERMITTED");
-        verifyNoInteractions(learning, permissions);
+                "update_learning_plan", args)).contains("PERMISSION_NOT_GRANTED");
+        verifyNoInteractions(learning);
+        verify(approvals).await(eq(owner), eq(run), eq("update_learning_plan"), any());
+        clearInvocations(approvals);
         when(permissions.autoApproves(owner, "update_learning_plan")).thenReturn(true);
         var bound = tools().bind(owner, "修改学习计划日期", run);
         var executors = wrapped(bound, null, null);
-        assertThat(execute(executors, "update_learning_plan", args)).doesNotContain("TOOL_NOT_PERMITTED", "RUN_STOPPED");
+        assertThat(execute(executors, "update_learning_plan", args)).doesNotContain("PERMISSION_NOT_GRANTED", "RUN_STOPPED");
         verify(learning).updateArrangementView(owner, plan, null, Instant.parse("2028-04-01T01:00:00Z"));
         assertThat(execute(executors, "update_learning_plan", args)).contains("DUPLICATE_WRITE_BLOCKED");
         var lease = new AgentStreamLease(); lease.fence();

@@ -353,20 +353,18 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
   const setSelectedSpanId = (spanId: string) => setSelection({ runId: selectedRun?.runId ?? null, spanId });
   const visibleRuns = trace.runs.filter((run) => !runFilter.trim() || `${run.message}\n${run.assistantMessage}`.toLowerCase().includes(runFilter.trim().toLowerCase()));
   const allSpans = trace.runs.flatMap((run) => run.spans).filter((span) => span.kind !== "RUN");
-  const starts = allSpans.map(spanStart).filter((value): value is number => value !== null);
-  const ends = allSpans.map(spanEnd).filter((value): value is number => value !== null);
-  const duration = starts.length && ends.length ? Math.max(...ends) - Math.min(...starts) : 0;
+  const duration = trace.runs.reduce((total, run) => total + recordedRunDuration(run.spans), 0);
   const llmCalls = allSpans.filter((span) => span.kind === "LLM").length;
   const toolCalls = allSpans.filter((span) => span.kind === "TOOL").length;
   const inputTokens = allSpans.reduce((sum, span) => sum + (span.inputTokens ?? 0), 0);
   const outputTokens = allSpans.reduce((sum, span) => sum + (span.outputTokens ?? 0), 0);
   const turnIndex = selectedRun ? trace.runs.findIndex((run) => run.runId === selectedRun.runId) + 1 : 0;
   return <div className="mt-4">
-    <div data-trace-overview className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-      {[[t("Duration", "时长"), formatDuration(duration)], [t("Turns", "轮次"), trace.runs.length], [t("Model calls", "模型调用"), llmCalls], [t("Tool calls", "工具调用"), toolCalls], [t("Tokens", "Token"), `${inputTokens} / ${outputTokens}`]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/80 bg-white/70 px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{label}</p><p className="mt-1 text-base font-semibold tabular-nums text-stone-800">{value}</p></div>)}
+    <div data-trace-overview data-active-duration-ms={duration} className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      {[[t("Cumulative run time", "累计运行时长"), formatDuration(duration)], [t("Turns", "轮次"), trace.runs.length], [t("Model calls", "模型调用"), llmCalls], [t("Tool calls", "工具调用"), toolCalls], [t("Tokens", "Token"), `${inputTokens} / ${outputTokens}`]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/80 bg-white/70 px-4 py-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{label}</p><p className="mt-1 text-base font-semibold tabular-nums text-stone-800">{value}</p></div>)}
     </div>
     <p className="mt-2 text-[11px] text-stone-400">{t("Observation only; it does not change how the chat runs.", "仅用于观测，不改变对话的执行方式。")}</p>
-    <TraceTimeOverview runs={trace.runs} selectedRunId={selectedRun?.runId ?? null} selectedSpanId={selectedSpanId} onSelect={(runId, spanId) => setSelection({ runId, spanId })} />
+    <TraceTimeOverview runs={selectedRun ? [selectedRun] : []} selectedRunId={selectedRun?.runId ?? null} selectedSpanId={selectedSpanId} onSelect={(runId, spanId) => setSelection({ runId, spanId })} />
     <section data-conversation-trace data-step-view={stepView} className={`mt-3 grid min-w-0 gap-3 ${stepView === "graph" ? "xl:grid-cols-[280px_minmax(0,1fr)]" : "xl:grid-cols-[280px_minmax(0,1fr)_440px]"}`}>
       <div data-trace-turns className={`min-w-0 overflow-hidden rounded-2xl border border-white/80 bg-white/70 ${stepView === "graph" ? "order-2" : ""}`}>
         <div className="border-b border-stone-200/70 px-4 py-3">
@@ -407,6 +405,15 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
     </section>
   </div>;
 }
+function recordedRunDuration(spans: TraceSpan[]): number {
+  const root = spans.find((span) => span.kind === "RUN");
+  if (root?.durationMs != null && Number.isFinite(root.durationMs) && root.durationMs >= 0) return root.durationMs;
+  // Fall back only to the recorded bounds within this run, never between turns.
+  const timed = (root ? [root] : spans).map((span) => ({ start: spanStart(span), end: spanEnd(span) }))
+    .filter((item): item is { start: number; end: number } => item.start !== null && item.end !== null && item.end >= item.start);
+  return timed.length ? Math.max(...timed.map((item) => item.end)) - Math.min(...timed.map((item) => item.start)) : 0;
+}
+
 function spanStart(span: TraceSpan): number | null {
   const value = new Date(span.startedAt).getTime();
   return Number.isFinite(value) ? value : null;
@@ -440,18 +447,18 @@ function TraceTimeOverview({ runs, selectedRunId, selectedSpanId, onSelect }: {
     [t("Model", "模型"), ["LLM"]],
     [t("Tools", "工具"), ["TOOL"]],
   ];
-  return <div data-trace-timeline className="mt-3 rounded-2xl border border-white/80 bg-white/70 p-4">
-    <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Time overview", "时间总览")}</p><span className="text-[10px] tabular-nums text-stone-400">{formatDuration(domain)}</span></div>
+  return <div data-trace-timeline data-timeline-run={selectedRunId} className="mt-3 rounded-2xl border border-white/80 bg-white/70 p-4">
+    <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Selected turn timing", "本轮时间总览")}</p><span className="text-[10px] tabular-nums text-stone-400">{formatDuration(domain)}</span></div>
     <div className="mt-3 space-y-2">
       {lanes.map(([label, kinds]) => <div key={label} className="flex items-center gap-3"><span className="w-24 shrink-0 text-right text-[10px] text-stone-400">{label}</span><div className="relative h-7 flex-1 rounded-lg bg-stone-100/80">{timed.filter((item) => kinds.includes(item.span.kind)).map((item) => {
-        const left = ((item.start - domainStart) / domain) * 100;
-        const width = Math.max(0.6, ((item.end - item.start) / domain) * 100);
+        const left = Math.min(99.4, Math.max(0, ((item.start - domainStart) / domain) * 100));
+        const width = Math.min(100 - left, Math.max(0.6, ((item.end - item.start) / domain) * 100));
         const selected = item.runId === selectedRunId && item.span.id === selectedSpanId;
         const failed = item.span.status === "FAILED";
         return <button key={`${item.runId}-${item.span.id}`} type="button" data-trace-lane onClick={() => onSelect(item.runId, item.span.id)} title={`${item.span.name} · ${formatDuration(item.end - item.start)}`} style={{ left: `${left}%`, width: `${width}%` }} className={`absolute top-1 bottom-1 min-w-[3px] rounded-full transition ${selected ? "z-10 ring-2 ring-violet-500" : "hover:brightness-90"} ${failed ? "bg-rose-400" : item.span.kind === "LLM" ? "bg-violet-400" : item.span.kind === "TOOL" ? "bg-sky-400" : "bg-stone-400"}`} aria-label={`${item.span.name} ${formatDuration(item.end - item.start)}`} />;
       })}</div></div>)}
     </div>
-    <p className="mt-2 text-[10px] text-stone-400">{t("Bars use recorded start, finish and duration. Click a bar to focus its step; missing timing is not invented.", "时间条只使用记录的 start/finish/duration；缺失的计时不会被伪造，点击可定位步骤。")}</p>
+    <p className="mt-2 text-[10px] text-stone-400">{t("Showing the selected turn only; idle time between turns is excluded. Select another turn to compare. Click a bar to inspect its recorded timing.", "仅展示当前轮次，不计入两次聊天之间的空闲时间。切换轮次可比较，点击时间条可查看实际计时。")}</p>
   </div>;
 }
 

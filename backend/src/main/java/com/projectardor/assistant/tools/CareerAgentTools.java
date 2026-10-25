@@ -230,7 +230,7 @@ public class CareerAgentTools {
         return new AgentContextReference(type, contextId, label);
     }
 
-    public final class BoundCareerTools implements com.projectardor.assistant.execution.service.ToolIntentScope, AgentToolBundle {
+    public final class BoundCareerTools implements AgentToolBundle {
         private final List<Object> moduleTools;
 
         @Override public List<Object> toolObjects() {
@@ -245,9 +245,6 @@ public class CareerAgentTools {
         private final UUID logicalActionId;
         private final UUID runRequestId;
         private UUID conversationId;
-        private boolean interviewAnswerContext;
-        private String interruptedRequest = "";
-        private String dateCorrectionContext = "";
         /* Destructive tools no longer delete. They hand the user a button and
            record it here; the caller of the run turns these into stream
            events, and nothing is removed until the person presses one. */
@@ -269,17 +266,6 @@ public class CareerAgentTools {
         public List<PendingConfirmation> pendingConfirmations() {
             return List.copyOf(pending);
         }
-        @Override public boolean permitsWrite(String tool) {
-            if (com.projectardor.assistant.execution.service.ToolIntentPolicy.revokesDateCorrection(trustedUserRequest)
-                    && Set.of("update_calendar_task", "update_recurring_task", "update_learning_plan").contains(tool)) return false;
-            return tool.equals("submit_interview_answer") && interviewAnswerContext
-                    || com.projectardor.assistant.execution.service.ToolIntentPolicy.permits(tool, trustedUserRequest)
-                    || com.projectardor.assistant.execution.service.ToolIntentPolicy.permitsContextualDateUpdate(tool, trustedUserRequest, dateCorrectionContext)
-                    || com.projectardor.assistant.execution.service.ToolIntentPolicy.permitsInherited(tool, trustedUserRequest, interruptedRequest);
-        }
-        public BoundCareerTools withInterviewAnswerContext(boolean active) { interviewAnswerContext = active; return this; }
-        public BoundCareerTools withDateCorrectionContext(String context) { dateCorrectionContext = context == null ? "" : context; return this; }
-        public BoundCareerTools withInterruptedRequest(String request) { interruptedRequest = request == null ? "" : request; return this; }
         /** The owned conversation this run belongs to; used only to persist proposal audit facts. */
         public BoundCareerTools withConversationId(UUID conversationId) { this.conversationId = conversationId; return this; }
 

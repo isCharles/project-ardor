@@ -36,7 +36,7 @@ for (const client of [owner, other]) {
     body: { email: `graph-${randomUUID()}@ardor.invalid`, password: `Synthetic-${randomUUID()}!` } });
 }
 await owner.request("/api/settings/llm", { method: "PUT", body: {
-  provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "graph-integration-probe", apiKey: "fake-only",
+  provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "runtime-integration-probe", apiKey: "fake-only",
 } });
 const conversation = await owner.request("/api/agent/conversations", { method: "POST", expected: 201 });
 for (let index = 0; index < 2; index++) {
@@ -48,20 +48,14 @@ for (let index = 0; index < 2; index++) {
     .map((line) => JSON.parse(line.slice(5).trim()));
   assert.equal(events.filter((event) => event.type === "done").length, 1,
     JSON.stringify(events.filter((event) => event.type === "error")));
-  assert.deepEqual(events.filter((event) => event.type === "phase").map((event) => event.content),
-    ["PLAN", "GATHER", "OBSERVE", "REFLECT", "ANSWER"]);
-  const finishedPhases = events.filter((event) => event.type === "phase_end");
-  assert.equal(finishedPhases.length, 5);
-  for (const event of finishedPhases) {
-    assert.equal(event.toolStatus, "COMPLETED");
-    assert.ok(event.elapsedMs >= 0);
-    assert.ok(events.findIndex((item) => item === event) > events.findIndex((item) => item.type === "phase" && item.content === event.content));
-  }
+  assert.equal(events.filter(event => ["phase", "phase_end"].includes(event.type)).length, 0,
+    "Read-only keywords must not dispatch a separate PLAN/GATHER/REFLECT runtime");
+  assert.ok(events.some(event => event.type === "delta" && event.content), "Ordinary model output remains streamed");
   assert.equal((await owner.request(`/api/agent/runs/${requestId}`)).status, "COMPLETED");
   const trace = await owner.request(`/api/agent/runs/${requestId}/trace`);
   assert.equal(trace.conversationId, conversation.id);
   assert.equal(trace.status, "COMPLETED");
-  assert.equal(trace.totals.llmCalls, 4);
+  assert.equal(trace.totals.llmCalls, 1, "No extra phase calls are injected by keywords");
   await other.request(`/api/agent/runs/${requestId}/trace`, { expected: 404 });
   await other.request(`/api/agent/runs/${requestId}`, { expected: 404 });
   await other.request(`/api/agent/conversations/${conversation.id}/trace`, { expected: 404 });
@@ -76,10 +70,10 @@ await new Client().request("/api/agent/tools/schemas", { expected: 401 });
 const state = await owner.request(`/api/agent?conversationId=${conversation.id}`);
 assert.equal(state.messages.filter((message) => message.role === "USER").length, 2);
 assert.equal(state.messages.filter((message) => message.role === "ASSISTANT").length, 2);
-// Structural streaming assertion: the model deliberately delays every phase.
+// Structural streaming assertion: the model deliberately delays its response.
 // Receiving a buffered final response must not pass this check.
 await owner.request("/api/settings/llm", { method: "PUT", body: {
-  provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "graph-live-probe", apiKey: "fake-only",
+  provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "runtime-live-probe", apiKey: "fake-only",
 } });
 const liveId = randomUUID();
 const live = await owner.request("/api/agent/messages/stream", { method: "POST", streaming: true, body: {
@@ -89,7 +83,7 @@ const reader = live.body.getReader();
 const first = await reader.read();
 assert.ok(first.value?.length, "A live progress event must arrive before completion");
 assert.equal((await owner.request(`/api/agent/runs/${liveId}`)).status, "RUNNING",
-  "SSE must not be buffered until the whole graph completes");
+  "SSE must not be buffered until the model completes");
 const decoder = new TextDecoder();
 let liveText = decoder.decode(first.value, { stream: true });
 while (true) {
@@ -99,4 +93,4 @@ while (true) {
 }
 assert.ok(liveText.includes('"type":"done"'));
 assert.equal((await owner.request(`/api/agent/runs/${liveId}`)).status, "COMPLETED");
-console.log("Graph HTTP acceptance: session, consecutive SSE runs, phase start/end order, persisted completion/history, model-call totals, foreign run/trace 404 and live progress before delayed model completion passed (synthetic model, not semantic quality).");
+console.log("Unified runtime HTTP acceptance: read-only keywords use normal streaming without phase calls; consecutive runs, persisted history, single-call trace, foreign run/trace 404 and live progress before delayed completion passed (synthetic model, not semantic quality).");

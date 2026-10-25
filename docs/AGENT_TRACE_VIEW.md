@@ -1,5 +1,44 @@
 # Agent trace developer view
 
+## Execution entry and context
+
+Chat exposes one conversation trace link at the right end of its title bar,
+rather than repeating it beside each answer. The route retains a run ID as its
+initial anchor and includes the conversation ID, preserving existing deep links.
+The multi-turn overview sums recorded root-run durations; elapsed wall time
+between messages is not execution time. The timing lanes show only the selected
+turn, so idle hours do not compress its model/tool steps to opposite edges.
+Missing run timing falls back to recorded bounds within that run only; nested
+model/tool spans are never summed on top of the root duration.
+
+Ordinary chat uses one streaming execution entry regardless of words such as
+“只读”. List and Graph render the same persisted run spans; choosing a view never
+selects an execution policy or another model workflow. Historical phase spans
+remain readable, but new chat runs do not synthesize graph phases.
+
+`AgentContextBuilder` assembles the system prompt, owner-scoped long-term memory,
+conversation summary, recent messages, recovered interrupted turns and references
+for both streaming chat and the compatibility synchronous transport. Summaries
+and reference text are data, not system instructions. Compaction considers the
+system prompt and expanded pending input as well as history. Its token budget is
+a soft compaction target, not a provider context-limit guarantee; failed
+compaction never silently drops user turns. Trace attributes expose the estimated
+assembled size and whether it exceeds that target.
+
+Production tool bindings no longer infer permission by matching verbs or module
+names in user text. The model interprets the trusted conversation; account/module
+grants decide which registered capabilities may run without confirmation.
+Insufficient grants request confirmation for the concrete tool arguments.
+Deletion remains an owner-validated proposal requiring a UI action. Ownership,
+state validation, cancellation fencing and duplicate-write protection remain
+independent checks. A denied confirmation is recorded as a `NOT_EXECUTED` tool
+span rather than disappearing from the execution view.
+
+This does not change the stored 0–3 grant contract or introduce the proposed
+Ask / Auto / Full / Custom modes yet. Existing proposal-only adapters still
+return proposal cards. These changes require separate permission-mode and UI
+acceptance work before claiming that redesign complete.
+
 The developer trace page lives at `/app/agent-runs/{requestId}`. It is an
 owner-scoped, read-only view over `GET /api/agent/runs/{requestId}/trace`.
 

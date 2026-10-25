@@ -8,7 +8,7 @@ class CareerAgentPromptTests {
 
     @Test
     void systemPromptStaysSmallAndKeepsCoreInvariants() {
-        String prompt = CareerAgentService.SYSTEM_PROMPT;
+        String prompt = AgentContextBuilder.SYSTEM_PROMPT;
 
         assertThat(prompt.length()).isLessThan(3_000);
         assertThat(prompt).contains("先读后写", "确认", "不可信", "长期记忆");

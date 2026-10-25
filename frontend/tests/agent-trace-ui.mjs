@@ -13,7 +13,7 @@ let browser;
 
 const span = (id, parentSpanId, kind, name, startedAt, extra = {}) => ({
   id, runId: "fixture-run", parentSpanId, kind, name, status: "COMPLETED",
-  startedAt, finishedAt: startedAt, durationMs: 100, model: null,
+  startedAt, finishedAt: new Date(Date.parse(startedAt) + (extra.durationMs ?? 100)).toISOString(), durationMs: 100, model: null,
   promptVersion: null, inputTokens: null, outputTokens: null,
   errorCode: null, attributes: {}, ...extra,
 });
@@ -35,7 +35,7 @@ try {
     durationMs: 2400,
     totals: { llmCalls: 2, toolCalls: 1, loopRounds: 1, inputTokens: 12000, outputTokens: 180 },
     spans: [
-      span("root", null, "RUN", "agent.run", "2026-10-23T08:00:00Z", { durationMs: 2400, attributes: { model: "fixture-model" } }),
+      span("root", null, "RUN", "agent.run", "2026-10-23T08:00:00Z", { durationMs: 5000, attributes: { model: "fixture-model" } }),
       span("thought", "root", "THOUGHT", "phase.plan", "2026-10-23T08:00:00Z", { durationMs: 40 }),
       span("context", "root", "CONTEXT", "context.load", "2026-10-23T08:00:01Z", { durationMs: 120 }),
       span("llm-1", "root", "LLM", "llm.call.1", "2026-10-23T08:00:02Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 32, attributes: { toolRound: true } }),
@@ -49,7 +49,7 @@ try {
     title: "Fixture conversation",
     runs: [
       { runId: "fixture-run", message: "第一轮问题", assistantMessage: "第一轮回答", status: "COMPLETED", createdAt: "2026-10-23T08:00:00Z", updatedAt: "2026-10-23T08:00:02Z", spans: trace.spans },
-      { runId: "run-2", message: "第二轮问题", assistantMessage: "第二轮回答", status: "COMPLETED", createdAt: "2026-10-23T08:01:00Z", updatedAt: "2026-10-23T08:01:02Z", spans: trace.spans.map((item) => ({ ...item, id: `${item.id}-2`, runId: "run-2", startedAt: "2026-10-23T08:01:00Z", finishedAt: "2026-10-23T08:01:02Z" })) },
+      { runId: "run-2", message: "第二轮问题", assistantMessage: "第二轮回答", status: "COMPLETED", createdAt: "2026-10-23T12:00:00Z", updatedAt: "2026-10-23T12:00:05Z", spans: trace.spans.map((item) => ({ ...item, id: `${item.id}-2`, runId: "run-2", startedAt: new Date(Date.parse(item.startedAt) + 4 * 3600_000).toISOString(), finishedAt: new Date(Date.parse(item.finishedAt) + 4 * 3600_000).toISOString() })) },
     ],
   };
   let conversationRequests = 0;
@@ -104,6 +104,12 @@ try {
   await page.locator("[data-conversation-run]").nth(1).waitFor();
   assert.ok(conversationRequests >= 2, "An initially empty conversation trace must recover");
   assert.equal(await page.locator("[data-conversation-run]").count(), 2, "Conversation trace lists every turn");
+  assert.equal(await page.locator("[data-trace-overview]").getAttribute("data-active-duration-ms"), "10000",
+    "Cumulative run time sums root durations and excludes the four-hour idle gap; nested spans are not double counted");
+  assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-run"), "run-2");
+  assert.equal(await page.locator("[data-trace-lane]").count(), 5, "Timing lanes show only the selected turn");
+  await page.locator("[data-conversation-run]").first().click();
+  assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-run"), "fixture-run");
   await page.getByRole("button", { name: "List", exact: true }).waitFor();
   await page.locator('[data-trace-lane][title^="llm.call.1"]').first().click();
   await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "llm.call.1" }).waitFor();

@@ -136,6 +136,7 @@ final class ApprovedAgentTools {
                     UUID blockedRow = startAudit(executionAudit, auditContext, request, tool, "AUTO");
                     finishAudit(executionAudit, blockedRow, userId, "NOT_EXECUTED", null,
                             "TOOL_INTENT_NOT_PERMITTED");
+                    traceNotExecuted(tracer, tool, "TOOL_INTENT_NOT_PERMITTED");
                     timings.record(request.id(), requested, requested, false);
                     return "{\"status\":\"TOOL_NOT_PERMITTED\",\"message\":\"当前用户请求没有授权这次写入；未执行本次操作，不要重复调用或声称已完成。\"}";
                 }
@@ -167,6 +168,7 @@ final class ApprovedAgentTools {
                 long approved = timings.now();
                 if (!allowed) {
                     finishAudit(executionAudit, auditRow, userId, "NOT_EXECUTED", null, "NOT_CONFIRMED");
+                    traceNotExecuted(tracer, tool, "NOT_CONFIRMED");
                     timings.record(request.id(), requested, approved, false);
                     return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"用户未确认、已拒绝、确认已过期或执行已停止。未执行本次操作，不要重复请求或声称已完成。\"}";
                 }
@@ -239,6 +241,14 @@ final class ApprovedAgentTools {
         }
         }
         return result;
+    }
+
+    private static void traceNotExecuted(AgentRunTracer tracer, String tool, String reason) {
+        if (tracer == null) return;
+        UUID span = tracer.startChild("TOOL", tool, Map.of("tool", tool));
+        tracer.recordTool();
+        if (span != null) tracer.finishChild(span, "NOT_EXECUTED", reason, null, null, null,
+                Map.of("executed", false));
     }
 
     private static UUID startAudit(AgentExecutionAuditStore auditStore,

@@ -94,6 +94,47 @@ class ApprovedAgentToolsTests {
     }
 
     @Test
+    void declinedConfirmationIsRecordedAsUnexecutedTool() {
+        var approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        var tracer = mock(AgentRunTracer.class);
+        UUID span = UUID.randomUUID();
+        when(tracer.startChild(eq("TOOL"), eq("fake_write"), any())).thenReturn(span);
+        var tools = new ScopedFakeTools(true);
+        var executors = ApprovedAgentTools.wrap(tools, USER, RUN, approvals, null,
+                new AgentToolTimings(), waiting -> {}, "OK", mock(AgentPermissionGrants.class),
+                null, CONVERSATION, false, tracer);
+        String result = executors.values().iterator().next().execute(writeRequest(), null);
+        assertThat(result).contains("PERMISSION_NOT_GRANTED");
+        assertThat(tools.calls).hasValue(0);
+        verify(approvals).await(eq(USER), eq(RUN), eq("fake_write"), any());
+        verify(tracer).recordTool();
+        verify(tracer).finishChild(eq(span), eq("NOT_EXECUTED"), eq("NOT_CONFIRMED"),
+                isNull(), isNull(), isNull(), eq(java.util.Map.of("executed", false)));
+    }
+
+    @Test
+    void blockedIntentIsVisibleInTraceWithoutExecutingOrRequestingApproval() {
+        var approvals = mock(AgentToolApprovals.class);
+        var permissions = mock(AgentPermissionGrants.class);
+        var tracer = mock(AgentRunTracer.class);
+        UUID span = UUID.randomUUID();
+        when(tracer.startChild(eq("TOOL"), eq("fake_write"), any())).thenReturn(span);
+        var tools = new ScopedFakeTools(false);
+        var executors = ApprovedAgentTools.wrap(tools, USER, RUN, approvals, null,
+                new AgentToolTimings(), waiting -> {}, "只读请求", permissions,
+                null, CONVERSATION, false, tracer);
+        String result = executors.values().iterator().next().execute(writeRequest(), null);
+        assertThat(result).contains("TOOL_NOT_PERMITTED");
+        assertThat(tools.calls).hasValue(0);
+        verify(tracer).recordTool();
+        verify(tracer).finishChild(eq(span), eq("NOT_EXECUTED"), eq("TOOL_INTENT_NOT_PERMITTED"),
+                isNull(), isNull(), isNull(), eq(java.util.Map.of("executed", false)));
+        verify(approvals, never()).await(any(), any(), any(), any());
+        verify(permissions, never()).recordAutoApproval(any(), any(), any(), any());
+    }
+
+    @Test
     void intentScopeBlocksWritesBeforeAutoApproval() {
         AgentToolApprovals approvals = mock(AgentToolApprovals.class);
         when(approvals.canPropose(USER, RUN)).thenReturn(true);

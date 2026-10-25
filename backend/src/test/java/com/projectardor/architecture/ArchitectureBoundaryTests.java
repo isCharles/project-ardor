@@ -23,6 +23,19 @@ import org.junit.jupiter.api.Test;
  * edges should be added here as their contracts are completed.</p>
  */
 class ArchitectureBoundaryTests {
+    @Test void chatContextHasOneBuilderAndNoKeywordGraphRuntime() throws IOException {
+        String host = Files.readString(SOURCE_ROOT.resolve("assistant/execution/service/CareerAgentService.java"), StandardCharsets.UTF_8);
+        assertTrue(!host.contains("AgentGraphRuntime") && !host.contains("isReadOnlyGraphRequest") && !host.contains("graphEnabled"),
+                "Natural-language keywords must not select a second chat runtime");
+        String toolHost = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
+        assertTrue(!toolHost.contains("ToolIntentScope") && !toolHost.contains("ToolIntentPolicy.permits"),
+                "Production tool authorization must use permissions and confirmation, not wording patterns");
+        assertTrue(host.contains("contextBuilder.prepare(") && !host.contains("String systemPrompt(") && !host.contains("String contextualMessage("),
+                "Prompt, memory and references belong to AgentContextBuilder");
+        String builder = Files.readString(SOURCE_ROOT.resolve("assistant/execution/service/AgentContextBuilder.java"), StandardCharsets.UTF_8);
+        assertTrue(!builder.contains("import com.projectardor.assistant.conversation.web") && !builder.contains("AgentMessageResponse"),
+                "Context assembly consumes its own typed turns, not HTTP DTOs");
+    }
     @Test void learningToolsStayInTheirApplicationAdapter() throws IOException {
         String host = Files.readString(SOURCE_ROOT.resolve("assistant/tools/CareerAgentTools.java"), StandardCharsets.UTF_8);
         for (String name : List.of("list_learning_plans", "get_learning_plan", "create_learning_plan",

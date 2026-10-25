@@ -28,6 +28,30 @@ import dev.langchain4j.model.chat.ChatModel;
 
 class AgentContextCompactorTests {
 
+    @Test void expandedCurrentInputTriggersCompactionBeforeTheRawMessageLimit() {
+        UUID user = UUID.randomUUID(), conversation = UUID.randomUUID();
+        List<ConversationMessage> messages = new ArrayList<>();
+        for (int i=0;i<6;i++) messages.add(ConversationMessage.user(user, conversation, "Short turn " + i));
+        var store = mock(AgentConversationStore.class);
+        when(store.allMessages(user, conversation)).thenReturn(messages);
+        var summaries = mock(ConversationSummaryStore.class);
+        when(summaries.latest(user, conversation)).thenReturn(Optional.empty());
+        when(summaries.save(any(), any(), anyInt(), any(), anyInt(), anyString(), anyInt(), any())).thenAnswer(call ->
+                new ConversationSummaryStore.Summary(UUID.randomUUID(), call.getArgument(2), call.getArgument(3),
+                        call.getArgument(4), call.getArgument(5), call.getArgument(6), call.getArgument(7), Instant.now()));
+        var model = mock(ChatModel.class); when(model.chat(anyString())).thenReturn("Preserved short-turn summary");
+        var factory = mock(LangChainModelFactory.class);
+        when(factory.create(any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList())).thenReturn(model);
+        var compactor = new AgentContextCompactor(store, summaries, factory, 4, 24, 1000);
+        var config = new LlmConfigService.LlmRuntimeConfig(LlmProvider.ANTHROPIC_COMPATIBLE, "https://example.invalid", "synthetic", "synthetic-only");
+        var result = compactor.prepare(user, conversation, "system", config, ReasoningDepth.AUTO, List.of(), () -> true, "reference ".repeat(500));
+        assertThat(result.compactedMessages()).isEqualTo(2);
+        assertThat(result.recentMessages()).containsExactlyElementsOf(messages.subList(2,6));
+        assertThat(result.summaryContext()).contains("Preserved short-turn summary");
+        assertThat(result.estimatedTokens()).isGreaterThan(1000);
+        assertThat(compactor.budgetTokens()).isEqualTo(1000);
+    }
+
     @Test
     void summarizesOlderMessagesAndKeepsRecentMessagesVerbatim() {
         UUID userId = UUID.randomUUID();
