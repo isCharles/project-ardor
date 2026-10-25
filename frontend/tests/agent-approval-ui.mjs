@@ -45,8 +45,12 @@ try {
   const page = await context.newPage();
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   await page.goto(origin + "/app");
+  assert.equal(await page.locator("[data-approval-trigger]").innerText(), "", "Composer permission control is icon-only");
+  assert.equal(await page.locator("[data-approval-trigger]").getAttribute("title"), "Custom");
   await page.getByRole("button", { name: "Custom", exact: true }).click();
   assert.equal(await page.getByRole("menuitemradio").count(), 4);
+  for (const item of await page.getByRole("menuitemradio").all()) assert.ok(await item.locator("svg").count() >= 1);
+  await page.screenshot({ path: ".next/agent-approval-menu.png" });
   await page.getByRole("menuitemradio", { name: /^Approve for me/ }).click();
   await page.getByRole("button", { name: "Approve for me", exact: true }).waitFor();
   await page.reload();

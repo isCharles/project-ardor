@@ -4,6 +4,7 @@ import { Check, ChevronDown, Cpu } from "lucide-react";
 import { useState } from "react";
 import { useDismiss } from "./overlay";
 import { useLocale } from "@/lib/locale";
+import { modelDisplayName } from "@/lib/model-display-name";
 
 type Depth = "AUTO" | "QUICK" | "STANDARD" | "DEEP";
 export type ReasoningLevel = { value: Depth; label: string };
@@ -13,6 +14,7 @@ const defaultLevels: ReasoningLevel[] = [
   { value: "STANDARD", label: "High" },
   { value: "DEEP", label: "Max" },
 ];
+const levelLabels: Record<Depth, string> = { AUTO: "Auto", QUICK: "Low", STANDARD: "High", DEEP: "Max" };
 const iconRules: Array<[RegExp, string, string]> = [
   [/(?:^|[/:\s-])(?:gpt|chatgpt|o[134])(?:[/:\s-]|$)|openai/i, "lobe-openai.svg", "#e7f6ec"],
   [/claude|anthropic|opus|sonnet|haiku/i, "color-claude.svg", "#fdf0e8"],
@@ -31,7 +33,6 @@ const iconRules: Array<[RegExp, string, string]> = [
 function iconFor(label: string) {
   return iconRules.find(([pattern]) => pattern.test(label));
 }
-
 function ModelIcon({ label }: { label: string }) {
   const match = iconFor(label);
   if (!match) return <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-stone-100 text-stone-400 ring-1 ring-stone-200/70"><Cpu className="size-3.5" /></span>;
@@ -52,10 +53,10 @@ export function ReasoningControl({ value, onChange, disabled, nativeControl, mod
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
   const selected = models.find((item) => item.id === model) ?? models[0];
   const levelOptions = selected?.reasoningLevels?.length ? selected.reasoningLevels : defaultLevels;
-  const currentLabel = value === "AUTO" ? t("Auto", "自动") : localizedLevel(t, levelOptions.find((level) => level.value === value)?.label ?? "Auto");
+  const currentLabel = levelLabels[value];
   return <div ref={ref} className="relative">
     <button data-reasoning-depth={value} data-model-choice={selected?.id} data-native-reasoning={nativeControl} type="button" disabled={disabled} aria-label={t("Model and thinking depth", "模型与思考深度")} aria-expanded={open} onClick={() => setOpen((current) => !current)} className="flex max-w-[min(40vw,13rem)] items-center gap-1.5 rounded-full px-2.5 py-2 text-xs text-stone-500 transition hover:bg-violet-50 disabled:opacity-40">
-      <span className="truncate font-medium text-stone-700">{selected?.label ?? t("Primary model", "主模型")}</span>
+      <span className="truncate font-medium text-stone-700" title={selected?.label}>{selected ? modelDisplayName(selected.label) : t("Primary model", "主模型")}</span>
       <span className="shrink-0 text-stone-400">{currentLabel}</span>
       <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
     </button>
@@ -64,7 +65,7 @@ export function ReasoningControl({ value, onChange, disabled, nativeControl, mod
       <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
         {models.map((item) => <button key={item.id} type="button" disabled={!item.available} aria-pressed={item.id === selected?.id} onClick={() => { onModelChange?.(item.id); }} className={`flex w-full items-center gap-2 rounded-2xl px-2.5 py-2 text-left transition ${item.id === selected?.id ? "bg-violet-50" : "hover:bg-stone-100"} disabled:cursor-not-allowed disabled:opacity-45`}>
           <ModelIcon label={item.label} />
-          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-stone-800">{item.label}</span><span className="block truncate text-[10px] text-stone-400">{item.id === "PRIMARY" ? t("Primary", "主力") : t("Relay", "中转站")}{!item.available ? ` · ${t("Not configured", "未配置")}` : ""}</span></span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-stone-800" title={item.label}>{modelDisplayName(item.label)}</span><span className="block truncate text-[10px] text-stone-400">{item.id === "PRIMARY" ? t("Primary", "主力") : t("Relay", "中转站")}{!item.available ? ` · ${t("Not configured", "未配置")}` : ""}</span></span>
           {item.id === selected?.id && <Check className="size-3.5 shrink-0 text-violet-600" />}
         </button>)}
         {models.length === 0 && <p className="px-3 py-4 text-xs text-stone-400">{t("No models available.", "暂无可用模型。")}</p>}
@@ -73,14 +74,11 @@ export function ReasoningControl({ value, onChange, disabled, nativeControl, mod
       <div className="flex items-center justify-between gap-2 px-2">
         <span className="shrink-0 text-xs font-medium text-stone-700">{t("Reasoning level", "推理等级")}</span>
         <div className="flex flex-wrap items-center justify-end gap-1">
-          <button type="button" aria-pressed={value === "AUTO"} onClick={() => onChange("AUTO")} className={`rounded-full px-2.5 py-1 text-[11px] transition ${value === "AUTO" ? "bg-emerald-100 font-medium text-emerald-800" : "text-stone-500 hover:bg-stone-100"}`}>{t("Auto", "自动")}</button>
-          {levelOptions.map((level) => <button type="button" key={level.value} aria-pressed={value === level.value} onClick={() => onChange(level.value)} className={`rounded-full px-2.5 py-1 text-[11px] transition ${value === level.value ? "bg-violet-100 font-medium text-violet-800" : "text-stone-500 hover:bg-stone-100"}`}>{localizedLevel(t, level.label)}</button>)}
+          <button type="button" title={t("Provider default", "厂商默认")} aria-pressed={value === "AUTO"} onClick={() => onChange("AUTO")} className={`rounded-full px-2.5 py-1 text-[11px] transition ${value === "AUTO" ? "bg-emerald-100 font-medium text-emerald-800" : "text-stone-500 hover:bg-stone-100"}`}>Auto</button>
+          {levelOptions.map((level) => <button type="button" key={level.value} aria-pressed={value === level.value} onClick={() => onChange(level.value)} className={`rounded-full px-2.5 py-1 text-[11px] transition ${value === level.value ? "bg-violet-100 font-medium text-violet-800" : "text-stone-500 hover:bg-stone-100"}`}>{levelLabels[level.value]}</button>)}
         </div>
       </div>
     </div>}
   </div>;
 }
 
-function localizedLevel(t: (en: string, zh: string) => string, label: string) {
-  return t(label, ({ Low: "低", Medium: "中", High: "高", Max: "最高" } as Record<string, string>)[label] ?? label);
-}
