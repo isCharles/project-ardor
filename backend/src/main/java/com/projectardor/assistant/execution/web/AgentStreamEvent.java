@@ -17,7 +17,19 @@ public record AgentStreamEvent(
         Boolean retryable,
         String errorCode,
         /** Set on "confirm" events: a deletion waiting for the user to press a button. */
-        AgentConfirmation confirmation, Long approvalWaitMs, Long businessMs, String toolStatus) {
+        AgentConfirmation confirmation, Long approvalWaitMs, Long businessMs, String toolStatus,
+        com.projectardor.assistant.execution.service.AgentContextUsage contextUsage) {
+
+    public AgentStreamEvent(String type, String content, String toolName, String label, Long elapsedMs,
+            UUID conversationId, UUID messageId, Boolean retryable, String errorCode, AgentConfirmation confirmation,
+            Long approvalWaitMs, Long businessMs, String toolStatus) {
+        this(type, content, toolName, label, elapsedMs, conversationId, messageId, retryable, errorCode,
+                confirmation, approvalWaitMs, businessMs, toolStatus, null);
+    }
+
+    public static AgentStreamEvent context(com.projectardor.assistant.execution.service.AgentContextUsage usage) {
+        return new AgentStreamEvent("context", null, null, null, null, null, null, null, null, null, null, null, null, usage);
+    }
 
     public AgentStreamEvent(String type, String content, String toolName, String label, Long elapsedMs,
             UUID conversationId, UUID messageId, Boolean retryable, String errorCode, AgentConfirmation confirmation) {

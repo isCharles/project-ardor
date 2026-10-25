@@ -396,10 +396,15 @@ public class CareerAgentService {
             streamProgress.begin(userId, progressId);
             if (finished.get()) { streamProgress.finish(progressId, true); return; }
             sink.send(AgentStreamEvent.status("正在整理对话上下文", elapsedMs(startedAt)));
+            java.util.function.Consumer<AgentContextUsage> contextObserver = usage -> {
+                streamProgress.context(progressId, usage);
+                sink.send(AgentStreamEvent.context(usage));
+            };
+            contextObserver.accept(AgentContextUsage.preparing(runtimeConfig.model()));
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
             AgentContextBuilder.Prepared promptContext = lease.modelCall(() -> buildContext(userId, conversation.getId(),
-                    message, agentInput, runtimeConfig, depth, tracer, lease));
+                    message, agentInput, runtimeConfig, depth, tracer, lease, contextObserver));
             ChatMemory memory = promptContext.memory();
             String systemMessage = promptContext.systemPrompt();
             if (contextSpan != null) {
@@ -559,6 +564,12 @@ public class CareerAgentService {
 
     private AgentContextBuilder.Prepared buildContext(UUID userId, UUID conversationId, String message, String currentInput,
             LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth, AgentRunTracer tracer, AgentStreamLease lease) {
+        return buildContext(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, null);
+    }
+
+    private AgentContextBuilder.Prepared buildContext(UUID userId, UUID conversationId, String message, String currentInput,
+            LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth, AgentRunTracer tracer, AgentStreamLease lease,
+            java.util.function.Consumer<AgentContextUsage> contextObserver) {
         List<AgentContextBuilder.HistoryTurn> interrupted = new java.util.ArrayList<>();
         // Durable unfinished requests must survive compaction and steering.
         for (AgentMessageResponse item : conversationHistory(userId, conversationId, true)) {
@@ -568,7 +579,9 @@ public class CareerAgentService {
             if (item.id().equals(synthetic)) interrupted.add(new AgentContextBuilder.HistoryTurn(
                     item.role(), item.content(), item.contextReferences(), item.createdAt()));
         }
-        return contextBuilder.prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, interrupted);
+        return contextObserver == null
+                ? contextBuilder.prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, interrupted)
+                : contextBuilder.prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, interrupted, contextObserver);
     }
 
     private List<AgentMessageResponse> conversationHistory(UUID userId, UUID conversationId) {
@@ -697,7 +710,8 @@ public class CareerAgentService {
         List<AgentStreamEvent.AgentConfirmation> proposals = pending.stream()
                 .map(AgentStreamEvent.AgentConfirmation::from).toList();
         try { return objectMapper.writeValueAsString(new RunTrace(elapsedMs, "COMPLETED", steps, proposals,
-                progress == null ? null : progress.thinkingOutput(), progress == null ? null : progress.firstOutputMs())); }
+                progress == null ? null : progress.thinkingOutput(), progress == null ? null : progress.firstOutputMs(),
+                progress == null ? null : progress.contextUsage())); }
         catch (tools.jackson.core.JacksonException exception) {
             log.warn("Could not serialize agent run trace: {}", exception.getMessage());
             return null;
@@ -705,7 +719,12 @@ public class CareerAgentService {
     }
 
     private record RunTrace(long elapsedMs, String status, List<RunStep> steps,
-            List<AgentStreamEvent.AgentConfirmation> proposals, String thinkingOutput, Long firstOutputMs) {}
+            List<AgentStreamEvent.AgentConfirmation> proposals, String thinkingOutput, Long firstOutputMs, AgentContextUsage contextUsage) {
+        RunTrace(long elapsedMs, String status, List<RunStep> steps,
+                List<AgentStreamEvent.AgentConfirmation> proposals, String thinkingOutput, Long firstOutputMs) {
+            this(elapsedMs, status, steps, proposals, thinkingOutput, firstOutputMs, null);
+        }
+    }
 
     public AgentStreamProgress.View progress(UUID userId, UUID requestId) {
         runStore.get(userId, requestId);

@@ -11,6 +11,33 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AgentStreamProgressTests {
+    @Test
+    void contextEstimateSurvivesCheckpointAndCannotBeReadByAnotherUser() {
+        var store = org.mockito.Mockito.mock(AgentProgressStore.class);
+        var captured = new java.util.concurrent.atomic.AtomicReference<AgentStreamProgress.Snapshot>();
+        var owner = UUID.randomUUID();
+        var run = UUID.randomUUID();
+        org.mockito.Mockito.doAnswer(call -> { captured.set(call.getArgument(2)); return null; })
+                .when(store).save(org.mockito.ArgumentMatchers.eq(owner), org.mockito.ArgumentMatchers.eq(run), org.mockito.ArgumentMatchers.any());
+        var live = new AgentStreamProgress(Clock.systemUTC(), store);
+        live.begin(owner, run);
+        var usage = new AgentContextUsage("READY", "synthetic", 1800L, 12000, null, 2, 8);
+        live.context(run, usage);
+        live.finish(run, false);
+        live.context(run, AgentContextUsage.preparing("late-stale-event"));
+        assertThat(live.get(owner, run).contextUsage()).isEqualTo(usage);
+        // Exercise record serialization used by persisted progress, including older payload compatibility.
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var snapshot = mapper.readValue(mapper.writeValueAsString(captured.get()), AgentStreamProgress.Snapshot.class);
+        assertThat(mapper.readValue(mapper.writeValueAsString(snapshot.view()), LegacyView.class).phase()).isEqualTo("COMPLETED");
+        org.mockito.Mockito.when(store.find(owner, run)).thenReturn(java.util.Optional.of(new AgentProgressStore.Saved(snapshot, "COMPLETED")));
+        var restored = new AgentStreamProgress(Clock.systemUTC(), store);
+        assertThat(restored.get(owner, run).contextUsage()).isEqualTo(usage);
+        assertThatThrownBy(() -> restored.get(UUID.randomUUID(), run)).isInstanceOf(ResourceNotFoundException.class);
+        assertThat(mapper.readValue("{\"phase\":\"COMPLETED\",\"label\":\"done\",\"thinkingOutput\":\"\",\"answerPartial\":\"\",\"silentSeconds\":0,\"truncated\":false,\"steps\":[],\"elapsedMs\":1}",
+                AgentStreamProgress.View.class).contextUsage()).isNull();
+    }
+
     private final MutableClock clock = new MutableClock();
     private final AgentStreamProgress progress = new AgentStreamProgress(clock);
     private final UUID owner = UUID.randomUUID();
@@ -107,6 +134,10 @@ class AgentStreamProgressTests {
         restarted.answer(request, "Must not resume a persisted run");
         assertThat(restarted.get(owner, request).answerPartial()).isEqualTo("Partial answer");
     }
+
+    private record LegacyView(String phase, String label, String thinkingOutput, String answerPartial,
+            Long firstThinkingMs, Long firstOutputMs, long silentSeconds, boolean truncated,
+            java.util.List<AgentStreamProgress.Step> steps, long elapsedMs) {}
 
     private static final class MutableClock extends Clock {
         private Instant now = Instant.parse("2026-10-14T00:00:00Z");

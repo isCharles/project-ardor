@@ -27,6 +27,18 @@ import com.projectardor.platform.model.llm.service.LlmConfigService;
 import dev.langchain4j.model.chat.ChatModel;
 
 class AgentContextCompactorTests {
+    @Test
+    void observerReportsActualCompactionAndFailureWithoutDiscardingHistory() {
+        var fixture = fixture(50, 20);
+        when(fixture.model().chat(anyString())).thenThrow(new IllegalStateException("synthetic failure"));
+        var states = new ArrayList<String>();
+        var result = fixture.compactor().prepare(fixture.user(), fixture.conversation(), "system", config(),
+                ReasoningDepth.AUTO, List.of(), () -> true, "current", states::add);
+        assertThat(states).containsExactly("COMPACTING", "COMPACTION_FAILED");
+        assertThat(result.compactedMessages()).isZero();
+        assertThat(result.recentMessages()).containsExactlyElementsOf(fixture.messages());
+    }
+
 
     @Test void expandedCurrentInputTriggersCompactionBeforeTheRawMessageLimit() {
         UUID user = UUID.randomUUID(), conversation = UUID.randomUUID();

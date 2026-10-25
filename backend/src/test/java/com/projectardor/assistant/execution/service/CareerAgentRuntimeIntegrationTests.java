@@ -34,6 +34,11 @@ class CareerAgentRuntimeIntegrationTests {
         assertThat(f.events).anyMatch(event -> "delta".equals(event.type()));
         assertThat(f.events.stream().filter(event -> "done".equals(event.type()))).hasSize(1);
         assertThat(f.events).noneMatch(event -> "phase".equals(event.type()) || "phase_end".equals(event.type()));
+        assertThat(f.events.stream().filter(event -> "context".equals(event.type())).map(AgentStreamEvent::contextUsage))
+                .extracting(AgentContextUsage::state).containsExactly("PREPARING", "READY");
+        var trace = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(f.conversations).appendExchange(any(), any(), anyString(), anyString(), trace.capture(), anyList());
+        assertThat(JsonMapper.builder().build().readTree(trace.getValue()).path("contextUsage").path("state").asText()).isEqualTo("READY");
         verify(f.factory, never()).create(any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
     }
 
@@ -71,7 +76,6 @@ class CareerAgentRuntimeIntegrationTests {
                 "FAILED", "Stopped", "AGENT_RUN_CANCELLED", "stopped", false, false,
                 java.time.Instant.now().minusSeconds(20), java.time.Instant.now().minusSeconds(10));
         when(f.runs.unfinished(f.user, f.conversation.getId(), true)).thenReturn(List.of(old));
-        when(f.progress.get(f.user, old.id())).thenThrow(new com.projectardor.common.web.ResourceNotFoundException("no snapshot"));
         f.run("等等，2不要重新生成");
         assertThat(f.requests).hasSize(1).allSatisfy(request -> assertThat(request.messages().toString())
                 .contains("Delete 1 2 3 and regenerate", "本轮已停止", "等等，2不要重新生成"));
@@ -80,7 +84,7 @@ class CareerAgentRuntimeIntegrationTests {
     @org.junit.jupiter.api.RepeatedTest(10) void cancellationDuringCompactionCannotDispatchTheModel() throws Exception {
         var f = new Fixture(Duration.ofMillis(1));
         var entered = new java.util.concurrent.CountDownLatch(1);
-        when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any(), anyString())).thenAnswer(call -> {
+        when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any(), anyString(), any())).thenAnswer(call -> {
             entered.countDown();
             try { new java.util.concurrent.CountDownLatch(1).await(); }
             catch (InterruptedException expected) { Thread.currentThread().interrupt(); }
@@ -144,7 +148,7 @@ class CareerAgentRuntimeIntegrationTests {
         final Conversation conversation = Conversation.create(user, "Synthetic runtime");
         final AgentConversationStore conversations = mock(AgentConversationStore.class);
         final AgentRunStore runs = mock(AgentRunStore.class);
-        final AgentStreamProgress progress = mock(AgentStreamProgress.class);
+        final AgentStreamProgress progress = new AgentStreamProgress();
         final AgentContextCompactor compactor = mock(AgentContextCompactor.class);
         final LangChainModelFactory factory = mock(LangChainModelFactory.class);
         final ResumeReads resumeReads = mock(ResumeReads.class);
@@ -171,7 +175,7 @@ class CareerAgentRuntimeIntegrationTests {
             var embedding = mock(MemoryEmbeddingService.class); when(embedding.context(eq(user), anyString())).thenReturn("");
             var profiles = mock(ProfileService.class);
             when(profiles.view(user)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(user, "Synthetic owner")));
-            when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString())).thenAnswer(call ->
+            when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), any())).thenAnswer(call ->
                     new AgentContextCompactor.Prepared(call.getArgument(2), List.of(ConversationMessage.user(user, conversation.getId(), "Earlier user instruction")), 0, 0, 10, null, summary));
             StreamingChatModel model = new StreamingChatModel() {
                 @Override public void doChat(ChatRequest request, StreamingChatResponseHandler handler) { requests.add(request); reply.accept(request, handler); }
