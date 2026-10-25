@@ -2,7 +2,7 @@
 
 import {
   Activity, Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, ChevronDown, FileSearch, FileText, Square,
-  MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, ShieldCheck, Target, Trash2, Upload, X,
+  MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, Target, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -400,15 +400,16 @@ export default function AgentHomePage() {
 
   function permissionPicker() {
     const current = approvalModes.find(option => option.mode === permissionMode) ?? approvalModes[3];
+    const ModeIcon = current.icon;
     return <div className="relative">
-      <button type="button" disabled={permissionSaving} aria-haspopup="menu" aria-expanded={permissionOpen} onClick={() => setPermissionOpen((value) => !value)} title={t("What Ardor may do without asking", "Ardor 可以不经询问直接执行的范围")} className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs text-stone-500 transition hover:bg-stone-100">
-        <ShieldCheck className="size-3.5" aria-hidden="true" />{t(...current.label)}<ChevronDown className="size-3.5" aria-hidden="true" />
+      <button type="button" data-approval-trigger data-approval-mode={permissionMode} disabled={permissionSaving} aria-label={t(...current.label)} aria-haspopup="menu" aria-expanded={permissionOpen} onClick={() => setPermissionOpen((value) => !value)} title={t(...current.label)} className="inline-flex size-8 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100">
+        <ModeIcon className={`size-4 ${permissionMode === "FULL" ? "text-orange-500" : ""}`} aria-hidden="true" />
       </button>
       {permissionOpen && <>
         <button type="button" aria-label={t("Close permission menu", "关闭权限菜单")} className="fixed inset-0 z-10 cursor-default bg-transparent" onClick={() => setPermissionOpen(false)} />
-        <div role="menu" className="absolute bottom-full left-0 z-20 mb-2 w-80 max-w-[85vw] rounded-2xl border border-stone-200 bg-white p-1 shadow-xl">
-          {approvalModes.map(option => <button key={option.mode} role="menuitemradio" aria-checked={permissionMode === option.mode} type="button" onClick={() => void choosePermission(option.mode)} className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-xs transition ${permissionMode === option.mode ? "bg-violet-50 text-violet-700" : "hover:bg-stone-50"}`}><span><span className="block font-medium">{t(...option.label)}</span><span className="mt-1 block text-[11px] leading-4 text-stone-500">{t(...option.description)}</span></span>{permissionMode === option.mode && <Check className="mt-0.5 size-3.5 shrink-0" />}</button>)}
-          <Link href="/app/settings" className="block px-3 py-2 text-[11px] text-stone-500 hover:text-violet-600">{t("Manage custom permissions in settings", "在设置中管理自定义权限")}</Link>
+        <div role="menu" className="absolute bottom-full left-0 z-20 mb-2 w-60 max-w-[85vw] rounded-2xl border border-stone-200 bg-white p-1 shadow-xl">
+          {approvalModes.map(option => { const Icon = option.icon; return <button key={option.mode} role="menuitemradio" aria-checked={permissionMode === option.mode} type="button" onClick={() => void choosePermission(option.mode)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs transition ${permissionMode === option.mode ? "bg-violet-50 text-violet-700" : "hover:bg-stone-50"}`}><Icon className={`size-4 shrink-0 ${option.mode === "FULL" ? "text-orange-500" : ""}`} aria-hidden="true" /><span className="flex-1 font-medium">{t(...option.label)}</span>{permissionMode === option.mode && <Check className="size-3.5 shrink-0" />}</button>; })}
+          <Link href="/app/settings" className="block px-3 py-2 text-[11px] text-stone-500 hover:text-violet-600">{t("Custom permission settings", "自定义权限设置")}</Link>
         </div>
       </>}
     </div>;

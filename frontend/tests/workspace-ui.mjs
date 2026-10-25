@@ -269,6 +269,13 @@ try {
   assert.equal(await page.getByRole("region", { name: "Attachments", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
   const depth = page.getByRole("dialog", { name: "Model and thinking depth options" });
+  assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "AUTO", "Provider default remains the default");
+  await depth.getByText("DeepSeek V4 Flash", { exact: true }).waitFor();
+  await depth.getByRole("button", { name: /^Claude Opus 5\.5/ }).click();
+  assert.equal(await page.locator('[data-model-choice]').getAttribute("data-model-choice"), "FALLBACK:claude-opus-5-5", "Friendly names must not change selection keys");
+  await depth.getByRole("button", { name: /^DeepSeek V4 Flash/ }).click();
+  assert.equal(await page.locator('[data-model-choice]').getAttribute("data-model-choice"), "PRIMARY");
+  for (const name of ["Auto", "Low", "High", "Max"]) await depth.getByRole("button", { name, exact: true }).waitFor();
   for (const icon of ["color-deepseek.svg", "color-claude.svg"]) {
     assert.equal(await depth.locator(`[style*="${icon}"]`).count(), 1, `Model must render its ${icon} mark`);
     const asset = await context.request.get(`${origin}/model-icons/${icon}`);

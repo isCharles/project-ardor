@@ -28,11 +28,14 @@ health UP、登录页 200、Flyway 64；原 PostgreSQL/Redis 与数据卷保持�
 Golden Path `40160081970` 8m4s，前端/桌面/PDF `40160081891`。
 已合并部署并在实际 3000 端口通过轨迹与聊天回归（API 全为合成夹具）。
 
-当前 `feat/agent-approval-modes` 候选实现四模式及 V65 新增模式偏好表：原全局/模块
+权限模式已由 [PR #202](https://github.com/isCharles/project-ardor/pull/202) 合并，提交
+`d9086586add39a81e57a07f74794239ead99c75c`，所有 CI 通过（Golden Path `40171117849`）。
+本机前后端已运行 `ardor-*-approval:562b615`，后端 healthy；保留原 PostgreSQL/Redis。
+上面的 #201 镜像记录是前一部署快照。四模式及 V65 新增模式偏好表：原全局/模块
 授权保留，旧写接口选择 CUSTOM；AUTO 明确区分操作影响并限制单轮自动写入次数，
 不匹配用户话语关键词。Java 21 全量 725 项，0 失败/错误、1 显式门控跳过，含真实
 V64→V65 升级及双账户配置保留；HTTP 的四模式、非法值、认证与隔离通过，前端
-类型/构建、模式选择/重载/失败回滚/窄屏测试通过。候选尚未提交 PR 或部署，回退
+类型/构建、模式选择/重载/失败回滚/窄屏测试通过。回退
 限制及完整合同见 [权限模式](AGENT_APPROVAL_MODES.md)。
 
 最终权限候选 JAR SHA-256 为 `A898CB2946F42B607E8C471EB87789E2EA56B261370CEF70773A6874EEF80030`。
