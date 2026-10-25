@@ -35,7 +35,7 @@
 | `answers` | 本次提交的答案数组（字符串，按题目顺序） |
 | `score` | 0–100；`legacy` 行可空 |
 | `evaluation` | 本轮评价 JSONB：feedback、questionFeedback、strengths、gaps、nextFocus、score、contentVersion、exercisesVersion，以及选择题判定 `choices` |
-| `model_name`、`prompt_version` | 评分模型与评价提示版本；新提交为 `learning-evaluation-v2`，历史 v1 保留原标识。`legacy` 行为 NULL |
+| `model_name`、`prompt_version` | 评分模型与评价提示版本；新提交为 `learning-evaluation-v3`，历史 v1/v2 保留原标识。`legacy` 行为 NULL |
 | `legacy` | 由旧投影回填、字段无法证明时为 TRUE，不伪造 rubric/model/prompt |
 | `submitted_at`、`created_at` | 提交时间与落库时间；旧投影缺失提交时间时为 NULL |
 
@@ -93,7 +93,7 @@
     "evaluation": {"feedback": "...", "strengths": [], "gaps": [], "nextFocus": "...",
                    "questionFeedback": [], "contentVersion": 1, "exercisesVersion": 1,
                    "choices": [{"exerciseId": "...", "selected": "...", "correctOption": "...", "correct": true}]},
-    "modelName": "...", "promptVersion": "learning-evaluation-v2",
+    "modelName": "...", "promptVersion": "learning-evaluation-v3",
     "legacy": false, "submittedAt": "..."
   }
 ]
@@ -250,3 +250,10 @@ bash backend/src/test/resources/interview-round-upgrade.sh attempts
 - Java 21 全量：736 项，0 失败、0 错误、1 项环境门控跳过。真实隔离 HTTP 验收覆盖原题 ID、倒序且改写题干的模型反馈、不可变历史及跨用户归属。
 - 前端类型检查、构建、关联契约、学习操作回归通过；Edge 在 1440/900/390 宽度验证逐题关联、旧反馈可见、区块顺序、状态分组及归档展开。上述浏览器样例使用合成 API 数据，未调用真实模型。
 - 本批没有 schema 迁移。代码验证不代表已合并或已部署；交付状态以对应 PR 和实际运行版本核验为准。
+
+## 8. 打开即开始与参考答案
+
+- 打开待学习单元时调用原所有者限定的 begin 接口，转为学习中；进入页面和紧接着提交共用同一个在途请求。用户可以立即填写和提交，界面不再要求单独“开始学习”。开始失败时保留草稿，提交时重试，不丢弃答案。
+- SCHEDULED 仍用于尚未打开的排期记录，保留数据库、旧链接和日程合同；不是删除历史状态或批量将未访问课程标为学习中。NEEDS_REVIEW 与 COMPLETED 不因浏览而被重置。
+- v3 批改提示要求简答题/场景题返回逐题 referenceAnswer，和评语一起按 exerciseId 保存及渲染；不是把 rubric 标成完整答案，也不把参考答案放进未提交题目。
+- 老批改没存参考答案时不伪造、不重评历史。新提示标识独立记录，旧轮次保留原版本和分数。

@@ -18,10 +18,13 @@ function plan(id, concept, status, identified = false) {
     completedAt: status === "COMPLETED" ? "2026-10-01T00:00:00Z" : null, createdAt: "2026-10-01T00:00:00Z",
     lastEvaluation: { feedback: "Round summary fixture", strengths: ["Verified strength"], gaps: ["Knowledge gap fixture"], nextFocus: "Next focus fixture",
       attempts: [{ items: answered, score: 87, submittedAt: "2026-10-01T00:00:00Z", feedback: "Round summary fixture",
-        questionFeedback: identified ? answered.map((item, i) => ({ exerciseId: item.exerciseId, question: "Changed title", feedback: `Identified comment ${i + 1}` })).reverse() : feedback }] } };
+        questionFeedback: identified ? answered.map((item, i) => ({ exerciseId: item.exerciseId, question: "Changed title", feedback: `Identified comment ${i + 1}`, referenceAnswer: `Reference answer ${i + 1}` })).reverse() : feedback }] } };
 }
 const plans = [plan("legacy", "Legacy course", "COMPLETED"), plan("identified", "Identified course", "IN_PROGRESS", true),
   plan("scheduled", "Scheduled course", "SCHEDULED"), plan("review", "Review course", "NEEDS_REVIEW")];
+Object.assign(plans[2], { attemptCount: 0, lastScore: null, lastEvaluation: {}, exercises: [{ exerciseId: "start-q", question: "Explain the concept", type: "SHORT_ANSWER" }] });
+let releaseBegin, beginCalls = 0, evaluationCalls = 0, evaluationJob = null;
+const beginGate = new Promise(resolve => { releaseBegin = resolve; });
 try {
   let ready = false;
   for (let i = 0; i < 100; i++) {
@@ -40,6 +43,22 @@ try {
     else if (path === "/api/profile/sidebar") body = { userId: "feedback-owner", revision: 1, destinationIds: ["learning"] };
     else if (path === "/api/profile") body = { displayName: "Synthetic learner", targetRoles: [], timezone: "UTC" };
     else if (path === "/api/learning-plans") body = plans;
+    else if (path === "/api/learning-plans/scheduled/begin") {
+      beginCalls++; await beginGate;
+      plans[2].status = "IN_PROGRESS"; body = plans[2];
+    }
+    else if (path === "/api/learning-plans/scheduled/evaluation-jobs") {
+      evaluationCalls++;
+      assert.equal(plans[2].status, "IN_PROGRESS");
+      assert.deepEqual(route.request().postDataJSON().answers, ["A complete synthetic answer"]);
+      evaluationJob = { id: "grade-fixture", type: "LEARNING_EVALUATE", resourceId: "scheduled", status: "RUNNING", attempts: 1,
+        resultPath: null, errorCode: null, errorMessage: null, estimateMinSeconds: 10, estimateMaxSeconds: 60 };
+      body = evaluationJob;
+    }
+    else if (path === "/api/ai-jobs") {
+      const query = new URL(route.request().url()).searchParams;
+      body = evaluationJob && query.get("type") === evaluationJob.type && (!query.get("resourceId") || query.get("resourceId") === evaluationJob.resourceId) ? [evaluationJob] : [];
+    }
     else if (path === "/api/auth/csrf") body = { headerName: "X-CSRF-TOKEN", token: "fixture" };
     await route.fulfill({ json: body });
   });
@@ -70,11 +89,27 @@ try {
   await page.getByRole("heading", { name: "Identified course", exact: true }).waitFor();
   assert.equal(await page.getByRole("region", { name: "Unassigned feedback", exact: true }).count(), 0);
   const questions = page.getByRole("region", { name: "Question-by-question review", exact: true });
-  for (let i = 1; i <= 6; i++) await questions.getByRole("article", { name: `Question ${i}`, exact: true }).getByText(`Identified comment ${i}`, { exact: true }).waitFor();
+  for (let i = 1; i <= 6; i++) {
+    const question = questions.getByRole("article", { name: `Question ${i}`, exact: true });
+    await question.getByText(`Identified comment ${i}`, { exact: true }).waitFor();
+    await question.getByText(`Reference answer ${i}`, { exact: true }).waitFor();
+  }
   const archive = page.getByRole("navigation", { name: "Learning plans", exact: true }).locator("details");
   assert.equal(await archive.getAttribute("open"), null, "Mastered plans are archived while working on an active plan");
   await archive.locator("summary").click();
   await archive.getByRole("button", { name: /Legacy course/ }).waitFor();
+  await page.goto(`${origin}/app/learning?id=scheduled`);
+  await page.getByRole("heading", { name: "Scheduled course", exact: true }).waitFor();
+  await page.locator("#learning-practice textarea").fill("A complete synthetic answer");
+  const submit = page.getByRole("button", { name: "Submit answers", exact: true });
+  assert.equal(await submit.isEnabled(), true, "No separate start action blocks submission");
+  assert.equal(await page.getByRole("button", { name: "Start learning", exact: true }).count(), 0);
+  await submit.click();
+  assert.equal(evaluationCalls, 0, "Submission waits for the in-flight automatic start");
+  releaseBegin();
+  await page.getByRole("button", { name: "Submitted for assessment", exact: true }).waitFor();
+  assert.equal(beginCalls, 1, "Opening and immediate submission share one start request");
+  assert.equal(evaluationCalls, 1);
   assert.deepEqual(errors, []);
   console.log("Learning review UI: six legacy comments preserved, stable-ID matching despite reordered paraphrases, questions before summary, status groups and archived mastery at 1440/900/390 passed (synthetic APIs).");
 } catch (error) {

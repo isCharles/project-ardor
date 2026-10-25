@@ -1,5 +1,5 @@
-export type LearningAnswer = { exerciseId?: string; question: string; answer: string; choiceCorrect?: boolean };
-export type QuestionFeedback = { exerciseId?: string; question?: string; feedback: string };
+export type LearningAnswer = { exerciseId?: string; question: string; answer: string; type?: string; choiceCorrect?: boolean };
+export type QuestionFeedback = { exerciseId?: string; question?: string; feedback: string; referenceAnswer?: string };
 export type LearningReviewSummary = { feedback?: string; strengths?: string[]; gaps?: string[]; nextFocus?: string };
 
 /** A model's paraphrase or array order is not a question identity. Never hide unassigned feedback. */
@@ -11,6 +11,7 @@ export function associateLearningFeedback(items: LearningAnswer[], feedback: unk
     const row = typeof value === "string" ? { feedback: value } : value;
     if (!row || typeof row !== "object" || typeof row.feedback !== "string") continue;
     const entry: QuestionFeedback = { feedback: row.feedback,
+      ...(typeof row.referenceAnswer === "string" ? { referenceAnswer: row.referenceAnswer } : {}),
       ...(typeof row.exerciseId === "string" ? { exerciseId: row.exerciseId } : {}),
       ...(typeof row.question === "string" ? { question: row.question } : {}) };
     const matches = items.flatMap((item, index) => {

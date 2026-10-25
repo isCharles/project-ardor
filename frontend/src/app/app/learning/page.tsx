@@ -155,6 +155,25 @@ export default function LearningPage() {
   }, [router]);
 
   const selected = plans.find((plan) => plan.id === selectedId) ?? null;
+  const startingPlans = useRef(new Map<string, Promise<LearningPlan>>());
+  const ensureStarted = useCallback((plan: LearningPlan): Promise<LearningPlan> => {
+    if (plan.status !== "SCHEDULED") return Promise.resolve(plan);
+    const pending = startingPlans.current.get(plan.id);
+    if (pending) return pending;
+    const request = api<LearningPlan>(`/api/learning-plans/${plan.id}/begin`, { method: "POST" })
+      .then((updated) => { setPlans(items => items.map(item => item.id === updated.id ? updated : item)); return updated; })
+      .finally(() => startingPlans.current.delete(plan.id));
+    startingPlans.current.set(plan.id, request);
+    return request;
+  }, []);
+  useEffect(() => {
+    if (!selected || selected.status !== "SCHEDULED") return;
+    let active = true;
+    void ensureStarted(selected).catch(reason => {
+      if (active) setError(reason instanceof Error ? reason.message : t("Could not enter learning. Submitting will retry.", "进入学习失败，提交时会自动重试。"));
+    });
+    return () => { active = false; };
+  }, [selected, ensureStarted, t]);
 
   async function deletePlan() {
     if (!deleteTarget || deleting) return;
@@ -276,21 +295,12 @@ export default function LearningPage() {
     finally { setBusy(false); }
   }
 
-  async function begin() {
-    if (!selected || selected.status !== "SCHEDULED" || busy) return;
-    setBusy(true); setError("");
-    try {
-      const updated = await api<LearningPlan>(`/api/learning-plans/${selected.id}/begin`, { method: "POST" });
-      setPlans((items) => items.map((item) => item.id === updated.id ? updated : item));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not start learning", "无法开始学习")); }
-    finally { setBusy(false); }
-  }
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selected || busy || assessing) return;
     setBusy(true); setError("");
     try {
+      await ensureStarted(selected);
       const requestKey = `ardor:learning-evaluation:${userId.current}:${selected.id}:${selected.attemptCount}`;
       const fingerprint = JSON.stringify(answers);
       let requestId = crypto.randomUUID();
@@ -353,8 +363,7 @@ export default function LearningPage() {
                   </p>
                   <h2 className="mt-2 max-w-3xl break-words text-2xl font-semibold tracking-[-0.04em] md:text-3xl">{selected.concept}</h2>
                   <div className="mt-5 flex flex-wrap items-center gap-3">
-                    {selected.status === "SCHEDULED" && <button type="button" onClick={() => void begin()} disabled={busy} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-stone-800 disabled:opacity-50">{busy ? t("Starting…", "正在开始…") : t("Start learning", "开始学习")}<ArrowRight className="size-4" /></button>}
-                    {(selected.status === "IN_PROGRESS" || selected.status === "NEEDS_REVIEW") && <button type="button" onClick={() => document.getElementById("learning-practice")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-stone-800">{t("Practice", "去练习")}<ArrowRight className="size-4" /></button>}
+                    {selected.status !== "COMPLETED" && <button type="button" onClick={() => document.getElementById("learning-practice")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-stone-800">{t("Practice", "去练习")}<ArrowRight className="size-4" /></button>}
                     <LearningContext plan={selected} sourceName={sourceName?.planId === selected.id ? sourceName.name : undefined} />
                   </div>
                 </div>
@@ -423,7 +432,7 @@ export default function LearningPage() {
                       {exercise.type === "MULTIPLE_CHOICE" || exercise.type === "TRUE_FALSE" ? exercise.options && exercise.options.length > 0 ? <div className="mt-3 grid gap-2">{exercise.options.map((option) => <label key={option} className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${answers[index] === option ? "border-violet-400 bg-violet-50/80" : "border-stone-200 bg-white/60 hover:bg-white"}`}><input type="radio" name={`exercise-${index}`} value={option} checked={answers[index] === option} onChange={() => changeAnswer(index, option)} required />{option}</label>)}</div> : <textarea required rows={2} value={answers[index] ?? ""} onChange={(event) => changeAnswer(index, event.target.value)} className="field mt-3 resize-y" placeholder={t("Answer in your own words", "用自己的话回答")} /> : <textarea required rows={exercise.type === "SCENARIO" ? 5 : 2} value={answers[index] ?? ""} onChange={(event) => changeAnswer(index, event.target.value)} className="field mt-3 resize-y" placeholder={exercise.type === "SCENARIO" ? t("Explain your approach and steps", "说明你的思路和步骤") : t("Answer in your own words", "用自己的话回答")} />}
                     </fieldset>)}
                     <p className="text-xs text-stone-400">{t("Draft saved in this browser session", "草稿已保留在当前浏览器会话")}</p>
-                    <button disabled={busy || assessing || selected.status === "SCHEDULED" || answers.some((answer) => !answer.trim())} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Submitting…", "正在提交…") : assessing ? t("Submitted for assessment", "已提交后台评估") : selected.status === "SCHEDULED" ? t("Start learning to practice", "开始学习后可练习") : t("Submit answers", "提交练习")}</button>
+                    <button disabled={busy || assessing || answers.some((answer) => !answer.trim())} className="w-full rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Submitting…", "正在提交…") : assessing ? t("Submitted for assessment", "已提交后台评估") : t("Submit answers", "提交练习")}</button>
                   </form>}
                 </section>
               </article>

@@ -43,4 +43,11 @@ class ResumeScoringContextTests {
         assertThrows(IllegalArgumentException.class, () -> ResumeScoringContext.freeze("a".repeat(241), ""));
         assertThrows(IllegalArgumentException.class, () -> ResumeScoringContext.freeze("", "a".repeat(8001)));
     }
+    @Test void revisedGuidanceUsesANewPromptIdentityWithoutRewritingOldContexts() {
+        var current = ResumeScoringContext.freeze("Java", "Uses Redis");
+        assertEquals("resume-analysis-v7", current.get("promptVersion"));
+        var old = new LinkedHashMap<>(current); old.put("promptVersion", "resume-analysis-v6");
+        assertNotEquals(ResumeScoringContext.key("Built a queue", old, mapper), ResumeScoringContext.key("Built a queue", current, mapper));
+        assertEquals("resume-analysis-v6", old.get("promptVersion"));
+    }
 }

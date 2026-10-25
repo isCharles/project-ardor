@@ -12,7 +12,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /** Frozen at request time; changing a profile while a job waits cannot change its assessment. */
 public final class ResumeScoringContext {
-    public static final String PROMPT_VERSION = "resume-analysis-v6";
+    public static final String PROMPT_VERSION = "resume-analysis-v7";
     public static final int TEXT_LIMIT = 50_000;
     private ResumeScoringContext() {}
 

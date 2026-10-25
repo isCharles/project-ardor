@@ -33,7 +33,7 @@ try {
     strengths: ["有一段真实的性能优化经历，指标和验证方式可核验。"],
     issues: [
       { severity: "A", dimensionId: "roleFit", category: "岗位方向", problem: "目标算法岗，但项目全是后端 CRUD", why: "筛选者会直接判断方向不对", action: "要么补算法项目，要么改投后端", evidence: "Fixture project evidence", example: "固定占位符" },
-      { severity: "B", dimensionId: "technicalDepth", category: "技术深度", problem: "技术栈罗列，没有使用深度", why: "无法判断技术深度", action: "每个核心技术写一个具体问题和一个限制" },
+      { severity: "B", dimensionId: "technicalDepth", category: "技术深度", problem: "技术栈罗列，没有使用深度", why: "无法判断技术深度", action: "每个核心技术写一个具体问题和一个限制", benchmark: "100 分标准：按满分标准写清一致性取舍与可核验结果" },
       { severity: "C", dimensionId: "clarity", category: "细节润色", problem: "单位和日期格式不一致", why: "降低对数字的信任", action: "统一单位和日期格式" },
     ],
     scoringContext: { targetRole: "Algorithm engineer", jobDescription: "Build recommendation models", mode: "USER_JD", roleFamily: "algorithm", familyVersion: "ardor-resume-families-v1", rubricVersion: "ardor-resume-rubric-v3", promptVersion: "resume-analysis-v5" },
@@ -81,6 +81,8 @@ try {
   await page.getByText("有一段真实的性能优化经历，指标和验证方式可核验。", { exact: false }).waitFor();
   await page.getByText("Algorithm / AI · Algorithm engineer", { exact: true }).waitFor();
   await page.getByText("Expertise", { exact: true }).waitFor();
+  assert.equal(await page.getByText(/100\s*分标准|满分标准|顶级标准/).count(), 0, "Old framing must not dominate the displayed improvement targets");
+  await page.getByText("按目标岗位要求写清一致性取舍与可核验结果", { exact: true }).waitFor();
   await page.getByText("C", { exact: true }).first().waitFor();
 
   await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });

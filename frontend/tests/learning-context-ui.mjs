@@ -21,6 +21,11 @@ try {
     {...template,id:"legacy-plan",concept:"Unresolved historical lesson",originKind:"LEGACY_RECAP",originResourceId:"missing-fixture",originRecordId:null,targetInterviewId:null,targetRoundId:null}];
   await context.route("**/api/**",async route=>{
     const path=new URL(route.request().url()).pathname;calls.push(path);
+    if(path.endsWith("/begin") && route.request().method()==="POST") {
+      const plan=plans.find(item=>path===`/api/learning-plans/${item.id}/begin`);
+      assert.ok(plan);plan.status="IN_PROGRESS";
+      return route.fulfill({json:plan});
+    }
     const json=path==="/api/auth/me"?{id:"context-ui-owner",email:"context@ardor.invalid",admin:false}
       :path==="/api/profile/sidebar"?{userId:"context-ui-owner",hrefs:["/app"],revision:0,configured:true}
       :path==="/api/background-tasks/summary"?{activeCount:0,unreadByModule:{}}
