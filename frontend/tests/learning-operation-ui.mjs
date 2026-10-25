@@ -30,7 +30,7 @@ try {
     else if (path === "/api/opportunities/proposal-target") body = { id: "proposal-target", company: "Preparation employer", targetRole: "Backend", rounds: [{ id: "proposal-round", roundNumber: 2 }] };
     else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [
       { id: "proposal-user", role: "USER", conversationId: conversation.id, content: "Prepare a JVM lesson", createdAt: conversation.createdAt },
-      { id: "proposal-answer", role: "ASSISTANT", conversationId: conversation.id, content: "Synthetic learning proposal answer", createdAt: conversation.createdAt, proposalResolutions: resolutions,
+      { id: "proposal-answer", role: "ASSISTANT", runId: "learning-fixture-run", conversationId: conversation.id, content: "Synthetic learning proposal answer", createdAt: conversation.createdAt, proposalResolutions: resolutions,
         runTrace: JSON.stringify({ status: "COMPLETED", elapsedMs: 100, steps: [], proposals: [{ kind: "learning_plan", label: "JVM memory", detail: "Review memory regions and practice explaining GC.", endpoint: "/api/learning-plans/jobs", learningPlan: { requestId, concept: "JVM memory", reason: "Synthetic practice gap", sourceType: "RECAP", sourceId: "proposal-question", scheduledAt: "2099-10-19T01:00:00Z", originKind: "INTERVIEW_QUESTION", originResourceId: "proposal-question", targetInterviewId: "proposal-target", targetRoundId: "proposal-round" } }] }) },
     ] };
     else if (path.endsWith("/proposal-resolution") && route.request().method() === "PUT") {
@@ -58,6 +58,7 @@ try {
     : route.fallback());
   await empty.goto(`${origin}/app`);
   await empty.getByRole("heading", { name: "What would you like to work on today?", exact: true }).waitFor();
+  assert.equal(await empty.locator("[data-conversation-trace-link]").count(), 0, "An empty chat has no fabricated trace link");
   assert.equal(await empty.getByRole("heading", { name: /What should we build/ }).count(), 0);
   await empty.close();
   const page = await context.newPage(), errors = [];
@@ -65,6 +66,18 @@ try {
   await page.goto(`${origin}/app`);
   const dock = page.getByRole("region", { name: "Learning creation confirmation", exact: true });
   await dock.getByRole("heading", { name: "Create a learning plan for “JVM memory”?", exact: true }).waitFor();
+  const traceLink = page.locator("header [data-conversation-trace-link]");
+  assert.equal(await traceLink.count(), 1, "Conversation trace has one header entry");
+  assert.equal(await traceLink.getAttribute("href"), "/app/agent-runs/learning-fixture-run?conversation=learning-chat");
+  assert.equal(await page.locator('[data-execution-trace] a[href*="/agent-runs/"]').count(), 0,
+    "Individual replies do not repeat the global trace entry");
+  const headerPosition = await traceLink.evaluate(element => {
+    const header = element.closest("header").getBoundingClientRect();
+    const title = element.closest("header").querySelector("h1").getBoundingClientRect();
+    const link = element.getBoundingClientRect();
+    return link.left > title.right && header.right - link.right < 40;
+  });
+  assert.ok(headerPosition, "Trace entry sits at the right end of the conversation title bar");
   await dock.getByRole("link", { name: "Preparation target", exact: true }).getByText(/Preparation employer/).waitFor();
   assert.equal(submissions, 0);
   await page.locator(".ardor-composer-enter").evaluateAll(elements => Promise.all(elements.flatMap(element => element.getAnimations()).map(animation => animation.finished.catch(() => undefined))));

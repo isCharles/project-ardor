@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, ChevronDown, FileSearch, FileText, Square,
+  Activity, Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, ChevronDown, FileSearch, FileText, Square,
   MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, ShieldCheck, Target, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
@@ -1259,12 +1259,15 @@ export default function AgentHomePage() {
   const showLiveTrace = !terminalInHistory && !liveAssistant?.runTrace && (runSteps.length > 0 || !!runThinking || busy || !!runningRun || retryFailures.length > 0);
   const phase = runningRun ? streamProgress?.phase : streamPhase;
   const activeLiveRunId = activeRunId ?? runningRun?.id ?? approvalRunId;
+  const conversationTraceRunId = activeLiveRunId ?? messages.findLast((message) => message.runId)?.runId;
+  const conversationTraceHref = conversationTraceRunId && state?.conversationId
+    ? `/app/agent-runs/${conversationTraceRunId}?conversation=${state.conversationId}` : null;
   const isRunning = busy || !!runningRun || !!approvalRunId || !!activeRunId;
   const liveTitle = !(busy || runningRun) ? t("Execution stopped", "执行已停止") : phase === "THINKING" ? t("Thinking", "思考中") : phase === "PLAN" ? t("Planning", "正在规划") : phase === "GATHER" ? t("Gathering evidence", "正在收集证据") : phase === "REFLECT" ? t("Reviewing evidence", "正在审查证据") : phase === "ANSWER" ? t("Writing reply", "正在生成回复") : phase === "TOOL" ? t("Using tools", "正在调用工具") : phase === "OUTPUT" ? t("Writing reply", "正在生成回复") : t("Waiting for model", "等待模型回应");
   const liveTrace = showLiveTrace ? <ExecutionTrace title={liveTitle}
     active={(busy || !!runningRun) && phase !== "OUTPUT"}
     elapsed={formatElapsed(runElapsed)} thinking={runThinking} steps={runSteps}
-    traceHref={activeLiveRunId ? `/app/agent-runs/${activeLiveRunId}${state?.conversationId ? `?conversation=${state.conversationId}` : ""}` : undefined}>
+    >
     {runningRun && <p>{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
     {retryFailures.map((failure, index) => <p key={index} className="text-amber-700">{failure.label} · {failure.detail}</p>)}
     {busy && retryAttempt > 0 && <p>{t(`Reconnecting · retry ${retryAttempt}/${MAX_MESSAGE_RETRIES}`, `正在重新连接 · 第 ${retryAttempt}/${MAX_MESSAGE_RETRIES} 次重试`)}</p>}
@@ -1335,10 +1338,11 @@ export default function AgentHomePage() {
 
         <section className="relative flex min-w-0 flex-1 flex-col">
           <header className="relative z-10 flex h-16 shrink-0 items-center justify-between px-4 md:px-6">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               <button aria-label={t("Toggle conversations", "折叠对话栏")} title={t("Recent chats", "最近对话")} onClick={() => setSidebarOpen((value) => !(value ?? window.matchMedia("(min-width: 768px)").matches))} className="ardor-chat-toggle rounded-xl p-2 text-stone-500 hover:bg-white"><PanelLeftOpen className="size-5" /></button>
               <h1 className="truncate text-sm font-medium text-stone-600">{selected?.title ?? "Ardor"}</h1>
             </div>
+            {conversationTraceHref && <Link data-conversation-trace-link href={conversationTraceHref} className="ml-3 inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs text-stone-500 transition hover:bg-white hover:text-violet-600"><Activity className="size-3.5" />{t("Trace", "轨迹")}</Link>}
           </header>
 
           {!state?.llmConfigured && <div className="mx-4 mt-2 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 md:mx-8"><span>{t("Connect a tool-capable model to get started.", "配置一个支持 Tool Calling 的模型后，Ardor 才能开始工作。")}</span><Link href="/app/settings" className="shrink-0 font-medium underline underline-offset-4">{t("Settings", "去设置")}</Link></div>}
@@ -1371,7 +1375,7 @@ export default function AgentHomePage() {
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         {message === liveAssistant && liveTrace}
-                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps} traceHref={message.runId ? `/app/agent-runs/${message.runId}${message.conversationId ? `?conversation=${message.conversationId}` : ""}` : undefined}>{proposalResults(message)}</ExecutionTrace>; })()}
+                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTrace>; })()}
                         <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 block text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time>
                       </div>
                     )}

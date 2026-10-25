@@ -1,6 +1,6 @@
 # Agent Graph Runtime · 架构设计
 
-> 状态：设计稿，完整目标尚未实现；当前只读 P0/P1 见对应运行时文档。
+> 状态：历史实验设计，已由统一聊天执行入口取代。下文的 P0/P1 图运行时、关键词路由和独立阶段预算不是当前合同；当前行为见 `AGENT_TRACE_VIEW.md`。Graph 仅作为同一份 trace 的展示视图，历史数据仍可读取。
 > 目标：把 Ardor 从“单次 tool-calling loop”升级为可解释、可中断、可恢复的 Agent Graph Runtime，作为项目工程深度的核心展示。
 
 ## 1. 现状与问题

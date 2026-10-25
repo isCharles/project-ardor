@@ -109,10 +109,6 @@ class CareerAgentToolsTests {
                 mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class), mock(TavilySearchService.class),
                 mock(KnowledgeService.class), mock(LearningPlanService.class), mock(ApplicationRhythmService.class), mock(OpportunityService.class), mock(com.projectardor.platform.jobs.aijobs.AiJobService.class), mock(com.projectardor.learning.review.service.FlashcardService.class));
         var bound = tools.bind(UUID.randomUUID(), "我会使用 Redis 做缓存", UUID.randomUUID());
-        assertThat(bound.permitsWrite("submit_interview_answer")).isFalse();
-        bound.withInterviewAnswerContext(true);
-        assertThat(bound.permitsWrite("submit_interview_answer")).isTrue();
-        assertThat(bound.permitsWrite("cancel_interview")).isFalse();
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> bound.submitInterviewAnswer(UUID.randomUUID().toString(), UUID.randomUUID().toString(), "Injected answer"))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(interviews);

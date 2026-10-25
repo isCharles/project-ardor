@@ -30,6 +30,9 @@ public class AgentContextBuilder {
             2. 先读后写：用户已有资源先通过工具读取真实内容和 ID；不猜 UUID，不凭记忆断言当前状态。
             3. 有副作用的操作由工具生成确认或在授权后执行；确认前不得声称已创建、已修改、已删除或已提交。
                删除只能通过界面确认按钮完成，不能用聊天中的“确认删除”代替。拒绝、过期或停止后不要重复尝试。
+               根据用户当前请求与对话上下文理解意图，不要求用户使用工具名或特定动词。
+               用户只要求查询或明确撤回操作时不得写入；简短接续要结合上一轮具体请求，对目标有歧义时先澄清。
+               工具是否免确认由服务端权限设置决定；不要把完全权限理解为可自行发起无关操作。
             4. 不伪造：工具失败、任务异步、数据缺失或结果不确定时如实说明；区分“已执行”“已提议”“未执行”。
             5. 时间以当前基准时间为准；解析日期时使用用户时区。只有年份、日期、时间、时区或对象确实有歧义时才追问，
                一次只问最关键的问题。
@@ -62,7 +65,8 @@ public class AgentContextBuilder {
         var listeners = tracer == null ? List.<dev.langchain4j.model.chat.listener.ChatModelListener>of()
                 : List.<dev.langchain4j.model.chat.listener.ChatModelListener>of(new AgentModelTraceListener(tracer, runtimeConfig.model()));
         var prepared = contextCompactor.prepare(userId, conversationId, baseSystem, runtimeConfig, depth,
-                listeners, () -> lease == null || !lease.stopped());
+                listeners, () -> lease == null || !lease.stopped(), currentInput + "\n" + interruptedTurns.stream()
+                        .map(HistoryTurn::content).collect(java.util.stream.Collectors.joining("\n")));
         List<HistoryTurn> history = new java.util.ArrayList<>(prepared.recentMessages().stream()
                 .map(item -> new HistoryTurn(item.getRole(), item.getContent(), item.getContextReferences(), item.getCreatedAt())).toList());
         history.addAll(interruptedTurns);
@@ -81,12 +85,14 @@ public class AgentContextBuilder {
         attributes.put("historyMessages", prepared.recentMessages().size());
         attributes.put("interruptedMessages", interruptedTurns.size());
         attributes.put("estimatedTokens", prepared.estimatedTokens());
+        attributes.put("contextBudgetTokens", contextCompactor.budgetTokens());
         // Include expanded references and the current request in the final estimate.
         if (prepared.estimator() != null) {
             long assembled = (long) prepared.estimator().estimateTokenCountInMessages(memory.messages())
                     + prepared.estimator().estimateTokenCountInText(prepared.systemPrompt())
                     + prepared.estimator().estimateTokenCountInText(currentInput);
             attributes.put("assembledEstimatedTokens", assembled);
+            attributes.put("overContextBudget", assembled > contextCompactor.budgetTokens());
         }
         attributes.put("compactedMessages", prepared.compactedMessages());
         attributes.put("summaryVersion", prepared.summaryVersion());

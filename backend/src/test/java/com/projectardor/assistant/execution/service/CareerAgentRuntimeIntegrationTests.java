@@ -80,7 +80,7 @@ class CareerAgentRuntimeIntegrationTests {
     @org.junit.jupiter.api.RepeatedTest(10) void cancellationDuringCompactionCannotDispatchTheModel() throws Exception {
         var f = new Fixture(Duration.ofMillis(1));
         var entered = new java.util.concurrent.CountDownLatch(1);
-        when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any())).thenAnswer(call -> {
+        when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any(), anyString())).thenAnswer(call -> {
             entered.countDown();
             try { new java.util.concurrent.CountDownLatch(1).await(); }
             catch (InterruptedException expected) { Thread.currentThread().interrupt(); }
@@ -171,7 +171,7 @@ class CareerAgentRuntimeIntegrationTests {
             var embedding = mock(MemoryEmbeddingService.class); when(embedding.context(eq(user), anyString())).thenReturn("");
             var profiles = mock(ProfileService.class);
             when(profiles.view(user)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(user, "Synthetic owner")));
-            when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any())).thenAnswer(call ->
+            when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString())).thenAnswer(call ->
                     new AgentContextCompactor.Prepared(call.getArgument(2), List.of(ConversationMessage.user(user, conversation.getId(), "Earlier user instruction")), 0, 0, 10, null, summary));
             StreamingChatModel model = new StreamingChatModel() {
                 @Override public void doChat(ChatRequest request, StreamingChatResponseHandler handler) { requests.add(request); reply.accept(request, handler); }
