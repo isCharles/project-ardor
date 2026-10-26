@@ -149,6 +149,27 @@ public class AgentRunStore {
                 """, RUN_MAPPER, userId, conversationId, safeLimit)).reversed();
     }
 
+    public record TracePage(List<AgentRun> runs, UUID nextBefore) {}
+
+    /** Stable keyset pages; the cursor must belong to this owner and conversation. */
+    public TracePage tracePage(UUID userId, UUID conversationId, UUID before, int limit) {
+        int size = Math.max(1, Math.min(100, limit));
+        AgentRun cursor = before == null ? null : get(userId, before);
+        if (cursor != null && !conversationId.equals(cursor.conversationId()))
+            throw new ResourceNotFoundException("请求记录不存在");
+        String query = """
+                SELECT id, conversation_id, message, status, label, error_code, error_message,
+                       retryable, tool_started, assistant_message_id, created_at, updated_at
+                FROM agent_runs WHERE user_id = ? AND conversation_id = ?
+                """ + (cursor == null ? "" : " AND (created_at,id) < (?,?)")
+                + " ORDER BY created_at DESC,id DESC LIMIT ?";
+        var descending = cursor == null ? jdbc.query(query, RUN_MAPPER, userId, conversationId, size + 1)
+                : jdbc.query(query, RUN_MAPPER, userId, conversationId, java.sql.Timestamp.from(cursor.createdAt()), cursor.id(), size + 1);
+        var page = descending.subList(0, Math.min(size, descending.size()));
+        UUID next = descending.size() > size ? page.getLast().id() : null;
+        return new TracePage(List.copyOf(page.reversed()), next);
+    }
+
     public Optional<AgentRun> latest(UUID userId, UUID conversationId) {
         return jdbc.query("""
                 SELECT id, conversation_id, message, status, label, error_code, error_message,

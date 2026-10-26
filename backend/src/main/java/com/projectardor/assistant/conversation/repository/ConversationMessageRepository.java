@@ -23,4 +23,7 @@ public interface ConversationMessageRepository extends JpaRepository<Conversatio
             UUID userId, UUID conversationId);
 
     long countByUserIdAndConversationId(UUID userId, UUID conversationId);
+
+    List<ConversationMessage> findByUserIdAndConversationIdAndRequestIdInAndRoleOrderByCreatedAtAsc(
+            UUID userId, UUID conversationId, List<UUID> requestIds, String role);
 }

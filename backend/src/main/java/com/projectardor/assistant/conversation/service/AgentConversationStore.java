@@ -71,6 +71,13 @@ public class AgentConversationStore {
         return messageRepository.findByUserIdAndConversationIdOrderByCreatedAtAsc(userId, conversationId);
     }
 
+    @Transactional(readOnly = true)
+    public List<ConversationMessage> assistantMessagesForRuns(UUID userId, UUID conversationId, List<UUID> requestIds) {
+        if (requestIds.isEmpty()) return List.of();
+        return messageRepository.findByUserIdAndConversationIdAndRequestIdInAndRoleOrderByCreatedAtAsc(
+                userId, conversationId, requestIds, "ASSISTANT");
+    }
+
     @Transactional
     public List<ConversationMessage> appendExchange(
             UUID userId, Conversation conversation, String userText, String assistantText) {

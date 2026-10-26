@@ -79,6 +79,16 @@ for (let index = 0; index < 2; index++) {
 const conversationTrace = await owner.request(`/api/agent/conversations/${conversation.id}/trace`);
 assert.equal(conversationTrace.runs.length, 2);
 assert.ok(conversationTrace.runs.every((run) => run.status === "COMPLETED" && run.assistantMessage && run.spans.length));
+const latestPage = await owner.request(`/api/agent/conversations/${conversation.id}/trace?limit=1`);
+assert.equal(latestPage.runs.length, 1);
+assert.ok(latestPage.nextBefore);
+const olderPage = await owner.request(`/api/agent/conversations/${conversation.id}/trace?limit=1&before=${latestPage.nextBefore}`);
+assert.equal(olderPage.runs.length, 1);
+assert.equal(olderPage.nextBefore, null);
+assert.deepEqual([...olderPage.runs, ...latestPage.runs].map(run => run.runId), conversationTrace.runs.map(run => run.runId));
+assert.ok(olderPage.runs[0].assistantMessage && latestPage.runs[0].assistantMessage);
+await owner.request(`/api/agent/conversations/${conversation.id}/trace?before=${randomUUID()}`, { expected: 404 });
+await other.request(`/api/agent/conversations/${conversation.id}/trace?before=${latestPage.nextBefore}`, { expected: 404 });
 const schemas = await owner.request("/api/agent/tools/schemas");
 assert.deepEqual(schemas.update_learning_plan.required, ["planId"]);
 assert.deepEqual(schemas.search_knowledge.required, ["query"]);

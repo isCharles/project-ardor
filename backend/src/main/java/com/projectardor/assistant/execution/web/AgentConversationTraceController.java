@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import com.projectardor.assistant.conversation.service.AgentConversationStore;
 import com.projectardor.assistant.execution.service.AgentRunStore;
@@ -33,18 +34,25 @@ public class AgentConversationTraceController {
         this.progress = progress;
     }
 
-    @GetMapping("/{conversationId}/trace")
     public AgentConversationTraceResponse trace(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable UUID conversationId) {
+        return tracePage(principal, conversationId, null, 30);
+    }
+
+    @GetMapping("/{conversationId}/trace")
+    public AgentConversationTraceResponse tracePage(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable UUID conversationId, @RequestParam(required = false) UUID before,
+            @RequestParam(defaultValue = "30") int limit) {
         var conversation = conversations.requireActive(principal.userId(), conversationId);
+        var page = runStore.tracePage(principal.userId(), conversationId, before, limit);
         var assistantByRun = new HashMap<UUID, String>();
-        for (var message : conversations.allMessages(principal.userId(), conversationId)) {
+        for (var message : conversations.assistantMessagesForRuns(principal.userId(), conversationId,
+                page.runs().stream().map(AgentRunStore.AgentRun::id).toList())) {
             if ("ASSISTANT".equals(message.getRole()) && message.getRequestId() != null) {
                 assistantByRun.put(message.getRequestId(), message.getContent());
             }
         }
-        List<AgentConversationTraceResponse.RunTrace> runs = runStore
-                .recentForConversation(principal.userId(), conversationId, 30).stream()
+        List<AgentConversationTraceResponse.RunTrace> runs = page.runs().stream()
                 .map(run -> new AgentConversationTraceResponse.RunTrace(
                         run.id(), run.message(), assistantByRun.getOrDefault(run.id(), ""),
                         thinking(principal.userId(), run.id()), run.status(),
@@ -52,7 +60,7 @@ public class AgentConversationTraceController {
                         traceStore.find(principal.userId(), run.id()).stream()
                                 .map(AgentTraceSpanResponse::from).toList()))
                 .toList();
-        return new AgentConversationTraceResponse(conversation.getId(), conversation.getTitle(), runs);
+        return new AgentConversationTraceResponse(conversation.getId(), conversation.getTitle(), runs, page.nextBefore());
     }
 
     private String thinking(UUID userId, UUID runId) {
