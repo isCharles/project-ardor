@@ -1240,12 +1240,11 @@ export default function AgentHomePage() {
   }
 
   function composerFooter() {
-    return <div data-composer-footer className="flex flex-wrap items-center justify-between gap-2 px-2 pb-1">
-      <div className="flex min-w-0 items-center gap-2">
+    return <div data-composer-footer className="ardor-composer-footer flex items-center justify-between gap-1 px-1 pb-1">
+      <div className="flex shrink-0 items-center gap-1">
         {attachmentPicker()}{permissionPicker()}
-        {draft.length >= 40_000 && <span className={`text-[11px] ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>{draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}</span>}
       </div>
-      <div data-composer-actions className="flex shrink-0 items-center gap-1.5">
+      <div data-composer-actions className="flex min-w-0 items-center justify-end gap-1">
         <ContextUsageIndicator selectedModel={modelOptions.find(item => item.id === modelChoice)?.label}
           usage={liveContext?.conversationId === state?.conversationId ? liveContext?.usage : streamProgress?.contextUsage ?? messages.slice().reverse().map(item => savedRunTrace(item.runTrace)?.contextUsage).find(Boolean)} />
         {reasoningPicker()}
@@ -1253,6 +1252,12 @@ export default function AgentHomePage() {
         {isRunning && !draft.trim() ? <Button type="button" aria-label={t("Stop", "停止")} disabled={cancelPending} onClick={() => void cancelExecution()} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800 disabled:opacity-50"><Square className="size-3 fill-current" /></Button> : <Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button>}
       </div>
     </div>;
+  }
+
+  function draftCounter() {
+    return draft.length >= 40_000 && <span data-draft-counter className={`pointer-events-none absolute right-4 top-3 rounded bg-white/90 px-1 text-[10px] tabular-nums ${draft.length > MAX_MESSAGE_LENGTH ? "text-red-600" : "text-stone-400"}`}>
+      {draft.length.toLocaleString()} / {MAX_MESSAGE_LENGTH.toLocaleString()}
+    </span>;
   }
 
   if (!state && !error) return <main className="ardor-workbench grid h-full place-items-center text-sm text-stone-500">{t("Waking Ardor…", "正在唤醒 Ardor…")}</main>;
@@ -1303,7 +1308,7 @@ export default function AgentHomePage() {
     <main className="ardor-workbench h-full overflow-hidden text-stone-900">
       <div className="flex h-full">
         {sidebarOpen === true && <button aria-label={t("Close conversations", "关闭会话栏")} className="fixed inset-0 z-20 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} />}
-        <aside aria-label={t("Conversations", "对话栏")} aria-hidden={sidebarOpen === false} inert={sidebarOpen === false} className={`fixed inset-y-0 left-16 z-40 shrink-0 flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl md:static md:z-20 md:shadow-none ${sidebarOpen === false ? "hidden" : sidebarOpen === true ? "flex" : "hidden md:flex"}`} style={{ width: "min(18rem, calc(100vw - 4rem))" }}>
+        <aside aria-label={t("Conversations", "对话栏")} aria-hidden={sidebarOpen === false} inert={sidebarOpen === false} className={`fixed inset-y-0 left-16 z-40 shrink-0 flex-col border-r border-stone-200/70 bg-[#f8f6f2] p-3 shadow-2xl md:static md:z-20 md:shadow-none ${sidebarOpen === false ? "hidden" : sidebarOpen === true ? "flex" : "hidden md:flex"}`} style={{ width: "min(16rem, calc(100vw - 4rem))" }}>
           <div className="flex h-12 items-center justify-between px-2">
             <WorkspaceBrand admin={isAdmin} />
             <div className="flex items-center gap-0.5"><ChatNotifications /><button aria-label={t("Search chats", "搜索对话")} onClick={() => { setSearchOpen((value) => !value); setRecentOpen(true); setChatSearch(""); }} className="rounded-lg p-2 text-stone-500 hover:bg-white"><Search className="size-4" /></button></div>
@@ -1313,13 +1318,13 @@ export default function AgentHomePage() {
           <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
             {searchOpen && <input autoFocus aria-label={t("Search chat titles", "搜索对话标题")} value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder={t("Search chat titles…", "搜索对话标题…")} className="mb-3 w-full rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm outline-none focus:border-violet-300" />}
             <button type="button" aria-expanded={recentOpen} aria-controls="recent-conversations" onClick={() => setRecentOpen((value) => !value)} className="flex w-full items-center gap-2 px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400"><ChevronDown className={`size-3 transition-transform ${recentOpen ? "" : "-rotate-90"}`} />{t("Recent chats", "最近对话")}</button>
-            {recentOpen && <div id="recent-conversations" className="space-y-1">
+            {recentOpen && <div id="recent-conversations" className="space-y-0.5">
               {conversations.filter((item) => item.title.toLocaleLowerCase().includes(chatSearch.trim().toLocaleLowerCase())).map((conversation) => (
                 <div key={conversation.id} className={`group relative rounded-xl ${conversation.id === state?.conversationId ? "bg-white shadow-sm" : "hover:bg-white/70"}`}>
-                  <button type="button" onClick={() => selectConversation(conversation.id)} className="flex w-full items-center gap-2 px-3 py-2.5 pr-10 text-left text-sm">{conversation.pinned && <Pin className="size-3.5 shrink-0 fill-stone-700 text-stone-700" />}<span className="truncate">{conversation.title}</span></button>
-                  <button type="button" aria-label={t("Chat actions", "会话操作")} onClick={() => setMenuId(menuId === conversation.id ? null : conversation.id)} className="absolute right-1.5 top-1.5 rounded-lg p-2 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-stone-700 md:opacity-0 md:group-hover:opacity-100"><MoreHorizontal className="size-4" /></button>
+                  <button data-conversation-row type="button" onClick={() => selectConversation(conversation.id)} className="flex h-8 w-full items-center gap-2 px-2.5 pr-9 text-left text-[13px] leading-5">{conversation.pinned && <Pin className="size-3 shrink-0 fill-stone-700 text-stone-700" />}<span className="truncate">{conversation.title}</span></button>
+                  <button type="button" aria-label={t("Chat actions", "会话操作")} onClick={() => setMenuId(menuId === conversation.id ? null : conversation.id)} className="absolute right-1 top-0 rounded-lg p-2 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-stone-700 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"><MoreHorizontal className="size-4" /></button>
                   {menuId === conversation.id && (
-                    <div className="absolute right-2 top-10 z-20 w-36 rounded-xl border border-stone-200 bg-white p-1.5 text-sm shadow-xl">
+                    <div className="absolute right-2 top-8 z-20 w-36 rounded-xl border border-stone-200 bg-white p-1.5 text-sm shadow-xl">
                       <button onClick={() => togglePin(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pin className={`size-3.5 ${conversation.pinned ? "fill-current" : ""}`} />{conversation.pinned ? t("Unpin", "取消置顶") : t("Pin", "置顶")}</button>
                       <button onClick={() => openRename(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pencil className="size-3.5" />{t("Rename", "重命名")}</button>
                       <button onClick={() => removeConversation(conversation.id, false)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Archive className="size-3.5" />{t("Archive", "归档")}</button>
@@ -1374,7 +1379,10 @@ export default function AgentHomePage() {
                   <form onSubmit={submit} className="mx-auto mt-8 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
                     {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
-                    <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={3} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
+                    <div className="relative">
+                      <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? typedHint : t("Set up a model first", "请先完成模型设置")} className={`w-full resize-none bg-transparent pl-4 ${draft.length >= 40_000 ? "pr-28" : "pr-4"} pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400`} />
+                      {draftCounter()}
+                    </div>
                     {composerFooter()}
                   </form>
                 </div>
@@ -1419,7 +1427,10 @@ export default function AgentHomePage() {
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
-              <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400" />
+              <div className="relative">
+                <textarea aria-label={t("Message Ardor", "给 Ardor 发消息")} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={handleKeyDown} disabled={!state?.llmConfigured} rows={2} placeholder={state?.llmConfigured ? "Message Ardor…" : "请先完成模型设置"} className={`w-full resize-none bg-transparent pl-4 ${draft.length >= 40_000 ? "pr-28" : "pr-4"} pb-1 pt-3 text-[15px] leading-6 outline-none focus-visible:!outline-none placeholder:text-stone-400`} />
+                {draftCounter()}
+              </div>
               {composerFooter()}
             </form>
           </div>}

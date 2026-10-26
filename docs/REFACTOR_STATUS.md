@@ -2,6 +2,17 @@
 
 ## 当前进度入口（2026-10-25，覆盖下方历史快照）
 
+2026-10-26 更新：[PR #206](https://github.com/isCharles/project-ardor/pull/206) 上下文容量环返工已合并并部署，
+合并提交 `01805b0`，revision `43ef68d50d6e261a27ddf7aa021f1b697be38bec`。每次实际请求计入工具定义与返回，
+比例环配三行提示，容量只用核实信息/明确配置。Java 21 全套 731 项（0 失败/错误、1 门控跳过），
+真实 HTTP、全部 CI（`40198542458`、`40198542432`）及实际 3000 端口四组合成 Edge 回归通过。
+前后端镜像 `ardor-*-context-ring:43ef68d`；实际 JAR SHA256
+`3D6221F950B6973095701988709B3545E912EEF5732F605AB1460F1AE8F4ADC8`，
+前端 BUILD_ID `p3jA83zT0TdfxSag9UVH6`。health UP、login 200、V65；原 PostgreSQL/Redis 与卷保留。
+部署前五类任务均为零；完整备份及镜像回退在仓库外 `../backups/20261026-before-context-ring-43ef68d/`。
+同时包含 #205 面试日期与课程关联布局修复。以下 #204/#203 等为历史部署，不能覆盖本段。
+当前继续 R07/R08 侧栏密度和窄屏输入框；整体 Goal、百轮与真实供应商精度仍未完成。
+
 上下文用量与实际压缩状态已由 [PR #204](https://github.com/isCharles/project-ardor/pull/204) 合并并部署，
 合并提交 `62851938933d4cdfa19c214293879f7a4d372c2e`。详细口径和证据见 [上下文观测](CONTEXT_USAGE.md)。
 本机后端 729 项（0 失败/错误、1 门控跳过）、真实 PostgreSQL、9 轮合成对话触发摘要的 HTTP

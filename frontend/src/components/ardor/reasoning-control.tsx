@@ -1,7 +1,8 @@
 "use client";
 
 import { Check, ChevronDown, Cpu } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useDismiss } from "./overlay";
 import { useLocale } from "@/lib/locale";
 import { modelDisplayName } from "@/lib/model-display-name";
@@ -50,17 +51,31 @@ export function ReasoningControl({ value, onChange, disabled, nativeControl, mod
 }) {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
-  const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
+  const [position, setPosition] = useState<{ left: number; bottom: number; width: number; maxHeight: number } | null>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false), popup);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("resize", close);
+    return () => window.removeEventListener("resize", close);
+  }, [open]);
   const selected = models.find((item) => item.id === model) ?? models[0];
   const levelOptions = selected?.reasoningLevels?.length ? selected.reasoningLevels : defaultLevels;
   const currentLabel = levelLabels[value];
-  return <div ref={ref} className="relative">
-    <button data-reasoning-depth={value} data-model-choice={selected?.id} data-native-reasoning={nativeControl} type="button" disabled={disabled} aria-label={t("Model and thinking depth", "模型与思考深度")} aria-expanded={open} onClick={() => setOpen((current) => !current)} className="flex max-w-[min(40vw,13rem)] items-center gap-1.5 rounded-full px-2.5 py-2 text-xs text-stone-500 transition hover:bg-violet-50 disabled:opacity-40">
+  return <div ref={ref} className="relative min-w-0">
+    <button data-reasoning-depth={value} data-model-choice={selected?.id} data-native-reasoning={nativeControl} type="button" disabled={disabled} aria-label={t("Model and thinking depth", "模型与思考深度")} aria-expanded={open} onClick={(event) => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const width = Math.min(352, window.innerWidth - 24);
+      setPosition({ left: Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12)),
+        bottom: Math.max(12, window.innerHeight - rect.top + 8), width, maxHeight: Math.max(100, rect.top - 20) });
+      setOpen(current => !current);
+    }} className="flex w-full min-w-0 max-w-[min(40vw,13rem)] items-center gap-1.5 rounded-full px-2.5 py-2 text-xs text-stone-500 transition hover:bg-violet-50 disabled:opacity-40">
       <span className="truncate font-medium text-stone-700" title={selected?.label}>{selected ? modelDisplayName(selected.label) : t("Primary model", "主模型")}</span>
-      <span className="shrink-0 text-stone-400">{currentLabel}</span>
+      <span data-reasoning-label className="shrink-0 text-stone-400">{currentLabel}</span>
       <ChevronDown className={`size-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
     </button>
-    {open && <div role="dialog" aria-label={t("Model and thinking depth options", "模型与思考深度选项")} className="ardor-depth-popover absolute bottom-12 right-0 z-40 w-[min(22rem,calc(100vw-2rem))] rounded-3xl border border-stone-200 bg-[#fcfcf9] p-3 shadow-xl">
+    {open && position && createPortal(<div ref={popup} role="dialog" aria-label={t("Model and thinking depth options", "模型与思考深度选项")} style={position} className="ardor-depth-popover fixed z-40 overflow-y-auto rounded-3xl border border-stone-200 bg-[#fcfcf9] p-3 shadow-xl">
       <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Models", "模型")}</div>
       <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
         {models.map((item) => <button key={item.id} type="button" disabled={!item.available} aria-pressed={item.id === selected?.id} onClick={() => { onModelChange?.(item.id); }} className={`flex w-full items-center gap-2 rounded-2xl px-2.5 py-2 text-left transition ${item.id === selected?.id ? "bg-violet-50" : "hover:bg-stone-100"} disabled:cursor-not-allowed disabled:opacity-45`}>
@@ -78,7 +93,7 @@ export function ReasoningControl({ value, onChange, disabled, nativeControl, mod
           {levelOptions.map((level) => <button type="button" key={level.value} aria-pressed={value === level.value} onClick={() => onChange(level.value)} className={`rounded-full px-2.5 py-1 text-[11px] transition ${value === level.value ? "bg-violet-100 font-medium text-violet-800" : "text-stone-500 hover:bg-stone-100"}`}>{levelLabels[level.value]}</button>)}
         </div>
       </div>
-    </div>}
+    </div>, document.body)}
   </div>;
 }
 
