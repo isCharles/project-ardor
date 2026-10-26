@@ -110,6 +110,8 @@ jobs:
         run: node tests/learning-feedback-ui.mjs
       - name: Course reading position UI regression (mock APIs)
         run: node tests/course-reading-position-ui.mjs
+      - name: Profile avatar UI regression (mock APIs)
+        run: node tests/profile-avatar-ui.mjs
       - name: Desktop update sidebar UI (synthetic bridge)
         run: node tests/desktop-update-ui.mjs
       - name: Learning source and target UI regression (mock APIs)
