@@ -14,8 +14,9 @@ function useAvatar(userId: string | null) {
   useEffect(() => {
     if (!userId) return;
     let active = true;
-    const load = () => { void api<Avatar>("/api/profile/avatar").then(value => {
-      if (active && value.userId === userId) setView(value);
+    let sequence = 0;
+    const load = () => { const request = ++sequence; void api<Avatar>("/api/profile/avatar").then(value => {
+      if (active && request === sequence && value.userId === userId) setView(value);
     }).catch(() => { /* Keep the default or previous image when offline. */ }); };
     load(); window.addEventListener(changed, load);
     return () => { active = false; window.removeEventListener(changed, load); };
