@@ -54,6 +54,11 @@ try {
     ],
   };
   let conversationRequests = 0;
+  let largeTrace = false, largePages = 0;
+  const largeRuns = Array.from({ length: 105 }, (_, index) => ({ ...conversation.runs[0], runId: `large-${index}`, message: `Synthetic turn ${index + 1}`,
+    spans: trace.spans.map(item => ({ ...item, id: `${item.id}-large-${index}`, runId: `large-${index}`,
+      startedAt: new Date(Date.parse(item.startedAt) + index * 4 * 3600_000).toISOString(),
+      finishedAt: new Date(Date.parse(item.finishedAt) + index * 4 * 3600_000).toISOString() })) }));
   await context.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body = {};
@@ -65,7 +70,17 @@ try {
       if (++traceRequests === 1) return route.fulfill({ status: 404, json: { message: "Trace is starting" } });
       body = trace;
     }
-    else if (path === "/api/agent/conversations/fixture-conv/trace") body = ++conversationRequests === 1 ? { ...conversation, runs: [] } : conversation;
+    else if (path === "/api/agent/conversations/fixture-conv/trace") {
+      if (largeTrace) {
+        largePages++;
+        const cursor = new URL(route.request().url()).searchParams.get("before");
+        const end = cursor ? Number(cursor.replace("large-", "")) : largeRuns.length;
+        const start = Math.max(0, end - 30);
+        body = { ...conversation, runs: largeRuns.slice(start, end), nextBefore: start ? `large-${start}` : null };
+      } else if (++conversationRequests === 1) body = { ...conversation, runs: [], nextBefore: null };
+      else if (new URL(route.request().url()).searchParams.has("before")) body = { ...conversation, runs: conversation.runs.slice(0, 1), nextBefore: null };
+      else body = { ...conversation, runs: conversation.runs.slice(1), nextBefore: "fixture-run" };
+    }
     await route.fulfill({ json: body });
   });
 
@@ -111,10 +126,11 @@ try {
   assert.equal(await page.locator("[data-conversation-run]").count(), 2, "Conversation trace lists every turn");
   assert.equal(await page.locator("[data-trace-overview]").getAttribute("data-active-duration-ms"), "10000",
     "Cumulative run time sums root durations and excludes the four-hour idle gap; nested spans are not double counted");
-  assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-run"), "run-2");
-  assert.equal(await page.locator("[data-trace-lane]").count(), 6, "Timing lanes show only the selected turn");
+  assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-turns"), "2");
+  assert.equal(await page.locator("[data-trace-lane]").count(), 12, "Timing lanes show all turns, including older pages");
+  const positions = await page.locator("[data-trace-lane]").evaluateAll(items => items.map(item => item.getAttribute("style")));
   await page.locator("[data-conversation-run]").first().click();
-  assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-run"), "fixture-run");
+  assert.deepEqual(await page.locator("[data-trace-lane]").evaluateAll(items => items.map(item => item.getAttribute("style"))), positions, "Selecting a turn never rescales the conversation overview");
   await page.getByRole("button", { name: "List", exact: true }).waitFor();
   await page.locator('[data-trace-lane][title^="llm.call.2"]').first().click();
   await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "llm.call.2" }).waitFor();
@@ -162,6 +178,18 @@ try {
   await page.locator("[data-conversation-run]").nth(1).click();
   await page.getByText("第二轮问题", { exact: true }).first().waitFor();
   await page.screenshot({ path: ".next/agent-trace-conversation.png", fullPage: true });
+  largeTrace = true;
+  await page.goto(`${origin}/app/agent-runs/fixture-run?conversation=fixture-conv`);
+  await page.waitForFunction(() => document.querySelector("[data-trace-timeline]")?.getAttribute("data-timeline-turns") === "105");
+  assert.equal(largePages, 4, "All 105 recorded turns load through four bounded pages");
+  assert.equal(await page.locator("[data-conversation-run]").count(), 105);
+  assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-duration-ms"), "525000");
+  assert.equal(await page.locator("[data-trace-lane]").count(), 630);
+  const globalPositions = await page.locator("[data-trace-lane]").evaluateAll(items => items.map(item => item.getAttribute("style")));
+  await page.locator("[data-conversation-run]").first().click();
+  assert.deepEqual(await page.locator("[data-trace-lane]").evaluateAll(items => items.map(item => item.getAttribute("style"))), globalPositions);
+  await page.setViewportSize({ width: 390, height: 900 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await context.close();
   console.log("Agent trace UI: graph nodes, metadata selection, inspector, timeline, multi-turn trace passed.");
 } finally {

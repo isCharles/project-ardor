@@ -8,7 +8,11 @@ import java.util.UUID;
 public record AgentConversationTraceResponse(
         UUID conversationId,
         String title,
-        List<RunTrace> runs) {
+        List<RunTrace> runs,
+        UUID nextBefore) {
+    public AgentConversationTraceResponse(UUID conversationId, String title, List<RunTrace> runs) {
+        this(conversationId, title, runs, null);
+    }
 
     public record RunTrace(
             UUID runId,

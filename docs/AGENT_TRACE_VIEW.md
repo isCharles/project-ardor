@@ -6,10 +6,21 @@ Chat exposes one conversation trace link at the right end of its title bar,
 rather than repeating it beside each answer. The route retains a run ID as its
 initial anchor and includes the conversation ID, preserving existing deep links.
 The multi-turn overview sums recorded root-run durations; elapsed wall time
-between messages is not execution time. The timing lanes show only the selected
-turn, so idle hours do not compress its model/tool steps to opposite edges.
+between messages is not execution time. Timing lanes stitch all recorded turns
+onto a cumulative active-time axis, omitting idle gaps. Selecting a turn or a bar
+changes the inspector, not the overview's scope or scale. Long histories scroll
+horizontally inside the overview instead of widening the page.
 Missing run timing falls back to recorded bounds within that run only; nested
 model/tool spans are never summed on top of the root duration.
+
+Conversation trace requests use bounded keyset pages: optional `before` (run ID)
+and `limit` (default 30, maximum 100), with additive `nextBefore` in the response.
+Each page retains chronological order. A cursor must belong to both the current
+user and conversation; foreign or unknown cursors return the same not-found
+response. Assistant messages are loaded only for that page's run IDs.
+The UI follows older pages before publishing the complete overview, deduplicates
+run IDs, and rejects repeated cursors. This removes the former 30-turn cutoff;
+it does not itself establish 100-turn model reasoning or compaction quality.
 
 Ordinary chat uses one streaming execution entry regardless of words such as
 “只读”. List and Graph render the same persisted run spans; choosing a view never
