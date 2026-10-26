@@ -18,24 +18,30 @@ public class AgentToolSchemaCatalog {
     }
 
     public Map<String, Object> schemas() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (var spec : specifications()) {
+            var schema = new LinkedHashMap<String, Object>(spec.parameters() == null
+                    ? Map.of("type", "object", "properties", Map.of())
+                    : JsonSchemaElementJsonUtils.toMap(spec.parameters()));
+            if (spec.description() != null) schema.put("description", spec.description());
+            if (result.putIfAbsent(spec.name(), schema) != null)
+                throw new IllegalStateException("工具重复登记：" + spec.name());
+        }
+        return result;
+    }
+
+    /** Same schema objects used by request estimation; discovery never binds or invokes tools. */
+    public List<dev.langchain4j.agent.tool.ToolSpecification> specifications() {
         var types = new java.util.ArrayList<Class<?>>();
         types.add(CareerAgentTools.BoundCareerTools.class);
         providers.forEach(provider -> types.addAll(provider.toolTypes()));
-        Map<String, Object> result = new LinkedHashMap<>();
+        var result = new java.util.ArrayList<dev.langchain4j.agent.tool.ToolSpecification>();
         for (Class<?> type : types) {
             for (var spec : ToolSpecifications.toolSpecificationsFrom(type)) {
-                // Pinned-library conversion stays in the assistant adapter; preserve optional,
-                // nested and enum parameters exactly as execution does.
-                var schema = new LinkedHashMap<String, Object>(spec.parameters() == null
-                        ? Map.of("type", "object", "properties", Map.of())
-                        : JsonSchemaElementJsonUtils.toMap(spec.parameters()));
-                if (spec.description() != null) schema.put("description", spec.description());
-                if (result.putIfAbsent(spec.name(), schema) != null) {
-                    throw new IllegalStateException("工具重复登记：" + spec.name());
-                }
+                result.add(spec);
             }
         }
-        return result;
+        return List.copyOf(result);
     }
 }
 

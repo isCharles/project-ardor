@@ -27,6 +27,13 @@ type TraceSpan = {
   attributes: Record<string, unknown>;
 };
 
+function spanLabel(span: TraceSpan, t: (english: string, chinese: string) => string) {
+  if (span.kind === "LLM" && span.attributes.purpose === "CONTEXT_COMPACTION")
+    return t("Context compaction", "上下文压缩");
+  if (span.kind === "CONTEXT" && span.name === "context.load") return t("Context assembly", "上下文加载");
+  return span.kind === "RUN" ? t("Agent run", "Agent 运行") : span.name;
+}
+
 type Trace = {
   runId: string;
   conversationId?: string | null;
@@ -232,7 +239,7 @@ function InspectorView({ spans, selected, filter, onFilter, onSelect, schemas }:
           return <button key={span.id} type="button" data-trace-inspector-item onClick={() => onSelect(span.id)} className={`flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition ${selected?.id === span.id ? "bg-violet-50 ring-1 ring-violet-200" : "hover:bg-stone-50"}`}>
             <span className={`mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${meta.color}`}><Icon className="size-2.5" />{meta.label}</span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs font-medium text-stone-800">{span.kind === "RUN" ? t("Agent run", "Agent 运行") : span.name}</span>
+              <span className="block truncate text-xs font-medium text-stone-800">{spanLabel(span, t)}</span>
               <span className="mt-1 flex items-center gap-2 text-[10px] text-stone-400"><span>#{index + 1}</span><span>{formatDuration(span.durationMs)}</span><span className={span.status === "FAILED" ? "text-rose-500" : span.status === "RUNNING" ? "text-violet-500" : "text-stone-400"}>{span.status}</span></span>
             </span>
           </button>;
@@ -268,7 +275,7 @@ function InspectorPanel({ span, schema, sourceLabel, thinking }: { span: TraceSp
   return <div data-trace-inspector-panel className="overflow-hidden rounded-2xl border border-white/80 bg-white/80">
     <div className="border-b border-stone-200/70 px-5 pt-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{isAssistant ? t("Assistant", "助手") : span.kind}</p><h2 className="mt-1 truncate text-lg font-semibold">{span.name}</h2></div>
+        <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{isAssistant ? t("Assistant", "助手") : span.kind}</p><h2 className="mt-1 truncate text-lg font-semibold">{spanLabel(span, t)}</h2></div>
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-stone-500"><span className={`rounded-full px-2 py-0.5 ${span.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : span.status === "RUNNING" ? "bg-violet-50 text-violet-700" : "bg-rose-50 text-rose-700"}`}>{span.status}</span><span>{formatDuration(span.durationMs)}</span></div>
       </div>
       <div role="tablist" aria-label={t("Span details", "步骤详情")} className="mt-4 flex gap-1 overflow-x-auto">
@@ -396,7 +403,7 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
         {stepView === "list" ? <div className="max-h-[62vh] overflow-y-auto p-2">
           {selectedRun?.spans.map((span) => <button key={span.id} type="button" data-trace-step-item onClick={() => setSelectedSpanId(span.id)} className={`mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs ${selectedSpanId === span.id ? "bg-violet-50 text-violet-800 ring-1 ring-violet-200" : "text-stone-500 hover:bg-stone-50"}`}>
             <span className={`size-2 shrink-0 rounded-full ${span.kind === "LLM" ? "bg-violet-400" : span.kind === "TOOL" ? "bg-sky-400" : "bg-stone-400"}`} />
-            <span className="min-w-0 flex-1 truncate">{span.kind === "RUN" ? t("Agent run", "Agent 运行") : span.name}</span>
+            <span className="min-w-0 flex-1 truncate">{spanLabel(span, t)}</span>
             <span className="shrink-0 tabular-nums text-[10px] text-stone-400">{formatDuration(span.durationMs)}</span>
           </button>)}
         </div> : <div className="max-h-[62vh] overflow-auto p-2">{flow.length > 0 ? <FlowGraph nodes={flow} selectedId={selectedSpanId} onSelect={setSelectedSpanId} /> : <p className="p-3 text-xs text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</p>}</div>}
@@ -534,7 +541,7 @@ function TraceNode({ node, index, selected, onSelect }: { node: FlowNode; index:
   const running = node.span.status === "RUNNING";
   return <button type="button" data-trace-node onClick={() => onSelect(node.span.id)} style={{ left: node.x, top: node.y, width: NODE_WIDTH, height: NODE_HEIGHT }} className={`absolute rounded-2xl border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${selected ? "border-violet-400 ring-2 ring-violet-200" : failed ? "border-rose-200" : "border-stone-200/80"}`} aria-label={`${meta.label} ${node.span.name}, ${formatDuration(node.span.durationMs)}`}>
     <div className="flex items-center justify-between gap-2"><span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wide ${meta.color}`}><Icon className="size-2.5" />{meta.label}</span><span className="text-[9px] tabular-nums text-stone-400">{index === 0 ? t("start", "起点") : `#${index}`}</span></div>
-    <p className="mt-1.5 truncate text-xs font-semibold text-stone-800">{node.span.kind === "RUN" ? t("Agent run", "Agent 运行") : node.span.name}</p>
+    <p className="mt-1.5 truncate text-xs font-semibold text-stone-800">{spanLabel(node.span, t)}</p>
     <div className="mt-1 flex items-center gap-2 text-[9px] text-stone-400"><span>{formatDuration(node.span.durationMs)}</span>{node.span.inputTokens != null && <span>{node.span.inputTokens} in</span>}{node.span.outputTokens != null && <span>{node.span.outputTokens} out</span>}{failed ? <CircleAlert className="size-3 text-rose-500" /> : running ? <LoaderCircle className="size-3 animate-spin text-violet-500" /> : <CheckCircle2 className="size-3 text-emerald-500" />}</div>
   </button>;
 }
@@ -553,7 +560,7 @@ function SpanDetails({ span, schema }: { span: TraceSpan; schema?: ToolSchema })
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{span.kind}</p>
-        <h2 className="mt-1 truncate text-lg font-semibold">{span.name}</h2>
+        <h2 className="mt-1 truncate text-lg font-semibold">{spanLabel(span, t)}</h2>
         <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-stone-500">
           <span className={`rounded-full px-2 py-0.5 ${span.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>{span.status}</span>
           <span>{formatDuration(span.durationMs)}</span>
@@ -609,7 +616,7 @@ function TraceRow({ span, root = false }: { span: TraceSpan; root?: boolean }) {
     <div className={`${root ? "grid size-9 shrink-0 place-items-center rounded-xl bg-violet-50" : "hidden"}`}><Icon className="size-4 text-violet-600" /></div>
     <div className="min-w-0 flex-1">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-sm font-medium text-stone-800">{root ? t("Agent run", "Agent 运行") : span.name}</span>
+        <span className="text-sm font-medium text-stone-800">{root ? t("Agent run", "Agent 运行") : spanLabel(span, t)}</span>
         {span.model && <span className="font-mono text-[11px] text-stone-400">{span.model}</span>}
         {ok ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : <CircleAlert className={`size-3.5 ${span.status === "RUNNING" ? "text-violet-500" : "text-rose-500"}`} />}
         <span className="ml-auto text-[11px] tabular-nums text-stone-400">{span.durationMs == null ? "—" : formatDuration(span.durationMs)}</span>

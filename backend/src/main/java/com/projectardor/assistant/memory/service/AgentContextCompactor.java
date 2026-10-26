@@ -12,13 +12,15 @@ import com.projectardor.assistant.ReasoningDepth;
 import com.projectardor.assistant.conversation.domain.ConversationMessage;
 import com.projectardor.assistant.conversation.service.AgentConversationStore;
 import com.projectardor.assistant.execution.service.LangChainModelFactory;
-import com.projectardor.platform.model.llm.domain.LlmProvider;
+import com.projectardor.assistant.execution.service.AgentContextBudgetPolicy;
+import com.projectardor.assistant.execution.service.ModelContextCapacity;
+import com.projectardor.assistant.execution.service.AgentRequestTokens;
+import com.projectardor.assistant.execution.service.AgentContextLimitException;
+import com.projectardor.assistant.tools.AgentToolSchemaCatalog;
 import com.projectardor.platform.model.llm.service.LlmConfigService;
 
-import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
 
 /**
  * Compacts the prompt view of a conversation without deleting persisted messages.
@@ -36,20 +38,31 @@ public class AgentContextCompactor {
     private final ConversationSummaryStore summaries;
     private final LangChainModelFactory modelFactory;
     private final int recentMessages;
-    private final int maxRawMessages;
     private final int maxHistoryTokens;
+    private final AgentContextBudgetPolicy budgetPolicy;
+    private final AgentToolSchemaCatalog schemas;
 
     public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
             LangChainModelFactory modelFactory,
+            int recentMessages, int maxRawMessages, int maxHistoryTokens) {
+        this(conversations, summaries, modelFactory, recentMessages, maxHistoryTokens,
+                new AgentContextBudgetPolicy(new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()),
+                        maxHistoryTokens, .75, .05), null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
+            LangChainModelFactory modelFactory,
             @Value("${app.agent.context.recent-messages:8}") int recentMessages,
-            @Value("${app.agent.context.max-raw-messages:24}") int maxRawMessages,
-            @Value("${app.agent.context.max-history-tokens:12000}") int maxHistoryTokens) {
+            @Value("${app.agent.context.max-history-tokens:12000}") int maxHistoryTokens,
+            AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas) {
         this.conversations = conversations;
         this.summaries = summaries;
         this.modelFactory = modelFactory;
         this.recentMessages = Math.max(2, recentMessages);
-        this.maxRawMessages = Math.max(4, maxRawMessages);
         this.maxHistoryTokens = Math.max(1000, maxHistoryTokens);
+        this.budgetPolicy = budgetPolicy;
+        this.schemas = schemas;
     }
 
     public Prepared prepare(UUID userId, UUID conversationId, String systemPrompt,
@@ -90,16 +103,23 @@ public class AgentContextCompactor {
         if (covered == 0) previous = java.util.Optional.empty();
         int recentStart = Math.max(covered, Math.max(0, visible.size() - recentMessages));
         List<ConversationMessage> older = covered < recentStart ? visible.subList(covered, recentStart) : List.of();
-        List<ConversationMessage> recent = visible.subList(Math.max(0, visible.size() - recentMessages), visible.size());
+        List<ConversationMessage> recent = visible.subList(Math.max(covered, visible.size() - recentMessages), visible.size());
 
         TokenCountEstimator estimator = estimator(config);
+        int output = modelFactory.maxOutputTokens(config, depth);
+        var budget = budgetPolicy.resolve(config, output > 0 ? output : 4096);
+        long toolTokens = schemas == null ? 0 : schemas.specifications().stream()
+                .mapToLong(spec -> estimator.estimateTokenCountInText(spec.toString())).sum();
+        if (budget.exceedsHardLimit(toolTokens + estimateTokens(estimator,
+                systemPrompt + "\n" + pendingContext, List.of(), List.of())))
+            throw new AgentContextLimitException();
         String currentSummary = previous.map(ConversationSummaryStore.Summary::content).orElse("");
-        boolean overBudget = estimateTokens(estimator, systemPrompt + "\n" + currentSummary + "\n" + pendingContext, older, recent) > maxHistoryTokens;
-        boolean enoughToCompact = older.size() >= 8 || visible.size() - covered > maxRawMessages;
+        boolean overBudget = budget.shouldCompact(toolTokens + estimateTokens(estimator,
+                systemPrompt + "\n" + currentSummary + "\n" + pendingContext, older, recent));
         // Every message must be represented by a saved summary or kept verbatim.
         List<ConversationMessage> effectiveRecent = visible.subList(covered, visible.size());
         int compactedCount = 0;
-        if (!older.isEmpty() && (overBudget || enoughToCompact)) {
+        if (!older.isEmpty() && overBudget) {
             status.accept("COMPACTING");
             CompactionResult compacted = compact(userId, conversationId, config, depth, previous, older, estimator, listeners, active);
             if (compacted != null) {
@@ -116,8 +136,10 @@ public class AgentContextCompactor {
                 + tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(java.util.Map.of(
                         "version", previous.map(ConversationSummaryStore.Summary::version).orElse(1), "content", currentSummary));
         int estimated = estimateTokens(estimator, systemPrompt + "\n" + summaryContext + "\n" + pendingContext, List.of(), effectiveRecent);
+        if (budget.exceedsHardLimit(toolTokens + estimated))
+            throw new AgentContextLimitException();
         return new Prepared(systemPrompt, effectiveRecent, previous.map(ConversationSummaryStore.Summary::version).orElse(0),
-                compactedCount, estimated, estimator, summaryContext);
+                compactedCount, estimated, estimator, summaryContext, budget);
     }
 
     public int budgetTokens() { return maxHistoryTokens; }
@@ -195,40 +217,22 @@ public class AgentContextCompactor {
     }
 
     private static TokenCountEstimator estimator(LlmConfigService.LlmRuntimeConfig config) {
-        if (config.provider() == LlmProvider.OPENAI_COMPATIBLE) {
-            try {
-                return new OpenAiTokenCountEstimator(config.model());
-            } catch (RuntimeException unsupported) {
-                // Unknown relay model IDs may not have a bundled vocabulary.
-            }
-        }
-        return new ApproximateEstimator();
+        return AgentRequestTokens.estimator(config);
     }
 
     private record CompactionResult(ConversationSummaryStore.Summary summary, String content) {}
 
     public record Prepared(String systemPrompt, List<ConversationMessage> recentMessages, int summaryVersion,
-            int compactedMessages, int estimatedTokens, TokenCountEstimator estimator, String summaryContext) {
+            int compactedMessages, int estimatedTokens, TokenCountEstimator estimator, String summaryContext,
+            AgentContextBudgetPolicy.Budget budget) {
+        public Prepared(String systemPrompt, List<ConversationMessage> recentMessages, int summaryVersion,
+                int compactedMessages, int estimatedTokens, TokenCountEstimator estimator, String summaryContext) {
+            this(systemPrompt, recentMessages, summaryVersion, compactedMessages, estimatedTokens, estimator, summaryContext, null);
+        }
         public Prepared(String systemPrompt, List<ConversationMessage> recentMessages, int summaryVersion,
                 int compactedMessages, int estimatedTokens, TokenCountEstimator estimator) {
             this(systemPrompt, recentMessages, summaryVersion, compactedMessages, estimatedTokens, estimator, "");
         }
     }
 
-    /** Conservative fallback for providers without a local tokenizer. */
-    static final class ApproximateEstimator implements TokenCountEstimator {
-        @Override public int estimateTokenCountInText(String text) {
-            return text == null || text.isEmpty() ? 0 : (text.length() + 1) / 2;
-        }
-
-        @Override public int estimateTokenCountInMessage(ChatMessage message) {
-            return 4 + estimateTokenCountInText(message == null ? "" : message.toString());
-        }
-
-        @Override public int estimateTokenCountInMessages(Iterable<ChatMessage> messages) {
-            int total = 0;
-            for (ChatMessage message : messages) total += estimateTokenCountInMessage(message);
-            return total;
-        }
-    }
 }

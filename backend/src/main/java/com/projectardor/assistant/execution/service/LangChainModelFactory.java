@@ -38,8 +38,8 @@ public class LangChainModelFactory {
     private final int proxyPort;
     private final Duration connectTimeout;
     private final Duration readTimeout;
+    private final AgentContextBudgetPolicy contextBudget;
 
-    @org.springframework.beans.factory.annotation.Autowired
     public LangChainModelFactory(
             LlmConfigService configService,
             @Value("${app.http.proxy-host:}") String proxyHost,
@@ -47,12 +47,25 @@ public class LangChainModelFactory {
             @Value("${app.http.connect-timeout:10s}") Duration connectTimeout,
             @Value("${app.http.read-timeout:120s}") Duration readTimeout,
             List<AgentModelProtocol> protocols) {
+        this(configService, proxyHost, proxyPort, connectTimeout, readTimeout, protocols,
+                new AgentContextBudgetPolicy(new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()),
+                        12000, .75, .05));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LangChainModelFactory(LlmConfigService configService,
+            @Value("${app.http.proxy-host:}") String proxyHost,
+            @Value("${app.http.proxy-port:0}") int proxyPort,
+            @Value("${app.http.connect-timeout:10s}") Duration connectTimeout,
+            @Value("${app.http.read-timeout:120s}") Duration readTimeout,
+            List<AgentModelProtocol> protocols, AgentContextBudgetPolicy contextBudget) {
         this.configService = configService;
         this.protocols = new ModelProtocols<>(protocols);
         this.proxyHost = proxyHost;
         this.proxyPort = proxyPort;
         this.connectTimeout = connectTimeout;
         this.readTimeout = readTimeout;
+        this.contextBudget = contextBudget;
     }
 
     /** Compatibility for non-Spring construction of the two existing protocols. */
@@ -82,6 +95,10 @@ public class LangChainModelFactory {
         return protocols.require(config.provider()).reasoning(config,ReasoningDepth.AUTO);
     }
 
+    public int maxOutputTokens(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth) {
+        return protocols.require(config.provider()).reasoning(config, depth).maxTokens();
+    }
+
     public ChatModel create(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth) {
         return create(config, depth, List.of());
     }
@@ -89,12 +106,16 @@ public class LangChainModelFactory {
     public ChatModel create(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
             List<ChatModelListener> listeners) {
         var protocol=protocols.require(config.provider());
+        var profile = protocol.reasoning(config, depth);
+        ChatModel model;
         if (listeners == null || listeners.isEmpty()) {
-            return protocol.chat(config,protocol.reasoning(config,depth),httpClientBuilder(),readTimeout,
+            model = protocol.chat(config,profile,httpClientBuilder(),readTimeout,
                     MODEL_INTERNAL_RETRIES);
+        } else {
+            model = protocol.chat(config,profile,httpClientBuilder(),readTimeout,
+                    MODEL_INTERNAL_RETRIES, listeners);
         }
-        return protocol.chat(config,protocol.reasoning(config,depth),httpClientBuilder(),readTimeout,
-                MODEL_INTERNAL_RETRIES, listeners);
+        return ContextBudgetedModels.chat(model, contextBudget.resolve(config, profile.maxTokens()), AgentRequestTokens.estimator(config));
     }
 
     public StreamingChatModel createStreaming(UUID userId) {
@@ -115,11 +136,15 @@ public class LangChainModelFactory {
     StreamingChatModel createStreaming(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
             AgentStreamLease lease, List<ChatModelListener> listeners) {
         var protocol=protocols.require(config.provider());
+        var profile = protocol.reasoning(config, depth);
         dev.langchain4j.http.client.HttpClientBuilder transport = lease == null ? httpClientBuilder() : new LeasedHttpClientBuilder(httpClientBuilder(), lease);
+        StreamingChatModel model;
         if (listeners == null || listeners.isEmpty()) {
-            return protocol.streaming(config,protocol.reasoning(config,depth),transport,readTimeout);
+            model = protocol.streaming(config,profile,transport,readTimeout);
+        } else {
+            model = protocol.streaming(config,profile,transport,readTimeout, listeners);
         }
-        return protocol.streaming(config,protocol.reasoning(config,depth),transport,readTimeout, listeners);
+        return ContextBudgetedModels.streaming(model, contextBudget.resolve(config, profile.maxTokens()), AgentRequestTokens.estimator(config));
     }
 
     private JdkHttpClientBuilder httpClientBuilder() {

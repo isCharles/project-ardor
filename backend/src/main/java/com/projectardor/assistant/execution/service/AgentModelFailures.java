@@ -14,6 +14,7 @@ final class AgentModelFailures {
     static Throwable classify(Throwable failure) {
         Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Throwable current = failure; current != null && seen.add(current); current = current.getCause()) {
+            if (current instanceof AgentContextLimitException) return current;
             if (current instanceof LlmCallException) return current;
             if (current instanceof HttpException http) return LlmFailureClassifier.http(http.statusCode(), failure);
             if (current instanceof AuthenticationException)

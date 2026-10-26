@@ -33,14 +33,15 @@ try {
     conversationId: "fixture-conv",
     status: "COMPLETED",
     durationMs: 2400,
-    totals: { llmCalls: 2, toolCalls: 1, loopRounds: 1, inputTokens: 12000, outputTokens: 180 },
+    totals: { llmCalls: 3, toolCalls: 1, loopRounds: 1, inputTokens: 12500, outputTokens: 230 },
     spans: [
       span("root", null, "RUN", "agent.run", "2026-10-23T08:00:00Z", { durationMs: 5000, attributes: { model: "fixture-model" } }),
       span("thought", "root", "THOUGHT", "phase.plan", "2026-10-23T08:00:00Z", { durationMs: 40 }),
       span("context", "root", "CONTEXT", "context.load", "2026-10-23T08:00:01Z", { durationMs: 120 }),
-      span("llm-1", "root", "LLM", "llm.call.1", "2026-10-23T08:00:02Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 32, attributes: { toolRound: true } }),
+      span("compaction", "context", "LLM", "context.compact.1", "2026-10-23T08:00:01.010Z", { durationMs: 100, model: "fixture-model", inputTokens: 500, outputTokens: 50, attributes: { purpose: "CONTEXT_COMPACTION", call: 1 } }),
+      span("llm-1", "root", "LLM", "llm.call.2", "2026-10-23T08:00:02Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 32, attributes: { toolRound: true } }),
       span("tool-1", "root", "TOOL", "list_resumes", "2026-10-23T08:00:03Z", { durationMs: 80 }),
-      span("llm-2", "root", "LLM", "llm.call.2", "2026-10-23T08:00:04Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 148 }),
+      span("llm-2", "root", "LLM", "llm.call.3", "2026-10-23T08:00:04Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 148 }),
     ],
   };
   let traceRequests = 0;
@@ -72,7 +73,8 @@ try {
   await page.goto(`${origin}/app/agent-runs/fixture-run`);
   await page.locator("[data-trace-node]").first().waitFor();
   assert.ok(traceRequests >= 2, "An initial not-found race must retry without requiring a page reload");
-  assert.equal(await page.locator("[data-trace-node]").count(), 6, "Flow graph renders every span including THOUGHT phases");
+  assert.equal(await page.locator("[data-trace-node]").count(), 7, "Flow graph renders every span including THOUGHT and independent compaction");
+  await page.getByText("Context compaction", { exact: true }).first().waitFor();
   await page.getByRole("button", { name: "Flow graph", exact: true }).waitFor();
   await page.getByRole("button", { name: "Timeline", exact: true }).waitFor();
 
@@ -81,13 +83,16 @@ try {
   assert.ok(fits, "Graph fits without horizontal scrolling");
   await page.getByRole("button", { name: "Inspector", exact: true }).click();
   await page.getByText("Metadata", { exact: true }).waitFor();
-  await page.getByText("llm.call.1", { exact: true }).first().waitFor();
+  await page.getByText("llm.call.2", { exact: true }).first().waitFor();
   await page.screenshot({ path: ".next/agent-trace-flow.png", fullPage: true });
 
   await page.getByRole("button", { name: "Inspector", exact: true }).click();
   await page.locator("[data-trace-inspector]").waitFor();
   await page.getByRole("tab", { name: "Overview", exact: true }).waitFor();
-  assert.equal(await page.locator("[data-trace-inspector-item]").count(), 6, "Inspector lists every span");
+  assert.equal(await page.locator("[data-trace-inspector-item]").count(), 7, "Inspector lists every span");
+  await page.locator("[data-trace-inspector-item]").filter({ hasText: "Context compaction" }).click();
+  await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "Context compaction" }).waitFor();
+  await page.locator("[data-trace-inspector-item]").filter({ hasText: "Agent run" }).click();
   await page.getByRole("tab", { name: "Timing", exact: true }).click();
   await page.getByText("Started at", { exact: true }).waitFor();
   await page.locator("[data-trace-inspector-item]").filter({ hasText: "list_resumes" }).click();
@@ -107,12 +112,12 @@ try {
   assert.equal(await page.locator("[data-trace-overview]").getAttribute("data-active-duration-ms"), "10000",
     "Cumulative run time sums root durations and excludes the four-hour idle gap; nested spans are not double counted");
   assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-run"), "run-2");
-  assert.equal(await page.locator("[data-trace-lane]").count(), 5, "Timing lanes show only the selected turn");
+  assert.equal(await page.locator("[data-trace-lane]").count(), 6, "Timing lanes show only the selected turn");
   await page.locator("[data-conversation-run]").first().click();
   assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-run"), "fixture-run");
   await page.getByRole("button", { name: "List", exact: true }).waitFor();
-  await page.locator('[data-trace-lane][title^="llm.call.1"]').first().click();
-  await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "llm.call.1" }).waitFor();
+  await page.locator('[data-trace-lane][title^="llm.call.2"]').first().click();
+  await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "llm.call.2" }).waitFor();
   await page.getByRole("button", { name: "Flow graph", exact: true }).click();
   assert.ok(await page.locator("[data-trace-node]").count() > 0, "Graph step view renders the flow");
   const graphLayout = await page.locator("[data-conversation-trace]").evaluate((element) => {
@@ -126,8 +131,8 @@ try {
   assert.ok(graphLayout.turnsTop >= graphLayout.graphBottom && graphLayout.inspectorTop >= graphLayout.graphBottom,
     "Conversation turns and inspector move below the full-width graph");
   await page.screenshot({ path: ".next/agent-trace-conversation-graph.png", fullPage: true });
-  await page.locator("[data-trace-node]").nth(3).click();
-  await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "llm.call.1" }).waitFor();
+  await page.locator("[data-trace-node]").filter({ hasText: "llm.call.2" }).click();
+  await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "llm.call.2" }).waitFor();
   for (const width of [900, 390]) {
     await page.setViewportSize({ width, height: 1100 });
     await page.waitForFunction(() => {

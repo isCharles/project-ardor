@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 if (process.env.ARDOR_ACCEPTANCE_DISPOSABLE_DB !== "true") throw new Error("Disposable database required");
 const base = process.env.ARDOR_ACCEPTANCE_API_BASE ?? "http://127.0.0.1:8080";
 const model = process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090";
+const expectedWindow = process.env.ARDOR_ACCEPTANCE_MODEL_WINDOW ? Number(process.env.ARDOR_ACCEPTANCE_MODEL_WINDOW) : null;
 
 class Client {
   cookies = new Map();
@@ -57,7 +58,7 @@ for (let index = 0; index < 2; index++) {
   assert.ok(contextEvents.slice(1).every(item => item.state === "READY"));
   const contextUsage = contextEvents.at(-1);
   assert.ok(contextUsage.estimatedTokens > 0, "The prompt estimate must be measured by the builder");
-  assert.equal(contextUsage.modelWindowTokens, null, "Unknown model windows must not be guessed");
+  assert.equal(contextUsage.modelWindowTokens, expectedWindow, "Only verified or explicitly configured model windows are reported");
   assert.ok(contextUsage.compressionBudgetTokens > 0);
   assert.equal((await owner.request(`/api/agent/runs/${requestId}`)).status, "COMPLETED");
   const trace = await owner.request(`/api/agent/runs/${requestId}/trace`);
@@ -120,7 +121,9 @@ for (; extraTurns < 16; ) {
   extraTurns++;
   const requestId = randomUUID();
   const text = await owner.request("/api/agent/messages/stream", { method: "POST", raw: true, body: {
-    conversationId: conversation.id, requestId, message: `Synthetic context retention probe ${extraTurns}`, reasoningDepth: "AUTO",
+    conversationId: conversation.id, requestId,
+    message: `Synthetic context retention probe ${extraTurns}\n${"Synthetic source material for budget growth. ".repeat(100)}`,
+    reasoningDepth: "AUTO",
   } });
   const events = text.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => JSON.parse(line.slice(5).trim()));
   assert.ok(events.some(event => event.type === "done"), "Synthetic compaction run must complete");
@@ -131,6 +134,13 @@ for (; extraTurns < 16; ) {
     assert.ok(measured.summaryVersion > 0 && measured.compactedMessages > 0);
     assert.ok(measured.estimatedTokens > 0);
     assert.deepEqual((await owner.request(`/api/agent/runs/${requestId}/progress`)).contextUsage, measured);
+    const trace = await owner.request(`/api/agent/runs/${requestId}/trace`);
+    const contextSpan = trace.spans.find(span => span.name === "context.load");
+    const compactSpan = trace.spans.find(span => span.attributes.purpose === "CONTEXT_COMPACTION");
+    assert.ok(compactSpan?.name.startsWith("context.compact."), "Summary is explicitly identified rather than an indistinguishable assistant call");
+    assert.equal(compactSpan.parentSpanId, contextSpan.id, "Summary is nested under context preparation");
+    const callNumbers = trace.spans.filter(span => span.kind === "LLM").map(span => span.attributes.call);
+    assert.equal(new Set(callNumbers).size, callNumbers.length, "Call numbers are unique across summary and assistant listeners");
     compacted = true; break;
   }
 }
