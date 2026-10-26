@@ -4,6 +4,14 @@
 
 相关合同：[领域合同与迁移基线](DOMAIN_CONTRACTS.md)、[学习来源与准备目标合同](LEARNING_ORIGIN_CONTEXT.md)、[数据库设计](DATABASE.md)。
 
+## 新生成客观题的质量约束
+
+新课程和未达标后的补充练习共用出题规范：明确适用前提、单一最佳答案、来自常见误解的合理干扰项，以及信息量相近的选项；判断题只判断一个清晰命题。简答题的评分规则不变。
+
+对新题检查 Unicode 等价/首尾空白重复选项，以及正确项长度明显超过干扰项的线索。检测到后最多请求一次定向修正；不截短答案，不改非选择题，不改题目数量或题型。普通合格输出不增加模型调用。修正仍不合格时，新课程生成失败；可选补充题则沿用既有行为，保留当前题目集，不影响已完成的评分。修正调用在数据库行锁外进行，提交时仍复核版本围栏。
+
+新题保存内部 `qualityVersion=learning-objective-v1`，公开题目视图不暴露答案或 rubric；旧课程、旧题及尝试快照不回写。长度与重复检查只捕捉机械线索，不能证明语义唯一性、技术事实或干扰项质量；真实模型抽样审校仍需单独验收。
+
 ## 1. 数据模型
 
 ### `learning_plans` 新增版本列（V52）
@@ -35,7 +43,7 @@
 | `answers` | 本次提交的答案数组（字符串，按题目顺序） |
 | `score` | 0–100；`legacy` 行可空 |
 | `evaluation` | 本轮评价 JSONB：feedback、questionFeedback、strengths、gaps、nextFocus、score、contentVersion、exercisesVersion，以及选择题判定 `choices` |
-| `model_name`、`prompt_version` | 评分模型与评价提示版本；新提交为 `learning-evaluation-v3`，历史 v1/v2 保留原标识。`legacy` 行为 NULL |
+| `model_name`、`prompt_version` | 评分模型与评价提示版本；新提交为 `learning-evaluation-v4`，历史 v1/v2/v3 保留原标识。`legacy` 行为 NULL |
 | `legacy` | 由旧投影回填、字段无法证明时为 TRUE，不伪造 rubric/model/prompt |
 | `submitted_at`、`created_at` | 提交时间与落库时间；旧投影缺失提交时间时为 NULL |
 
@@ -93,7 +101,7 @@
     "evaluation": {"feedback": "...", "strengths": [], "gaps": [], "nextFocus": "...",
                    "questionFeedback": [], "contentVersion": 1, "exercisesVersion": 1,
                    "choices": [{"exerciseId": "...", "selected": "...", "correctOption": "...", "correct": true}]},
-    "modelName": "...", "promptVersion": "learning-evaluation-v3",
+    "modelName": "...", "promptVersion": "learning-evaluation-v4",
     "legacy": false, "submittedAt": "..."
   }
 ]

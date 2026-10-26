@@ -306,6 +306,25 @@ class LearningPlanServiceTests {
         verify(f.plans, times(2)).flush();
     }
 
+    @Test
+    void followUpRepairFinishesBeforeLockAndKeepsOriginalAttemptSnapshot() {
+        Fixture f = new Fixture();
+        String cue = "每个请求使用独立请求 ID 作为 member，并以毫秒时间戳作为 score，才能避免同一毫秒的不同请求相互覆盖并统计窗口内的全部调用";
+        String flawed = WEAK_WITH_FOLLOW_UPS.replace("[\"A\",\"B\",\"C\"]", "[\"" + cue + "\",\"会\",\"不会\"]");
+        String repair = "{\"exercises\":" + new ObjectMapper().readTree(WEAK_WITH_FOLLOW_UPS).path("nextExercises") + "}";
+        when(f.llm.completeJson(any(), any(), any())).thenReturn(
+                new LlmGateway.LlmResult(flawed, "eval-model"), new LlmGateway.LlmResult(repair, "repair-model"));
+        var original = List.copyOf(f.plan.getExercises());
+        f.service.submit(f.userId, f.plan.getId(), List.of("内存由不同区域负责", "B"));
+        var order = org.mockito.Mockito.inOrder(f.llm, f.plans);
+        order.verify(f.llm, times(2)).completeJson(any(), any(), any());
+        order.verify(f.plans).findOwnedForUpdate(f.plan.getId(), f.userId);
+        assertThat(f.saved).singleElement().satisfies(attempt -> assertThat(attempt.getExerciseSnapshot()).isEqualTo(original));
+        assertThat(f.plan.getExercises().get(1)).containsEntry("options", List.of("A", "B", "C"))
+                .containsEntry("correctOption", 0).containsEntry("qualityVersion", LearningExerciseQuality.VERSION);
+        assertThat(f.plan.getExercisesVersion()).isEqualTo(2);
+    }
+
     private static class Fixture {
         final UUID userId = UUID.randomUUID();
         final LearningPlanRepository plans = mock(LearningPlanRepository.class);
