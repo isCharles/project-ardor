@@ -55,6 +55,20 @@ try {
   };
   let conversationRequests = 0;
   let largeTrace = false, largePages = 0;
+  let denseTrace = false, activeTrace = false;
+  const denseRuns = Array.from({ length: 400 }, (_, index) => {
+    const start = Date.parse("2026-10-23T08:00:00Z") + index * 3600_000;
+    const startedAt = new Date(start).toISOString();
+    return { ...conversation.runs[0], runId: `dense-${index}`, message: `Dense turn ${index + 1}`, spans: [
+      span(`dense-root-${index}`, null, "RUN", "agent.run", startedAt, { durationMs: 1000 }),
+      span(`dense-model-${index}`, `dense-root-${index}`, "LLM", "llm.call.1", startedAt, { durationMs: 1000 }),
+    ] };
+  });
+  const activeRun = { ...conversation.runs[0], runId: "active", message: "Active turn", status: "RUNNING", spans: [
+    span("active-root", null, "RUN", "agent.run", "2026-10-23T08:00:00Z", { durationMs: null, finishedAt: null, status: "RUNNING" }),
+    span("active-context", "active-root", "CONTEXT", "context.load", "2026-10-23T08:00:00.200Z", { durationMs: 300 }),
+    span("active-model", "active-root", "LLM", "llm.call.1", "2026-10-23T08:00:00.500Z", { durationMs: 400 }),
+  ] };
   const largeRuns = Array.from({ length: 105 }, (_, index) => ({ ...conversation.runs[0], runId: `large-${index}`, message: `Synthetic turn ${index + 1}`,
     spans: trace.spans.map(item => ({ ...item, id: `${item.id}-large-${index}`, runId: `large-${index}`,
       startedAt: new Date(Date.parse(item.startedAt) + index * 4 * 3600_000).toISOString(),
@@ -71,7 +85,13 @@ try {
       body = trace;
     }
     else if (path === "/api/agent/conversations/fixture-conv/trace") {
-      if (largeTrace) {
+      if (activeTrace) body = { ...conversation, runs: [activeRun], nextBefore: null };
+      else if (denseTrace) {
+        const cursor = new URL(route.request().url()).searchParams.get("before");
+        const end = cursor ? Number(cursor.replace("dense-", "")) : denseRuns.length;
+        const start = Math.max(0, end - 30);
+        body = { ...conversation, runs: denseRuns.slice(start, end), nextBefore: start ? `dense-${start}` : null };
+      } else if (largeTrace) {
         largePages++;
         const cursor = new URL(route.request().url()).searchParams.get("before");
         const end = cursor ? Number(cursor.replace("large-", "")) : largeRuns.length;
@@ -190,6 +210,21 @@ try {
   assert.deepEqual(await page.locator("[data-trace-lane]").evaluateAll(items => items.map(item => item.getAttribute("style"))), globalPositions);
   await page.setViewportSize({ width: 390, height: 900 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  denseTrace = true;
+  await page.goto(`${origin}/app/agent-runs/fixture-run?conversation=fixture-conv`);
+  await page.waitForFunction(() => document.querySelector("[data-trace-timeline]")?.getAttribute("data-timeline-turns") === "400");
+  assert.equal(await page.locator("[data-trace-lane]").count(), 400);
+  const tail = await page.locator('[data-trace-lane][data-lane-run="dense-398"], [data-trace-lane][data-lane-run="dense-399"]').evaluateAll(items => items.map(item => item.style.left));
+  assert.notEqual(tail[0], tail[1], "Final turns must retain distinct start positions on the scrollable canvas");
+  await page.locator('[data-trace-lane][data-lane-run="dense-398"]').click();
+  await page.locator("[data-trace-inspector-panel]").getByText("Turn #399", { exact: true }).waitFor();
+  await page.locator('[data-trace-lane][data-lane-run="dense-399"]').click();
+  await page.locator("[data-trace-inspector-panel]").getByText("Turn #400", { exact: true }).waitFor();
+  activeTrace = true;
+  await page.goto(`${origin}/app/agent-runs/fixture-run?conversation=fixture-conv`);
+  await page.waitForFunction(() => document.querySelector("[data-trace-timeline]")?.getAttribute("data-timeline-turns") === "1");
+  assert.equal(await page.locator("[data-trace-lane]").count(), 2, "Completed children remain visible before the root finishes");
+  assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-duration-ms"), "900");
   await context.close();
   console.log("Agent trace UI: graph nodes, metadata selection, inspector, timeline, multi-turn trace passed.");
 } finally {

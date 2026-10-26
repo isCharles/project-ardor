@@ -428,10 +428,14 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
 function recordedRunDuration(spans: TraceSpan[]): number {
   const root = spans.find((span) => span.kind === "RUN");
   if (root?.durationMs != null && Number.isFinite(root.durationMs) && root.durationMs >= 0) return root.durationMs;
-  // Fall back only to the recorded bounds within this run, never between turns.
-  const timed = (root ? [root] : spans).map((span) => ({ start: spanStart(span), end: spanEnd(span) }))
+  const rootStart = root ? spanStart(root) : null;
+  const rootEnd = root ? spanEnd(root) : null;
+  if (rootStart !== null && rootEnd !== null && rootEnd >= rootStart) return rootEnd - rootStart;
+  // An active root has no end yet; completed children still provide recorded bounds.
+  const timed = spans.map((span) => ({ start: spanStart(span), end: spanEnd(span) }))
     .filter((item): item is { start: number; end: number } => item.start !== null && item.end !== null && item.end >= item.start);
-  return timed.length ? Math.max(...timed.map((item) => item.end)) - Math.min(...timed.map((item) => item.start)) : 0;
+  return timed.length ? Math.max(0, Math.max(...timed.map((item) => item.end))
+    - (rootStart ?? Math.min(...timed.map((item) => item.start)))) : 0;
 }
 
 function spanStart(span: TraceSpan): number | null {
@@ -484,8 +488,8 @@ function TraceTimeOverview({ runs, selectedRunId, selectedSpanId, onSelect }: {
     <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Conversation timing", "对话时间总览")}</p><span className="text-[10px] tabular-nums text-stone-400">{formatDuration(domain)}</span></div>
     <div className="mt-3 overflow-x-auto"><div className="space-y-2" style={{ minWidth: Math.max(360, runs.length * 45) }}>
       {lanes.map(([label, kinds]) => <div key={label} className="flex items-center gap-3"><span className="w-24 shrink-0 text-right text-[10px] text-stone-400">{label}</span><div className="relative h-7 flex-1 rounded-lg bg-stone-100/80">{timed.filter((item) => kinds.includes(item.span.kind)).map((item) => {
-        const left = Math.min(99.4, Math.max(0, ((item.start - domainStart) / domain) * 100));
-        const width = Math.min(100 - left, Math.max(0.6, ((item.end - item.start) / domain) * 100));
+        const left = Math.min(100, Math.max(0, ((item.start - domainStart) / domain) * 100));
+        const width = Math.min(100 - left, Math.max(0, ((item.end - item.start) / domain) * 100));
         const selected = item.runId === selectedRunId && item.span.id === selectedSpanId;
         const failed = item.span.status === "FAILED";
         return <button key={`${item.runId}-${item.span.id}`} type="button" data-trace-lane data-lane-run={item.runId} onClick={() => onSelect(item.runId, item.span.id)} title={`${item.span.name} · ${t("Turn", "轮次")} ${runs.findIndex(run => run.runId === item.runId) + 1} · ${formatDuration(item.end - item.start)}`} style={{ left: `${left}%`, width: `${width}%` }} className={`absolute top-1 bottom-1 min-w-[3px] rounded-full transition ${selected ? "z-10 ring-2 ring-violet-500" : "hover:brightness-90"} ${failed ? "bg-rose-400" : item.span.kind === "LLM" ? "bg-violet-400" : item.span.kind === "TOOL" ? "bg-sky-400" : "bg-stone-400"}`} aria-label={`${item.span.name} ${formatDuration(item.end - item.start)}`} />;
