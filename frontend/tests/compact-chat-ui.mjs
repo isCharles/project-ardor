@@ -22,6 +22,11 @@ try {
     const path = new URL(route.request().url()).pathname;
     let body = [];
     if (path === "/api/auth/me") body = { id: "compact-owner", email: "compact@ardor.invalid", admin: false };
+    else if (path === "/api/auth/csrf") body = { token: "fixture", headerName: "X-CSRF-TOKEN" };
+    else if (path.endsWith("/pin") && route.request().method() === "PATCH") {
+      const id = path.split("/").at(-2), item = conversations.find(value => value.id === id);
+      item.pinned = route.request().postDataJSON().pinned; body = item;
+    }
     else if (path === "/api/profile") body = { displayName: "Synthetic owner", timezone: "Asia/Shanghai", targetRoles: [] };
     else if (path === "/api/profile/sidebar") body = { userId: "compact-owner", hrefs: ["/app"], configured: true, revision: 0 };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
@@ -36,6 +41,32 @@ try {
   const page = await context.newPage();
   await page.goto(`${origin}/app`);
   await page.locator("[data-conversation-row]").first().waitFor();
+  const sidebar = page.getByRole("complementary", { name: "Conversations", exact: true });
+  await sidebar.getByText("Ardor", { exact: true }).waitFor();
+  assert.equal(await sidebar.getByText("Project Ardor", { exact: true }).count(), 0);
+  const pinned = sidebar.getByRole("region", { name: "Pinned chats", exact: true });
+  await pinned.waitFor();
+  assert.equal(await pinned.locator("[data-conversation-row]").count(), 1);
+  assert.equal(await pinned.locator("[data-conversation-row] svg").count(), 0);
+  assert.equal(await sidebar.locator('#recent-conversations [data-conversation-row]').count(), 39);
+  await sidebar.getByRole("button", { name: "Recent chats", exact: true }).click();
+  await page.locator("#recent-conversations").waitFor({ state: "hidden" });
+  assert.equal(await pinned.isVisible(), true, "Pinned chats remain available when recent history is collapsed");
+  await sidebar.getByRole("button", { name: "Recent chats", exact: true }).click();
+  const title = pinned.locator("[data-conversation-title]");
+  await page.waitForFunction(() => document.querySelector('[data-conversation-title]')?.dataset.overflow === 'true');
+  assert.equal(await title.evaluate(element => getComputedStyle(element).textOverflow), "clip");
+  assert.notEqual(await title.evaluate(element => getComputedStyle(element).maskImage), "none");
+  assert.equal(await title.locator("span").evaluate(element => getComputedStyle(element).animationName), "none", "Respect reduced motion");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await pinned.locator("[data-conversation-row]").hover();
+  await page.waitForFunction(() => document.querySelector('[data-conversation-title] > span')?.getAnimations().length > 0);
+  const animatedShift = await title.locator("span").evaluate(element => {
+    const animation = element.getAnimations()[0]; animation.pause(); animation.currentTime = 5000;
+    return new DOMMatrix(getComputedStyle(element).transform).m41;
+  });
+  assert.ok(animatedShift < 0, "Hover reveals the clipped title by moving it left");
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const markdown = page.locator(".ardor-markdown");
   await markdown.getByText("北京晴 4~16℃，本周投递 30~40 份。", { exact: false }).waitFor();
   assert.equal(await markdown.locator("del").count(), 1);
@@ -51,6 +82,16 @@ try {
   await page.getByRole("button", { name: "Chat actions", exact: true }).first().click();
   await page.getByRole("button", { name: "Rename", exact: true }).waitFor();
   await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Rename", exact: true }).waitFor({ state: "hidden" });
+  await pinned.locator("[data-conversation-item]").hover();
+  await pinned.getByRole("button", { name: "Chat actions", exact: true }).click();
+  await pinned.getByRole("button", { name: "Unpin", exact: true }).click();
+  await pinned.waitFor({ state: "hidden" });
+  assert.equal(await sidebar.locator('#recent-conversations [data-conversation-row]').count(), 40);
+  await sidebar.locator("[data-conversation-item]").first().hover();
+  await sidebar.getByRole("button", { name: "Chat actions", exact: true }).first().click();
+  await sidebar.getByRole("button", { name: "Pin", exact: true }).click();
+  await pinned.waitFor();
 
   for (const isEmpty of [false, true]) {
     empty = isEmpty;

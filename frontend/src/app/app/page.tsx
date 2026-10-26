@@ -17,6 +17,7 @@ import { AppDialog } from "@/components/ui/app-dialog";
 import { ChatNotifications } from "@/components/ardor/chat-notifications";
 import { ChatVoiceButton } from "@/components/ardor/chat-voice-button";
 import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
+import { ConversationTitle } from "@/components/ardor/conversation-title";
 import { ReasoningControl, type ModelOption } from "@/components/ardor/reasoning-control";
 import { ContextUsageIndicator, type ContextUsage } from "@/components/ardor/context-usage";
 import { ServicePicker } from "@/components/ardor/service-picker";
@@ -267,6 +268,7 @@ export default function AgentHomePage() {
   const [notice, setNotice] = useState("");
   const [applicationReminder, setApplicationReminder] = useState<ApplicationReminder | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
+  const conversationMenuRef = useDismiss<HTMLDivElement>(menuId !== null, () => setMenuId(null));
   const [renaming, setRenaming] = useState<Conversation | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [renameError, setRenameError] = useState("");
@@ -1302,6 +1304,23 @@ export default function AgentHomePage() {
     try { resolution = window.localStorage.getItem(deletionResolutionKey(item, message.conversationId)) ?? resolution; } catch { /* Device storage can be unavailable. */ }
     return resolution && ["DONE", "DISMISSED", "EXPIRED"].includes(resolution) ? <p key={confirmationKey(item)}>{resolution === "DONE" ? t("Deleted", "已删除") : resolution === "DISMISSED" ? t("Kept", "已保留") : t("Expired proposal", "建议已过期")} · {item.label}</p> : null;
   });
+  const filteredConversations = conversations.filter((item) => item.title.toLocaleLowerCase().includes(chatSearch.trim().toLocaleLowerCase()));
+  const pinnedConversations = filteredConversations.filter((item) => item.pinned);
+  const recentConversations = filteredConversations.filter((item) => !item.pinned);
+  const conversationRow = (conversation: Conversation) => (
+    <div key={conversation.id} ref={menuId === conversation.id ? conversationMenuRef : undefined} data-conversation-item className={`group relative rounded-xl ${conversation.id === state?.conversationId ? "bg-stone-200/80" : "hover:bg-stone-200/45"}`}>
+      <button data-conversation-row aria-current={conversation.id === state?.conversationId ? "page" : undefined} title={conversation.title} type="button" onClick={() => selectConversation(conversation.id)} className="flex h-8 w-full items-center gap-2 px-2.5 pr-9 text-left text-[13px] leading-5"><ConversationTitle>{conversation.title}</ConversationTitle></button>
+      <button type="button" aria-label={t("Chat actions", "会话操作")} onClick={() => setMenuId(menuId === conversation.id ? null : conversation.id)} className="absolute right-1 top-0 rounded-lg p-2 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-stone-700 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"><MoreHorizontal className="size-4" /></button>
+      {menuId === conversation.id && (
+        <div className="absolute right-2 top-8 z-20 w-36 rounded-xl border border-stone-200 bg-white p-1.5 text-sm shadow-xl">
+          <button onClick={() => togglePin(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pin className={`size-3.5 ${conversation.pinned ? "fill-current" : ""}`} />{conversation.pinned ? t("Unpin", "取消置顶") : t("Pin", "置顶")}</button>
+          <button onClick={() => openRename(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pencil className="size-3.5" />{t("Rename", "重命名")}</button>
+          <button onClick={() => removeConversation(conversation.id, false)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Archive className="size-3.5" />{t("Archive", "归档")}</button>
+          <button onClick={() => removeConversation(conversation.id, true)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-red-600 hover:bg-red-50"><Trash2 className="size-3.5" />{t("Delete permanently", "永久删除")}</button>
+        </div>
+      )}
+    </div>
+  );
   const feedbackBanner = feedback && <div role="status" className="mx-auto mb-2 flex max-w-3xl items-center gap-3 px-3 py-1 text-xs text-stone-500"><span className="min-w-0 flex-1">{feedback}</span><button type="button" aria-label={t("Dismiss notice", "关闭提示")} onClick={() => setFeedback("")}><X className="size-3.5" /></button></div>;
 
   return (
@@ -1313,26 +1332,17 @@ export default function AgentHomePage() {
             <WorkspaceBrand admin={isAdmin} />
             <div className="flex items-center gap-0.5"><ChatNotifications /><button aria-label={t("Search chats", "搜索对话")} onClick={() => { setSearchOpen((value) => !value); setRecentOpen(true); setChatSearch(""); }} className="rounded-lg p-2 text-stone-500 hover:bg-white"><Search className="size-4" /></button></div>
           </div>
-          <button data-new-chat type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-sm font-medium shadow-sm transition hover:border-stone-300 hover:shadow disabled:opacity-50"><Plus className="size-4" />{t("New chat", "新对话")}</button>
+          <button data-new-chat type="button" onClick={newConversation} disabled={busy} className="mt-3 flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors hover:bg-stone-200/50 disabled:opacity-50"><Plus className="size-4" />{t("New chat", "新对话")}</button>
 
           <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
             {searchOpen && <input autoFocus aria-label={t("Search chat titles", "搜索对话标题")} value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder={t("Search chat titles…", "搜索对话标题…")} className="mb-3 w-full rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm outline-none focus:border-violet-300" />}
+            {pinnedConversations.length > 0 && <section aria-label={t("Pinned chats", "置顶对话")} className="mb-4">
+              <h2 className="px-2 pb-2 text-xs font-medium text-stone-400">{t("Pinned", "置顶")}</h2>
+              <div className="space-y-0.5">{pinnedConversations.map(conversationRow)}</div>
+            </section>}
             <button type="button" aria-expanded={recentOpen} aria-controls="recent-conversations" onClick={() => setRecentOpen((value) => !value)} className="flex w-full items-center gap-2 px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-stone-400"><ChevronDown className={`size-3 transition-transform ${recentOpen ? "" : "-rotate-90"}`} />{t("Recent chats", "最近对话")}</button>
             {recentOpen && <div id="recent-conversations" className="space-y-0.5">
-              {conversations.filter((item) => item.title.toLocaleLowerCase().includes(chatSearch.trim().toLocaleLowerCase())).map((conversation) => (
-                <div key={conversation.id} className={`group relative rounded-xl ${conversation.id === state?.conversationId ? "bg-white shadow-sm" : "hover:bg-white/70"}`}>
-                  <button data-conversation-row type="button" onClick={() => selectConversation(conversation.id)} className="flex h-8 w-full items-center gap-2 px-2.5 pr-9 text-left text-[13px] leading-5">{conversation.pinned && <Pin className="size-3 shrink-0 fill-stone-700 text-stone-700" />}<span className="truncate">{conversation.title}</span></button>
-                  <button type="button" aria-label={t("Chat actions", "会话操作")} onClick={() => setMenuId(menuId === conversation.id ? null : conversation.id)} className="absolute right-1 top-0 rounded-lg p-2 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-stone-700 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"><MoreHorizontal className="size-4" /></button>
-                  {menuId === conversation.id && (
-                    <div className="absolute right-2 top-8 z-20 w-36 rounded-xl border border-stone-200 bg-white p-1.5 text-sm shadow-xl">
-                      <button onClick={() => togglePin(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pin className={`size-3.5 ${conversation.pinned ? "fill-current" : ""}`} />{conversation.pinned ? t("Unpin", "取消置顶") : t("Pin", "置顶")}</button>
-                      <button onClick={() => openRename(conversation)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Pencil className="size-3.5" />{t("Rename", "重命名")}</button>
-                      <button onClick={() => removeConversation(conversation.id, false)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-100"><Archive className="size-3.5" />{t("Archive", "归档")}</button>
-                      <button onClick={() => removeConversation(conversation.id, true)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-red-600 hover:bg-red-50"><Trash2 className="size-3.5" />{t("Delete permanently", "永久删除")}</button>
-                    </div>
-                  )}
-                </div>
-              ))}
+              {recentConversations.map(conversationRow)}
               {conversations.length === 0 && <p className="px-2 py-3 text-xs leading-5 text-stone-400">{t("New chats will appear here.", "新对话会出现在这里。")}</p>}
               {chatSearch.trim() && !conversations.some((item) => item.title.toLocaleLowerCase().includes(chatSearch.trim().toLocaleLowerCase())) && <p className="px-2 py-3 text-xs text-stone-400">{t("No matching chats.", "没有匹配的对话。")}</p>}
             </div>}

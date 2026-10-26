@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+.ardor-conversation-title { display: block; min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; }
+.ardor-conversation-title > span { display: block; width: max-content; }
+.ardor-conversation-title[data-overflow="true"] { mask-image: linear-gradient(to right, black 70%, transparent); }
+[data-conversation-item]:is(:hover, :focus-within) .ardor-conversation-title[data-overflow="true"] > span {
+  animation: ardor-title-pan var(--title-duration) ease-in-out 0.8s infinite alternate;
+}
+@keyframes ardor-title-pan { 0%, 10% { transform: translateX(0); } 90%, 100% { transform: translateX(var(--title-shift)); } }
+@media (prefers-reduced-motion: reduce) {
+  [data-conversation-item]:is(:hover, :focus-within) .ardor-conversation-title[data-overflow="true"] > span { animation: none; }
+}
+
 .ardor-window-titlebar { -webkit-app-region: drag; }
 .ardor-window-control { -webkit-app-region: no-drag; }
 [data-desktop-chrome] { --ardor-page-height: calc(100dvh - 46px); }
