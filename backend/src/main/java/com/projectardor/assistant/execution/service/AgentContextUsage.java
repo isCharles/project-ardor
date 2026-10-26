@@ -1,6 +1,6 @@
 package com.projectardor.assistant.execution.service;
 
-/** Prompt assembly estimate, not provider billing or a claimed model capacity. */
+/** Latest request input usage (estimated until provider usage arrives), never cumulative billing. */
 public record AgentContextUsage(String state, String model, Long estimatedTokens, int compressionBudgetTokens,
         Long modelWindowTokens, int summaryVersion, int compactedMessages) {
     public static AgentContextUsage preparing(String model) {

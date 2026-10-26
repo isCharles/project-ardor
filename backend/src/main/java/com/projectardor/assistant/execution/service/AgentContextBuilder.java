@@ -49,13 +49,22 @@ public class AgentContextBuilder {
     private final AgentContextCompactor contextCompactor;
     private final ProfileService profileService;
     private final CareerAgentTools tools;
+    private final ModelContextCapacity capacity;
 
     public AgentContextBuilder(MemoryEmbeddingService memoryEmbedding, AgentContextCompactor contextCompactor,
             ProfileService profileService, CareerAgentTools tools) {
+        this(memoryEmbedding, contextCompactor, profileService, tools,
+                new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentContextBuilder(MemoryEmbeddingService memoryEmbedding, AgentContextCompactor contextCompactor,
+            ProfileService profileService, CareerAgentTools tools, ModelContextCapacity capacity) {
         this.memoryEmbedding = memoryEmbedding;
         this.contextCompactor = contextCompactor;
         this.profileService = profileService;
         this.tools = tools;
+        this.capacity = capacity;
     }
 
     public Prepared prepare(UUID userId, UUID conversationId, String message, String currentInput,
@@ -114,11 +123,16 @@ public class AgentContextBuilder {
         attributes.put("summaryVersion", prepared.summaryVersion());
         if (observer != null) observer.accept(new AgentContextUsage(failed.get() ? "COMPACTION_FAILED" : "READY",
                 runtimeConfig.model(), attributes.get("assembledEstimatedTokens") instanceof Number count ? count.longValue() : null,
-                contextCompactor.budgetTokens(), null, prepared.summaryVersion(), prepared.compactedMessages()));
-        return new Prepared(prepared.systemPrompt(), memory, java.util.Collections.unmodifiableMap(attributes));
+                contextCompactor.budgetTokens(), capacity.resolve(runtimeConfig), prepared.summaryVersion(), prepared.compactedMessages()));
+        return new Prepared(prepared.systemPrompt(), memory, java.util.Collections.unmodifiableMap(attributes), prepared.estimator());
     }
 
-    public record Prepared(String systemPrompt, ChatMemory memory, java.util.Map<String, Object> attributes) {}
+    public record Prepared(String systemPrompt, ChatMemory memory, java.util.Map<String, Object> attributes,
+            dev.langchain4j.model.TokenCountEstimator estimator) {
+        public Prepared(String systemPrompt, ChatMemory memory, java.util.Map<String, Object> attributes) {
+            this(systemPrompt, memory, attributes, null);
+        }
+    }
     public record HistoryTurn(String role, String content, List<AgentContextReference> contextReferences, Instant createdAt) {
         public HistoryTurn { contextReferences = contextReferences == null ? List.of() : List.copyOf(contextReferences); }
     }
