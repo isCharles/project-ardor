@@ -23,6 +23,8 @@ public final class AgentRunTracer {
     private final String promptVersion;
     private final UUID rootSpanId;
     private final AtomicInteger llmCalls = new AtomicInteger();
+    private final AtomicInteger modelCallSequence = new AtomicInteger();
+    private final java.util.concurrent.atomic.AtomicReference<UUID> contextSpan = new java.util.concurrent.atomic.AtomicReference<>();
     private final AtomicInteger toolCalls = new AtomicInteger();
     private final AtomicInteger loopRounds = new AtomicInteger();
     private final AtomicLong inputTokens = new AtomicLong();
@@ -52,14 +54,25 @@ public final class AgentRunTracer {
 
     public UUID startChild(String kind, String name, Map<String, Object> attributes) {
         if (!active()) return null;
-        return store.startSpan(userId, runId, rootSpanId, kind, name, attributes);
+        UUID span = store.startSpan(userId, runId, rootSpanId, kind, name, attributes);
+        if ("CONTEXT".equals(kind) && "context.load".equals(name)) contextSpan.set(span);
+        return span;
     }
+
+    public UUID startChild(UUID parent, String kind, String name, Map<String, Object> attributes) {
+        if (!active()) return null;
+        return store.startSpan(userId, runId, parent == null ? rootSpanId : parent, kind, name, attributes);
+    }
+
+    public UUID contextSpanId() { return contextSpan.get(); }
+    public int nextModelCall() { return modelCallSequence.incrementAndGet(); }
 
     public void finishChild(UUID spanId, String status, String errorCode, String modelName,
             Integer inTokens, Integer outTokens, Map<String, Object> attributes) {
         if (!active() || spanId == null) return;
         store.finishSpan(userId, spanId, status, errorCode, modelName, promptVersion,
                 inTokens, outTokens, attributes);
+        contextSpan.compareAndSet(spanId, null);
     }
 
     public void recordLlm(Integer inTokens, Integer outTokens, boolean toolRound) {

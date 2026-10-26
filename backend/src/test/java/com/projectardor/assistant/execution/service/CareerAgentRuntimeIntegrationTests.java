@@ -27,6 +27,30 @@ import tools.jackson.databind.json.JsonMapper;
 
 /** The actual streaming AI Services entry, including former keyword-triggered requests. */
 class CareerAgentRuntimeIntegrationTests {
+    @Test void localContextLimitClosesTheContextSpanAndNeverDispatchesTheModel() {
+        var f = new Fixture();
+        UUID requestId = UUID.randomUUID(), rootSpan = UUID.randomUUID(), contextSpan = UUID.randomUUID();
+        when(f.traces.enabled()).thenReturn(true);
+        when(f.traces.startSpan(eq(f.user), eq(requestId), isNull(), eq("RUN"), eq("agent.run"), any())).thenReturn(rootSpan);
+        when(f.traces.startSpan(eq(f.user), eq(requestId), eq(rootSpan), eq("CONTEXT"), eq("context.load"), any())).thenReturn(contextSpan);
+        when(f.runs.begin(eq(f.user), eq(requestId), eq(f.conversation.getId()), anyString(), isNull(), isNull(), anyList(), any(), any(), anyList())).thenReturn(true);
+        when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any(), anyString(), any()))
+                .thenThrow(new AgentContextLimitException());
+        var failedRun = mock(AgentRunStore.AgentRun.class);
+        when(f.runs.fail(eq(f.user), eq(requestId), eq("INVALID_STATE"), anyString(), eq(false))).thenReturn(failedRun);
+        f.service.chatStream(f.user, f.conversation.getId(), "Synthetic oversized request", null, null, List.of(), requestId,
+                new CareerAgentService.StreamSink() {
+                    public void send(AgentStreamEvent event) { f.events.add(event); }
+                    public void complete() {}
+                });
+        verify(f.traces).finishSpan(eq(f.user), eq(contextSpan), eq("FAILED"), eq("AGENT_CONTEXT_LIMIT"),
+                eq("fixture-model"), anyString(), isNull(), isNull(), any());
+        assertThat(f.events).anyMatch(event -> "error".equals(event.type())
+                && "INVALID_STATE".equals(event.errorCode()) && !Boolean.TRUE.equals(event.retryable()));
+        verify(f.factory, never()).createStreaming(any(LlmConfigService.LlmRuntimeConfig.class), any(), any(), anyList());
+        assertThat(f.requests).isEmpty();
+    }
+
     @ParameterizedTest @ValueSource(strings = {"请只读分析我的准备情况", "read-only audit my preparation", "请分析我的准备情况"})
     void keywordsUseTheSameStreamingEntryWithoutInventedPhases(String message) {
         var f = new Fixture(); f.run(message);
@@ -151,6 +175,7 @@ class CareerAgentRuntimeIntegrationTests {
         final AgentStreamProgress progress = new AgentStreamProgress();
         final AgentContextCompactor compactor = mock(AgentContextCompactor.class);
         final LangChainModelFactory factory = mock(LangChainModelFactory.class);
+        final AgentTraceStore traces = mock(AgentTraceStore.class);
         final ResumeReads resumeReads = mock(ResumeReads.class);
         final List<AgentStreamEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
         final List<ChatRequest> requests = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -184,7 +209,7 @@ class CareerAgentRuntimeIntegrationTests {
             var approvals = mock(AgentToolApprovals.class); when(approvals.canRead(eq(user), any())).thenReturn(true);
             service = new CareerAgentService(conversations, runs, factory, tools, mock(LlmConfigService.class), mock(AgentMemoryService.class),
                     new AgentContextBuilder(embedding, compactor, profiles, tools), profiles, JsonMapper.builder().build(), progress, approvals,
-                    mock(AgentPermissionGrants.class), mock(AgentExecutionAuditStore.class), mock(AgentTraceStore.class), catalog,
+                    mock(AgentPermissionGrants.class), mock(AgentExecutionAuditStore.class), traces, catalog,
                     mock(com.projectardor.platform.usage.UsageTokenStore.class), Duration.ofSeconds(90), timeout);
         }
         void run(String message) { service.chatStream(user, conversation.getId(), message, null, null, new CareerAgentService.StreamSink() {

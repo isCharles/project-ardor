@@ -3,7 +3,6 @@ package com.projectardor.assistant.execution.service;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -23,19 +22,27 @@ public final class AgentModelTraceListener implements ChatModelListener {
     private static final String SPAN_ATTRIBUTE = AgentModelTraceListener.class.getName() + ".span";
     private final AgentRunTracer tracer;
     private final String model;
-    private final AtomicInteger sequence = new AtomicInteger();
+    private final String purpose;
+    private final UUID parent;
 
     public AgentModelTraceListener(AgentRunTracer tracer, String model) {
+        this(tracer, model, "ASSISTANT", null);
+    }
+
+    public AgentModelTraceListener(AgentRunTracer tracer, String model, String purpose, UUID parent) {
         this.tracer = tracer;
         this.model = model;
+        this.purpose = purpose;
+        this.parent = parent;
     }
 
     @Override
     public void onRequest(ChatModelRequestContext context) {
         if (!tracer.active()) return;
-        int call = sequence.incrementAndGet();
+        int call = tracer.nextModelCall();
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("call", call);
+        attributes.put("purpose", purpose);
         attributes.put("model", model == null ? "" : model);
         attributes.put("provider", context.modelProvider() == null ? "" : context.modelProvider().name());
         attributes.put("messages", context.chatRequest() == null || context.chatRequest().messages() == null
@@ -47,7 +54,8 @@ public final class AgentModelTraceListener implements ChatModelListener {
             }
             attributes.put("inputPreview", TracePreview.of(preview));
         }
-        UUID span = tracer.startChild("LLM", "llm.call." + call, attributes);
+        String name = "CONTEXT_COMPACTION".equals(purpose) ? "context.compact." + call : "llm.call." + call;
+        UUID span = tracer.startChild(parent, "LLM", name, attributes);
         if (span != null) context.attributes().put(SPAN_ATTRIBUTE, span);
     }
 

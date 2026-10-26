@@ -79,7 +79,8 @@ public class AgentContextBuilder {
             java.util.function.Consumer<AgentContextUsage> observer) {
         String baseSystem = systemPrompt(userId, message) + depth.guidance();
         var listeners = tracer == null ? List.<dev.langchain4j.model.chat.listener.ChatModelListener>of()
-                : List.<dev.langchain4j.model.chat.listener.ChatModelListener>of(new AgentModelTraceListener(tracer, runtimeConfig.model()));
+                : List.<dev.langchain4j.model.chat.listener.ChatModelListener>of(new AgentModelTraceListener(
+                        tracer, runtimeConfig.model(), "CONTEXT_COMPACTION", tracer.contextSpanId()));
         String pending = currentInput + "\n" + interruptedTurns.stream()
                 .map(HistoryTurn::content).collect(java.util.stream.Collectors.joining("\n"));
         var failed = new java.util.concurrent.atomic.AtomicBoolean();
@@ -106,24 +107,31 @@ public class AgentContextBuilder {
             else if ("ASSISTANT".equals(turn.role())) memory.add(AiMessage.from(turn.content()));
         }
         var attributes = new java.util.LinkedHashMap<String, Object>();
+        long softBudget = prepared.budget() == null ? contextCompactor.budgetTokens() : prepared.budget().softInputTokens();
+        int displayedBudget = (int) Math.min(Integer.MAX_VALUE, softBudget);
         attributes.put("promptChars", prepared.systemPrompt().length());
         attributes.put("historyMessages", prepared.recentMessages().size());
         attributes.put("interruptedMessages", interruptedTurns.size());
         attributes.put("estimatedTokens", prepared.estimatedTokens());
-        attributes.put("contextBudgetTokens", contextCompactor.budgetTokens());
+        attributes.put("contextBudgetTokens", displayedBudget);
+        if (prepared.budget() != null) {
+            attributes.put("hardInputBudgetTokens", prepared.budget().hardInputTokens());
+            attributes.put("outputReserveTokens", prepared.budget().outputReserveTokens());
+            attributes.put("safetyReserveTokens", prepared.budget().safetyReserveTokens());
+        }
         // Include expanded references and the current request in the final estimate.
         if (prepared.estimator() != null) {
             long assembled = (long) prepared.estimator().estimateTokenCountInMessages(memory.messages())
                     + prepared.estimator().estimateTokenCountInText(prepared.systemPrompt())
                     + prepared.estimator().estimateTokenCountInText(currentInput);
             attributes.put("assembledEstimatedTokens", assembled);
-            attributes.put("overContextBudget", assembled > contextCompactor.budgetTokens());
+            attributes.put("overContextBudget", assembled >= softBudget);
         }
         attributes.put("compactedMessages", prepared.compactedMessages());
         attributes.put("summaryVersion", prepared.summaryVersion());
         if (observer != null) observer.accept(new AgentContextUsage(failed.get() ? "COMPACTION_FAILED" : "READY",
                 runtimeConfig.model(), attributes.get("assembledEstimatedTokens") instanceof Number count ? count.longValue() : null,
-                contextCompactor.budgetTokens(), capacity.resolve(runtimeConfig), prepared.summaryVersion(), prepared.compactedMessages()));
+                displayedBudget, capacity.resolve(runtimeConfig), prepared.summaryVersion(), prepared.compactedMessages()));
         return new Prepared(prepared.systemPrompt(), memory, java.util.Collections.unmodifiableMap(attributes), prepared.estimator());
     }
 

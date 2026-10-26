@@ -30,17 +30,7 @@ final class AgentRequestContextListener implements ChatModelListener {
         if (!active.getAsBoolean() || context.chatRequest() == null) return;
         long call = sequence.incrementAndGet();
         context.attributes().put(CALL, call);
-        var request = context.chatRequest();
-        long tokens = 0;
-        for (var message : request.messages()) {
-            tokens += estimator == null ? 4L + estimate(message.toString())
-                    : estimator.estimateTokenCountInMessage(message);
-        }
-        if (request.toolSpecifications() != null) {
-            for (var tool : request.toolSpecifications()) tokens += estimate(tool.toString());
-        }
-        if (request.responseFormat() != null) tokens += estimate(request.responseFormat().toString());
-        publish(tokens);
+        publish(AgentRequestTokens.estimate(context.chatRequest(), estimator));
     }
 
     @Override public synchronized void onResponse(ChatModelResponseContext context) {
@@ -50,11 +40,6 @@ final class AgentRequestContextListener implements ChatModelListener {
         // Provider input usage is per request, never the run's cumulative billing total.
         if (usage != null && usage.inputTokenCount() != null && usage.inputTokenCount() > 0)
             publish(usage.inputTokenCount().longValue());
-    }
-
-    private long estimate(String text) {
-        return text == null ? 0 : estimator == null ? (text.length() + 1L) / 2
-                : estimator.estimateTokenCountInText(text);
     }
 
     private void publish(long tokens) {

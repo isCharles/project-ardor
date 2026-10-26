@@ -216,8 +216,14 @@ public class CareerAgentService {
                     conversation.getId(), runtimeConfig.model(), AgentRunTracer.PROMPT_VERSION);
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
-            AgentContextBuilder.Prepared promptContext = buildContext(userId, conversation.getId(),
-                    message, agentInput, runtimeConfig, depth, tracer, null);
+            AgentContextBuilder.Prepared promptContext;
+            try {
+                promptContext = buildContext(userId, conversation.getId(), message, agentInput, runtimeConfig, depth, tracer, null);
+            } catch (RuntimeException failure) {
+                if (contextSpan != null) tracer.finishChild(contextSpan, "FAILED", contextFailureCode(failure),
+                        runtimeConfig.model(), null, null, java.util.Map.of());
+                throw failure;
+            }
             ChatMemory memory = promptContext.memory();
             String systemMessage = promptContext.systemPrompt();
             if (contextSpan != null) {
@@ -406,8 +412,15 @@ public class CareerAgentService {
             contextObserver.accept(AgentContextUsage.preparing(runtimeConfig.model()));
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
-            AgentContextBuilder.Prepared promptContext = lease.modelCall(() -> buildContext(userId, conversation.getId(),
-                    message, agentInput, runtimeConfig, depth, tracer, lease, contextObserver));
+            AgentContextBuilder.Prepared promptContext;
+            try {
+                promptContext = lease.modelCall(() -> buildContext(userId, conversation.getId(),
+                        message, agentInput, runtimeConfig, depth, tracer, lease, contextObserver));
+            } catch (RuntimeException failure) {
+                if (contextSpan != null) tracer.finishChild(contextSpan, "FAILED", contextFailureCode(failure),
+                        runtimeConfig.model(), null, null, java.util.Map.of());
+                throw failure;
+            }
             ChatMemory memory = promptContext.memory();
             String systemMessage = promptContext.systemPrompt();
             if (contextSpan != null) {
@@ -656,6 +669,11 @@ public class CareerAgentService {
     private Runnable cancellation(dev.langchain4j.model.chat.response.StreamingHandle handle) {
         return handle == null ? () -> {} : handle::cancel;
     }
+    private static String contextFailureCode(RuntimeException failure) {
+        return failure instanceof AgentContextLimitException ? "AGENT_CONTEXT_LIMIT"
+                : failure instanceof java.util.concurrent.CancellationException ? "AGENT_RUN_CANCELLED" : "CONTEXT_LOAD_FAILED";
+    }
+
     static Throwable classifyStreamFailure(Throwable failure) {
         return AgentModelFailures.classify(failure);
     }

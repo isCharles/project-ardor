@@ -1,6 +1,15 @@
 # 领域重构收尾状态
 
-## 当前进度入口（2026-10-25，覆盖下方历史快照）
+## 当前进度入口（2026-10-26，覆盖下方历史快照）
+
+最新部署：[PR #207](https://github.com/isCharles/project-ardor/pull/207) 已合并为 `2f92d02`，仅更新前端。
+运行镜像 `ardor-frontend-compact-chat:1367053`，revision `136705339a3fb128c7b5040eef1a8435c831ff26`，
+镜像 `sha256:b94cbe4e206065e5c6b78fbf6ee5772344e0db75ff97f9e3fa198041e92763d7`，
+实际 BUILD_ID `mDP4PSRMqD-t8SR9C3118`。全部 CI（`40253432036`、`40253432079`）通过，
+审阅指出的超长草稿计数挤占已修复。实际 3000 端口六尺寸布局/长草稿/菜单、上下文环与权限回归通过，
+API 均为合成夹具。login 200、后端 health UP；后端仍为下方 #206，数据库、Redis 和卷未替换。
+前端回退记录位于仓库外 `../backups/20261026-before-compact-chat-1367053/`。
+容量感知压缩在独立分支开发，尚未部署；完整分层压缩、结构化约束和百轮语义验收仍未完成。
 
 2026-10-26 更新：[PR #206](https://github.com/isCharles/project-ardor/pull/206) 上下文容量环返工已合并并部署，
 合并提交 `01805b0`，revision `43ef68d50d6e261a27ddf7aa021f1b697be38bec`。每次实际请求计入工具定义与返回，

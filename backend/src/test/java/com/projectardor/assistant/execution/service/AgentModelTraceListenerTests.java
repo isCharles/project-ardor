@@ -24,6 +24,28 @@ import dev.langchain4j.model.output.TokenUsage;
 
 class AgentModelTraceListenerTests {
     @Test
+    void compactionHasExplicitPurposeAndContextParentWithRunWideCallNumbers() {
+        var store = mock(AgentTraceStore.class);
+        when(store.enabled()).thenReturn(true);
+        when(store.startSpan(any(), any(), any(), any(), any(), any())).thenAnswer(call -> UUID.randomUUID());
+        UUID user = UUID.randomUUID(), run = UUID.randomUUID();
+        var tracer = AgentRunTracer.begin(store, user, run, null, "fixture", "v1");
+        UUID contextSpan = tracer.startChild("CONTEXT", "context.load", Map.of());
+        var compact = new AgentModelTraceListener(tracer, "fixture", "CONTEXT_COMPACTION", tracer.contextSpanId());
+        var reply = new AgentModelTraceListener(tracer, "fixture");
+        var request = mock(ChatModelRequestContext.class);
+        when(request.attributes()).thenAnswer(call -> new HashMap<>());
+        compact.onRequest(request);
+        tracer.finishChild(contextSpan, "COMPLETED", null, "fixture", null, null, Map.of());
+        assertThat(tracer.contextSpanId()).isNull();
+        reply.onRequest(request);
+        verify(store).startSpan(eq(user), eq(run), eq(contextSpan), eq("LLM"), eq("context.compact.1"),
+                org.mockito.ArgumentMatchers.argThat(attributes -> "CONTEXT_COMPACTION".equals(attributes.get("purpose"))));
+        verify(store).startSpan(eq(user), eq(run), eq(tracer.rootSpanId()), eq("LLM"), eq("llm.call.2"),
+                org.mockito.ArgumentMatchers.argThat(attributes -> "ASSISTANT".equals(attributes.get("purpose"))));
+    }
+
+    @Test
     void responseTokensAreCountedEvenWhenNoTraceSpanCanBeCreated() {
         AgentRunTracer tracer = AgentRunTracer.begin(null, UUID.randomUUID(), UUID.randomUUID(), null,
                 "fixture", null);
