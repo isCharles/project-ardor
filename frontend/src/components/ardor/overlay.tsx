@@ -6,7 +6,8 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /** Closes on Escape and on any pointer press outside the returned ref. */
-export function useDismiss<T extends HTMLElement>(open: boolean, onClose: () => void) {
+export function useDismiss<T extends HTMLElement>(open: boolean, onClose: () => void,
+  portalRef?: React.RefObject<HTMLElement | null>) {
   const ref = React.useRef<T>(null);
   React.useEffect(() => {
     if (!open) return;
@@ -17,7 +18,7 @@ export function useDismiss<T extends HTMLElement>(open: boolean, onClose: () => 
       }
     };
     const onPointer = (event: PointerEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) onClose();
+      if (ref.current && !ref.current.contains(event.target as Node) && !portalRef?.current?.contains(event.target as Node)) onClose();
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onPointer);
@@ -25,7 +26,7 @@ export function useDismiss<T extends HTMLElement>(open: boolean, onClose: () => 
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onPointer);
     };
-  }, [open, onClose]);
+  }, [open, onClose, portalRef]);
   return ref;
 }
 
