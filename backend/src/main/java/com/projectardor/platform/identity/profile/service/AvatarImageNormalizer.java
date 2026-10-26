@@ -1,6 +1,7 @@
 package com.projectardor.platform.identity.profile.service;
 
 import java.awt.RenderingHints;
+import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -37,6 +38,7 @@ public class AvatarImageNormalizer {
             var graphics = normalized.createGraphics();
             try {
                 graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                graphics.transform(orientationTransform(JpegExifOrientation.read(input)));
                 int side = Math.min(width, height), x = (width - side) / 2, y = (height - side) / 2;
                 graphics.drawImage(source, 0, 0, SIZE, SIZE, x, y, x + side, y + side, null);
             } finally { graphics.dispose(); source.flush(); }
@@ -48,4 +50,16 @@ public class AvatarImageNormalizer {
         finally { if (reader != null) reader.dispose(); }
     }
     private static IllegalArgumentException invalid() { return new IllegalArgumentException("请选择有效的 PNG 或 JPEG 图片"); }
+    private static AffineTransform orientationTransform(int orientation) {
+        return switch (orientation) {
+            case 2 -> new AffineTransform(-1, 0, 0, 1, SIZE, 0);
+            case 3 -> new AffineTransform(-1, 0, 0, -1, SIZE, SIZE);
+            case 4 -> new AffineTransform(1, 0, 0, -1, 0, SIZE);
+            case 5 -> new AffineTransform(0, 1, 1, 0, 0, 0);
+            case 6 -> new AffineTransform(0, 1, -1, 0, SIZE, 0);
+            case 7 -> new AffineTransform(0, -1, -1, 0, SIZE, SIZE);
+            case 8 -> new AffineTransform(0, -1, 1, 0, 0, SIZE);
+            default -> new AffineTransform();
+        };
+    }
 }
