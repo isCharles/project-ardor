@@ -6,6 +6,7 @@ import { chromium } from "playwright";
 const origin = "http://127.0.0.1:3121";
 const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", "3121"], { stdio: "pipe" });
 let logs = "", browser, empty = false;
+const answer = "北京晴 4~16℃，本周投递 30~40 份。~~旧安排~~";
 server.stdout.on("data", chunk => logs += chunk); server.stderr.on("data", chunk => logs += chunk);
 try {
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -24,7 +25,7 @@ try {
     else if (path === "/api/profile") body = { displayName: "Synthetic owner", timezone: "Asia/Shanghai", targetRoles: [] };
     else if (path === "/api/profile/sidebar") body = { userId: "compact-owner", hrefs: ["/app"], configured: true, revision: 0 };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
-    else if (path === "/api/agent") body = { conversationId: conversations[0].id, llmConfigured: true, memory: { content: "" }, conversations, archivedConversations: [], messages: empty ? [] : [{ id: "compact-answer", role: "ASSISTANT", content: "Synthetic answer", createdAt: date }] };
+    else if (path === "/api/agent") body = { conversationId: conversations[0].id, llmConfigured: true, memory: { content: "" }, conversations, archivedConversations: [], messages: empty ? [] : [{ id: "compact-answer", role: "ASSISTANT", content: answer, createdAt: date }] };
     else if (path === "/api/agent/runs/latest") return route.fulfill({ status: 204 });
     else if (path === "/api/agent/models") body = [{ id: "PRIMARY", label: `claude-opus-5-5-${"long-name-".repeat(12)}`, provider: "ANTHROPIC_COMPATIBLE", available: true, nativeControl: true }];
     else if (path === "/api/agent/permissions") body = { mode: "AUTO", globalLevel: 2, modules: [] };
@@ -35,6 +36,10 @@ try {
   const page = await context.newPage();
   await page.goto(`${origin}/app`);
   await page.locator("[data-conversation-row]").first().waitFor();
+  const markdown = page.locator(".ardor-markdown");
+  await markdown.getByText("北京晴 4~16℃，本周投递 30~40 份。", { exact: false }).waitFor();
+  assert.equal(await markdown.locator("del").count(), 1);
+  assert.equal(await markdown.locator("del").innerText(), "旧安排");
   assert.ok((await page.getByRole("complementary", { name: "Conversations", exact: true }).boundingBox()).width <= 256);
   const visibleRows = await page.locator("[data-conversation-row]").evaluateAll(rows => rows.filter(row => {
     const box = row.getBoundingClientRect();

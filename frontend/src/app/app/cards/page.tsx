@@ -4,7 +4,7 @@ import { ArrowRight, Check, Clock3, Pencil, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { markdownPlugins } from "@/lib/markdown-plugins";
 
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
@@ -32,7 +32,7 @@ function reviewDate(value: string, locale: string) {
 }
 
 function RichText({ text }: { text: string }) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+  return <ReactMarkdown remarkPlugins={markdownPlugins} components={{
     p: ({ children }) => <p className="mb-4 last:mb-0">{children}</p>,
     h1: ({ children }) => <p className="mb-4 font-semibold">{children}</p>,
     h2: ({ children }) => <p className="mb-4 font-semibold">{children}</p>,

@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { markdownPlugins } from "@/lib/markdown-plugins";
 import { type AiJob } from "@/lib/ai-jobs";
 import { approvalModes, type ApprovalMode } from "@/lib/approval-modes";
 
@@ -1397,14 +1397,14 @@ export default function AgentHomePage() {
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         {message === liveAssistant && liveTrace}
                         {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTrace>; })()}
-                        <div className="ardor-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 block text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time>
+                        <div className="ardor-markdown"><ReactMarkdown remarkPlugins={markdownPlugins}>{message.content}</ReactMarkdown></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 block text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time>
                       </div>
                     )}
                   </article>
                 ))}
                 {!liveAssistant && liveTrace}
-                {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div>}
-                {!terminalInHistory && !runningRun && !busy && streamProgress?.answerPartial && streamProgress.phase !== "COMPLETED" && <details className="max-w-xl rounded-2xl border border-stone-200/70 bg-white/50 p-4"><summary className="cursor-pointer text-xs text-stone-500">{t("Incomplete reply · saved before execution stopped", "未完成回复 · 停止前保留的片段")}</summary><div className="ardor-markdown mt-3 text-sm leading-7"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamProgress.answerPartial}</ReactMarkdown></div></details>}
+                {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={markdownPlugins}>{streamProgress.answerPartial}</ReactMarkdown></div>}
+                {!terminalInHistory && !runningRun && !busy && streamProgress?.answerPartial && streamProgress.phase !== "COMPLETED" && <details className="max-w-xl rounded-2xl border border-stone-200/70 bg-white/50 p-4"><summary className="cursor-pointer text-xs text-stone-500">{t("Incomplete reply · saved before execution stopped", "未完成回复 · 停止前保留的片段")}</summary><div className="ardor-markdown mt-3 text-sm leading-7"><ReactMarkdown remarkPlugins={markdownPlugins}>{streamProgress.answerPartial}</ReactMarkdown></div></details>}
                 <QueuedMessages key={state?.conversationId} conversationId={state?.conversationId ?? null} activeRunId={runningRun?.id ?? approvalRunId} onPendingChange={setHasQueuedMessages} onCompleted={load} onStarted={setQueuedWakeId} />
                 <div ref={endRef} />
               </div>

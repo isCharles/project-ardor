@@ -2,7 +2,7 @@
 
 import { ArrowLeft, Download, FileText, Sparkles } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { markdownPlugins } from "@/lib/markdown-plugins";
 import { useState } from "react";
 import { useLocale } from "@/lib/locale";
 
@@ -110,7 +110,7 @@ function InlineMarkdown({ text }: { text: string }) {
 }
 
 function MarkdownBlock({ text }: { text: string }) {
-  return <div className="mt-2"><ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{text}</ReactMarkdown></div>;
+  return <div className="mt-2"><ReactMarkdown remarkPlugins={markdownPlugins} components={markdownComponents}>{text}</ReactMarkdown></div>;
 }
 
 function IssueCard({ issue, t }: { issue: ResumeIssue; t: (en: string, zh: string) => string }) {

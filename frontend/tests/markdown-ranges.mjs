@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { markdownPlugins } from "../src/lib/markdown-plugins.ts";
+
+const render = (text, plugins = markdownPlugins) => renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: plugins }, text));
+const ranges = "10-28 scout 当天北京晴 4~16℃，按原计划去不用改期。投递节奏卡我也一并改成了「本周收在 30~40 份」的版本。";
+assert.match(render(ranges, [remarkGfm]), /<del>/, "Reproduce the previous accidental strikethrough");
+assert.doesNotMatch(render(ranges), /<del>/);
+assert.match(render(ranges), /4~16℃.*30~40 份/);
+assert.doesNotMatch(render("Wait ~5 minutes, then review ~10 cards."), /<del>/);
+assert.match(render("~~Old schedule~~ → **New schedule**"), /<del>Old schedule<\/del>.*<strong>New schedule<\/strong>/);
+assert.doesNotMatch(render(String.raw`\~\~literal\~\~`), /<del>/);
+assert.match(render("`4~16 and ~~literal~~`"), /<code>4~16 and ~~literal~~<\/code>/);
+assert.match(render("| Temperature | Applications |\n| --- | --- |\n| 4~16℃ | 30~40 |"), /<table>/);
+assert.doesNotMatch(render("| Temperature | Applications |\n| --- | --- |\n| 4~16℃ | 30~40 |"), /<del>/);
+assert.match(render("- [x] Check ranges"), /type="checkbox"/);
+console.log("Markdown: numeric ranges, explicit strikethrough, escapes, code, tables and task lists passed.");
