@@ -73,6 +73,22 @@ class QuotaServiceTests {
                 new QuotaService.FeatureUsage(UsageFeature.RESUME_ANALYSIS, 2, 40));
     }
 
+    @Test
+    void planExpiryIsSeparateFromQuotaResetAndScopedToTheCurrentUser() {
+        UUID paid = UUID.randomUUID(), free = UUID.randomUUID();
+        Instant expiry = Instant.parse("2026-11-18T12:30:00Z");
+        when(memberships.tier(paid)).thenReturn(MembershipTier.PLUS);
+        when(memberships.tier(free)).thenReturn(MembershipTier.FREE);
+        when(memberships.expiry(paid)).thenReturn(expiry);
+        when(policies.list()).thenReturn(List.of());
+
+        var snapshot = service.snapshot(paid);
+        assertThat(snapshot.planExpiresAt()).isEqualTo(expiry);
+        assertThat(snapshot.resetsAt()).isEqualTo(Instant.parse("2026-11-01T00:00:00Z"));
+        assertThat(service.snapshot(free).planExpiresAt()).isNull();
+        verify(memberships, never()).expiry(free);
+    }
+
 
     @Test
     void tokenBudgetBlocksBeforeTheModuleCounter() {
