@@ -36,6 +36,8 @@ class CareerAgentRuntimeIntegrationTests {
         when(f.runs.begin(eq(f.user), eq(requestId), eq(f.conversation.getId()), anyString(), isNull(), isNull(), anyList(), any(), any(), anyList())).thenReturn(true);
         when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any(), anyString(), any()))
                 .thenThrow(new AgentContextLimitException());
+        var failedRun = mock(AgentRunStore.AgentRun.class);
+        when(f.runs.fail(eq(f.user), eq(requestId), eq("INVALID_STATE"), anyString(), eq(false))).thenReturn(failedRun);
         f.service.chatStream(f.user, f.conversation.getId(), "Synthetic oversized request", null, null, List.of(), requestId,
                 new CareerAgentService.StreamSink() {
                     public void send(AgentStreamEvent event) { f.events.add(event); }
@@ -43,7 +45,8 @@ class CareerAgentRuntimeIntegrationTests {
                 });
         verify(f.traces).finishSpan(eq(f.user), eq(contextSpan), eq("FAILED"), eq("AGENT_CONTEXT_LIMIT"),
                 eq("fixture-model"), anyString(), isNull(), isNull(), any());
-        assertThat(f.events).anyMatch(event -> "error".equals(event.type()) && !Boolean.TRUE.equals(event.retryable()));
+        assertThat(f.events).anyMatch(event -> "error".equals(event.type())
+                && "INVALID_STATE".equals(event.errorCode()) && !Boolean.TRUE.equals(event.retryable()));
         verify(f.factory, never()).createStreaming(any(LlmConfigService.LlmRuntimeConfig.class), any(), any(), anyList());
         assertThat(f.requests).isEmpty();
     }
