@@ -12,7 +12,7 @@ public final class ModelContextCapacity {
 
     public ModelContextCapacity(Environment environment) { this.environment = environment; }
 
-    Long resolve(LlmConfigService.LlmRuntimeConfig config) {
+    public Long resolve(LlmConfigService.LlmRuntimeConfig config) {
         if (config == null || config.model() == null) return null;
         String model = config.model();
         String configured = environment.getProperty("app.agent.context.windows." + model);

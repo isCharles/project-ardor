@@ -79,7 +79,8 @@ public class AgentContextBuilder {
             java.util.function.Consumer<AgentContextUsage> observer) {
         String baseSystem = systemPrompt(userId, message) + depth.guidance();
         var listeners = tracer == null ? List.<dev.langchain4j.model.chat.listener.ChatModelListener>of()
-                : List.<dev.langchain4j.model.chat.listener.ChatModelListener>of(new AgentModelTraceListener(tracer, runtimeConfig.model()));
+                : List.<dev.langchain4j.model.chat.listener.ChatModelListener>of(new AgentModelTraceListener(
+                        tracer, runtimeConfig.model(), "CONTEXT_COMPACTION", tracer.contextSpanId()));
         String pending = currentInput + "\n" + interruptedTurns.stream()
                 .map(HistoryTurn::content).collect(java.util.stream.Collectors.joining("\n"));
         var failed = new java.util.concurrent.atomic.AtomicBoolean();
