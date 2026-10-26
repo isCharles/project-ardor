@@ -30,7 +30,7 @@ try {
     else if (path === "/api/agent/runs/latest") {
       if (!running) return route.fulfill({ status: 204 });
       body = { id: "context-run", conversationId: conversation.id, message: "Synthetic request", status: "RUNNING", label: "Working", createdAt: conversation.createdAt };
-    } else if (path.endsWith("/context-run/progress")) body = { phase: "WAITING", label: "Preparing", thinkingOutput: "", answerPartial: "", steps: [], contextUsage: usage };
+    } else if (path.endsWith("/context-run/progress")) body = { phase: "WAITING", label: "Preparing", thinkingOutput: "", answerPartial: "北京晴 4~16℃，投递 30~40 份。~~旧安排~~", steps: [], contextUsage: usage };
     else if (path === "/api/agent/permissions") body = { mode: "CUSTOM", globalLevel: 1, modules: [] };
     else if (path === "/api/agent/models") body = [
       { id: "PRIMARY", label: "synthetic-model", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
@@ -74,6 +74,11 @@ try {
   usage = { ...usage, state: "COMPACTING", estimatedTokens: null };
   await page.reload();
   await page.locator('[data-context-state="COMPACTING"]').waitFor();
+  const partialReply = page.getByLabel("Reply in progress", { exact: true });
+  await partialReply.waitFor();
+  assert.match(await partialReply.innerText(), /4~16℃.*30~40/);
+  assert.equal(await partialReply.locator("del").count(), 1);
+  assert.equal(await partialReply.locator("del").innerText(), "旧安排");
   await indicator.hover();
   await tooltip.getByText("Compacting context", { exact: true }).waitFor();
   usage = { ...usage, state: "COMPACTION_FAILED", estimatedTokens: 1800 };
