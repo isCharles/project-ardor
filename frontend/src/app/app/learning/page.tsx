@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, BookOpen, CheckCircle2, CircleAlert, Ellipsis, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowRight, BookOpen, CheckCircle2, CircleAlert, Ellipsis, Plus, Sparkles, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
@@ -90,6 +90,7 @@ function clearCompletedCreateRequest(items: LearningPlan[]) {
 export default function LearningPage() {
   const router = useRouter();
   const { locale, t } = useLocale();
+  const newCourseHref = agentCreationHref("LEARNING", locale, t("Recommend some courses for me", "帮我推荐一些学习课程"));
   const [plans, setPlans] = useState<LearningPlan[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<string[]>([]);
@@ -321,19 +322,6 @@ export default function LearningPage() {
   return (
     <main className="ardor-workbench min-h-screen px-5 pb-16 pt-6 text-[#1d1d1f] md:px-10">
       <div className="mx-auto max-w-7xl">
-        <div className="flex items-center justify-end">
-          
-          <div className="flex items-center gap-2">
-            {selected && <details className="relative">
-              <summary aria-label={t("More actions", "更多操作")} className="grid size-11 cursor-pointer list-none place-items-center rounded-full border border-white/80 bg-white/65 text-stone-500 shadow-sm transition hover:bg-white hover:text-stone-800 [&::-webkit-details-marker]:hidden"><Ellipsis className="size-4" /></summary>
-              <div className="absolute right-0 z-20 mt-1 w-44 rounded-2xl border border-stone-200 bg-white p-1 shadow-xl">
-                <button type="button" onClick={(event) => { (event.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); setDeleteTarget(selected); setDeleteError(""); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"><Trash2 className="size-4" />{t("Delete plan", "删除计划")}</button>
-              </div>
-            </details>}
-            {!loading && plans.length > 0 && <button type="button" onClick={() => router.push(agentCreationHref("LEARNING", locale))} className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/65 px-4 py-2.5 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-white">
-            <Plus className="size-4" />{t("New topic", "新学习")}
-          </button>}</div>
-        </div>
         {/* A finished creation job is history: the plan list already shows the lesson. */}
         {creation.job && creation.job.status !== "COMPLETED" && <AiJobStatus job={creation.job} retry={creation.retry} pollFailed={creation.pollFailed} />}
 
@@ -346,7 +334,7 @@ export default function LearningPage() {
           <div className="ardor-panel h-80 animate-pulse rounded-[2.5rem]" aria-label={t("Loading learning plans", "正在加载学习计划")} />
         ) : plans.length === 0 ? (
           <section className="ardor-panel grid min-h-96 place-items-center rounded-[2.5rem] px-6 text-center">
-            <div><BookOpen className="mx-auto size-9 text-violet-500" /><h2 className="mt-5 text-2xl font-semibold">{t("Start with one concept", "从一个概念开始")}</h2><p className="mt-2 text-sm text-stone-500">{t("Choose one yourself, or let Ardor suggest one from your interviews.", "自己选择，或让 Ardor 根据面试情况安排。")}</p><button type="button" onClick={() => router.push(agentCreationHref("LEARNING", locale))} className="mt-7 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white">{t("New topic", "新学习")}<ArrowRight className="ml-2 inline size-4" /></button></div>
+            <div><BookOpen className="mx-auto size-9 text-violet-500" /><h2 className="mt-5 text-2xl font-semibold">{t("Start with one concept", "从一个概念开始")}</h2><p className="mt-2 text-sm text-stone-500">{t("Choose one yourself, or let Ardor suggest one from your interviews.", "自己选择，或让 Ardor 根据面试情况安排。")}</p><button type="button" onClick={() => router.push(newCourseHref)} className="mt-7 rounded-full bg-stone-950 px-6 py-3 text-sm font-medium text-white">{t("New course", "新课程")}<ArrowRight className="ml-2 inline size-4" /></button></div>
           </section>
         ) : selected && (
           <>
@@ -387,7 +375,7 @@ export default function LearningPage() {
 
             <div className="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
               <aside className="ardor-soft-panel h-fit rounded-[2rem] p-3">
-                <div className="flex items-center justify-between px-3 pb-3 pt-2"><h2 className="text-sm font-semibold">{t("Learning path", "学习轨道")}</h2><span className="text-xs text-stone-500">{t(`${activeCount} active`, `${activeCount} 项进行中`)}</span></div>
+                <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-2"><div><h2 className="text-sm font-semibold">{t("Learning path", "学习轨道")}</h2><p className="mt-1 text-xs text-stone-500">{t(`${activeCount} active`, `${activeCount} 项进行中`)}</p></div><button type="button" aria-label={t("New course", "新课程")} title={t("New course", "新课程")} onClick={() => router.push(newCourseHref)} className="grid size-8 shrink-0 place-items-center rounded-full text-stone-600 transition hover:bg-white"><Plus className="size-4" /></button></div>
                 <nav aria-label={t("Learning plans", "学习计划")} className="space-y-1">
                   {(["NEEDS_REVIEW", "IN_PROGRESS", "SCHEDULED"] as const).map((status) => {
                     const group = orderedPlans.filter((plan) => plan.status === status);
@@ -405,7 +393,10 @@ export default function LearningPage() {
 
               <article className="space-y-6">
                 <section className="ardor-panel rounded-[2.5rem] p-7 md:p-10" aria-labelledby="lesson-title">
-                  <h2 id="lesson-title" className="text-2xl font-semibold">{t("Understand", "理解")}</h2>
+                  <div className="flex items-center justify-between gap-4">
+                    <h2 id="lesson-title" className="text-2xl font-semibold">{t("Understand", "理解")}</h2>
+                    <button type="button" aria-label={t("Delete plan", "删除计划")} title={t("Delete plan", "删除计划")} onClick={() => { setDeleteTarget(selected); setDeleteError(""); }} className="grid size-9 shrink-0 place-items-center rounded-full text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"><Ellipsis className="size-4" /></button>
+                  </div>
                   {selected.reason && <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-600">{selected.reason}</p>}
                   {selected.lesson.summary && <MarkdownContent className="mt-8 text-xl font-medium leading-8">{selected.lesson.summary}</MarkdownContent>}
                   {selected.lesson.keyPoints && selected.lesson.keyPoints.length > 0 && <div className="mt-7 grid gap-3 sm:grid-cols-2">{selected.lesson.keyPoints.map((point) => <div key={point} className="rounded-2xl bg-white/65 p-4 text-sm leading-6"><Sparkles className="mb-3 size-4 text-violet-500" /><MarkdownContent>{point}</MarkdownContent></div>)}</div>}

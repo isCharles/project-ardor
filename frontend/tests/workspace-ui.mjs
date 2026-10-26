@@ -377,9 +377,9 @@ try {
   await page.getByRole("option", { name: "Flashcards", exact: true }).press("Enter");
   assert.equal(await draftBox.inputValue(), "");
   await page.goto(`${origin}/app/learning`);
-  await page.getByRole("button", { name: "New topic", exact: true }).click();
+  await page.getByRole("button", { name: "New course", exact: true }).click();
   await page.getByRole("button", { name: "Change service" }).waitFor();
-  assert.equal(await draftBox.inputValue(), "I'd like to learn…");
+  assert.equal(await draftBox.inputValue(), "Recommend some courses for me");
   await page.goto(`${origin}/app/cards`);
   await page.getByRole("button", { name: "New card", exact: true }).click();
   await page.getByRole("button", { name: "Change service" }).waitFor();
@@ -579,12 +579,10 @@ try {
   assert.equal(await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).count(), 0);
   learningPlans = [{ id: "delete-fixture", concept: "Synthetic JVM lesson", status: "COMPLETED", sourceType: "MANUAL", scheduledAt: new Date().toISOString(), lesson: { summary: "Fixture" }, exercises: [], lastScore: null, attemptCount: 0 }];
   await page.goto(`${origin}/app/learning`);
-  await page.getByLabel("More actions", { exact: true }).click();
   await page.getByRole("button", { name: "Delete plan", exact: true }).click();
   assert.equal(learningDeleteCalls, 0);
   await page.getByRole("dialog", { name: "Delete learning plan?" }).getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal(learningDeleteCalls, 0);
-  await page.getByLabel("More actions", { exact: true }).click();
   await page.getByRole("button", { name: "Delete plan", exact: true }).click();
   learningDeleteFails = true;
   await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
