@@ -84,6 +84,24 @@ try {
       assert.equal(await controls[3].getAttribute("data-reasoning-depth"), "DEEP", "Portal controls remain interactive");
       await page.keyboard.press("Escape");
       await popup.waitFor({ state: "hidden" });
+      if (width === 320) {
+        for (const length of [40000, 50000, 50001]) {
+          await input.fill("x".repeat(length));
+          const badge = await page.locator("[data-draft-counter]").boundingBox();
+          const currentFooter = await footer.boundingBox();
+          assert.ok(badge.x >= 0 && badge.x + badge.width <= width && badge.y + badge.height <= currentFooter.y,
+            "Long-draft counter must stay outside the toolbar");
+          let previousRight = currentFooter.x;
+          for (const control of controls) {
+            const box = await control.boundingBox();
+            assert.ok(box.x >= previousRight - 1 && box.x + box.width <= currentFooter.x + currentFooter.width + 1,
+              `Long-draft controls overlap at ${length}`);
+            previousRight = box.x + box.width;
+          }
+          assert.equal(await controls.at(-1).isDisabled(), length > 50000);
+        }
+        await input.fill("A draft that must survive responsive resizing.");
+      }
       await page.screenshot({ path: `.next/compact-chat-${isEmpty ? "new" : "existing"}-${width}.png` });
     }
   }
