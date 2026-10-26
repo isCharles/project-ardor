@@ -339,7 +339,7 @@ export function WorkspaceRail() {
   secondaryGroups.sort((left, right) => domainRank(left.domain) - domainRank(right.domain));
 
   return (
-    <aside className="relative z-30 flex h-full w-16 shrink-0 flex-col items-center border-r border-stone-200/70 bg-gradient-to-b from-white via-[#faf8ff] to-[#fff8f6] py-3 md:w-[4.25rem]" aria-label={t("Main navigation", "主导航")}>
+    <aside className="relative z-30 flex h-full w-16 shrink-0 flex-col items-center border-r border-stone-200/70 bg-gradient-to-b from-white via-[#faf8ff] to-[#fff8f6] py-3" aria-label={t("Main navigation", "主导航")}>
       <nav className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto px-2" aria-label={t("Workspaces", "工作区")} onScroll={() => setTooltip(null)}>
         {primaryWorkspaces.map((item, index) => {
           const active = destinationActive(item.id, pathname);
@@ -366,7 +366,7 @@ export function WorkspaceRail() {
           );
         })}
         <button ref={moreButton} type="button" aria-label={t("More workspaces", "更多工作区")} aria-expanded={moreOpen} aria-controls="ardor-more-workspaces" onMouseEnter={showMore} onMouseLeave={hideMoreSoon} onFocus={showMore} onClick={() => { showMore(); setMorePinned((value) => !value); }} className={`relative grid size-11 shrink-0 place-items-center rounded-2xl transition-colors focus-visible:outline-2 focus-visible:outline-violet-500 ${moreOpen || secondaryWorkspaces.some((item) => destinationActive(item.id, pathname)) ? "bg-violet-100 text-violet-700" : "text-stone-500 hover:bg-white hover:text-stone-900 hover:shadow-sm"}`}><Ellipsis className="size-5" aria-hidden="true" />{secondaryWorkspaces.some(item => hasReady(item.href)) && <span className="absolute right-1 top-1 size-2 rounded-full bg-red-500 ring-2 ring-white" aria-hidden="true" />}</button>
-        {pinnedExtras.length > 0 && <div className="mt-2 flex w-full flex-col items-center gap-1 border-t border-stone-200/60 pt-2">
+        {pinnedExtras.length > 0 && <div className="relative mt-2 flex w-full flex-col items-center gap-1 pt-2 before:absolute before:inset-x-2 before:top-0 before:border-t before:border-stone-200/60">
           {pinnedExtras.map((item) => {
             const active = destinationActive(item.id, pathname);
             const label = t(item.en, item.zh);
@@ -385,7 +385,7 @@ export function WorkspaceRail() {
         </div>}
       </nav>
 
-      <div className="mt-2 flex w-full shrink-0 flex-col items-center border-t border-stone-200/70 px-2 pt-3">
+      <div className="mt-2 flex w-full shrink-0 flex-col items-center px-2 pt-3">
         <DesktopUpdateButton />
         <button
           type="button"
@@ -396,7 +396,7 @@ export function WorkspaceRail() {
           onMouseLeave={() => setTooltip(null)}
           onFocus={(event) => setTooltip({ label: t("Account", "个人账户"), top: event.currentTarget.getBoundingClientRect().top + 8 })}
           onBlur={() => setTooltip(null)}
-          className="grid size-11 place-items-center rounded-2xl bg-gradient-to-br from-rose-200 via-violet-200 to-blue-200 text-sm font-semibold text-stone-800 transition hover:shadow-md focus-visible:outline-2 focus-visible:outline-violet-500"
+          className="grid size-8 place-items-center rounded-xl bg-gradient-to-br from-rose-200 via-violet-200 to-blue-200 text-xs font-semibold text-stone-800 transition hover:shadow-md focus-visible:outline-2 focus-visible:outline-violet-500"
         >
           <ProfileAvatar userId={account?.id ?? null} fallback={account?.email ?? "A"} />
         </button>

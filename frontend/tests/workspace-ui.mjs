@@ -194,7 +194,7 @@ try {
   await assertComposerActions("Empty conversation");
   const sidebar = page.getByRole("complementary", { name: "Conversations", exact: true });
   assert.equal(await sidebar.getByRole("button", { name: "Notifications", exact: true }).count(), 0, "Background task status lives above the composer, not in the chat header");
-  assert.equal(await sidebar.getByRole("button", { name: "Project Ardor", exact: true }).count(), 0);
+  assert.equal(await sidebar.getByRole("button", { name: "Ardor", exact: true }).count(), 0);
   assert.equal(await sidebar.getByRole("button", { name: "Close conversations", exact: true }).count(), 0);
   const bounds = await sidebar.boundingBox();
   const composer = await page.getByRole("textbox", { name: "Message Ardor", exact: true }).boundingBox();
@@ -400,7 +400,7 @@ try {
   assert.equal(await page.getByRole("link", { name: "Open result", exact: true }).count(), 1);
   taskRefreshFails = false;
   await page.goto(`${origin}/app`);
-  await sidebar.getByRole("button", { name: "Project Ardor", exact: true }).click();
+  await sidebar.getByRole("button", { name: "Ardor", exact: true }).click();
   await sidebar.getByRole("link", { name: "Admin dashboard", exact: true }).waitFor();
   await page.getByRole("textbox", { name: "Message Ardor", exact: true }).click();
   await page.getByRole("button", { name: "Account", exact: true }).click();
