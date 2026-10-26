@@ -96,6 +96,20 @@ try {
   await page.getByText("Saved final minutes", { exact: true }).click();
   await page.getByText("Saved final minutes fixture", { exact: true }).waitFor();
   await page.goto(`${origin}/app/opportunities`);
+  await page.getByRole("combobox", { name: "Result", exact: true }).first().waitFor();
+  const initialResults = await page.getByRole("combobox", { name: "Result", exact: true }).evaluateAll(items => items.map(item => item.value));
+  for (const width of [1440, 900, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.getByRole("button", { name: "Presentation mode", exact: true }).click();
+    for (const label of ["Result", "Date", "Round"]) assert.equal(await page.getByRole("columnheader", { name: label, exact: true }).count(), 0);
+    assert.equal(await page.getByRole("combobox", { name: "Result", exact: true }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Backend intern", exact: true }).count(), 2, "Role and record access stay available");
+    assert.equal(await page.getByRole("cell", { name: "Fixture company", exact: true }).count(), 1);
+    assert.equal(await page.locator("table col").count(), 5);
+    await page.getByRole("button", { name: "Presentation mode", exact: true }).click();
+    assert.deepEqual(await page.getByRole("combobox", { name: "Result", exact: true }).evaluateAll(items => items.map(item => item.value)), initialResults);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole("row").filter({ has: page.getByRole("cell", { name: "Fixture company", exact: true }) })
     .getByRole("button", { name: "Backend intern", exact: true }).click();
   const cardsLink = page.getByRole("link", { name: "Flashcards 2", exact: true });

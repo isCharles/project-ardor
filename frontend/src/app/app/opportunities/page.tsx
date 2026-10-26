@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpDown, ChevronDown, FileSearch, FileText, GraduationCap, Layers, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowUpDown, ChevronDown, EyeOff, FileSearch, FileText, GraduationCap, Layers, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, Fragment, useEffect, useState } from "react";
@@ -89,6 +89,7 @@ export default function OpportunitiesPage() {
   const [editing, setEditing] = useState<Opportunity | null>(null);
   const newMenuRef = useDismiss<HTMLDivElement>(newMenuOpen, () => setNewMenuOpen(false));
   const [sortAscending, setSortAscending] = useState(false);
+  const [presentationMode, setPresentationMode] = useState(false);
 
   function fail(reason: unknown, fallbackEn: string, fallbackZh: string) {
     if (reason instanceof ApiError && reason.status === 401) { router.replace("/login"); return; }
@@ -255,11 +256,12 @@ export default function OpportunitiesPage() {
             <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{t("Interviews", "面试")}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setSortAscending((value) => !value)}
+            <button type="button" aria-pressed={presentationMode} onClick={() => setPresentationMode(value => !value)} title={t("Hide results, dates and round numbers", "隐藏结果、时间与轮次")} className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm transition ${presentationMode ? "border-violet-300 bg-violet-50 text-violet-700" : "border-stone-300 text-stone-700 hover:bg-stone-100"}`}><EyeOff className="size-4" />{t("Presentation mode", "演示模式")}</button>
+            {!presentationMode && <button type="button" onClick={() => setSortAscending((value) => !value)}
               className="inline-flex items-center gap-2 rounded-full border border-stone-300 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-100">
               <ArrowUpDown className="size-4" />
               {sortAscending ? t("Date: oldest first", "日期：正序") : t("Date: newest first", "日期：倒序")}
-            </button>
+            </button>}
             <div ref={newMenuRef} className="relative" onMouseEnter={() => setNewMenuOpen(true)} onMouseLeave={() => setNewMenuOpen(false)}>
               <button type="button" aria-haspopup="menu" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen(true)}
                 className="inline-flex items-center gap-2 rounded-full bg-stone-950 px-5 py-2.5 text-sm font-medium text-white hover:bg-stone-800">
@@ -319,16 +321,16 @@ export default function OpportunitiesPage() {
         )}
 
         <div className="overflow-x-auto rounded-3xl border border-stone-200 bg-white">
-          <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-sm">
+          <table className={`w-full table-fixed border-collapse text-left text-sm ${presentationMode ? "min-w-[620px]" : "min-w-[860px]"}`}>
             <colgroup>
-              {[28, 12, 16, 6, 12, 10, 6, 10].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}
+              {(presentationMode ? [45, 18, 14, 8, 15] : [28, 12, 16, 6, 12, 10, 6, 10]).map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}
             </colgroup>
             <thead className="text-xs uppercase tracking-wide text-stone-400">
               <tr className="border-b border-stone-200">
                 <th className="px-4 py-3 font-medium">{t("Role", "岗位")}</th>
-                <th className="px-4 py-3 font-medium">{t("Result", "结果")}</th>
+                {!presentationMode && <><th className="px-4 py-3 font-medium">{t("Result", "结果")}</th>
                 <th className="px-4 py-3 font-medium">{t("Date", "时间")}</th>
-                <th className="px-4 py-3 font-medium">{t("Round", "轮次")}</th>
+                <th className="px-4 py-3 font-medium">{t("Round", "轮次")}</th></>}
                 <th className="px-4 py-3 font-medium">{t("Company", "公司")}</th>
                 <th className="px-4 py-3 font-medium">{t("Platform", "平台")}</th>
                 <th className="px-4 py-3 font-medium">{t("Duration", "时长")}</th>
@@ -337,7 +339,7 @@ export default function OpportunitiesPage() {
             </thead>
             <tbody>
               {items.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-14 text-center text-stone-400">
+                <tr><td colSpan={presentationMode ? 5 : 8} className="px-4 py-14 text-center text-stone-400">
                   {t("No interviews yet. Paste an HR invite to the agent, or add one here.", "还没有面试记录。可以把 HR 邀请粘贴给 Agent，或在这里手动添加。")}
                 </td></tr>
               )}
@@ -360,7 +362,7 @@ export default function OpportunitiesPage() {
                           </Link>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      {!presentationMode && <><td className="px-4 py-3">
                         <select value={item.status} title={statusLabel(item.status, en)} aria-label={t("Result", "结果")} disabled={busy === item.id} onChange={(event) => void setStatus(item, event.target.value)}
                           className={`w-full min-w-0 max-w-full truncate rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLE[item.status] ?? "bg-stone-100 text-stone-600"}`}>
                           {STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status, en)}</option>)}
@@ -369,7 +371,7 @@ export default function OpportunitiesPage() {
                       <td className="truncate px-4 py-3 text-stone-600" title={formatDate(round?.occurredAt ?? round?.scheduledAt ?? null)}>
                         {formatDate(round?.occurredAt ?? round?.scheduledAt ?? null)}
                       </td>
-                      <td className="px-4 py-3 text-stone-600">{item.currentRound || "—"}</td>
+                      <td className="px-4 py-3 text-stone-600">{item.currentRound || "—"}</td></>}
                       <td className="truncate px-4 py-3 text-stone-600" title={item.company}>{item.company}</td>
                       <td className="px-4 py-3">
                         {item.platform ? <span className="rounded-lg bg-stone-100 px-2 py-0.5 text-xs text-stone-600">{item.platform}</span> : "—"}
@@ -388,7 +390,7 @@ export default function OpportunitiesPage() {
                     </tr>
                     {open && (
                       <tr key={`${item.id}-detail`} className="border-b border-stone-100 bg-stone-50/60">
-                        <td colSpan={8} className="px-6 py-5">
+                        <td colSpan={presentationMode ? 5 : 8} className="px-6 py-5">
                           <div className="min-w-0 space-y-2">
                             {(recapsFor(item).length > 0 || plansFor(item).length > 0) && (
                               <Link href={"/app/learning/progress?sourceInterviewId=" + item.id}
