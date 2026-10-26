@@ -16,6 +16,7 @@ import { AppDialog } from "@/components/ui/app-dialog";
 import { LearningContext, type PlanContext } from "@/components/ardor/learning-context";
 import { LearningAttemptReview } from "@/components/ardor/learning-attempt-review";
 import type { LearningReviewSummary, QuestionFeedback } from "@/lib/learning-feedback";
+import { useCourseReadingPosition } from "@/lib/use-course-reading-position";
 
 type Lesson = { summary?: string; keyPoints?: string[]; explanation?: string; example?: string; pitfalls?: string[] };
 type Exercise = { exerciseId?: string; question: string; type?: "SHORT_ANSWER" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SCENARIO"; options?: string[] };
@@ -38,6 +39,7 @@ type LearningPlan = PlanContext & {
   nextReviewAt: string | null;
   completedAt: string | null;
   createdAt: string;
+  contentVersion?: number;
 };
 
 const statusLabel: Record<LearningPlan["status"], { en: string; zh: string }> = {
@@ -94,6 +96,7 @@ export default function LearningPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [readingOwner, setReadingOwner] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -136,6 +139,7 @@ export default function LearningPage() {
       .then(([items, account]) => {
         if (!active) return;
         userId.current = account.id;
+        setReadingOwner(account.id);
         if (clearCompletedCreateRequest(items)) pendingCreate.current = null;
         setPlans(items);
         const requested = new URLSearchParams(window.location.search).get("id");
@@ -155,6 +159,7 @@ export default function LearningPage() {
   }, [router]);
 
   const selected = plans.find((plan) => plan.id === selectedId) ?? null;
+  useCourseReadingPosition(readingOwner, selected?.id ?? null, selected?.contentVersion ?? 1);
   const startingPlans = useRef(new Map<string, Promise<LearningPlan>>());
   const ensureStarted = useCallback((plan: LearningPlan): Promise<LearningPlan> => {
     if (plan.status !== "SCHEDULED") return Promise.resolve(plan);
