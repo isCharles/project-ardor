@@ -108,6 +108,8 @@ jobs:
         run: node tests/compact-chat-ui.mjs
       - name: Learning feedback and status groups UI regression (mock APIs)
         run: node tests/learning-feedback-ui.mjs
+      - name: Course reading position UI regression (mock APIs)
+        run: node tests/course-reading-position-ui.mjs
       - name: Desktop update sidebar UI (synthetic bridge)
         run: node tests/desktop-update-ui.mjs
       - name: Learning source and target UI regression (mock APIs)
