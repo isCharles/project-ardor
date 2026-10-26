@@ -34,6 +34,8 @@ try {
     else if (path === "/api/agent/permissions/mode") {
       const value = route.request().postDataJSON().mode;
       requests.push(value);
+      // The optimistic icon can update before the server persists the mode.
+      await new Promise(resolve => setTimeout(resolve, 100));
       if (failMode) return route.fulfill({ status: 503, json: { message: "Synthetic mode save failed" } });
       mode = value; return route.fulfill({ status: 204 });
     } else if (path === "/api/agent/permissions/calendar") {
@@ -51,7 +53,10 @@ try {
   assert.equal(await page.getByRole("menuitemradio").count(), 4);
   for (const item of await page.getByRole("menuitemradio").all()) assert.ok(await item.locator("svg").count() >= 1);
   await page.screenshot({ path: ".next/agent-approval-menu.png" });
+  const modeSaved = page.waitForResponse(response => response.url().endsWith("/api/agent/permissions/mode")
+    && response.request().method() === "PUT");
   await page.getByRole("menuitemradio", { name: /^Approve for me/ }).click();
+  assert.equal((await modeSaved).status(), 204);
   await page.getByRole("button", { name: "Approve for me", exact: true }).waitFor();
   await page.reload();
   await page.getByRole("button", { name: "Approve for me", exact: true }).waitFor();
