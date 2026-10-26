@@ -13,6 +13,7 @@ import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 import { usageFeatureLabels } from "@/lib/usage-features";
 import { LocaleSwitch } from "@/components/ardor/locale-switch";
+import { ProfileAvatarSettings } from "@/components/ardor/profile-avatar";
 
 const settingsCategories = [
   { id: "general", en: "General & sidebar", zh: "通用与侧栏" },
@@ -490,6 +491,7 @@ export default function SettingsPage() {
         <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
           <div className="flex items-center gap-3"><UserRound className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("Profile", "个人资料")}</h2></div>
           <p className="mt-2 text-sm text-muted-foreground">{t("Ardor uses these details as context for your career goals.", "Agent 会把这些信息作为求职上下文。")}</p>
+          <ProfileAvatarSettings userId={user?.id ?? null} fallback={user?.email ?? "A"} />
           <form key={JSON.stringify(profile)} className="mt-7 space-y-5" onSubmit={saveProfile}>
             <label className="block text-sm font-medium">{t("Name", "称呼")}<input className="field mt-2" name="displayName" defaultValue={profile.displayName ?? ""} maxLength={120} /></label>
             <label className="block text-sm font-medium">{t("Headline", "当前定位")}<input className="field mt-2" name="headline" defaultValue={profile.headline ?? ""} maxLength={240} placeholder={t("For example: Java backend engineer with 3 years' experience", "例如：3 年经验 Java 后端工程师")} /></label>

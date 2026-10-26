@@ -1,5 +1,7 @@
 "use client";
 
+import { ProfileAvatar } from "@/components/ardor/profile-avatar";
+
 import {
   BookOpenText, Brain, Briefcase, CalendarDays, FileSearch, GraduationCap,
   Clock3, Ellipsis, Home, LogOut, MessageSquareText, Settings2, SquareStack, Target, TrendingUp, UsersRound,
@@ -396,7 +398,7 @@ export function WorkspaceRail() {
           onBlur={() => setTooltip(null)}
           className="grid size-11 place-items-center rounded-2xl bg-gradient-to-br from-rose-200 via-violet-200 to-blue-200 text-sm font-semibold text-stone-800 transition hover:shadow-md focus-visible:outline-2 focus-visible:outline-violet-500"
         >
-          {(account?.email || "A").trim().charAt(0).toUpperCase()}
+          <ProfileAvatar userId={account?.id ?? null} fallback={account?.email ?? "A"} />
         </button>
       </div>
 
