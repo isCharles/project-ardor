@@ -361,6 +361,17 @@ time,
   }
 }
 
+/* Respond to the actual composer width, including a half-screen desktop with its sidebar open. */
+.ardor-composer-footer { container-type: inline-size; }
+.ardor-composer-footer > div > button { flex-shrink: 0; }
+@container (max-width: 340px) {
+  [data-composer-actions] { gap: 2px; }
+  [data-composer-actions] > button { width: 32px; min-width: 32px; }
+  [data-composer-actions] > button[aria-pressed="true"] > span[aria-hidden] { display: none; }
+  [data-reasoning-depth] { padding-inline: 4px; gap: 3px; }
+  [data-reasoning-label] { display: none; }
+}
+
 /* The mobile navigation drawer.
 
    Written out rather than composed from Tailwind translate utilities:

@@ -104,6 +104,8 @@ jobs:
         run: node tests/agent-approval-ui.mjs
       - name: Context usage and compaction UI regression (mock APIs)
         run: node tests/context-usage-ui.mjs
+      - name: Compact chat layout UI regression (mock APIs)
+        run: node tests/compact-chat-ui.mjs
       - name: Learning feedback and status groups UI regression (mock APIs)
         run: node tests/learning-feedback-ui.mjs
       - name: Desktop update sidebar UI (synthetic bridge)
