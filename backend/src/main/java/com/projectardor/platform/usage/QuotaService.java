@@ -72,7 +72,8 @@ public class QuotaService {
         List<PlanView> available = plans == null ? List.of()
                 : plans.list().stream().map(QuotaService::planView).toList();
         return new UsageSnapshot(tier, current, nextMonth(now), features,
-                new TokenUsage(tokenUsed, tokenLimit), available);
+                new TokenUsage(tokenUsed, tokenLimit), available,
+                tier.paid() ? memberships.expiry(userId) : null);
     }
 
     private static PlanView planView(MembershipPlanService.Plan plan) {
@@ -91,5 +92,5 @@ public class QuotaService {
     public record PlanView(String code, String nameZh, String nameEn, int priceCents, String currency,
             String billingInterval, long tokenLimit, boolean paymentEnabled) {}
     public record UsageSnapshot(MembershipTier tier, PlanView plan, Instant resetsAt, List<FeatureUsage> features,
-            TokenUsage tokens, List<PlanView> plans) {}
+            TokenUsage tokens, List<PlanView> plans, Instant planExpiresAt) {}
 }
