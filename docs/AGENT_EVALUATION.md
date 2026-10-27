@@ -107,8 +107,8 @@ safeRejection 2/2、环境错误 0/9。
 
 该驱动暴露了一个真实口径问题：工具校验/业务错误以文本结果返回时，轨迹仍记为
 `COMPLETED` 且 `executed=true`。评分器现在检查工具结果的短错误预览并据此判定失败；
-产品侧已改为记录 `FAILED` span 与稳定 `TOOL_FAILED` errorCode，评分器保留结果预览
-启发式以兼容修复前的历史轨迹。
+产品侧已改为记录 `FAILED` span，并按原因给出 `INVALID_ARGUMENTS`、`RESOURCE_NOT_FOUND`
+或 `TOOL_FAILED` errorCode，评分器保留结果预览启发式以兼容修复前的历史轨迹。
 
 ## 限制
 
@@ -118,7 +118,7 @@ safeRejection 2/2、环境错误 0/9。
 - 轨迹接口按 `offset`/`limit` 分页（默认 128、单页上限 500）；两个评测驱动会跟随
   `nextOffset` 读取完整轨迹，页请求失败、缺少分页元数据、span 总数不一致或超过页数上限时
   按环境错误处理，不会用截断前缀评分。真实超过一页的评测运行尚未构造；
-- 工具参数的校验错误会记录 `FAILED` span 与稳定 `TOOL_FAILED` errorCode；评分器仍保留
-  结果预览的启发式，以兼容修复前的历史轨迹；
+- 工具参数的校验错误会记录 `FAILED` span，`INVALID_ARGUMENTS`/`RESOURCE_NOT_FOUND`
+  与 `TOOL_FAILED` 区分原因；评分器仍保留结果预览的启发式，以兼容修复前的历史轨迹；
 - 工具 schema 哈希需要外部导出的 schema 快照，缺失时报告为 `null` 而非伪造；
 - 语义正确性、真实供应商的摘要质量与 tokenizer 精度不在本批次范围。
