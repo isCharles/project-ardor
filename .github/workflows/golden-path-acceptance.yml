@@ -41,8 +41,10 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check Agent evaluation assertions
-        run: node --test scripts/agent-eval-assertions.test.mjs scripts/agent-eval-sse.test.mjs
+      - name: Check Agent evaluation harness
+        run: |
+          node --test scripts/agent-eval-dataset.test.mjs scripts/agent-eval-assertions.test.mjs scripts/agent-eval-sse.test.mjs scripts/agent-eval-report.test.mjs scripts/agent-eval-diff.test.mjs
+          node scripts/agent-eval-demo.mjs --out "$RUNNER_TEMP/ardor-agent-eval-demo"
 
       - name: Start disposable database and Redis
         shell: bash
