@@ -78,25 +78,46 @@ public class AgentContextBuilder {
     public Prepared prepare(UUID userId, UUID conversationId, String message, String currentInput,
             LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth,
             AgentRunTracer tracer, AgentStreamLease lease, List<HistoryTurn> interruptedTurns) {
-        return prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, interruptedTurns, null);
+        return prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease,
+                interruptedTurns, List.of());
+    }
+
+    public Prepared prepare(UUID userId, UUID conversationId, String message, String currentInput,
+            LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth,
+            AgentRunTracer tracer, AgentStreamLease lease, List<HistoryTurn> interruptedTurns,
+            List<UUID> messageImageIds) {
+        return prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease,
+                interruptedTurns, null, messageImageIds);
     }
 
     public Prepared prepare(UUID userId, UUID conversationId, String message, String currentInput,
             LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth,
             AgentRunTracer tracer, AgentStreamLease lease, List<HistoryTurn> interruptedTurns,
             java.util.function.Consumer<AgentContextUsage> observer) {
+        return prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease,
+                interruptedTurns, observer, List.of());
+    }
+
+    public Prepared prepare(UUID userId, UUID conversationId, String message, String currentInput,
+            LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth,
+            AgentRunTracer tracer, AgentStreamLease lease, List<HistoryTurn> interruptedTurns,
+            java.util.function.Consumer<AgentContextUsage> observer, List<UUID> messageImageIds) {
+        List<UUID> currentImages = messageImageIds == null ? List.of() : messageImageIds;
         String baseSystem = systemPrompt(userId, message) + depth.guidance();
         var listeners = tracer == null ? List.<dev.langchain4j.model.chat.listener.ChatModelListener>of()
                 : List.<dev.langchain4j.model.chat.listener.ChatModelListener>of(new AgentModelTraceListener(
                         tracer, runtimeConfig.model(), "CONTEXT_COMPACTION", tracer.contextSpanId()));
         String pending = currentInput + "\n" + interruptedTurns.stream()
                 .map(HistoryTurn::content).collect(java.util.stream.Collectors.joining("\n"));
+        // Current and interrupted turns are not persisted history yet, so their image cost is explicit.
+        int pendingImages = currentImages.size() + interruptedTurns.stream()
+                .mapToInt(turn -> turn.imageIds().size()).sum();
         var failed = new java.util.concurrent.atomic.AtomicBoolean();
         var prepared = observer == null
                 ? contextCompactor.prepare(userId, conversationId, baseSystem, runtimeConfig, depth,
-                        listeners, () -> lease == null || !lease.stopped(), pending)
+                        listeners, () -> lease == null || !lease.stopped(), pending, pendingImages)
                 : contextCompactor.prepare(userId, conversationId, baseSystem, runtimeConfig, depth,
-                        listeners, () -> lease == null || !lease.stopped(), pending, state -> {
+                        listeners, () -> lease == null || !lease.stopped(), pending, pendingImages, state -> {
                             if ("COMPACTION_FAILED".equals(state)) failed.set(true);
                             observer.accept(new AgentContextUsage(state, runtimeConfig.model(), null,
                                     contextCompactor.budgetTokens(), null, 0, 0));
@@ -111,11 +132,19 @@ public class AgentContextBuilder {
         // Compaction owns durable summaries; this memory keeps its selected turns intact.
         ChatMemory memory = MessageWindowChatMemory.withMaxMessages(Math.max(40, history.size() + 26));
         if (!prepared.summaryContext().isBlank()) memory.add(AiMessage.from(prepared.summaryContext()));
+        boolean imageCapable = AgentImageModelPolicy.supports(runtimeConfig);
         for (HistoryTurn turn : history) {
             if ("USER".equals(turn.role())) {
                 String recovered = recoveredContextualMessage(userId, turn);
-                memory.add(turn.imageIds().isEmpty() ? UserMessage.from(recovered)
-                        : UserMessage.from(images.contents(userId, recovered, turn.imageIds())));
+                if (turn.imageIds().isEmpty()) {
+                    memory.add(UserMessage.from(recovered));
+                } else if (!imageCapable) {
+                    // A text-only model must not receive image parts from earlier turns.
+                    memory.add(UserMessage.from(recovered + "\n\n（此前消息附带 "
+                            + turn.imageIds().size() + " 张图片；当前模型不支持图片输入，本次未发送图片。）"));
+                } else {
+                    memory.add(UserMessage.from(historyImages(userId, recovered, turn.imageIds())));
+                }
             } else if ("ASSISTANT".equals(turn.role())) memory.add(AiMessage.from(turn.content()));
         }
         var attributes = new java.util.LinkedHashMap<String, Object>();
@@ -135,7 +164,8 @@ public class AgentContextBuilder {
         if (prepared.estimator() != null) {
             long assembled = (long) prepared.estimator().estimateTokenCountInMessages(memory.messages())
                     + prepared.estimator().estimateTokenCountInText(prepared.systemPrompt())
-                    + prepared.estimator().estimateTokenCountInText(currentInput);
+                    + prepared.estimator().estimateTokenCountInText(currentInput)
+                    + (long) currentImages.size() * AgentRequestTokens.IMAGE_TOKENS;
             attributes.put("assembledEstimatedTokens", assembled);
             attributes.put("overContextBudget", assembled >= softBudget);
         }
@@ -145,6 +175,11 @@ public class AgentContextBuilder {
                 runtimeConfig.model(), attributes.get("assembledEstimatedTokens") instanceof Number count ? count.longValue() : null,
                 displayedBudget, capacity.resolve(runtimeConfig), prepared.summaryVersion(), prepared.compactedMessages()));
         return new Prepared(prepared.systemPrompt(), memory, java.util.Collections.unmodifiableMap(attributes), prepared.estimator());
+    }
+
+    private List<dev.langchain4j.data.message.Content> historyImages(UUID userId, String text, List<UUID> imageIds) {
+        return images == null ? List.of(dev.langchain4j.data.message.TextContent.from(text))
+                : images.historyContents(userId, text, imageIds);
     }
 
     public record Prepared(String systemPrompt, ChatMemory memory, java.util.Map<String, Object> attributes,

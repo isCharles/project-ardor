@@ -353,6 +353,36 @@ class AgentContextCompactorTests {
         verify(fixture.model(), times(1)).chat(any(ChatRequest.class));
     }
 
+    @Test void historyImagesCountTowardTheCompactionDecision() {
+        var fixture = fixture(10, 20);
+        var vision = new LlmConfigService.LlmRuntimeConfig(LlmProvider.OPENAI_COMPATIBLE,
+                "https://example.invalid", "gpt-4o", "redacted");
+        // Short text alone stays under the 1000-token soft budget.
+        var plain = fixture.compactor().prepare(fixture.user(), fixture.conversation(), "system", vision, ReasoningDepth.AUTO);
+        assertThat(plain.compactedMessages()).isZero();
+
+        var messages = new ArrayList<>(fixture.messages());
+        messages.set(9, ConversationMessage.user(fixture.user(), fixture.conversation(),
+                messages.get(9).getContent(), List.of(), List.of(UUID.randomUUID())));
+        when(fixture.store().allMessages(fixture.user(), fixture.conversation())).thenReturn(messages);
+        var withHistoryImage = fixture.compactor().prepare(fixture.user(), fixture.conversation(),
+                "system", vision, ReasoningDepth.AUTO);
+        assertThat(withHistoryImage.compactedMessages()).isPositive();
+    }
+
+    @Test void pendingCurrentImagesCountTowardTheBudgetBeforeDispatch() {
+        var fixture = fixture(3, 20);
+        var vision = new LlmConfigService.LlmRuntimeConfig(LlmProvider.OPENAI_COMPATIBLE,
+                "https://example.invalid", "gpt-4o", "redacted");
+        var without = fixture.compactor().prepare(fixture.user(), fixture.conversation(), "system", vision,
+                ReasoningDepth.AUTO, List.of(), () -> true, "", 0);
+        var with = fixture.compactor().prepare(fixture.user(), fixture.conversation(), "system", vision,
+                ReasoningDepth.AUTO, List.of(), () -> true, "", 2);
+        assertThat(with.estimatedTokens() - without.estimatedTokens())
+                .isEqualTo(2 * com.projectardor.assistant.execution.service.AgentRequestTokens.IMAGE_TOKENS);
+        assertThat(with.compactedMessages()).isZero();
+    }
+
     private static ChatResponse response(String text) {
         return ChatResponse.builder().aiMessage(AiMessage.from(text)).build();
     }

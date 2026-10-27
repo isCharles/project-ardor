@@ -34,6 +34,7 @@ public class AgentRunStore {
             rs.getString("message"), rs.getString("status"), rs.getString("label"),
             rs.getString("error_code"), rs.getString("error_message"), rs.getBoolean("retryable"),
             rs.getBoolean("tool_started"), rs.getObject("assistant_message_id", UUID.class),
+            parseImageIds(rs.getString("image_ids")),
             rs.getTimestamp("created_at").toInstant(),
             rs.getTimestamp("updated_at").toInstant());
 
@@ -112,17 +113,21 @@ public class AgentRunStore {
             List<UUID> imageIds) {
         String hash = fingerprint(conversationId, message, contextType, contextId, references, depth, steeringSource(userId, requestId), imageIds);
         String contextJson = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(resolvedReferences);
+        // Image references are persisted at acceptance so a cancelled or interrupted run can still
+        // rebuild its multimodal input; the bytes themselves are kept while a run references them.
+        String imageJson = tools.jackson.databind.json.JsonMapper.builder().build()
+                .writeValueAsString(imageIds == null ? List.of() : imageIds);
         int inserted = logicalActionId == null
                 ? jdbc.update("""
-                    INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message, context_references)
-                    VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb))
+                    INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message, context_references, image_ids)
+                    VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb), CAST(? AS jsonb))
                     ON CONFLICT (id) DO NOTHING
-                    """, requestId, userId, conversationId, hash, message, contextJson)
+                    """, requestId, userId, conversationId, hash, message, contextJson, imageJson)
                 : jdbc.update("""
-                    INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message, logical_action_id, context_references)
-                    VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb))
+                    INSERT INTO agent_runs (id, user_id, conversation_id, request_hash, message, logical_action_id, context_references, image_ids)
+                    VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), CAST(? AS jsonb))
                     ON CONFLICT (id) DO NOTHING
-                    """, requestId, userId, conversationId, hash, message, logicalActionId, contextJson);
+                    """, requestId, userId, conversationId, hash, message, logicalActionId, contextJson, imageJson);
         if (inserted == 0) {
             List<String> hashes = jdbc.queryForList(
                     "SELECT request_hash FROM agent_runs WHERE id = ? AND user_id = ?", String.class,
@@ -138,7 +143,7 @@ public class AgentRunStore {
     public AgentRun get(UUID userId, UUID requestId) {
         return jdbc.query("""
                 SELECT id, conversation_id, message, status, label, error_code, error_message,
-                       retryable, tool_started, assistant_message_id, created_at, updated_at
+                       retryable, tool_started, assistant_message_id, image_ids, created_at, updated_at
                 FROM agent_runs WHERE id = ? AND user_id = ?
                 """, RUN_MAPPER, requestId, userId).stream().findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("请求记录不存在"));
@@ -157,7 +162,7 @@ public class AgentRunStore {
         int safeLimit = Math.max(1, Math.min(100, limit));
         return new java.util.ArrayList<>(jdbc.query("""
                 SELECT id, conversation_id, message, status, label, error_code, error_message,
-                       retryable, tool_started, assistant_message_id, created_at, updated_at
+                       retryable, tool_started, assistant_message_id, image_ids, created_at, updated_at
                 FROM agent_runs WHERE user_id = ? AND conversation_id = ?
                 ORDER BY created_at DESC, id DESC LIMIT ?
                 """, RUN_MAPPER, userId, conversationId, safeLimit)).reversed();
@@ -173,7 +178,7 @@ public class AgentRunStore {
             throw new ResourceNotFoundException("请求记录不存在");
         String query = """
                 SELECT id, conversation_id, message, status, label, error_code, error_message,
-                       retryable, tool_started, assistant_message_id, created_at, updated_at
+                       retryable, tool_started, assistant_message_id, image_ids, created_at, updated_at
                 FROM agent_runs WHERE user_id = ? AND conversation_id = ?
                 """ + (cursor == null ? "" : " AND (created_at,id) < (?,?)")
                 + " ORDER BY created_at DESC,id DESC LIMIT ?";
@@ -187,7 +192,7 @@ public class AgentRunStore {
     public Optional<AgentRun> latest(UUID userId, UUID conversationId) {
         return jdbc.query("""
                 SELECT id, conversation_id, message, status, label, error_code, error_message,
-                       retryable, tool_started, assistant_message_id, created_at, updated_at
+                       retryable, tool_started, assistant_message_id, image_ids, created_at, updated_at
                 FROM agent_runs WHERE user_id = ? AND conversation_id = ?
                 ORDER BY created_at DESC, id DESC LIMIT 1
                 """, RUN_MAPPER, userId, conversationId).stream().findFirst();
@@ -211,6 +216,7 @@ public class AgentRunStore {
                 SELECT q.id,q.conversation_id,q.payload->>'message' AS message,q.status,
                   '未执行' AS label,CASE WHEN q.status='CANCELLED' THEN 'SUPERSEDED' ELSE 'QUEUE_NOT_STARTED' END AS error_code,
                   q.error_message,false AS retryable,false AS tool_started,CAST(NULL AS uuid) AS assistant_message_id,
+                  COALESCE(q.payload->'imageIds','[]'::jsonb) AS image_ids,
                   q.created_at,q.updated_at
                 FROM agent_message_queue q WHERE q.user_id=? AND q.conversation_id=?
                   AND (q.status IN ('FAILED','INTERRUPTED') OR (q.status='CANCELLED' AND q.error_message='已由后续补充替代，未执行'))
@@ -419,15 +425,31 @@ public class AgentRunStore {
         }
     }
 
+    private static List<UUID> parseImageIds(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        return tools.jackson.databind.json.JsonMapper.builder().build()
+                .readValue(json, new tools.jackson.core.type.TypeReference<List<UUID>>() {});
+    }
+
     public record AgentRun(UUID id, UUID conversationId, String message, String status, String label,
             String errorCode, String errorMessage, boolean retryable, boolean toolStarted,
-            UUID assistantMessageId, Instant createdAt, Instant updatedAt) {
+            UUID assistantMessageId, List<UUID> imageIds, Instant createdAt, Instant updatedAt) {
+        public AgentRun {
+            imageIds = imageIds == null ? List.of() : List.copyOf(imageIds);
+        }
         /** Compatibility constructor for call sites that predate the assistant-message link. */
         public AgentRun(UUID id, UUID conversationId, String message, String status, String label,
                 String errorCode, String errorMessage, boolean retryable, boolean toolStarted,
                 Instant createdAt, Instant updatedAt) {
             this(id, conversationId, message, status, label, errorCode, errorMessage, retryable,
-                    toolStarted, null, createdAt, updatedAt);
+                    toolStarted, null, List.of(), createdAt, updatedAt);
+        }
+        /** Compatibility constructor for call sites that predate image input. */
+        public AgentRun(UUID id, UUID conversationId, String message, String status, String label,
+                String errorCode, String errorMessage, boolean retryable, boolean toolStarted,
+                UUID assistantMessageId, Instant createdAt, Instant updatedAt) {
+            this(id, conversationId, message, status, label, errorCode, errorMessage, retryable,
+                    toolStarted, assistantMessageId, List.of(), createdAt, updatedAt);
         }
     }
 

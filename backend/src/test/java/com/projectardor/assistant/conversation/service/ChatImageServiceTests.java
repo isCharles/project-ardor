@@ -51,4 +51,25 @@ class ChatImageServiceTests {
         assertThat(image.image().mimeType()).isEqualTo("image/png");
         assertThat(service.contents(owner, "", List.of(imageId))).singleElement().isInstanceOf(ImageContent.class);
     }
+
+    @Test void historyReplaySkipsGoneImagesInsteadOfFailingTheCurrentTurn() {
+        UUID owner = UUID.randomUUID(), present = UUID.randomUUID(), missing = UUID.randomUUID();
+        doReturn(new ChatImageService.StoredImage(new byte[] { 1, 2, 3 }, "image/png")).when(service).read(owner, present);
+        doThrow(new com.projectardor.common.web.ResourceNotFoundException("图片不存在"))
+                .when(service).read(owner, missing);
+
+        var contents = service.historyContents(owner, "图里写了什么？", List.of(present, missing));
+
+        assertThat(contents).hasSize(2);
+        assertThat(((TextContent) contents.get(0)).text()).contains("图里写了什么？", "1 张图片已不可用");
+        assertThat(contents.get(1)).isInstanceOf(ImageContent.class);
+        assertThat(service.historyContents(owner, "", List.of(missing))).singleElement().satisfies(content ->
+                assertThat(((TextContent) content).text()).contains("1 张图片已不可用"));
+    }
+
+    @Test void abandonedUploadsAreKeptWhileAnAcceptedRunStillReferencesThem() {
+        service.discardAbandonedUploads();
+        verify(jdbc).update(org.mockito.ArgumentMatchers.<String>argThat(sql -> sql.contains("jsonb_exists")
+                && sql.contains("agent_runs") && sql.contains("message_id IS NULL")));
+    }
 }

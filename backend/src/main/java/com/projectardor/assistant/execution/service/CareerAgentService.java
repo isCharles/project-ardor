@@ -269,7 +269,7 @@ public class CareerAgentService {
             AgentContextBuilder.Prepared promptContext;
             long prepareStartedAt = System.nanoTime();
             try {
-                promptContext = buildContext(userId, conversation.getId(), modelText, agentInput, runtimeConfig, depth, tracer, null);
+                promptContext = buildContext(userId, conversation.getId(), modelText, agentInput, runtimeConfig, depth, tracer, null, imageIds);
             } catch (RuntimeException failure) {
                 if (contextSpan != null) tracer.finishChild(contextSpan, "FAILED", contextFailureCode(failure),
                         runtimeConfig.model(), null, null, java.util.Map.of());
@@ -499,7 +499,7 @@ public class CareerAgentService {
             long prepareStartedAt = System.nanoTime();
             try {
                 promptContext = lease.modelCall(() -> buildContext(userId, conversation.getId(),
-                        modelText, agentInput, runtimeConfig, depth, tracer, lease, contextObserver));
+                        modelText, agentInput, runtimeConfig, depth, tracer, lease, imageIds, contextObserver));
             } catch (RuntimeException failure) {
                 if (contextSpan != null) tracer.finishChild(contextSpan, "FAILED", contextFailureCode(failure),
                         runtimeConfig.model(), null, null, java.util.Map.of());
@@ -705,13 +705,14 @@ public class CareerAgentService {
     }
 
     private AgentContextBuilder.Prepared buildContext(UUID userId, UUID conversationId, String message, String currentInput,
-            LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth, AgentRunTracer tracer, AgentStreamLease lease) {
-        return buildContext(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, null);
+            LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth, AgentRunTracer tracer, AgentStreamLease lease,
+            List<UUID> messageImageIds) {
+        return buildContext(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, messageImageIds, null);
     }
 
     private AgentContextBuilder.Prepared buildContext(UUID userId, UUID conversationId, String message, String currentInput,
             LlmConfigService.LlmRuntimeConfig runtimeConfig, ReasoningDepth depth, AgentRunTracer tracer, AgentStreamLease lease,
-            java.util.function.Consumer<AgentContextUsage> contextObserver) {
+            List<UUID> messageImageIds, java.util.function.Consumer<AgentContextUsage> contextObserver) {
         List<AgentContextBuilder.HistoryTurn> interrupted = new java.util.ArrayList<>();
         // Durable unfinished requests must survive compaction and steering.
         for (AgentMessageResponse item : conversationHistory(userId, conversationId, true)) {
@@ -719,11 +720,11 @@ public class CareerAgentService {
             String prefix = "USER".equals(item.role()) ? "ardor:interrupted-user:" : "ardor:interrupted-status:";
             UUID synthetic = UUID.nameUUIDFromBytes((prefix + item.requestId()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             if (item.id().equals(synthetic)) interrupted.add(new AgentContextBuilder.HistoryTurn(
-                    item.role(), item.content(), item.contextReferences(), item.createdAt()));
+                    item.role(), item.content(), item.contextReferences(), item.imageIds(), item.createdAt()));
         }
         return contextObserver == null
-                ? contextBuilder.prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, interrupted)
-                : contextBuilder.prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, interrupted, contextObserver);
+                ? contextBuilder.prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, interrupted, messageImageIds)
+                : contextBuilder.prepare(userId, conversationId, message, currentInput, runtimeConfig, depth, tracer, lease, interrupted, contextObserver, messageImageIds);
     }
 
     private List<AgentMessageResponse> conversationHistory(UUID userId, UUID conversationId) {
@@ -737,7 +738,8 @@ public class CareerAgentService {
             UUID userMessageId = UUID.nameUUIDFromBytes(("ardor:interrupted-user:" + run.id()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             UUID statusMessageId = UUID.nameUUIDFromBytes(("ardor:interrupted-status:" + run.id()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             history.add(new AgentMessageResponse(userMessageId, conversationId, "USER", run.message(),
-                    runStore.contextReferences(userId, conversationId, run.id()), null, run.createdAt(), run.id()));
+                    runStore.contextReferences(userId, conversationId, run.id()), run.imageIds(), null,
+                    run.createdAt(), run.id(), java.util.Map.of(), run.id()));
             String note = "SUPERSEDED".equals(run.errorCode()) ? "本条已由后续补充替代，未执行。" : "QUEUE_NOT_STARTED".equals(run.errorCode())
                     ? "本条未能开始：" + (run.errorMessage() == null ? "请检查引用资料和模型配置。" : run.errorMessage())
                     : "AGENT_RUN_CANCELLED".equals(run.errorCode()) ? "本轮已停止；已开始的操作请核验结果。" : "本轮未完成；不能假定操作已成功，请先核验结果。";

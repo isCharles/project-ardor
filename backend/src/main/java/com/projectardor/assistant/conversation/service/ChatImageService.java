@@ -61,6 +61,35 @@ public class ChatImageService {
     public List<Content> contents(UUID userId, String text, List<UUID> imageIds) {
         List<StoredImage> images = load(userId, imageIds);
         if (images.isEmpty()) return List.of(TextContent.from(text));
+        return contents(text, images);
+    }
+
+    /**
+     * History replay is best effort: a turn whose upload is gone (for example an abandoned
+     * upload past its retention) degrades to text instead of failing the current request.
+     */
+    public List<Content> historyContents(UUID userId, String text, List<UUID> imageIds) {
+        List<StoredImage> images = new ArrayList<>();
+        int missing = 0;
+        for (UUID id : normalize(imageIds)) {
+            try {
+                images.add(read(userId, id));
+            } catch (ResourceNotFoundException gone) {
+                missing++;
+            }
+        }
+        if (missing == 0) return images.isEmpty() ? List.of(TextContent.from(text)) : contents(text, images);
+        String note = "（此前消息中的 " + missing + " 张图片已不可用，本次未发送；不要猜测图片内容。）";
+        String combined = text == null || text.isBlank() ? note : text + "\n\n" + note;
+        List<Content> result = new ArrayList<>();
+        result.add(TextContent.from(combined));
+        for (StoredImage image : images) {
+            result.add(ImageContent.from(Base64.getEncoder().encodeToString(image.content()), image.mediaType()));
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<Content> contents(String text, List<StoredImage> images) {
         List<Content> contents = new ArrayList<>();
         if (text != null && !text.isBlank()) contents.add(TextContent.from(text));
         for (StoredImage image : images) {
@@ -82,7 +111,14 @@ public class ChatImageService {
 
     @Scheduled(fixedDelay = 3_600_000, initialDelay = 3_600_000)
     public void discardAbandonedUploads() {
-        jdbc.update("DELETE FROM chat_images WHERE message_id IS NULL AND created_at < CURRENT_TIMESTAMP - INTERVAL '1 day'");
+        // Accepted-but-unfinished runs keep their image references; their bytes stay readable
+        // so the next turn can rebuild the multimodal input.
+        jdbc.update("""
+                DELETE FROM chat_images c WHERE c.message_id IS NULL
+                  AND c.created_at < CURRENT_TIMESTAMP - INTERVAL '1 day'
+                  AND NOT EXISTS (SELECT 1 FROM agent_runs r
+                                  WHERE r.user_id=c.user_id AND jsonb_exists(r.image_ids, c.id::text))
+                """);
     }
 
     private List<StoredImage> load(UUID userId, List<UUID> imageIds) {

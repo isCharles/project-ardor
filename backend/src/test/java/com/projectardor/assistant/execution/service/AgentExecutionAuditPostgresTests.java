@@ -433,6 +433,7 @@ class AgentExecutionAuditPostgresTests {
                 assistant_message_id UUID,
                 logical_action_id UUID,
                 context_references JSONB NOT NULL DEFAULT '[]'::jsonb,
+                image_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 finished_at TIMESTAMPTZ,

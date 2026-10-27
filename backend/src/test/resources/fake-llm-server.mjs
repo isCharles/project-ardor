@@ -229,7 +229,10 @@ http.createServer((request, response) => {
       Array.isArray(message.content) && message.content.some((part) => part?.type === "image_url"));
     if (hasImageInput) imageInputRequests++;
     const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
-    const latestUserText = String(payload.messages?.filter((message) => message.role === "user").at(-1)?.content ?? "");
+    const latestUser = payload.messages?.filter((message) => message.role === "user").at(-1);
+    const latestUserText = Array.isArray(latestUser?.content)
+      ? latestUser.content.filter((part) => part?.type === "text").map((part) => part.text ?? "").join("\n")
+      : String(latestUser?.content ?? "");
     if (isAgentRequest && latestUserText.includes("CANCEL-HOLD")) {
       cancelHoldRequests++;
       await new Promise((resolve) => pendingCancelResponses.push(resolve));

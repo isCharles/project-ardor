@@ -12,7 +12,7 @@ import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
 
 /** Shared estimates for compression, request telemetry and the pre-send limit fence. */
 public final class AgentRequestTokens {
-    private static final int ESTIMATED_IMAGE_TOKENS = 1_105;
+    public static final int IMAGE_TOKENS = 1_105;
     private AgentRequestTokens() {}
     public static TokenCountEstimator estimator(LlmConfigService.LlmRuntimeConfig config) {
         if (config.provider() == LlmProvider.OPENAI_COMPATIBLE) {
@@ -32,7 +32,7 @@ public final class AgentRequestTokens {
                 long total = 4;
                 for (var content : user.contents()) {
                     if (content instanceof TextContent text) total += delegate.estimateTokenCountInText(text.text());
-                    else if (content instanceof ImageContent) total += ESTIMATED_IMAGE_TOKENS;
+                    else if (content instanceof ImageContent) total += IMAGE_TOKENS;
                 }
                 return (int) Math.min(Integer.MAX_VALUE, total);
             }

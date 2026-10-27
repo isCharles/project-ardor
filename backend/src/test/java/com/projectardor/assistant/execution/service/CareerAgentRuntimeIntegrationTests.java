@@ -34,7 +34,7 @@ class CareerAgentRuntimeIntegrationTests {
         when(f.traces.startSpan(eq(f.user), eq(requestId), isNull(), eq("RUN"), eq("agent.run"), any())).thenReturn(rootSpan);
         when(f.traces.startSpan(eq(f.user), eq(requestId), eq(rootSpan), eq("CONTEXT"), eq("context.load"), any())).thenReturn(contextSpan);
         when(f.runs.begin(eq(f.user), eq(requestId), eq(f.conversation.getId()), anyString(), isNull(), isNull(), anyList(), any(), any(), anyList(), anyList())).thenReturn(true);
-        when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any(), anyString(), any()))
+        when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any()))
                 .thenThrow(new AgentContextLimitException());
         var failedRun = mock(AgentRunStore.AgentRun.class);
         when(f.runs.fail(eq(f.user), eq(requestId), eq("INVALID_STATE"), anyString(), eq(false))).thenReturn(failedRun);
@@ -143,10 +143,35 @@ class CareerAgentRuntimeIntegrationTests {
                 .contains("Delete 1 2 3 and regenerate", "本轮已停止", "等等，2不要重新生成"));
     }
 
+    @Test void cancelledImageInstructionKeepsItsImageInTheNextRequest() {
+        var f = new Fixture();
+        var vision = new LlmConfigService.LlmRuntimeConfig(LlmProvider.OPENAI_COMPATIBLE,
+                "https://example.invalid", "gpt-4o", "synthetic-only");
+        when(f.catalog.resolve(eq(f.user), any())).thenReturn(new AgentModelCatalogService.Resolved("PRIMARY", vision));
+        when(f.factory.createStreaming(eq(vision), any(ReasoningDepth.class), any(), anyList())).thenReturn(f.model);
+        when(f.compactor.prepare(eq(f.user), eq(f.conversation.getId()), anyString(), eq(vision), any(), anyList(),
+                any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any())).thenAnswer(call ->
+                new AgentContextCompactor.Prepared(call.getArgument(2), List.of(), 0, 0, 10, null, ""));
+        UUID imageId = UUID.randomUUID();
+        var old = new AgentRunStore.AgentRun(UUID.randomUUID(), f.conversation.getId(), "分析这张图片",
+                "FAILED", "Stopped", "AGENT_RUN_CANCELLED", "stopped", false, false, null, List.of(imageId),
+                java.time.Instant.now().minusSeconds(20), java.time.Instant.now().minusSeconds(10));
+        when(f.runs.unfinished(f.user, f.conversation.getId(), true)).thenReturn(List.of(old));
+        var restored = List.<dev.langchain4j.data.message.Content>of(
+                dev.langchain4j.data.message.TextContent.from("分析这张图片"),
+                dev.langchain4j.data.message.ImageContent.from("aGVsbG8=", "image/png"));
+        when(f.images.historyContents(eq(f.user), anyString(), eq(List.of(imageId)))).thenReturn(restored);
+
+        f.run("继续");
+
+        assertThat(f.requests).singleElement().satisfies(request -> assertThat(request.messages())
+                .contains(dev.langchain4j.data.message.UserMessage.from(restored)));
+    }
+
     @org.junit.jupiter.api.RepeatedTest(10) void cancellationDuringCompactionCannotDispatchTheModel() throws Exception {
         var f = new Fixture(Duration.ofMillis(1));
         var entered = new java.util.concurrent.CountDownLatch(1);
-        when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any(), anyString(), any())).thenAnswer(call -> {
+        when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any())).thenAnswer(call -> {
             entered.countDown();
             try { new java.util.concurrent.CountDownLatch(1).await(); }
             catch (InterruptedException expected) { Thread.currentThread().interrupt(); }
@@ -193,7 +218,7 @@ class CareerAgentRuntimeIntegrationTests {
         UUID imageId = UUID.randomUUID();
         when(f.catalog.resolve(eq(f.user), any())).thenReturn(new AgentModelCatalogService.Resolved("PRIMARY", config));
         when(f.factory.createStreaming(eq(config), any(ReasoningDepth.class), any(), anyList())).thenReturn(f.model);
-        when(f.compactor.prepare(eq(f.user), eq(f.conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), any()))
+        when(f.compactor.prepare(eq(f.user), eq(f.conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any()))
                 .thenAnswer(call -> new AgentContextCompactor.Prepared(call.getArgument(2), List.of(), 0, 0, 10, null, ""));
         var multimodal = List.<dev.langchain4j.data.message.Content>of(
                 dev.langchain4j.data.message.TextContent.from("请查看并理解用户附带的图片。"),
@@ -341,12 +366,14 @@ class CareerAgentRuntimeIntegrationTests {
             var embedding = mock(MemoryEmbeddingService.class); when(embedding.context(eq(user), anyString())).thenReturn("");
             var profiles = mock(ProfileService.class);
             when(profiles.view(user)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(user, "Synthetic owner")));
-            when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), any())).thenAnswer(call ->
+            when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any())).thenAnswer(call ->
                     new AgentContextCompactor.Prepared(call.getArgument(2), List.of(ConversationMessage.user(user, conversation.getId(), "Earlier user instruction")), 0, 0, 10, null, summary));
             when(factory.createStreaming(eq(config), any(ReasoningDepth.class), any(), anyList())).thenReturn(model);
             var approvals = mock(AgentToolApprovals.class); when(approvals.canRead(eq(user), any())).thenReturn(true);
             service = new CareerAgentService(conversations, runs, factory, tools, mock(LlmConfigService.class), mock(AgentMemoryService.class),
-                    new AgentContextBuilder(embedding, compactor, profiles, tools), profiles, JsonMapper.builder().build(), progress, approvals,
+                    new AgentContextBuilder(embedding, compactor, profiles, tools,
+                            new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()), images),
+                    profiles, JsonMapper.builder().build(), progress, approvals,
                     mock(AgentPermissionGrants.class), mock(AgentExecutionAuditStore.class), traces, catalog, images,
                     mock(com.projectardor.platform.usage.UsageTokenStore.class), metrics,
                     Duration.ofSeconds(90), timeout);

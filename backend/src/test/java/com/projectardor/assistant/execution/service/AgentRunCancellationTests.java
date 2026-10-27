@@ -66,6 +66,7 @@ class AgentRunCancellationTests {
                   assistant_message_id uuid,
                   logical_action_id uuid,
                   context_references jsonb NOT NULL DEFAULT '[]'::jsonb,
+                  image_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
                   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   finished_at timestamptz
