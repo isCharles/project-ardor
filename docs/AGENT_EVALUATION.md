@@ -38,6 +38,8 @@ node scripts/agent-eval.mjs
 通过。该断言只检查记录到的工具状态，不证明工具结果、最终答案的语义正确性；
 返回业务错误文本但未抛异常的调用、仅创建建议卡的调用仍可能记为 `COMPLETED`。
 CI 使用 `node --test scripts/agent-eval-assertions.test.mjs` 验证断言本身。
+流式采集按 SSE 事件边界增量解析，覆盖多字节文本、跨分片和 CRLF；
+格式错误不会被悄悄忽略。事件解析失败不代表模型回答本身错误。
 
 失败分类：
 

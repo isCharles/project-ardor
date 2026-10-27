@@ -39,7 +39,7 @@ jobs:
           node-version: "22"
 
       - name: Check Agent evaluation assertions
-        run: node --test scripts/agent-eval-assertions.test.mjs
+        run: node --test scripts/agent-eval-assertions.test.mjs scripts/agent-eval-sse.test.mjs
 
       - name: Start disposable database and Redis
         shell: bash
