@@ -17,11 +17,20 @@ public class AiJobWorker {
     private final AiJobStore store;
     private final AiJobService service;
     private final AgentMetrics metrics;
-    private final Semaphore slots = new Semaphore(2);
+    private final Semaphore slots;
     private final ConcurrentHashMap<UUID, AiJobStore.Job> active = new ConcurrentHashMap<>();
-    private final ExecutorService executor = Executors.newFixedThreadPool(2, Thread.ofPlatform().name("ai-evaluation-", 0).factory());
+    private final ExecutorService executor;
     public AiJobWorker(AiJobStore store, AiJobService service, AgentMetrics metrics) {
+        this(store, service, metrics, 2);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public AiJobWorker(AiJobStore store, AiJobService service, AgentMetrics metrics,
+            @org.springframework.beans.factory.annotation.Value("${app.ai-jobs.worker-capacity:2}") int capacity) {
         this.store = store; this.service = service; this.metrics = metrics;
+        int slotsCount = Math.max(1, capacity);
+        this.slots = new Semaphore(slotsCount);
+        this.executor = Executors.newFixedThreadPool(slotsCount,
+                Thread.ofPlatform().name("ai-evaluation-", 0).factory());
     }
 
     @Scheduled(fixedDelay = 1000)
@@ -34,14 +43,14 @@ public class AiJobWorker {
             active.put(job.id(), job);
             try { executor.execute(() -> {
                 try {
-                    store.complete(job, service.perform(job));
-                    metrics.recordJobCompletion(job.type().name(), "COMPLETED");
+                    if (store.complete(job, service.perform(job)))
+                        metrics.recordJobCompletion(job.type().name(), "COMPLETED");
                 } catch (RuntimeException failure) { handleFailure(job, failure); }
-                finally { active.remove(job.id()); slots.release(); }
+                finally { active.remove(job.id(), job); slots.release(); }
             }); } catch (RuntimeException rejected) {
-                active.remove(job.id());
-                store.requeue(job, Instant.now().plusSeconds(30));
-                metrics.recordJobRetry(job.type().name());
+                active.remove(job.id(), job);
+                if (store.requeue(job, Instant.now().plusSeconds(30)))
+                    metrics.recordJobRetry(job.type().name());
                 throw rejected;
             }
         } catch (RuntimeException failure) { slots.release(); throw failure; }
@@ -51,21 +60,22 @@ public class AiJobWorker {
         boolean retryable = isRetryable(failure);
         int attempt = job.attempts();
         int max = job.maxAttempts();
+        boolean applied;
         if (retryable && attempt < max) {
             long backoffSeconds = Math.min(30L * (1L << (attempt - 1)), 600L);
-            store.requeue(job, Instant.now().plusSeconds(backoffSeconds));
-            metrics.recordJobRetry(job.type().name());
+            applied = store.requeue(job, Instant.now().plusSeconds(backoffSeconds));
+            if (applied) metrics.recordJobRetry(job.type().name());
         } else if (retryable) {
-            store.deadLetter(job, "AI_JOB_EXHAUSTED",
+            applied = store.deadLetter(job, "AI_JOB_EXHAUSTED",
                     "评估在 " + attempt + " 次尝试后仍未完成，已转入死信，可手动重试");
-            metrics.recordJobDeadLetter(job.type().name());
+            if (applied) metrics.recordJobDeadLetter(job.type().name());
         } else {
             String code = failure instanceof LlmCallException llm ? llm.getCode() : "AI_EVALUATION_FAILED";
             String message = failure instanceof LlmCallException || failure instanceof IllegalStateException
                     || failure instanceof IllegalArgumentException
                     ? failure.getMessage() : "评估未完成，原提交已保留，请重试";
-            store.fail(job, code, message == null ? "评估未完成，请重试" : message);
-            metrics.recordJobCompletion(job.type().name(), "FAILED");
+            applied = store.fail(job, code, message == null ? "评估未完成，请重试" : message);
+            if (applied) metrics.recordJobCompletion(job.type().name(), "FAILED");
         }
     }
 

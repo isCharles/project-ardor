@@ -27,15 +27,16 @@ class AiJobAttemptFencingTests {
         var connection=DriverManager.getConnection(url,"ardor","acceptance-only");
         dataSource=new SingleConnectionDataSource(connection,true);
         jdbc=new JdbcTemplate(dataSource);store=new AiJobStore(jdbc,Duration.ofMinutes(5));
-        jdbc.execute("CREATE TEMP TABLE ai_jobs(id uuid,user_id uuid,status text,attempts integer,result_path text,error_code text,error_message text,finished_at timestamptz,updated_at timestamptz)");
-        jdbc.update("INSERT INTO ai_jobs(id,user_id,status,attempts,updated_at) VALUES(?,?,'RUNNING',2,?)",id,owner,java.sql.Timestamp.from(original));
+        jdbc.execute("CREATE TEMP TABLE ai_jobs(id uuid,user_id uuid,status text,attempts integer,max_attempts integer,priority integer,result_path text,error_code text,error_message text,started_at timestamptz,finished_at timestamptz,created_at timestamptz,retry_after timestamptz,updated_at timestamptz)");
+        jdbc.update("INSERT INTO ai_jobs(id,user_id,status,attempts,max_attempts,priority,created_at,started_at,updated_at) VALUES(?,?,'RUNNING',2,5,0,?,?,?)",
+                id,owner,java.sql.Timestamp.from(original),java.sql.Timestamp.from(original),java.sql.Timestamp.from(original));
     }
     @AfterEach void close() { if(dataSource!=null) dataSource.destroy(); }
     private AiJobStore.Job attempt(int number) {
         return new AiJobStore.Job(id,owner,AiJobType.LEARNING_EVALUATE,UUID.randomUUID(),"fixture","{}",
                 "RUNNING",number,5,0,null,null,null,original,original,null,null);
     }
-    private String status() { return jdbc.queryForObject("SELECT status FROM ai_jobs",String.class); }
+    private String status() { return jdbc.queryForObject("SELECT status FROM ai_jobs WHERE id=?",String.class,id); }
 
     @Test void lateCompletionCannotFinishANewerAttempt() {
         store.complete(attempt(1),"/app/learning?id=old");
@@ -58,5 +59,26 @@ class AiJobAttemptFencingTests {
         assertThat(jdbc.queryForObject("SELECT updated_at FROM ai_jobs",java.sql.Timestamp.class).toInstant()).isEqualTo(original);
         store.heartbeat(attempt(2));
         assertThat(jdbc.queryForObject("SELECT updated_at FROM ai_jobs",java.sql.Timestamp.class).toInstant()).isAfter(original);
+    }
+    @Test void lateRequeueAndDeadLetterCannotTouchANewerAttempt() {
+        assertThat(store.requeue(attempt(1),Instant.now().plusSeconds(30))).isFalse();
+        assertThat(store.deadLetter(attempt(1),"OLD","old")).isFalse();
+        assertThat(status()).isEqualTo("RUNNING");
+        assertThat(store.requeue(attempt(2),Instant.now().plusSeconds(30))).isTrue();
+        assertThat(status()).isEqualTo("QUEUED");
+    }
+    @Test void staleRecoveryRequeuesWithinBudgetAndDeadLettersExhaustedAttempts() {
+        UUID exhausted=UUID.randomUUID(),exhaustedOwner=UUID.randomUUID();
+        jdbc.update("INSERT INTO ai_jobs(id,user_id,status,attempts,max_attempts,priority,created_at,started_at,updated_at) VALUES(?,?,'RUNNING',5,5,0,?,?,?)",
+                exhausted,exhaustedOwner,java.sql.Timestamp.from(original),java.sql.Timestamp.from(original),java.sql.Timestamp.from(original));
+
+        var recovery=store.recoverStale();
+
+        assertThat(recovery.requeued()).isEqualTo(1);
+        assertThat(recovery.deadLettered()).isEqualTo(1);
+        assertThat(status()).isEqualTo("QUEUED");
+        assertThat(jdbc.queryForObject("SELECT status FROM ai_jobs WHERE id=?",String.class,exhausted)).isEqualTo("DEAD");
+        assertThat(jdbc.queryForObject("SELECT error_code FROM ai_jobs WHERE id=?",String.class,exhausted))
+                .isEqualTo("AI_JOB_RECOVERY_EXHAUSTED");
     }
 }

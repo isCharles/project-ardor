@@ -34,13 +34,26 @@ class SchedulingAgentToolProviderTests {
     void ordinaryTaskParsingKeepsOffsetIdentityAndExistingNullDefaults() {
         UUID interview = UUID.randomUUID(), task = UUID.randomUUID();
         bound.createCalendarTask("Review", "", " 2028-04-01T09:00:00+08:00 ", " high ", interview.toString());
-        verify(calendar).createView(owner, "Review", "", Instant.parse("2028-04-01T01:00:00Z"),
+        verify(calendar).createViewOnce(owner, null, null, "Review", "",
+                Instant.parse("2028-04-01T01:00:00Z"),
                 CalendarTaskPriority.HIGH, CalendarTaskSource.AGENT, interview);
         bound.updateCalendarTask(task.toString(), "Revised", "", "", "low", "completed");
         verify(calendar).updateGeneralView(owner, task, "Revised", "", null, CalendarTaskPriority.LOW,
                 CalendarTaskStatus.COMPLETED);
         bound.listCalendarTasks(null, " ");
         verify(calendar).listViews(owner, null, null);
+    }
+
+    @Test
+    void createCarriesTheLogicalActionAndRunForSemanticIdempotency() {
+        UUID action = UUID.randomUUID(), run = UUID.randomUUID();
+        var scoped = new SchedulingAgentToolProvider(calendar, series)
+                .bind(new AgentToolContext(owner, (kind, id, label, detail, endpoint) -> Map.of(),
+                        (source, content) -> "unused", action, run, input -> Map.of()));
+        scoped.createCalendarTask("Review", "", "2028-04-01T09:00:00+08:00", "high", "");
+        verify(calendar).createViewOnce(owner, action, run, "Review", "",
+                Instant.parse("2028-04-01T01:00:00Z"),
+                CalendarTaskPriority.HIGH, CalendarTaskSource.AGENT, null);
     }
 
     @Test
