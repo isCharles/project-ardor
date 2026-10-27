@@ -33,6 +33,12 @@ node scripts/agent-eval.mjs
 `/api/agent/runs/{requestId}/trace` 的实际 Token 和工具调用。脚本不会记录 Prompt、
 答案正文、API Key 或 Cookie；报告只包含 case id、状态、失败分类、工具名和 Token/费用汇总。
 
+预期工具只有在轨迹中出现 `COMPLETED` 调用才算通过；被拒绝、失败或仍在运行
+不能算成功。禁止的工具即使被拦截也算一次尝试。运行轨迹缺失或未完成时不判为
+通过。该断言只检查记录到的工具状态，不证明工具结果、最终答案的语义正确性；
+返回业务错误文本但未抛异常的调用、仅创建建议卡的调用仍可能记为 `COMPLETED`。
+CI 使用 `node --test scripts/agent-eval-assertions.test.mjs` 验证断言本身。
+
 失败分类：
 
 - `EXPECTATION`：工具或答案断言不满足；
