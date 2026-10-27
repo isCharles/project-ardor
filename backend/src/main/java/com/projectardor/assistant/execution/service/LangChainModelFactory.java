@@ -144,7 +144,7 @@ public class LangChainModelFactory {
         } else {
             model = protocol.streaming(config,profile,transport,readTimeout, listeners);
         }
-        return ContextBudgetedModels.streaming(model, contextBudget.resolve(config, profile.maxTokens()), AgentRequestTokens.estimator(config));
+        return ContextBudgetedModels.streaming(TimedStreamingModel.wrap(model), contextBudget.resolve(config, profile.maxTokens()), AgentRequestTokens.estimator(config));
     }
 
     private JdkHttpClientBuilder httpClientBuilder() {
