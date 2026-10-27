@@ -27,7 +27,7 @@ class QuotaServiceTests {
     void giftedMemberUsesMemberLimitAndAllowsIdempotentRetry() {
         UUID user = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
-        UsagePolicy policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 8, 120, now);
+        UsagePolicy policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 500, 2000, 2, 25, 100, 8, 120, now);
         when(policies.get(UsageFeature.AGENT_CHAT)).thenReturn(policy);
         when(memberships.tier(user)).thenReturn(MembershipTier.PLUS);
         when(store.consume(user, policy, MembershipTier.PLUS, requestId, now))
@@ -42,7 +42,7 @@ class QuotaServiceTests {
     @Test
     void monthlyExhaustionReturnsNextUtcMonth() {
         UUID user = UUID.randomUUID();
-        UsagePolicy policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 8, 120, now);
+        UsagePolicy policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 500, 2000, 2, 25, 100, 8, 120, now);
         when(policies.get(UsageFeature.AGENT_CHAT)).thenReturn(policy);
         when(memberships.tier(user)).thenReturn(MembershipTier.FREE);
         when(store.consume(user, policy, MembershipTier.FREE, null, now))
@@ -60,8 +60,8 @@ class QuotaServiceTests {
         UUID user = UUID.randomUUID();
         when(memberships.tier(user)).thenReturn(MembershipTier.PLUS);
         when(policies.list()).thenReturn(List.of(
-                new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 8, 120, now),
-                new UsagePolicy(UsageFeature.RESUME_ANALYSIS, 1, 40, 3, 30, now)));
+                new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 500, 2000, 2, 25, 100, 8, 120, now),
+                new UsagePolicy(UsageFeature.RESUME_ANALYSIS, 1, 40, 40, 160, 1, 10, 40, 3, 30, now)));
         when(store.used(user, UsageFeature.AGENT_CHAT, now)).thenReturn(12);
         when(store.used(user, UsageFeature.RESUME_ANALYSIS, now)).thenReturn(2);
 
@@ -97,7 +97,7 @@ class QuotaServiceTests {
         var budgetService = new QuotaService(policies, memberships, store, plans, tokens,
                 Clock.fixed(now, ZoneOffset.UTC));
         UUID user = UUID.randomUUID();
-        UsagePolicy policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 8, 120, now);
+        UsagePolicy policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 500, 2000, 2, 25, 100, 8, 120, now);
         when(policies.get(UsageFeature.AGENT_CHAT)).thenReturn(policy);
         when(memberships.tier(user)).thenReturn(MembershipTier.FREE);
         when(plans.tokenLimit(MembershipTier.FREE)).thenReturn(100L);

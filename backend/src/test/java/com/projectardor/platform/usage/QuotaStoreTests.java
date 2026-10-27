@@ -20,10 +20,10 @@ class QuotaStoreTests {
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenAnswer(invocation -> {
                     Object[] arguments = invocation.getArguments();
-                    assertThat(Long.parseLong((String) arguments[8])).isGreaterThanOrEqualTo(35L * 86_400);
+                    assertThat(Long.parseLong((String) arguments[10])).isGreaterThanOrEqualTo(35L * 86_400);
                     return 1L;
                 });
-        var policy = new UsagePolicy(UsageFeature.LEARNING_PLAN, 5, 500, 8, 30, Instant.now());
+        var policy = new UsagePolicy(UsageFeature.LEARNING_PLAN, 5, 500, 500, 2000, 2, 25, 100, 8, 30, Instant.now());
 
         assertThat(new QuotaStore(redis).consume(UUID.randomUUID(), policy, MembershipTier.PLUS,
                 UUID.randomUUID(), Instant.parse("2026-10-31T23:59:59Z")))
@@ -40,17 +40,26 @@ class QuotaStoreTests {
     }
 
     @Test
+    void weeklyKeysUseUtcCalendarWeek() {
+        UUID user = UUID.randomUUID();
+        assertThat(QuotaStore.weekKey(user, UsageFeature.AGENT_CHAT,
+                Instant.parse("2026-10-31T23:59:59Z"))).endsWith(":202644");
+        assertThat(QuotaStore.weekKey(user, UsageFeature.AGENT_CHAT,
+                Instant.parse("2026-11-02T00:00:00Z"))).endsWith(":202645");
+    }
+
+    @Test
     void mapsAtomicRedisDenialWithoutTreatingItAsSuccess() {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenAnswer(invocation -> {
                     RedisScript<?> script = invocation.getArgument(0);
                     assertThat(script.getScriptAsString()).contains("redis.call('INCR'", "return -i",
-                            "tonumber(ARGV[7])");
-                    return -2L;
+                            "tonumber(ARGV[9])");
+                    return -3L;
                 });
         var store = new QuotaStore(redis);
-        var policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 8, 30, Instant.now());
+        var policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 500, 2000, 2, 25, 100, 8, 30, Instant.now());
 
         assertThat(store.consume(UUID.randomUUID(), policy, MembershipTier.PLUS,
                 null, Instant.parse("2026-10-03T01:00:00Z")))

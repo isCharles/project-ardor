@@ -54,8 +54,11 @@ public class QuotaService {
         }
         QuotaStore.Decision decision = store.consume(userId, policy, tier, requestId, now);
         if (decision == QuotaStore.Decision.ALLOWED || decision == QuotaStore.Decision.DUPLICATE) return;
-        Instant resetAt = decision == QuotaStore.Decision.MONTHLY_LIMIT ? nextMonth(now)
-                : now.truncatedTo(ChronoUnit.MINUTES).plus(1, ChronoUnit.MINUTES);
+        Instant resetAt = switch (decision) {
+            case MONTHLY_LIMIT -> nextMonth(now);
+            case WEEKLY_LIMIT -> nextWeek(now);
+            default -> now.truncatedTo(ChronoUnit.MINUTES).plus(1, ChronoUnit.MINUTES);
+        };
         throw new QuotaExceededException(feature, decision, resetAt);
     }
 
@@ -85,6 +88,13 @@ public class QuotaService {
         return LocalDate.of(now.atZone(ZoneOffset.UTC).getYear(),
                 now.atZone(ZoneOffset.UTC).getMonthValue(), 1)
                 .plusMonths(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+    }
+
+    private Instant nextWeek(Instant now) {
+        var date = now.atZone(ZoneOffset.UTC).toLocalDate();
+        var nextMonday = date.plusDays((8 - date.getDayOfWeek().getValue()) % 7);
+        if (nextMonday.equals(date)) nextMonday = date.plusWeeks(1);
+        return nextMonday.atStartOfDay().toInstant(ZoneOffset.UTC);
     }
 
     public record FeatureUsage(UsageFeature feature, int used, int limit) {}

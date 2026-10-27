@@ -12,8 +12,6 @@ RUN npm run build
 FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk add --no-cache texlive-xetex texmf-dist-latexextra texmf-dist-langchinese font-noto-cjk
-ENV ARDOR_LATEX_ENGINE=xelatex
 COPY --from=dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build --chown=node:node /app/public ./public
