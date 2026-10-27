@@ -80,39 +80,39 @@ public class AiJobStore {
                 """, MAPPER).stream().findFirst();
     }
 
-    public void complete(Job job, String resultPath) {
-        jdbc.update("""
+    public boolean complete(Job job, String resultPath) {
+        return jdbc.update("""
                 UPDATE ai_jobs SET status = 'COMPLETED', result_path = ?, error_code = NULL,
                     error_message = NULL, finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ? AND status = 'RUNNING' AND attempts = ?
-                """, resultPath, job.id(), job.userId(), job.attempts());
+                """, resultPath, job.id(), job.userId(), job.attempts()) == 1;
     }
 
-    public void fail(Job job, String code, String message) {
-        jdbc.update("""
+    public boolean fail(Job job, String code, String message) {
+        return jdbc.update("""
                 UPDATE ai_jobs SET status = 'FAILED', error_code = ?, error_message = ?,
                     finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ? AND status = 'RUNNING' AND attempts = ?
-                """, code, message.substring(0, Math.min(500, message.length())), job.id(), job.userId(), job.attempts());
+                """, code, message.substring(0, Math.min(500, message.length())), job.id(), job.userId(), job.attempts()) == 1;
     }
 
-    public void requeue(Job job, Instant retryAfter) {
-        jdbc.update("""
+    public boolean requeue(Job job, Instant retryAfter) {
+        return jdbc.update("""
                 UPDATE ai_jobs SET status = 'QUEUED', retry_after = ?,
                     error_code = NULL, error_message = NULL,
                     started_at = NULL, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ? AND status = 'RUNNING' AND attempts = ?
                 """, retryAfter == null ? null : java.sql.Timestamp.from(retryAfter),
-                job.id(), job.userId(), job.attempts());
+                job.id(), job.userId(), job.attempts()) == 1;
     }
 
-    public void deadLetter(Job job, String code, String message) {
-        jdbc.update("""
+    public boolean deadLetter(Job job, String code, String message) {
+        return jdbc.update("""
                 UPDATE ai_jobs SET status = 'DEAD', error_code = ?, error_message = ?,
                     finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ? AND status = 'RUNNING' AND attempts = ?
                 """, code, message.substring(0, Math.min(500, message.length())),
-                job.id(), job.userId(), job.attempts());
+                job.id(), job.userId(), job.attempts()) == 1;
     }
 
     public Job cancel(UUID userId, UUID id) {
@@ -144,17 +144,27 @@ public class AiJobStore {
                 job.id(), job.userId(), job.attempts());
     }
 
-    public void recoverStale() {
+    public Recovery recoverStale() {
         Instant backoff = Instant.now().plusSeconds(Math.min(staleSeconds, 60));
-        jdbc.update("""
+        int exhausted = jdbc.update("""
+                UPDATE ai_jobs SET status = 'DEAD', error_code = 'AI_JOB_RECOVERY_EXHAUSTED',
+                    error_message = '任务在多次失联后停止重试，请核对原提交后手动重试',
+                    finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE status = 'RUNNING' AND attempts >= max_attempts
+                    AND updated_at < CURRENT_TIMESTAMP - (CAST(? AS double precision) * INTERVAL '1 second')
+                """, staleSeconds);
+        int requeued = jdbc.update("""
                 UPDATE ai_jobs SET status = 'QUEUED', retry_after = ?,
                     error_code = 'AI_JOB_INTERRUPTED',
                     error_message = '评估中断，自动排队重试',
                     started_at = NULL, updated_at = CURRENT_TIMESTAMP
-                WHERE status = 'RUNNING'
+                WHERE status = 'RUNNING' AND attempts < max_attempts
                     AND updated_at < CURRENT_TIMESTAMP - (CAST(? AS double precision) * INTERVAL '1 second')
                 """, java.sql.Timestamp.from(backoff), staleSeconds);
+        return new Recovery(requeued, exhausted);
     }
+
+    public record Recovery(int requeued, int deadLettered) {}
 
     public int queuePosition(Job job) {
         Integer pos = jdbc.queryForObject("""

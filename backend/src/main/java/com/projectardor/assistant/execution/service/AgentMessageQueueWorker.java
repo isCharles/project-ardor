@@ -17,10 +17,16 @@ public class AgentMessageQueueWorker {
     private final AgentMessageQueue queue;
     private final CareerAgentService agent;
     private final AgentRunStore runs;
-    private final Semaphore slots = new Semaphore(2);
+    private final Semaphore slots;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     public AgentMessageQueueWorker(AgentMessageQueue queue, CareerAgentService agent, AgentRunStore runs) {
+        this(queue, agent, runs, 2);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentMessageQueueWorker(AgentMessageQueue queue, CareerAgentService agent, AgentRunStore runs,
+            @org.springframework.beans.factory.annotation.Value("${app.agent.queue.capacity:2}") int capacity) {
         this.queue = queue; this.agent = agent; this.runs = runs;
+        this.slots = new Semaphore(Math.max(1, capacity));
     }
     @Scheduled(fixedDelay = 1000)
     public void poll() {

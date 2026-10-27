@@ -66,6 +66,12 @@ logging:
     com.projectardor: INFO
 
 app:
+  agent:
+    queue:
+      enabled: ${ARDOR_AGENT_QUEUE_ENABLED:true}
+      capacity: ${ARDOR_AGENT_QUEUE_CAPACITY:2}
+  ai-jobs:
+    worker-capacity: ${ARDOR_AI_JOB_WORKER_CAPACITY:2}
   admin:
     emails: ${ARDOR_ADMIN_EMAILS:}
   http:
