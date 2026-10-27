@@ -45,7 +45,7 @@ ARDOR_ACCEPTANCE_SEMANTIC_MODE=default \
   node backend/src/test/resources/semantic-recall-acceptance.mjs
 ```
 
-脚本在第 1 轮埋入随机暗号，之后持续对话到百轮，断言：最终回答仍能引用该事实；压缩状态和 `summaryVersion` 只前进不回退；重复压缩模式至少两次、默认 200K 预算模式不超过 20 次；请求估算不超过配额上限；原始用户/助手消息全部保留；最终 Run 状态为 `COMPLETED`。
+脚本在第 1 轮埋入随机暗号，之后持续对话到百轮，断言：最终回答仍能引用该事实；摘要版本与压缩次数一致并推进；重复压缩模式至少两次、默认 200K 预算模式不超过 20 次；请求估算不超过配额上限；原始用户/助手消息全部保留；最终 Run 状态为 `COMPLETED`。
 
 **自动入口 2**：`ContextComparisonExperimentTests`（PR #249）复用真实 Builder/Compactor/Budget/重复结果压缩，对 20/80/200 轮合成对话比较原文、摘要、摘要+重复只读结果压缩三种视图。报告在 `backend/target/context-comparison/report.json`，逐模式记录最终请求 Token、含摘要与重试的会话总 Token、摘要额外时延、标签保留分子/分母和违规副作用；未知窗口保持 `null`，80/200 轮原文超 32K 已知窗口时单列为失败样本，未当作节省。
 
@@ -72,7 +72,7 @@ node backend/src/test/resources/golden-path-acceptance.mjs
 
 写入安全断言：
 
-- 同一 run 内第二次相同写入返回 `DUPLICATE_WRITE_BLOCKED`，业务表只产生一条记录（`ApprovedAgentToolsTests`、`ModularAgentToolsTests`）；
+- 同一 run 内第二次相同写入返回 `DUPLICATE_WRITE_BLOCKED`，业务 Service 只被调用一次（`ApprovedAgentToolsTests`、`ModularAgentToolsTests`）；写后响应丢失案例要求最终只有一条任务（`scripts/agent-eval-cases.json`）；
 - 工具校验/业务错误记录为 `FAILED` span 和失败结果，不伪装成 `COMPLETED`（`AgentToolFailureHandlerTests`、e2e 非法参数案例）；
 - 执行结果未知时消息进入 `INTERRUPTED` 并提示先核对，不自动重放（`AgentMessageQueueWorkerTests`）；
 - 旧 attempt 的迟到完成、失败和心跳不能覆盖新 attempt（`AiJobAttemptFencingTests`，需一次性 PostgreSQL）。
