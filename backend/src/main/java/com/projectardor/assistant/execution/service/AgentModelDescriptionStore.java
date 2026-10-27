@@ -1,6 +1,10 @@
 package com.projectardor.assistant.execution.service;
 
+import java.sql.SQLException;
+import java.sql.Types;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -47,7 +51,19 @@ public class AgentModelDescriptionStore {
                     description = EXCLUDED.description,
                     failed_at = EXCLUDED.failed_at,
                     updated_at = CURRENT_TIMESTAMP
-                """, userId, modelKey, locale, fingerprint, description, failedAt);
+                """, statement -> bind(statement, userId, modelKey, locale, fingerprint, description, failedAt));
+    }
+
+    private static void bind(java.sql.PreparedStatement statement, UUID userId, String modelKey, String locale,
+            String fingerprint, String description, Instant failedAt) throws SQLException {
+        statement.setObject(1, userId, Types.OTHER);
+        statement.setString(2, modelKey);
+        statement.setString(3, locale);
+        statement.setString(4, fingerprint);
+        if (description == null) statement.setNull(5, Types.VARCHAR);
+        else statement.setString(5, description);
+        if (failedAt == null) statement.setNull(6, Types.TIMESTAMP_WITH_TIMEZONE);
+        else statement.setObject(6, OffsetDateTime.ofInstant(failedAt, ZoneOffset.UTC), Types.TIMESTAMP_WITH_TIMEZONE);
     }
 
     public record Entry(String fingerprint, String description, Instant updatedAt) {
