@@ -16,15 +16,23 @@ public class CompatibleLlmGateway implements LlmGateway {
 
     private final LlmConfigService configService;
     private final ModelProtocols<JsonModelProtocol> protocols;
+    private final ModelCallCapacity capacity;
 
     @org.springframework.beans.factory.annotation.Autowired
+    public CompatibleLlmGateway(LlmConfigService configService,List<JsonModelProtocol> protocols,
+            ModelCallCapacity capacity) {
+        this.configService=configService;this.protocols=new ModelProtocols<>(protocols);this.capacity=capacity;
+    }
+
+    /** Compatibility for protocol tests that do not exercise the shared capacity guard. */
     public CompatibleLlmGateway(LlmConfigService configService,List<JsonModelProtocol> protocols) {
-        this.configService=configService;this.protocols=new ModelProtocols<>(protocols);
+        this(configService, protocols, new ModelCallCapacity(8));
     }
 
     /** Compatibility for callers constructing the default transports outside Spring. */
     public CompatibleLlmGateway(LlmConfigService configService,ObjectMapper mapper,RestClient.Builder clients) {
-        this(configService,List.of(new OpenAiJsonModelProtocol(mapper,clients),new AnthropicJsonModelProtocol(mapper,clients)));
+        this(configService,List.of(new OpenAiJsonModelProtocol(mapper,clients),new AnthropicJsonModelProtocol(mapper,clients)),
+                new ModelCallCapacity(8));
     }
 
     @Override
@@ -36,6 +44,7 @@ public class CompatibleLlmGateway implements LlmGateway {
             LlmConfigService.LlmRuntimeConfig config,
             String systemPrompt,
             String userPrompt) {
+        if (!capacity.tryAcquire("job")) throw capacity.busy();
         try {
             return protocols.require(config.provider()).complete(config,systemPrompt,userPrompt);
         } catch (RestClientResponseException exception) {
@@ -50,6 +59,8 @@ public class CompatibleLlmGateway implements LlmGateway {
                     "LLM 返回格式无法解析，请检查所选协议是否与 Base URL 匹配",
                     false,
                     exception);
+        } finally {
+            capacity.release();
         }
     }
 

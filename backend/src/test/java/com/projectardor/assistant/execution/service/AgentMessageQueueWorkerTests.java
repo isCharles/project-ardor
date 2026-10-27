@@ -45,7 +45,8 @@ class AgentMessageQueueWorkerTests {
             return null;
         }).when(service).chatStream(eq(owner), eq(input.conversationId()), eq(input.message()), isNull(), isNull(),
                 eq(List.of()), eq(id), eq(ReasoningDepth.DEEP), isNull(), any(CareerAgentService.StreamSink.class));
-        var worker = new AgentMessageQueueWorker(queue, service, runs);
+        var worker = new AgentMessageQueueWorker(queue, service, runs,
+                new AgentMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
         try {
             worker.poll();
             if (thrown) verify(queue, timeout(2000)).interrupted(item);
@@ -81,7 +82,8 @@ class AgentMessageQueueWorkerTests {
         }).when(service).chatStream(any(), any(), any(), any(), any(), any(), any(), any(), any(),
                 any(CareerAgentService.StreamSink.class));
         when(runs.get(any(), any())).thenThrow(new ResourceNotFoundException("请求记录不存在"));
-        var worker = new AgentMessageQueueWorker(queue, service, runs, 2);
+        var worker = new AgentMessageQueueWorker(queue, service, runs,
+                new AgentMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()), 2);
 
         worker.poll();
         worker.poll();

@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.projectardor.platform.model.llm.service.LlmConfigService;
+import com.projectardor.platform.model.llm.service.ModelCallCapacity;
 import com.projectardor.platform.model.llm.service.ModelProtocols;
 import com.projectardor.assistant.ReasoningDepth;
 
@@ -39,6 +40,7 @@ public class LangChainModelFactory {
     private final Duration connectTimeout;
     private final Duration readTimeout;
     private final AgentContextBudgetPolicy contextBudget;
+    private final ModelCallCapacity capacity;
 
     public LangChainModelFactory(
             LlmConfigService configService,
@@ -49,7 +51,14 @@ public class LangChainModelFactory {
             List<AgentModelProtocol> protocols) {
         this(configService, proxyHost, proxyPort, connectTimeout, readTimeout, protocols,
                 new AgentContextBudgetPolicy(new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()),
-                        200000, .75, .05));
+                        200000, .75, .05), new ModelCallCapacity(8));
+    }
+
+    /** Compatibility for SDK tests that supply their own context budget. */
+    public LangChainModelFactory(LlmConfigService configService,String proxyHost,int proxyPort,Duration connectTimeout,
+            Duration readTimeout,List<AgentModelProtocol> protocols,AgentContextBudgetPolicy contextBudget) {
+        this(configService,proxyHost,proxyPort,connectTimeout,readTimeout,protocols,contextBudget,
+                new ModelCallCapacity(8));
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -58,7 +67,8 @@ public class LangChainModelFactory {
             @Value("${app.http.proxy-port:0}") int proxyPort,
             @Value("${app.http.connect-timeout:10s}") Duration connectTimeout,
             @Value("${app.http.read-timeout:120s}") Duration readTimeout,
-            List<AgentModelProtocol> protocols, AgentContextBudgetPolicy contextBudget) {
+            List<AgentModelProtocol> protocols, AgentContextBudgetPolicy contextBudget,
+            ModelCallCapacity capacity) {
         this.configService = configService;
         this.protocols = new ModelProtocols<>(protocols);
         this.proxyHost = proxyHost;
@@ -66,6 +76,7 @@ public class LangChainModelFactory {
         this.connectTimeout = connectTimeout;
         this.readTimeout = readTimeout;
         this.contextBudget = contextBudget;
+        this.capacity = capacity;
     }
 
     /** Compatibility for non-Spring construction of the two existing protocols. */
@@ -117,7 +128,9 @@ public class LangChainModelFactory {
         }
         var budget = contextBudget.resolve(config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
-        return RepeatedToolResultCompactor.chat(ContextBudgetedModels.chat(model, budget, estimator), budget, estimator);
+        return RepeatedToolResultCompactor.chat(
+                ContextBudgetedModels.chat(CapacityLimitedModels.chat(model, capacity), budget, estimator),
+                budget, estimator);
     }
 
     public StreamingChatModel createStreaming(UUID userId) {
@@ -148,7 +161,11 @@ public class LangChainModelFactory {
         }
         var budget = contextBudget.resolve(config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
-        return RepeatedToolResultCompactor.streaming(ContextBudgetedModels.streaming(TimedStreamingModel.wrap(model), budget, estimator), budget, estimator);
+        return RepeatedToolResultCompactor.streaming(
+                ContextBudgetedModels.streaming(
+                        TimedStreamingModel.wrap(CapacityLimitedModels.streaming(model, capacity)),
+                        budget, estimator),
+                budget, estimator);
     }
 
     private JdkHttpClientBuilder httpClientBuilder() {

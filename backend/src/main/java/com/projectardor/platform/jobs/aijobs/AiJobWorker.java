@@ -40,6 +40,8 @@ public class AiJobWorker {
             var next = store.claimNext();
             if (next.isEmpty()) { slots.release(); return; }
             var job = next.get();
+            metrics.recordJobClaim(job.type().name(),
+                    java.time.Duration.between(job.createdAt(), Instant.now()).toNanos());
             active.put(job.id(), job);
             try { executor.execute(() -> {
                 try {
