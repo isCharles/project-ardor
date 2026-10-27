@@ -5,6 +5,8 @@ on:
     paths:
       - "backend/**"
       - "frontend/**"
+      - "scripts/agent-eval*.mjs"
+      - "scripts/agent-eval-cases.json"
       - ".github/workflows/golden-path-acceptance.yml"
       - ".github/tests/recap-metadata-*.sql"
   workflow_dispatch:
@@ -35,6 +37,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      - name: Check Agent evaluation assertions
+        run: node --test scripts/agent-eval-assertions.test.mjs
 
       - name: Start disposable database and Redis
         shell: bash

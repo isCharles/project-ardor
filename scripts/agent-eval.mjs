@@ -21,6 +21,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { evaluateCase } from "./agent-eval-assertions.mjs";
 
 if (process.env.ARDOR_EVAL_ALLOW_REAL_MODEL !== "true") {
   throw new Error("Set ARDOR_EVAL_ALLOW_REAL_MODEL=true to run against a real model.");
@@ -125,17 +126,7 @@ async function runCase(item) {
     });
     if (!traceResponse.ok) throw new Error(`TRACE_HTTP_${traceResponse.status}`);
     const trace = await traceResponse.json();
-    const toolNames = trace.spans.filter((span) => span.kind === "TOOL").map((span) => span.name);
-    const failures = [];
-    for (const expected of item.expectedTools ?? []) {
-      if (!toolNames.includes(expected)) failures.push(`expected tool ${expected}`);
-    }
-    for (const forbidden of item.forbiddenTools ?? []) {
-      if (toolNames.includes(forbidden)) failures.push(`forbidden tool ${forbidden}`);
-    }
-    if (item.mustContain && !String(done.content ?? "").includes(item.mustContain)) {
-      failures.push(`answer missing ${JSON.stringify(item.mustContain)}`);
-    }
+    const { failures, toolNames } = evaluateCase(item, trace, done.content);
     const input = Number(trace.totals?.inputTokens ?? 0);
     const output = Number(trace.totals?.outputTokens ?? 0);
     const total = input + output;
