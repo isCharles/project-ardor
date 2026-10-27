@@ -41,7 +41,7 @@ try {
       span("compaction", "context", "LLM", "context.compact.1", "2026-10-23T08:00:01.010Z", { durationMs: 100, model: "fixture-model", inputTokens: 500, outputTokens: 50, attributes: { purpose: "CONTEXT_COMPACTION", call: 1 } }),
       span("llm-1", "root", "LLM", "llm.call.2", "2026-10-23T08:00:02Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 32, attributes: { toolRound: true } }),
       span("tool-1", "root", "TOOL", "list_resumes", "2026-10-23T08:00:03Z", { durationMs: 80 }),
-      span("llm-2", "root", "LLM", "llm.call.3", "2026-10-23T08:00:04Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 148 }),
+      span("llm-2", "root", "LLM", "llm.call.3", "2026-10-23T08:00:04Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 148, attributes: { timingSource: "client-monotonic-stream-v1", firstContentMs: 250, streamAfterFirstContentMs: 750, outputTokensPerRequestSecond: 148 } }),
     ],
   };
   let traceRequests = 0;
@@ -127,6 +127,14 @@ try {
   assert.equal(await page.locator("[data-trace-inspector-item]").count(), 7, "Inspector lists every span");
   await page.locator("[data-trace-inspector-item]").filter({ hasText: "Context compaction" }).click();
   await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "Context compaction" }).waitFor();
+  const inspector = page.locator("[data-trace-inspector-panel]");
+  await page.locator("[data-trace-inspector-item]").filter({ hasText: "llm.call.3" }).click();
+  await inspector.getByText("First content", { exact: true }).waitFor();
+  await inspector.getByText("250 ms", { exact: true }).waitFor();
+  await inspector.getByText("750 ms", { exact: true }).waitFor();
+  await inspector.getByText("148.0 tok/s", { exact: true }).waitFor();
+  await page.locator("[data-trace-inspector-item]").filter({ hasText: "llm.call.2" }).click();
+  assert.equal(await inspector.getByText("148.0 tok/s", { exact: true }).count(), 0, "Historical spans never inherit another call's timing");
   await page.locator("[data-trace-inspector-item]").filter({ hasText: "Agent run" }).click();
   await page.getByRole("tab", { name: "Timing", exact: true }).click();
   await page.getByText("Started at", { exact: true }).waitFor();

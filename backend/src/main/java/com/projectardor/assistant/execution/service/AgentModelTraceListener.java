@@ -74,6 +74,7 @@ public final class AgentModelTraceListener implements ChatModelListener {
         attributes.put("finishReason", response == null || response.metadata() == null
                 || response.metadata().finishReason() == null ? "" : response.metadata().finishReason().name());
         attributes.put("toolRound", toolRound);
+        copyTiming(context.attributes(), attributes);
         if (message != null) {
             attributes.put("outputPreview", TracePreview.of(message.text()));
             if (message.hasToolExecutionRequests()) {
@@ -91,8 +92,18 @@ public final class AgentModelTraceListener implements ChatModelListener {
         tracer.recordLlm(null, null, false);
         if (span == null) return;
         String errorCode = context.error() == null ? "LLM_CALL_FAILED" : context.error().getClass().getSimpleName();
-        tracer.finishChild(span, "FAILED", errorCode, model, null, null,
-                Map.of("errorType", errorCode));
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("errorType", errorCode);
+        copyTiming(context.attributes(), attributes);
+        tracer.finishChild(span, "FAILED", errorCode, model, null, null, attributes);
+    }
+
+    private static void copyTiming(Map<Object, Object> source, Map<String, Object> target) {
+        if (source != null && source.remove(TimedStreamingModel.TIMING) instanceof Map<?, ?> timing)
+            timing.forEach((key, value) -> {
+                if (key instanceof String name && (value instanceof Number || "timingSource".equals(name)))
+                    target.put(name, value);
+            });
     }
 
     private static UUID takeSpan(Map<Object, Object> attributes) {
