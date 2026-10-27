@@ -107,15 +107,18 @@ safeRejection 2/2、环境错误 0/9。
 
 该驱动暴露了一个真实口径问题：工具校验/业务错误以文本结果返回时，轨迹仍记为
 `COMPLETED` 且 `executed=true`。评分器现在检查工具结果的短错误预览并据此判定失败；
-产品侧应改为记录 `FAILED` span 与稳定 errorCode，归入指标/Trace 批次。
+产品侧已改为记录 `FAILED` span，并按原因给出 `INVALID_ARGUMENTS`、`RESOURCE_NOT_FOUND`
+或 `TOOL_FAILED` errorCode，评分器保留结果预览启发式以兼容修复前的历史轨迹。
 
 ## 限制
 
 - 零成本演示使用合成轨迹，只验证框架与合同，不代表真实模型质量；
 - 端到端驱动当前只覆盖日历相关 9 个案例；记忆、面试、知识库等仍以轨迹评分为主，
   尚未全部读回业务终态；
-- 轨迹只保留最早 128 个 span（静默截断），超长运行的评分可能漏掉后续工具；该问题在
-  指标/Trace 口径批次修复；
-- 工具业务错误目前靠结果预览的启发式识别；产品尚未记录 `FAILED` span 与稳定 errorCode；
+- 轨迹接口按 `offset`/`limit` 分页（默认 128、单页上限 500）；两个评测驱动会跟随
+  `nextOffset` 读取完整轨迹，页请求失败、缺少分页元数据、span 总数不一致或超过页数上限时
+  按环境错误处理，不会用截断前缀评分。真实超过一页的评测运行尚未构造；
+- 工具参数的校验错误会记录 `FAILED` span，`INVALID_ARGUMENTS`/`RESOURCE_NOT_FOUND`
+  与 `TOOL_FAILED` 区分原因；评分器仍保留结果预览的启发式，以兼容修复前的历史轨迹；
 - 工具 schema 哈希需要外部导出的 schema 快照，缺失时报告为 `null` 而非伪造；
 - 语义正确性、真实供应商的摘要质量与 tokenizer 精度不在本批次范围。
