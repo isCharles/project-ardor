@@ -44,6 +44,26 @@ class AgentStreamProgressTests {
     private final UUID request = UUID.randomUUID();
 
     @Test
+    void intermediateToolRoundMovesOnlyRealCommentaryIntoStepsAndClearsFinalAnswerBuffer() {
+        progress.begin(owner, request);
+        progress.answer(request, "I'll inspect the plans.");
+        progress.intermediate(request, "I'll inspect the plans.");
+        var afterToolRound = progress.get(owner, request);
+        assertThat(afterToolRound.answerPartial()).isEmpty();
+        assertThat(afterToolRound.steps()).singleElement().satisfies(step -> {
+            assertThat(step.label()).isEqualTo("I'll inspect the plans.");
+            assertThat(step.status()).isEqualTo("COMMENTARY");
+        });
+        progress.answer(request, "Final answer.");
+        assertThat(progress.get(owner, request).answerPartial()).isEqualTo("Final answer.");
+        progress.intermediate(request, "");
+        assertThat(progress.get(owner, request).steps()).hasSize(1);
+        progress.finish(request, false);
+        progress.intermediate(request, "late");
+        assertThat(progress.get(owner, request).steps()).hasSize(1);
+    }
+
+    @Test
     void silenceIsNotPresentedAsThinkingAndFirstOutputUsesStartTime() {
         progress.begin(owner, request);
         clock.advance(31);

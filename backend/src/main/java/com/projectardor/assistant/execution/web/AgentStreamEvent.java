@@ -72,6 +72,9 @@ public record AgentStreamEvent(
     public static AgentStreamEvent delta(String content) {
         return new AgentStreamEvent("delta", content, null, null, null, null, null, null, null, null);
     }
+    public static AgentStreamEvent intermediate(String content) {
+        return new AgentStreamEvent("intermediate", content, null, null, null, null, null, null, null, null);
+    }
     public static AgentStreamEvent phaseFinished(String phase, String label, long elapsedMs, String status) {
         return new AgentStreamEvent("phase_end", phase, null, label, elapsedMs, null, null, null, null, null,
                 null, null, status);

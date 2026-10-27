@@ -41,7 +41,7 @@ type Conversation = { id: string; title: string; pinned: boolean; titleManuallyS
 type AgentMemory = { content: string; updatedAt: string | null };
 type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null };
 type RetryFailure = { label: string; detail: string };
-type AgentStreamEvent = ToolMeasurement & { type: "context" | "status" | "phase" | "phase_end" | "thinking" | "delta" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string; contextUsage?: ContextUsage | null };
+type AgentStreamEvent = ToolMeasurement & { type: "context" | "status" | "phase" | "phase_end" | "thinking" | "delta" | "intermediate" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string; contextUsage?: ContextUsage | null };
 type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number; contextUsage?: ContextUsage | null };
 type AgentRun = { id: string; conversationId: string; message: string; status: "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED"; label: string; errorCode: string | null; errorMessage: string | null; retryable: boolean; createdAt: string; updatedAt: string };
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
@@ -902,6 +902,11 @@ export default function AgentHomePage() {
               setStreamPhase("OUTPUT");
               receivedDelta = true;
               setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: item.content + event.content } : item));
+            } else if (event.type === "intermediate") {
+              setStreamPhase("WAITING_DATA");
+              setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: "" } : item));
+              setStreamProgress((current) => current ? { ...current, answerPartial: "" } : current);
+              if (event.content) setRunSteps((current) => [...current, { key: `commentary-${current.length}`, label: event.content!, elapsedMs: 0, status: "COMMENTARY", done: true }]);
             } else if (event.type === "phase" && event.label) {
               setStreamPhase(event.content ?? "PLAN");
               setRunSteps((current) => [...current, { key: `phase-${event.content ?? "phase"}-${current.length}`, label: event.label!, elapsedMs: 0, done: false }]);
@@ -1284,9 +1289,11 @@ export default function AgentHomePage() {
     ? `/app/agent-runs/${conversationTraceRunId}?conversation=${state.conversationId}` : null;
   const isRunning = busy || !!runningRun || !!approvalRunId || !!activeRunId;
   const liveTitle = !(busy || runningRun) ? t("Execution stopped", "执行已停止") : phase === "THINKING" ? t("Thinking", "思考中") : phase === "PLAN" ? t("Planning", "正在规划") : phase === "GATHER" ? t("Gathering evidence", "正在收集证据") : phase === "REFLECT" ? t("Reviewing evidence", "正在审查证据") : phase === "ANSWER" ? t("Writing reply", "正在生成回复") : phase === "TOOL" ? t("Using tools", "正在调用工具") : phase === "OUTPUT" ? t("Writing reply", "正在生成回复") : t("Waiting for model", "等待模型回应");
+  const displayedSteps = runningRun && !busy && streamProgress?.steps
+    ? streamProgress.steps.map((step, index) => ({ ...step, key: `recovered-${index}`, done: true })) : runSteps;
   const liveTrace = showLiveTrace ? <ExecutionTrace title={liveTitle}
     active={(busy || !!runningRun) && phase !== "OUTPUT"}
-    elapsed={formatElapsed(runElapsed)} thinking={runThinking} steps={runSteps}
+    elapsed={formatElapsed(runElapsed)} thinking={runThinking} steps={displayedSteps}
     >
     {runningRun && <p>{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
     {retryFailures.map((failure, index) => <p key={index} className="text-amber-700">{failure.label} · {failure.detail}</p>)}
