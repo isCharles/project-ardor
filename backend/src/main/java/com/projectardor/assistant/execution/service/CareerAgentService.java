@@ -182,25 +182,37 @@ public class CareerAgentService {
 
     /** Runs a scheduled automation: the prompt is persisted for model context but hidden from the transcript. */
     public AgentMessageResponse chatAutomation(UUID userId, UUID conversationId, String prompt) {
+        return chatAutomation(userId, conversationId, prompt, null);
+    }
+
+    /** Keeps the scheduled automation identity on the run trace instead of inferring it from UI order. */
+    public AgentMessageResponse chatAutomation(UUID userId, UUID conversationId, String prompt, UUID automationId) {
         String executionPrompt = """
                 这是一个已经启用的定时自动化任务，现在到点执行。用户不在本轮对话中，不能向用户追问、不能要求用户确认时间或补充信息；请直接使用当前账户已有数据，调用需要的工具完成任务。
                 如果某个信息确实缺失，按现有数据做最合理的处理，并在结果里说明假设，不要等待用户回复。
                 自动化任务：%s
                 """.formatted(prompt == null ? "" : prompt.strip());
         return chatInternal(userId, conversationId, executionPrompt, null, null, List.of(), null,
-                ReasoningDepth.AUTO, true, null);
+                ReasoningDepth.AUTO, true, null, automationId);
     }
 
     private AgentMessageResponse chatInternal(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
             boolean hiddenUserMessage) {
         return chatInternal(userId, conversationId, rawMessage, contextType, contextId, requestedReferences,
-                requestId, requestedDepth, hiddenUserMessage, null);
+                requestId, requestedDepth, hiddenUserMessage, null, null);
     }
 
     private AgentMessageResponse chatInternal(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
             boolean hiddenUserMessage, String modelChoice) {
+        return chatInternal(userId, conversationId, rawMessage, contextType, contextId, requestedReferences,
+                requestId, requestedDepth, hiddenUserMessage, modelChoice, null);
+    }
+
+    private AgentMessageResponse chatInternal(UUID userId, UUID conversationId, String rawMessage, String contextType,
+            UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
+            boolean hiddenUserMessage, String modelChoice, UUID jobId) {
         ReasoningDepth depth = ReasoningDepth.orAuto(requestedDepth);
         String message = normalizeMessage(rawMessage);
         long startedAt = System.nanoTime();
@@ -224,16 +236,19 @@ public class CareerAgentService {
                     ? store.create(userId)
                     : store.requireActive(userId, conversationId);
             tracer = requestId == null ? null : AgentRunTracer.begin(traceStore, userId, requestId,
-                    conversation.getId(), runtimeConfig.model(), AgentRunTracer.PROMPT_VERSION);
+                    conversation.getId(), runtimeConfig.model(), AgentRunTracer.PROMPT_VERSION, jobId);
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
             AgentContextBuilder.Prepared promptContext;
+            long prepareStartedAt = System.nanoTime();
             try {
                 promptContext = buildContext(userId, conversation.getId(), message, agentInput, runtimeConfig, depth, tracer, null);
             } catch (RuntimeException failure) {
                 if (contextSpan != null) tracer.finishChild(contextSpan, "FAILED", contextFailureCode(failure),
                         runtimeConfig.model(), null, null, java.util.Map.of());
                 throw failure;
+            } finally {
+                agentMetrics.recordContextPrepare(System.nanoTime() - prepareStartedAt);
             }
             ChatMemory memory = promptContext.memory();
             String systemMessage = promptContext.systemPrompt();
@@ -439,6 +454,7 @@ public class CareerAgentService {
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
             AgentContextBuilder.Prepared promptContext;
+            long prepareStartedAt = System.nanoTime();
             try {
                 promptContext = lease.modelCall(() -> buildContext(userId, conversation.getId(),
                         message, agentInput, runtimeConfig, depth, tracer, lease, contextObserver));
@@ -446,6 +462,8 @@ public class CareerAgentService {
                 if (contextSpan != null) tracer.finishChild(contextSpan, "FAILED", contextFailureCode(failure),
                         runtimeConfig.model(), null, null, java.util.Map.of());
                 throw failure;
+            } finally {
+                agentMetrics.recordContextPrepare(System.nanoTime() - prepareStartedAt);
             }
             ChatMemory memory = promptContext.memory();
             String systemMessage = promptContext.systemPrompt();
@@ -521,6 +539,10 @@ public class CareerAgentService {
                         String status = timing != null && !timing.executed() ? "NOT_EXECUTED" : execution.hasFailed() ? "FAILED" : "COMPLETED";
                         Long approvalWait = timing == null ? null : timing.approvalWaitMs();
                         Long business = timing == null ? null : timing.businessMs();
+                        if (approvalWait != null) agentMetrics.recordApprovalWait(
+                                java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(approvalWait));
+                        if (business != null) agentMetrics.recordToolBusiness(
+                                java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(business));
                         if (toolStarted != null) agentMetrics.recordToolCall(
                                 java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(duration),
                                 execution.request().name(), execution.hasFailed());

@@ -95,6 +95,9 @@ public final class AgentModelTraceListener implements ChatModelListener {
             if (message.hasToolExecutionRequests()) {
                 attributes.put("requestedTools", message.toolExecutionRequests().stream()
                         .map(request -> request.name()).toList());
+                for (var request : message.toolExecutionRequests()) {
+                    tracer.bindToolCall(request.id(), span);
+                }
             }
         }
         String actualModel = response == null || response.metadata() == null ? model : response.metadata().modelName();

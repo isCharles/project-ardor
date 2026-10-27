@@ -145,7 +145,7 @@ final class ApprovedAgentTools {
                     UUID blockedRow = startAudit(executionAudit, auditContext, request, tool, "AUTO");
                     finishAudit(executionAudit, blockedRow, userId, "NOT_EXECUTED", null,
                             "TOOL_INTENT_NOT_PERMITTED");
-                    traceNotExecuted(tracer, tool, "TOOL_INTENT_NOT_PERMITTED");
+                    traceNotExecuted(tracer, request, tool, "TOOL_INTENT_NOT_PERMITTED");
                     timings.record(request.id(), requested, requested, false);
                     return "{\"status\":\"TOOL_NOT_PERMITTED\",\"message\":\"当前用户请求没有授权这次写入；未执行本次操作，不要重复调用或声称已完成。\"}";
                 }
@@ -178,7 +178,7 @@ final class ApprovedAgentTools {
                 long approved = timings.now();
                 if (!allowed) {
                     finishAudit(executionAudit, auditRow, userId, "NOT_EXECUTED", null, "NOT_CONFIRMED");
-                    traceNotExecuted(tracer, tool, "NOT_CONFIRMED");
+                    traceNotExecuted(tracer, request, tool, "NOT_CONFIRMED");
                     timings.record(request.id(), requested, approved, false);
                     return "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"用户未确认、已拒绝、确认已过期或执行已停止。未执行本次操作，不要重复请求或声称已完成。\"}";
                 }
@@ -189,8 +189,10 @@ final class ApprovedAgentTools {
                     finishAudit(executionAudit, auditRow, userId, "NOT_EXECUTED", null,
                             "DUPLICATE_WRITE_BLOCKED");
                     if (tracer != null) {
-                        UUID blockedSpan = tracer.startChild("TOOL", tool,
-                                Map.of("tool", tool, "duplicateWrite", true));
+                        Map<String, Object> blockedAttributes = new LinkedHashMap<>();
+                        blockedAttributes.put("tool", tool);
+                        blockedAttributes.put("duplicateWrite", true);
+                        UUID blockedSpan = startToolSpan(tracer, request, tool, blockedAttributes);
                         tracer.recordTool();
                         if (blockedSpan != null) tracer.finishChild(blockedSpan, "NOT_EXECUTED",
                                 "DUPLICATE_WRITE_BLOCKED", null, null, null, Map.of("retryBlocked", true));
@@ -207,7 +209,7 @@ final class ApprovedAgentTools {
                 toolAttributes.put("approvalSource", approvalSource);
                 toolAttributes.put("proposal", proposal);
                 toolAttributes.put("argumentsPreview", TracePreview.of(request.arguments()));
-                UUID traceSpan = tracer == null ? null : tracer.startChild("TOOL", tool, toolAttributes);
+                UUID traceSpan = startToolSpan(tracer, request, tool, toolAttributes);
                 if (tracer != null) tracer.recordTool();
                 AtomicBoolean executed = new AtomicBoolean();
                 Supplier<String> call = () -> {
@@ -235,7 +237,7 @@ final class ApprovedAgentTools {
                     return returned;
                 } catch (RuntimeException failure) {
                     outcome = "FAILED";
-                    errorCode = "TOOL_FAILED";
+                    errorCode = failureCode(failure);
                     throw failure;
                 } finally {
                     finishAudit(executionAudit, row, userId, outcome, auditResult, errorCode);
@@ -257,9 +259,29 @@ final class ApprovedAgentTools {
         return result;
     }
 
-    private static void traceNotExecuted(AgentRunTracer tracer, String tool, String reason) {
+    private static String failureCode(Throwable failure) {
+        Throwable cause = failure instanceof dev.langchain4j.exception.ToolExecutionException
+                && failure.getCause() != null ? failure.getCause() : failure;
+        if (cause instanceof IllegalArgumentException) return "INVALID_ARGUMENTS";
+        if (cause instanceof com.projectardor.common.web.ResourceNotFoundException) return "RESOURCE_NOT_FOUND";
+        return "TOOL_FAILED";
+    }
+
+    private static UUID startToolSpan(AgentRunTracer tracer, ToolExecutionRequest request, String tool,
+            Map<String, Object> attributes) {
+        if (tracer == null) return null;
+        attributes.put("toolCallId", request == null || request.id() == null ? "" : request.id());
+        UUID parent = tracer.toolCallParent(request == null ? null : request.id());
+        return parent == null ? tracer.startChild("TOOL", tool, attributes)
+                : tracer.startChild(parent, "TOOL", tool, attributes);
+    }
+
+    private static void traceNotExecuted(AgentRunTracer tracer, ToolExecutionRequest request, String tool,
+            String reason) {
         if (tracer == null) return;
-        UUID span = tracer.startChild("TOOL", tool, Map.of("tool", tool));
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("tool", tool);
+        UUID span = startToolSpan(tracer, request, tool, attributes);
         tracer.recordTool();
         if (span != null) tracer.finishChild(span, "NOT_EXECUTED", reason, null, null, null,
                 Map.of("executed", false));
