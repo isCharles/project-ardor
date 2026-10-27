@@ -31,13 +31,37 @@ export function isProposal(span) {
   return attributes.proposal === true || PROPOSAL_SOURCES.has(attributes.approvalSource);
 }
 
-/** A span that actually mutated business state: completed, executed, and not a mere proposal. */
+// Some tools return a business/validation error as a plain result string instead of
+// throwing, so the span is still COMPLETED/executed. Treat a short error result as a
+// failed, non-executed call. This is a heuristic until the trace records FAILED spans
+// with a stable errorCode (tracked for the metrics/Trace batch); it only inspects the
+// recorded result preview of TOOL spans, never the model's prose.
+const ERROR_STATUS = /"(?:status|outcome)"\s*:\s*"(?:PERMISSION_NOT_GRANTED|TOOL_NOT_PERMITTED|DUPLICATE_WRITE_BLOCKED|NOT_FOUND|FAILED|ERROR|INVALID[A-Z_]*)"/i;
+const ERROR_TEXT = /(不存在|未执行|无权|权限不足|不合法|格式不正确|必须使用|必须为|失败|错误|冲突)/;
+const PARAM_TEXT = /(格式|必须|不合法|参数|解析)/;
+
+export function businessErrorPreview(span) {
+  const preview = String((span?.attributes ?? {}).resultPreview ?? (span?.attributes ?? {}).result ?? "");
+  if (!preview) return false;
+  return ERROR_STATUS.test(preview) || (preview.length <= 240 && ERROR_TEXT.test(preview));
+}
+
+/** A business/validation error can be surfaced as a COMPLETED result; expose its real code. */
+export function effectiveErrorCode(span) {
+  if (span?.errorCode) return span.errorCode;
+  if (!businessErrorPreview(span)) return (span?.attributes ?? {}).errorCode ?? null;
+  const preview = String((span?.attributes ?? {}).resultPreview ?? "");
+  return PARAM_TEXT.test(preview) ? "PARAM_INVALID" : "TOOL_BUSINESS_ERROR";
+}
+
+/** A span that actually mutated business state: completed, executed, not a proposal, no business error. */
 export function isExecuted(span) {
-  return span?.status === "COMPLETED" && !isProposal(span) && (span?.attributes ?? {}).executed !== false;
+  return span?.status === "COMPLETED" && !isProposal(span)
+    && (span?.attributes ?? {}).executed !== false && !businessErrorPreview(span);
 }
 
 function isFailed(span) {
-  return span?.status === "FAILED";
+  return span?.status === "FAILED" || businessErrorPreview(span);
 }
 
 function spansFor(spans, name) {
@@ -64,7 +88,7 @@ export function scoreCase(item, trace, answer, options = {}) {
       status: span.status,
       proposal: isProposal(span),
       executed: isExecuted(span),
-      errorCode: span.errorCode ?? (span.attributes ?? {}).errorCode ?? null,
+      errorCode: effectiveErrorCode(span),
     })),
     llmCalls: trace?.totals?.llmCalls ?? null,
     inputTokens: trace?.totals?.inputTokens ?? null,
@@ -169,7 +193,7 @@ export function scoreCase(item, trace, answer, options = {}) {
     || item.expectInvalidParams === true
     || item.expectToolFailure === true;
   if (expectsToolInteraction) {
-    const badParam = spans.find((span) => isFailed(span) && PARAM_ERROR.test(String(span.errorCode ?? "")));
+    const badParam = spans.find((span) => isFailed(span) && PARAM_ERROR.test(String(effectiveErrorCode(span) ?? "")));
     paramValid = spans.length > 0 && !badParam;
     if (item.expectInvalidParams === true) {
       // For an intentional bad-params case, rejecting the arguments IS success.
