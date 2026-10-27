@@ -160,6 +160,17 @@ jobs:
           docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET user_minute_limit=GREATEST(user_minute_limit,30), global_minute_limit=GREATEST(global_minute_limit,1000) WHERE feature='AGENT_CHAT'"
           node backend/src/test/resources/agent-runtime-acceptance.mjs
 
+      - name: Verify a fact survives a hundred turns of repeated compaction
+        env:
+          ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
+          ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
+        run: |
+          test "$ARDOR_ACCEPTANCE_DISPOSABLE_DB" = true
+          # A hundred accepted turns exceed the per-minute and weekly guards; this is
+          # synthetic headroom for the run only, not a change to product defaults.
+          docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET free_monthly_limit=GREATEST(free_monthly_limit,1000), free_weekly_limit=GREATEST(free_weekly_limit,1000), user_minute_limit=GREATEST(user_minute_limit,400), global_minute_limit=GREATEST(global_minute_limit,4000) WHERE feature='AGENT_CHAT'"
+          node backend/src/test/resources/semantic-recall-acceptance.mjs
+
       - name: Verify automation and calendar advice module contracts and confirmation boundary
         env:
           ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080

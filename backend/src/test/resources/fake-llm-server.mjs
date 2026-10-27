@@ -92,6 +92,24 @@ function releaseLearningResponses() {
 
 function completionFor(payload) {
   const input = JSON.stringify(payload);
+  if (payload.model === "semantic-recall-probe") {
+    const marker = input.match(/ARDOR-RECALL-\d+/)?.[0] ?? null;
+    if (input.includes("你是 Ardor 的上下文压缩器")) {
+      return {
+        goals: marker ? [`记住项目暗号 ${marker}`] : [],
+        decisions: [], corrections: [], entities: [], unresolved: [], toolConclusions: [],
+        narrative: marker ? `用户要求记住项目暗号 ${marker}。` : "摘要中未出现暗号。",
+      };
+    }
+    const latest = payload.messages?.filter(message => message.role === "user").at(-1);
+    const latestText = typeof latest?.content === "string" ? latest.content : JSON.stringify(latest?.content ?? "");
+    if (latestText.includes("RECALL-CHECK")) {
+      // Distinguish "still visible as a raw message" from "survived into the summary".
+      const recall = input.includes("我的项目暗号是") ? "present-raw" : marker ? "present-summary" : "missing";
+      return { recall };
+    }
+    return { ok: true };
+  }
   if (input.includes("面试初步纪要：只整理事实")) {
     if (["recap-recovery-probe", "recap-ui-recovery-probe"].includes(payload.model)) {
       const attempt = (transientAttempts.get(payload.model) ?? 0) + 1;
