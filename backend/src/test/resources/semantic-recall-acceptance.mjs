@@ -19,7 +19,7 @@ class Client {
     return { [csrf.headerName]: csrf.token, Cookie: [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ") };
   }
   async request(path, { method = "GET", body, expected = 200, raw = false } = {}) {
-    const headers = {};
+    const headers = { Cookie: this.cookieHeader() };
     if (!["GET", "HEAD"].includes(method)) Object.assign(headers, await this.headers());
     if (body) headers["Content-Type"] = "application/json";
     const response = await fetch(base + path, {

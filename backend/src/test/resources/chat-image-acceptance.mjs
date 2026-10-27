@@ -20,7 +20,7 @@ class Client {
     }
   }
   async request(path, { method = "GET", body, expected = 200 } = {}) {
-    const headers = {};
+    const headers = { Cookie: this.cookieHeader() };
     if (!["GET", "HEAD"].includes(method)) Object.assign(headers, await this.csrfHeaders());
     if (body) headers["Content-Type"] = "application/json";
     const response = await fetch(base + path, {
