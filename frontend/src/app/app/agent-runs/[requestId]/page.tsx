@@ -273,6 +273,14 @@ function InspectorPanel({ span, schema, sourceLabel, thinking }: { span: TraceSp
     ? span.attributes.requestedTools.filter((item): item is string => typeof item === "string")
     : [];
   const isAssistant = span.kind === "LLM";
+  const measuredTiming = span.attributes.timingSource === "client-monotonic-stream-v1";
+  const timingNumber = (key: string) => {
+    const value = measuredTiming ? span.attributes[key] : null;
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  };
+  const contentDelay = timingNumber("firstContentMs");
+  const afterContent = timingNumber("streamAfterFirstContentMs");
+  const outputRate = timingNumber("outputTokensPerRequestSecond");
   const tabs = isAssistant ? [
     ["overview", t("Overview", "概述")],
     ["preview", t("Preview", "预览")],
@@ -307,10 +315,10 @@ function InspectorPanel({ span, schema, sourceLabel, thinking }: { span: TraceSp
         <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Request timing", "请求计时")}</p><div className="mt-2 grid gap-3 sm:grid-cols-2">
           <InspectorField label={t("Started at", "开始时间")} value={formatDateTime(span.startedAt)} mono />
           <InspectorField label={t("Total duration", "总时长")} value={formatDuration(span.durationMs)} />
-          <InspectorField label={t("TTFT", "首 token 延迟")} value="—" />
-          <InspectorField label={t("Generation", "生成")} value="—" />
-          <InspectorField label={t("Throughput", "吞吐量")} value="—" />
-          <InspectorField label={t("Timing source", "计时来源")} value={t("Recorded span timestamps", "记录的 span 时间戳")} />
+          <InspectorField label={t("First content", "首内容延迟")} value={contentDelay == null ? "—" : formatDuration(contentDelay)} />
+          <InspectorField label={t("Stream after first content", "首内容后流耗时")} value={afterContent == null ? "—" : formatDuration(afterContent)} />
+          <InspectorField label={t("Output / request time", "输出 / 请求耗时")} value={outputRate == null ? "—" : `${outputRate.toFixed(1)} tok/s`} />
+          <InspectorField label={t("Timing source", "计时来源")} value={measuredTiming ? t("Client stream callbacks", "客户端流回调") : t("Recorded span timestamps", "记录的 span 时间戳")} />
         </div></div>
         {requestedTools.length > 0 && <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Requested tools", "请求的工具")}</p><div className="mt-1.5 flex flex-wrap gap-1.5">{requestedTools.map((tool) => <span key={tool} className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-[10px] text-violet-700">{tool}</span>)}</div></div>}
       </div> : <div className="grid gap-x-8 gap-y-3 text-xs sm:grid-cols-2">
@@ -336,10 +344,10 @@ function InspectorPanel({ span, schema, sourceLabel, thinking }: { span: TraceSp
         <InspectorField label={t("Finished at", "结束时间")} value={span.finishedAt ? formatDateTime(span.finishedAt) : "—"} mono />
         <InspectorField label={t("Duration", "耗时")} value={formatDuration(span.durationMs)} />
         <InspectorField label={t("Duration (ms)", "耗时（毫秒）")} value={span.durationMs ?? "—"} mono />
-        <InspectorField label={t("TTFT", "首 token 延迟")} value="—" />
-        <InspectorField label={t("Generation", "生成")} value="—" />
-        <InspectorField label={t("Throughput", "吞吐量")} value="—" />
-        <InspectorField label={t("Timing source", "计时来源")} value={t("Recorded span timestamps", "记录的 span 时间戳")} />
+        <InspectorField label={t("First content", "首内容延迟")} value={contentDelay == null ? "—" : formatDuration(contentDelay)} />
+        <InspectorField label={t("Stream after first content", "首内容后流耗时")} value={afterContent == null ? "—" : formatDuration(afterContent)} />
+        <InspectorField label={t("Output / request time", "输出 / 请求耗时")} value={outputRate == null ? "—" : `${outputRate.toFixed(1)} tok/s`} />
+        <InspectorField label={t("Timing source", "计时来源")} value={measuredTiming ? t("Client stream callbacks", "客户端流回调") : t("Recorded span timestamps", "记录的 span 时间戳")} />
       </div>}
       <p className="mt-4 text-[10px] leading-5 text-stone-400">{t("Previews are truncated and redacted; full prompts, tool payloads and private chain-of-thought are not stored.", "预览已截断并脱敏；不存储完整 prompt、工具 payload 或私有思维链。")}</p>
     </div>

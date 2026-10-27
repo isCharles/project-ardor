@@ -90,6 +90,21 @@ the trace view contract changes.
 
 ## Bounded input/output previews
 
+New traced streaming requests record `client-monotonic-stream-v1` timing from a
+per-invocation monotonic clock. `firstContentMs` measures request dispatch to the
+first nonempty text/reasoning fragment or partial tool call observed by the SDK;
+it is not a provider-internal first-token timestamp. `streamAfterFirstContentMs`
+measures from that event until completion/error and can include buffering and
+transport time. Missing partial callbacks leave both fields unknown.
+
+`outputTokensPerRequestSecond` is the provider-reported output token count divided
+by the complete measured request duration. It is an end-to-end output rate, not
+pure decoder throughput. Missing usage/errors leave the rate unknown; historical
+and synchronous requests are not backfilled from total span time. The wrapper
+forwards streaming/cancellation contexts unchanged and keeps separate clocks for
+every call. The UI uses these explicit labels instead of claiming exact TTFT or
+generation speed.
+
 Developer trace nodes now include optional `inputPreview`, `outputPreview`,
 `argumentsPreview` and `resultPreview` attributes. These are owner-scoped and
 intentionally bounded to about 900 characters per field by `TracePreview`.

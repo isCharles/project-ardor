@@ -148,7 +148,7 @@ public class LangChainModelFactory {
         }
         var budget = contextBudget.resolve(config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
-        return RepeatedToolResultCompactor.streaming(ContextBudgetedModels.streaming(model, budget, estimator), budget, estimator);
+        return RepeatedToolResultCompactor.streaming(ContextBudgetedModels.streaming(TimedStreamingModel.wrap(model), budget, estimator), budget, estimator);
     }
 
     private JdkHttpClientBuilder httpClientBuilder() {
