@@ -75,4 +75,14 @@ class AgentMetricsTests {
 
         assertThat(registry.get("ardor.agent.stream.ttft").timer().count()).isEqualTo(2);
     }
+
+    @Test
+    void compactionCountersSeparateWrittenSummariesFromFailures() {
+        metrics.recordCompaction(false);
+        metrics.recordCompaction(false);
+        metrics.recordCompaction(true);
+
+        assertThat(registry.get("ardor.agent.context.compactions").counter().count()).isEqualTo(2.0);
+        assertThat(registry.get("ardor.agent.context.compaction.failures").counter().count()).isEqualTo(1.0);
+    }
 }

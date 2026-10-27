@@ -35,6 +35,9 @@ public final class AgentMetrics {
 
     private final Timer timeToFirstToken;
 
+    private final Counter compactions;
+    private final Counter compactionFailures;
+
     public AgentMetrics(MeterRegistry registry) {
         this.registry = registry;
 
@@ -71,6 +74,13 @@ public final class AgentMetrics {
 
         this.timeToFirstToken = Timer.builder("ardor.agent.stream.ttft")
                 .description("Time from run start to first streamed token")
+                .register(registry);
+
+        this.compactions = Counter.builder("ardor.agent.context.compactions")
+                .description("Context summaries written for agent conversations")
+                .register(registry);
+        this.compactionFailures = Counter.builder("ardor.agent.context.compaction.failures")
+                .description("Context summary attempts that produced no usable summary")
                 .register(registry);
     }
 
@@ -136,6 +146,12 @@ public final class AgentMetrics {
     public void recordTimeToFirstToken(long durationNanos) {
         try {
             timeToFirstToken.record(java.time.Duration.ofNanos(durationNanos));
+        } catch (RuntimeException ignored) { }
+    }
+
+    public void recordCompaction(boolean failed) {
+        try {
+            (failed ? compactionFailures : compactions).increment();
         } catch (RuntimeException ignored) { }
     }
 
