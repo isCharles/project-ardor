@@ -1,5 +1,18 @@
 # 领域重构收尾状态
 
+## 2026-10-27 批次（额度窗口、LaTeX 运行时、百轮验收）
+
+[PR #235](https://github.com/isCharles/project-ardor/pull/235) 让 `/api/usage` 同时返回周窗口（`74d17e0`），
+[PR #236](https://github.com/isCharles/project-ardor/pull/236) 恢复运行镜像的 XeLaTeX 与 Noto CJK（`43ddc77`），
+[PR #237](https://github.com/isCharles/project-ardor/pull/237) 新增百轮语义召回验收（`0a08eb4`）。三者均已合并。
+
+#235/#236 已重建本机 backend 与 frontend 并实测：接口返回 `weeklyUsed`/`weeklyLimit`，FREE 用户对话格显示
+`0 / 2 resets weekly`，镜像内 `xelatex` 与 CJK 字体就绪；部署覆盖 #214–#222、#230–#236。
+百轮验收在临时库与第二后端容器上通过：95 次摘要重写、第 1 轮事实经摘要保留、原始消息未删除、
+最大请求估算 27,641 tokens；把暗号从摘要中移除的负向对照按预期失败。#237 只改测试与文档，无需部署。
+未覆盖：真实供应商摘要语义质量与 tokenizer 精度、接近预算时每轮摘要的成本/延迟（见
+[上下文观测](CONTEXT_USAGE.md)）、多实例执行协调。
+
 ## 当前进度入口（2026-10-26，覆盖下方历史快照）
 
 最新部署：[PR #207](https://github.com/isCharles/project-ardor/pull/207) 已合并为 `2f92d02`，仅更新前端。
