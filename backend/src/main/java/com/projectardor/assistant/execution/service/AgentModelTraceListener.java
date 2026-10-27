@@ -20,24 +20,36 @@ import dev.langchain4j.model.output.TokenUsage;
 public final class AgentModelTraceListener implements ChatModelListener {
 
     private static final String SPAN_ATTRIBUTE = AgentModelTraceListener.class.getName() + ".span";
+    private static final String START_NANOS = AgentModelTraceListener.class.getName() + ".startNanos";
     private final AgentRunTracer tracer;
     private final String model;
     private final String purpose;
     private final UUID parent;
+    private final AgentMetrics metrics;
 
     public AgentModelTraceListener(AgentRunTracer tracer, String model) {
-        this(tracer, model, "ASSISTANT", null);
+        this(tracer, model, "ASSISTANT", null, null);
     }
 
     public AgentModelTraceListener(AgentRunTracer tracer, String model, String purpose, UUID parent) {
+        this(tracer, model, purpose, parent, null);
+    }
+
+    public AgentModelTraceListener(AgentRunTracer tracer, String model, AgentMetrics metrics) {
+        this(tracer, model, "ASSISTANT", null, metrics);
+    }
+
+    public AgentModelTraceListener(AgentRunTracer tracer, String model, String purpose, UUID parent, AgentMetrics metrics) {
         this.tracer = tracer;
         this.model = model;
         this.purpose = purpose;
         this.parent = parent;
+        this.metrics = metrics;
     }
 
     @Override
     public void onRequest(ChatModelRequestContext context) {
+        context.attributes().put(START_NANOS, System.nanoTime());
         if (!tracer.active()) return;
         int call = tracer.nextModelCall();
         Map<String, Object> attributes = new LinkedHashMap<>();
@@ -62,6 +74,7 @@ public final class AgentModelTraceListener implements ChatModelListener {
     @Override
     public void onResponse(ChatModelResponseContext context) {
         UUID span = takeSpan(context.attributes());
+        long durationNanos = elapsedNanos(context.attributes());
         ChatResponse response = context.chatResponse();
         TokenUsage usage = response == null ? null : response.tokenUsage();
         Integer input = usage == null ? null : usage.inputTokenCount();
@@ -69,6 +82,7 @@ public final class AgentModelTraceListener implements ChatModelListener {
         AiMessage message = response == null ? null : response.aiMessage();
         boolean toolRound = message != null && message.hasToolExecutionRequests();
         tracer.recordLlm(input, output, toolRound);
+        if (metrics != null) metrics.recordLlmCall(durationNanos, input, output, model, false);
         if (span == null) return;
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("finishReason", response == null || response.metadata() == null
@@ -89,7 +103,9 @@ public final class AgentModelTraceListener implements ChatModelListener {
     @Override
     public void onError(ChatModelErrorContext context) {
         UUID span = takeSpan(context.attributes());
+        long durationNanos = elapsedNanos(context.attributes());
         tracer.recordLlm(null, null, false);
+        if (metrics != null) metrics.recordLlmCall(durationNanos, null, null, model, true);
         if (span == null) return;
         String errorCode = context.error() == null ? "LLM_CALL_FAILED" : context.error().getClass().getSimpleName();
         Map<String, Object> attributes = new LinkedHashMap<>();
@@ -110,5 +126,12 @@ public final class AgentModelTraceListener implements ChatModelListener {
         if (attributes == null) return null;
         Object value = attributes.remove(SPAN_ATTRIBUTE);
         return value instanceof UUID id ? id : null;
+    }
+
+    private static long elapsedNanos(Map<Object, Object> attributes) {
+        if (attributes == null) return 0L;
+        Object start = attributes.get(START_NANOS);
+        if (start instanceof Long startNanos) return Math.max(0, System.nanoTime() - startNanos);
+        return 0L;
     }
 }

@@ -50,11 +50,20 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       probes:
         enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %level [%thread] %logger{36} — %msg — runId=%X{runId:-} userId=%X{userId:-}%n"
+  level:
+    com.projectardor: INFO
 
 app:
   admin:
