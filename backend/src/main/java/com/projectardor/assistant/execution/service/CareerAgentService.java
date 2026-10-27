@@ -323,6 +323,10 @@ public class CareerAgentService {
             if (tracer != null) tracer.fail("AGENT_INVALID_STATE");
             recordAgentUsage(userId, requestId, tracer, null);
             throw exception;
+        } catch (com.projectardor.common.web.ResourceNotFoundException exception) {
+            if (tracer != null) tracer.fail("NOT_FOUND");
+            recordAgentUsage(userId, requestId, tracer, null);
+            throw exception;
         } catch (RuntimeException exception) {
             Throwable root = rootCause(exception);
             log.error(
@@ -812,6 +816,8 @@ public class CareerAgentService {
             event = AgentStreamEvent.error(
                     exception instanceof IllegalArgumentException ? "INVALID_REQUEST" : "INVALID_STATE",
                     exception.getMessage(), false, elapsedMs(startedAt));
+        } else if (exception instanceof com.projectardor.common.web.ResourceNotFoundException notFound) {
+            event = AgentStreamEvent.error("NOT_FOUND", notFound.getMessage(), false, elapsedMs(startedAt));
         } else {
             boolean retryable = isTransientFailure(exception);
             event = AgentStreamEvent.error(retryable ? "AGENT_TEMPORARILY_UNAVAILABLE" : "AGENT_LLM_FAILED",
