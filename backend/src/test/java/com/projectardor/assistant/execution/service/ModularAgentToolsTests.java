@@ -434,6 +434,8 @@ class ModularAgentToolsTests {
     void fullCalendarPermissionAcceptsContextualWordingWithoutKeywordAuthorization() {
         when(permissions.autoApproves(owner, "create_calendar_task")).thenReturn(true);
         when(permissions.autoApproves(owner, "update_calendar_task")).thenReturn(true);
+        when(calendar.createViewOnce(eq(owner), eq(run), eq(run), eq("Synthetic review"), any(), any(), any(), any(), any()))
+                .thenReturn(mock(com.projectardor.scheduling.service.CalendarTaskView.class));
         UUID task = UUID.randomUUID();
         var host = tools();
         var wordings = List.of("帮我定个合适的时间", "OK", "再试一次", "就按刚才那个方案办");
@@ -442,8 +444,8 @@ class ModularAgentToolsTests {
             execute(executors, "create_calendar_task", "{\"title\":\"Synthetic review\",\"dueAt\":\"2028-04-01T09:00:00+08:00\"}");
             execute(executors, "update_calendar_task", "{\"taskId\":\"" + task + "\",\"dueAt\":\"2028-04-02T09:00:00+08:00\"}");
         }
-        verify(calendar, times(wordings.size())).createView(eq(owner), eq("Synthetic review"), any(),
-                eq(Instant.parse("2028-04-01T01:00:00Z")), any(), any(), any());
+        verify(calendar, times(wordings.size())).createViewOnce(eq(owner), eq(run), eq(run), eq("Synthetic review"),
+                any(), eq(Instant.parse("2028-04-01T01:00:00Z")), any(), any(), any());
         verify(calendar, times(wordings.size())).updateGeneralView(eq(owner), eq(task), any(), any(),
                 eq(Instant.parse("2028-04-02T01:00:00Z")), any(), any());
         verify(approvals, never()).await(any(), any(), any(), any());
@@ -485,9 +487,14 @@ class ModularAgentToolsTests {
         when(audit.startToolCall(any(), any(), any(), any(), any())).thenReturn(row);
         var bound = host.bind(owner, "创建日历待办", run);
         var executors = wrapped(bound, null, audit);
+        when(calendar.createViewOnce(owner, run, run, "Review", null, Instant.parse("2028-04-01T01:00:00Z"),
+                com.projectardor.scheduling.domain.CalendarTaskPriority.MEDIUM,
+                com.projectardor.scheduling.domain.CalendarTaskSource.AGENT, null))
+                .thenReturn(mock(com.projectardor.scheduling.service.CalendarTaskView.class));
         assertThat(execute(executors, "create_calendar_task", args)).doesNotContain("PERMISSION_NOT_GRANTED", "RUN_STOPPED");
         assertThat(execute(executors, "create_calendar_task", args)).contains("DUPLICATE_WRITE_BLOCKED");
-        verify(calendar, times(1)).createView(owner, "Review", null, Instant.parse("2028-04-01T01:00:00Z"),
+        verify(calendar, times(1)).createViewOnce(owner, run, run, "Review", null,
+                Instant.parse("2028-04-01T01:00:00Z"),
                 com.projectardor.scheduling.domain.CalendarTaskPriority.MEDIUM,
                 com.projectardor.scheduling.domain.CalendarTaskSource.AGENT, null);
         verify(audit).finishToolCall(eq(row), eq(owner), eq("COMPLETED"), any(), eq(null));

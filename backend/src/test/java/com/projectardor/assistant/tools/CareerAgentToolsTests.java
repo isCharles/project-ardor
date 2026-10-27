@@ -190,7 +190,8 @@ class CareerAgentToolsTests {
         var task = CalendarTask.create(user, "Fixture", null, null, CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT);
         var view = com.projectardor.scheduling.service.CalendarTaskView.from(task);
         when(calendar.listViews(user, null, null)).thenReturn(java.util.List.of(view));
-        when(calendar.createView(user, "Fixture", "", null, CalendarTaskPriority.MEDIUM, CalendarTaskSource.AGENT, null)).thenReturn(view);
+        when(calendar.createViewOnce(user, null, null, "Fixture", "", null, CalendarTaskPriority.MEDIUM,
+                CalendarTaskSource.AGENT, null)).thenReturn(view);
         when(calendar.updateGeneralView(user, task.getId(), "Fixture", "", null, CalendarTaskPriority.MEDIUM,
                 com.projectardor.scheduling.domain.CalendarTaskStatus.TODO)).thenReturn(view);
         var bound = (com.projectardor.assistant.tools.modules.SchedulingAgentToolProvider.Bound)
