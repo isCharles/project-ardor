@@ -18,6 +18,7 @@ public class QuotaStore {
     // Check all dimensions before incrementing any counter. Redis runs the script atomically.
     private static final DefaultRedisScript<Long> CONSUME = quotaScript();
     private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyyMM").withZone(ZoneOffset.UTC);
+    private static final DateTimeFormatter WEEK = DateTimeFormatter.ofPattern("yyyyww").withZone(ZoneOffset.UTC);
     private static final DateTimeFormatter MINUTE = DateTimeFormatter.ofPattern("yyyyMMddHHmm").withZone(ZoneOffset.UTC);
 
     private final StringRedisTemplate redis;
@@ -40,26 +41,31 @@ public class QuotaStore {
                 .plusMonths(1).atStartOfDay(ZoneOffset.UTC).toInstant();
         long monthlyTtl = Math.max(1, ChronoUnit.SECONDS.between(now, nextMonth) + 86_400);
         String monthKey = monthKey(userId, policy.feature(), now);
+        String weekKey = weekKey(userId, policy.feature(), now);
+        long weeklyTtl = secondsUntilNextWeek(now);
         String minuteSuffix = MINUTE.format(now);
         String idempotencyKey = "ardor:quota:idempotency:" + userId + ":" + policy.feature() + ":"
                 + (requestId == null ? "none" : requestId);
         Long outcome = redis.execute(CONSUME,
-                List.of(monthKey,
+                List.of(monthKey, weekKey,
                         "ardor:quota:user-minute:" + userId + ":" + policy.feature() + ":" + minuteSuffix,
                         "ardor:quota:global-minute:" + policy.feature() + ":" + minuteSuffix,
                         idempotencyKey),
                 String.valueOf(policy.monthlyLimit(tier)),
+                String.valueOf(policy.weeklyLimit(tier)),
                 String.valueOf(policy.userMinuteLimit()),
                 String.valueOf(policy.globalMinuteLimit()),
-                String.valueOf(monthlyTtl), "120", requestId == null ? "0" : "1",
+                String.valueOf(monthlyTtl), String.valueOf(weeklyTtl), "120",
+                requestId == null ? "0" : "1",
                 String.valueOf(Math.max(monthlyTtl, 35L * 86_400)));
         if (outcome == null) throw new IllegalStateException("额度计数器未返回结果");
         return switch (outcome.intValue()) {
             case 1 -> Decision.ALLOWED;
             case 2 -> Decision.DUPLICATE;
             case -1 -> Decision.MONTHLY_LIMIT;
-            case -2 -> Decision.USER_MINUTE_LIMIT;
-            case -3 -> Decision.GLOBAL_MINUTE_LIMIT;
+            case -2 -> Decision.WEEKLY_LIMIT;
+            case -3 -> Decision.USER_MINUTE_LIMIT;
+            case -4 -> Decision.GLOBAL_MINUTE_LIMIT;
             default -> throw new IllegalStateException("额度计数器返回了未知状态");
         };
     }
@@ -69,11 +75,27 @@ public class QuotaStore {
         return value == null ? 0 : Integer.parseInt(value);
     }
 
+    public int usedThisWeek(UUID userId, UsageFeature feature, Instant now) {
+        String value = redis.opsForValue().get(weekKey(userId, feature, now));
+        return value == null ? 0 : Integer.parseInt(value);
+    }
+
     static String monthKey(UUID userId, UsageFeature feature, Instant now) {
         return "ardor:quota:user-month:" + userId + ":" + feature + ":" + MONTH.format(now);
     }
 
+    static String weekKey(UUID userId, UsageFeature feature, Instant now) {
+        return "ardor:quota:user-week:" + userId + ":" + feature + ":" + WEEK.format(now);
+    }
+
+    private static long secondsUntilNextWeek(Instant now) {
+        var date = now.atZone(ZoneOffset.UTC).toLocalDate();
+        var nextMonday = date.plusDays((8 - date.getDayOfWeek().getValue()) % 7);
+        if (nextMonday.equals(date)) nextMonday = date.plusWeeks(1);
+        return ChronoUnit.SECONDS.between(now, nextMonday.atStartOfDay().toInstant(ZoneOffset.UTC)) + 3600;
+    }
+
     public enum Decision {
-        ALLOWED, DUPLICATE, MONTHLY_LIMIT, TOKEN_LIMIT, USER_MINUTE_LIMIT, GLOBAL_MINUTE_LIMIT
+        ALLOWED, DUPLICATE, MONTHLY_LIMIT, TOKEN_LIMIT, WEEKLY_LIMIT, USER_MINUTE_LIMIT, GLOBAL_MINUTE_LIMIT
     }
 }

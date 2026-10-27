@@ -64,7 +64,8 @@ public class UsageController {
     public UsagePolicy updatePolicy(@PathVariable UsageFeature feature,
             @Valid @RequestBody PolicyUpdate request) {
         return policies.update(feature, request.freeMonthlyLimit(), request.plusMonthlyLimit(),
-                request.proMonthlyLimit(), request.userMinuteLimit(), request.globalMinuteLimit());
+                request.proMonthlyLimit(), request.freeWeeklyLimit(), request.plusWeeklyLimit(),
+                request.proWeeklyLimit(), request.userMinuteLimit(), request.globalMinuteLimit());
     }
 
     @GetMapping("/api/admin/plans")
@@ -100,7 +101,8 @@ public class UsageController {
     public record RedeemRequest(@NotBlank @Size(max = 80) String code) {}
 
     public record PolicyUpdate(@Min(0) int freeMonthlyLimit, @Min(0) int plusMonthlyLimit,
-            @Min(0) int proMonthlyLimit, @Min(1) int userMinuteLimit, @Min(1) int globalMinuteLimit) {}
+            @Min(0) int proMonthlyLimit, @Min(0) int freeWeeklyLimit, @Min(0) int plusWeeklyLimit,
+            @Min(0) int proWeeklyLimit, @Min(1) int userMinuteLimit, @Min(1) int globalMinuteLimit) {}
 
     public record PlanUpdateRequest(@Min(0) int priceCents, @Min(0) long tokenMonthlyLimit,
             boolean paymentEnabled) {}
