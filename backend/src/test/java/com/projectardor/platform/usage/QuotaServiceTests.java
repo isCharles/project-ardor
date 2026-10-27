@@ -64,13 +64,34 @@ class QuotaServiceTests {
                 new UsagePolicy(UsageFeature.RESUME_ANALYSIS, 1, 40, 40, 160, 1, 10, 40, 3, 30, now)));
         when(store.used(user, UsageFeature.AGENT_CHAT, now)).thenReturn(12);
         when(store.used(user, UsageFeature.RESUME_ANALYSIS, now)).thenReturn(2);
+        when(store.usedThisWeek(user, UsageFeature.AGENT_CHAT, now)).thenReturn(4);
+        when(store.usedThisWeek(user, UsageFeature.RESUME_ANALYSIS, now)).thenReturn(1);
 
         var snapshot = service.snapshot(user);
 
         assertThat(snapshot.tier()).isEqualTo(MembershipTier.PLUS);
         assertThat(snapshot.features()).containsExactly(
-                new QuotaService.FeatureUsage(UsageFeature.AGENT_CHAT, 12, 500),
-                new QuotaService.FeatureUsage(UsageFeature.RESUME_ANALYSIS, 2, 40));
+                new QuotaService.FeatureUsage(UsageFeature.AGENT_CHAT, 12, 500, 4, 25),
+                new QuotaService.FeatureUsage(UsageFeature.RESUME_ANALYSIS, 2, 40, 1, 10));
+    }
+
+    @Test
+    void snapshotReportsTheWeeklyBudgetThatActuallyDeniesAFreeUser() {
+        UUID user = UUID.randomUUID();
+        when(memberships.tier(user)).thenReturn(MembershipTier.FREE);
+        when(policies.list()).thenReturn(List.of(
+                new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 500, 2000, 2, 25, 100, 8, 120, now)));
+        when(store.used(user, UsageFeature.AGENT_CHAT, now)).thenReturn(0);
+        when(store.usedThisWeek(user, UsageFeature.AGENT_CHAT, now)).thenReturn(2);
+
+        var feature = service.snapshot(user).features().getFirst();
+
+        assertThat(feature.limit()).isEqualTo(5);
+        assertThat(feature.weeklyLimit()).isEqualTo(2);
+        assertThat(feature.weeklyUsed()).isEqualTo(2);
+        // The panel must be able to tell that this user is spent even though the month shows 0 / 5.
+        assertThat(feature.weeklyLimit() - feature.weeklyUsed())
+                .isLessThan(feature.limit() - feature.used());
     }
 
     @Test

@@ -67,7 +67,8 @@ public class QuotaService {
         MembershipTier tier = memberships.tier(userId);
         List<FeatureUsage> features = policies.list().stream()
                 .map(policy -> new FeatureUsage(policy.feature(),
-                        store.used(userId, policy.feature(), now), policy.monthlyLimit(tier)))
+                        store.used(userId, policy.feature(), now), policy.monthlyLimit(tier),
+                        store.usedThisWeek(userId, policy.feature(), now), policy.weeklyLimit(tier)))
                 .toList();
         long tokenLimit = plans == null ? 0 : plans.tokenLimit(tier);
         long tokenUsed = tokenStore == null ? 0 : tokenStore.usedThisMonth(userId, now);
@@ -97,7 +98,7 @@ public class QuotaService {
         return nextMonday.atStartOfDay().toInstant(ZoneOffset.UTC);
     }
 
-    public record FeatureUsage(UsageFeature feature, int used, int limit) {}
+    public record FeatureUsage(UsageFeature feature, int used, int limit, int weeklyUsed, int weeklyLimit) {}
     public record TokenUsage(long used, long limit) {}
     public record PlanView(String code, String nameZh, String nameEn, int priceCents, String currency,
             String billingInterval, long tokenLimit, boolean paymentEnabled) {}

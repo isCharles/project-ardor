@@ -116,6 +116,8 @@ jobs:
         run: node tests/profile-avatar-ui.mjs
       - name: Subscription validity UI regression (mock APIs)
         run: node tests/usage-validity-ui.mjs
+      - name: Usage quota window UI regression (mock APIs)
+        run: node tests/usage-quota-window-ui.mjs
       - name: Desktop update sidebar UI (synthetic bridge)
         run: node tests/desktop-update-ui.mjs
       - name: Learning source and target UI regression (mock APIs)
