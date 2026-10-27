@@ -19,8 +19,11 @@ import com.projectardor.assistant.execution.service.AgentContextLimitException;
 import com.projectardor.assistant.tools.AgentToolSchemaCatalog;
 import com.projectardor.platform.model.llm.service.LlmConfigService;
 
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
 
 /**
  * Compacts the prompt view of a conversation without deleting persisted messages.
@@ -154,6 +157,8 @@ public class AgentContextCompactor {
 
     public int budgetTokens() { return maxHistoryTokens; }
 
+    private static final int MAX_COMPACTION_ATTEMPTS = 2;
+
     private CompactionResult compact(UUID userId, UUID conversationId, LlmConfigService.LlmRuntimeConfig config,
             ReasoningDepth depth, java.util.Optional<ConversationSummaryStore.Summary> previous,
             List<ConversationMessage> older, TokenCountEstimator estimator,
@@ -161,7 +166,6 @@ public class AgentContextCompactor {
             java.util.function.BooleanSupplier active) {
         String existingSummary = previous.map(ConversationSummaryStore.Summary::content).orElse("");
         var extraction = structureExtractor.extract(older);
-        String prompt = structureExtractor.buildStructuredSummaryPrompt(existingSummary, older, extraction);
 
         int used = 0;
         int included = 0;
@@ -172,39 +176,70 @@ public class AgentContextCompactor {
             included++;
         }
 
-        String rawSummary;
-        requireActive(active);
-        try {
-            ChatModel model = modelFactory.create(config, depth, listeners);
-            rawSummary = model.chat(prompt);
-        } catch (RuntimeException unavailable) {
+        int messageCount = included;
+        for (int attempt = 1; attempt <= MAX_COMPACTION_ATTEMPTS; attempt++) {
             requireActive(active);
-            log.warn("Context summarization unavailable: conversationId={}, type={}", conversationId,
-                    unavailable.getClass().getSimpleName());
-            return null;
-        }
-        if (rawSummary == null || rawSummary.isBlank()) return null;
-        requireActive(active);
+            List<ConversationMessage> messagesForPrompt = attempt == 1 ? older : older.subList(0, messageCount);
+            String prompt = structureExtractor.buildStructuredSummaryPrompt(existingSummary, messagesForPrompt, extraction);
 
-        String summaryContent = parseStructuredSummary(rawSummary, extraction);
-        if (summaryContent == null) {
-            log.debug("Structured summary parsing failed, using raw text: conversationId={}", conversationId);
-            summaryContent = rawSummary;
-        }
+            ChatResponse response;
+            try {
+                ChatModel model = modelFactory.create(config, depth, listeners);
+                ChatRequest request = ChatRequest.builder().messages(UserMessage.from(prompt)).build();
+                response = model.doChat(request);
+            } catch (RuntimeException unavailable) {
+                requireActive(active);
+                log.warn("Context summarization unavailable: conversationId={}, type={}", conversationId,
+                        unavailable.getClass().getSimpleName());
+                return null;
+            }
 
-        if (summaryContent.length() > 4000) {
-            log.warn("Context summary exceeds storage limit: conversationId={}, length={}", conversationId, summaryContent.length());
-            return null;
-        }
+            String rawSummary = response == null || response.aiMessage() == null ? null : response.aiMessage().text();
+            if (rawSummary == null || rawSummary.isBlank()) return null;
+            requireActive(active);
 
-        String trimmed = summaryContent;
-        int version = previous.map(ConversationSummaryStore.Summary::version).orElse(0) + 1;
-        UUID coveredMessageId = older.get(included - 1).getId();
-        int tokenCount = estimator.estimateTokenCountInText(trimmed);
-        int coveredCount = previous.map(ConversationSummaryStore.Summary::coveredCount).orElse(0) + included;
-        var saved = summaries.save(userId, conversationId, version, coveredMessageId, coveredCount, trimmed,
-                tokenCount, config.model());
-        return new CompactionResult(saved, trimmed);
+            boolean truncated = isOutputTruncated(response);
+            String summaryContent = parseStructuredSummary(rawSummary, extraction);
+
+            if (summaryContent == null) {
+                log.debug("Structured summary parsing failed, using raw text: conversationId={}", conversationId);
+                summaryContent = rawSummary;
+            }
+
+            if (summaryContent.length() > 4000) {
+                log.warn("Context summary exceeds storage limit: conversationId={}, length={}, attempt={}",
+                        conversationId, summaryContent.length(), attempt);
+                if (attempt < MAX_COMPACTION_ATTEMPTS) {
+                    messageCount = Math.max(2, messageCount / 2);
+                    continue;
+                }
+                return null;
+            }
+
+            if (truncated) {
+                log.info("Context summarization output truncated: conversationId={}, attempt={}", conversationId, attempt);
+                if (attempt < MAX_COMPACTION_ATTEMPTS) {
+                    messageCount = Math.max(2, messageCount / 2);
+                    continue;
+                }
+                return null;
+            }
+
+            int version = previous.map(ConversationSummaryStore.Summary::version).orElse(0) + 1;
+            UUID coveredMessageId = older.get(Math.max(0, messageCount - 1)).getId();
+            int tokenCount = estimator.estimateTokenCountInText(summaryContent);
+            int coveredCount = previous.map(ConversationSummaryStore.Summary::coveredCount).orElse(0) + messageCount;
+            var saved = summaries.save(userId, conversationId, version, coveredMessageId, coveredCount, summaryContent,
+                    tokenCount, config.model());
+            return new CompactionResult(saved, summaryContent);
+        }
+        return null;
+    }
+
+    private static boolean isOutputTruncated(ChatResponse response) {
+        if (response == null || response.metadata() == null || response.metadata().finishReason() == null) return false;
+        String reason = response.metadata().finishReason().name();
+        return "LENGTH".equals(reason) || "MAX_TOKENS".equals(reason);
     }
 
     private String parseStructuredSummary(String rawOutput, ConversationStructureExtractor.ExtractionResult extraction) {
