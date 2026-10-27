@@ -18,3 +18,9 @@ test("forbidden attempts fail even when blocked and missing records do not pass"
 test("answer assertion does not expose expected private text", () => {
   assert.deepEqual(evaluateCase({ mustContain: "private text" }, { status: "COMPLETED", spans: [] }, "other").failures, ["answer assertion failed"]);
 });
+test("tool allowlist catches any unexpected attempt including denied writes", () => {
+  const result = evaluateCase({ allowedTools: ["list_calendar_tasks"] },
+    { status: "COMPLETED", spans: [span("list_calendar_tasks", "COMPLETED"), span("update_calendar_task", "NOT_EXECUTED")] }, "");
+  assert.deepEqual(result.failures, ["unexpected tool update_calendar_task was attempted"]);
+  assert.equal(evaluateCase({ allowedTools: [] }, { status: "COMPLETED", spans: [span("list_resumes", "COMPLETED")] }, "").failures.length, 1);
+});

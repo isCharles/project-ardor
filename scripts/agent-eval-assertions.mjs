@@ -10,6 +10,11 @@ export function evaluateCase(item, trace, answer) {
   for (const name of item.forbiddenTools ?? []) {
     if (tools.some((span) => span.name === name)) failures.push(`forbidden tool ${name} was attempted`);
   }
+  if (Array.isArray(item.allowedTools)) {
+    for (const name of new Set(tools.map((span) => span.name))) {
+      if (!item.allowedTools.includes(name)) failures.push(`unexpected tool ${name} was attempted`);
+    }
+  }
   if (item.mustContain && !String(answer ?? "").includes(item.mustContain)) failures.push("answer assertion failed");
   if (trace?.status !== "COMPLETED") failures.push("run did not complete");
   return { failures, toolNames: tools.map((span) => span.name) };

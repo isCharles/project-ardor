@@ -16,6 +16,14 @@ CI 不调用真实模型。已有的 `golden-path-acceptance.yml` 使用
 
 用例：`scripts/agent-eval-cases.json`
 
+固定集当前包含 8 个单轮、只读场景：普通对话、简历、日历、课程、真实面试、
+重复日程、知识库和投递进度。每个用例记录明确的预期工具与允许工具；出现其他
+工具调用（即使被拒绝）记为失败。它们主要衡量工具选择和只读边界，不检验答案
+是否符合真实数据，也不覆盖多轮、写入后的业务状态或语义质量。
+默认只运行前 3 项；要跑全部需显式设置 `ARDOR_EVAL_MAX_CASES=8`。
+允许列表是事后评测断言，**不会阻止实际工具执行**；必须使用隔离测试账户与
+可丢弃数据，并确保账户权限和外部服务配置不会影响真实数据。
+
 ```powershell
 $env:ARDOR_EVAL_ALLOW_REAL_MODEL="true"
 $env:ARDOR_SESSION_COOKIE="SESSION=..."

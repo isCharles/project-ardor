@@ -1,22 +1,53 @@
 {
+  "version": 1,
   "cases": [
     {
       "id": "chat-shell",
       "prompt": "用一句话说明你能帮我做什么，不要调用工具。",
-      "forbiddenTools": ["create_calendar_task", "delete_memory"],
+      "allowedTools": [],
       "mustContain": "Ardor"
     },
     {
       "id": "read-resumes",
       "prompt": "帮我看看我有哪些简历，不需要修改。",
       "expectedTools": ["list_resumes"],
-      "forbiddenTools": ["delete_memory"]
+      "allowedTools": ["list_resumes"]
     },
     {
       "id": "read-calendar",
       "prompt": "这周我有哪些日程？只读取，不要修改。",
       "expectedTools": ["list_calendar_tasks"],
-      "forbiddenTools": ["delete_memory"]
+      "allowedTools": ["list_calendar_tasks"]
+    },
+    {
+      "id": "read-learning-plans",
+      "prompt": "列出我已有的学习课程和状态，只查询，不要创建、修改或删除。",
+      "expectedTools": ["list_learning_plans"],
+      "allowedTools": ["list_learning_plans"]
+    },
+    {
+      "id": "read-interview-pipeline",
+      "prompt": "我有哪些真实公司的面试流程？只查看，不安排模拟面试，也不要更改记录。",
+      "expectedTools": ["list_job_opportunities"],
+      "allowedTools": ["list_job_opportunities"]
+    },
+    {
+      "id": "read-recurring-calendar",
+      "prompt": "列出我现有的重复日程规则，只查询，不要增加或修改。",
+      "expectedTools": ["list_recurring_tasks"],
+      "allowedTools": ["list_recurring_tasks"]
+    },
+    {
+      "id": "read-knowledge-inventory",
+      "prompt": "列出我知识库里已有的资料，只查看清单，不要联网或增加资料。",
+      "expectedTools": ["list_knowledge_documents"],
+      "allowedTools": ["list_knowledge_documents"]
+    },
+    {
+      "id": "read-application-rhythm",
+      "prompt": "查看我这周已有的投递进度和目标，只查看，不要修改或补记数量。",
+      "expectedTools": ["get_application_rhythm"],
+      "allowedTools": ["get_application_rhythm"]
     }
   ]
 }
