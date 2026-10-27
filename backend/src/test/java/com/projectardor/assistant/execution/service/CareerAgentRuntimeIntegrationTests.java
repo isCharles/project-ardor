@@ -248,7 +248,8 @@ class CareerAgentRuntimeIntegrationTests {
             service = new CareerAgentService(conversations, runs, factory, tools, mock(LlmConfigService.class), mock(AgentMemoryService.class),
                     new AgentContextBuilder(embedding, compactor, profiles, tools), profiles, JsonMapper.builder().build(), progress, approvals,
                     mock(AgentPermissionGrants.class), mock(AgentExecutionAuditStore.class), traces, catalog,
-                    mock(com.projectardor.platform.usage.UsageTokenStore.class), Duration.ofSeconds(90), timeout);
+                    mock(com.projectardor.platform.usage.UsageTokenStore.class), mock(AgentMetrics.class),
+                    Duration.ofSeconds(90), timeout);
         }
         void run(String message) { service.chatStream(user, conversation.getId(), message, null, null, new CareerAgentService.StreamSink() {
             public void send(AgentStreamEvent event) { events.add(event); } public void complete() {}
