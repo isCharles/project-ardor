@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import com.projectardor.learning.plan.domain.LearningPlan;
 import com.projectardor.learning.plan.service.LearningPlanService;
 import com.projectardor.learning.practice.exercises.service.LearningEvaluationJobHandler;
+import com.projectardor.platform.usage.MembershipService;
 import tools.jackson.databind.ObjectMapper;
 
 class AiJobServiceTests {
@@ -21,20 +22,20 @@ class AiJobServiceTests {
         when(plan.getId()).thenReturn(planId);
         when(learning.submit(eq(user), eq(planId), anyList(), eq(2), eq(request))).thenReturn(plan);
         var mapper=new ObjectMapper();
-        var service = new AiJobService(mock(AiJobStore.class), handlers(new LearningEvaluationJobHandler(learning,mapper)), mapper);
+        var service = new AiJobService(mock(AiJobStore.class), handlers(new LearningEvaluationJobHandler(learning,mapper)), mapper, mock(MembershipService.class));
         String payload = "{\"requestId\":\"" + UUID.randomUUID() + "\",\"expectedAttemptCount\":2,\"answers\":[\"saved answer\"]}";
         var job = new AiJobStore.Job(request, user, AiJobType.LEARNING_EVALUATE, planId, "hash", payload,
-                "RUNNING", 1, null, null, null, Instant.now(), Instant.now(), null);
+                "RUNNING", 1, 5, 0, null, null, null, Instant.now(), Instant.now(), null, null);
         assertThat(service.perform(job)).isEqualTo("/app/learning?id=" + planId);
         verify(learning).submit(user, planId, List.of("saved answer"), 2, request);
-        assertThat(AiJobResponse.from(job).estimateMaxSeconds()).isGreaterThan(AiJobResponse.from(job).estimateMinSeconds());
+        assertThat(AiJobResponse.from(job, -1).estimateMaxSeconds()).isGreaterThan(AiJobResponse.from(job, -1).estimateMinSeconds());
     }
 
     @Test void duplicateAndMissingHandlersFailAtRegistrationRatherThanAtRuntime() {
         var handler=mock(AiJobHandler.class);when(handler.type()).thenReturn(AiJobType.LEARNING_CREATE);
-        assertThatThrownBy(() -> new AiJobService(mock(AiJobStore.class),List.of(handler,handler),new ObjectMapper()))
+        assertThatThrownBy(() -> new AiJobService(mock(AiJobStore.class),List.of(handler,handler),new ObjectMapper(),mock(MembershipService.class)))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("Duplicate");
-        assertThatThrownBy(() -> new AiJobService(mock(AiJobStore.class),List.of(handler),new ObjectMapper()))
+        assertThatThrownBy(() -> new AiJobService(mock(AiJobStore.class),List.of(handler),new ObjectMapper(),mock(MembershipService.class)))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("Missing");
     }
 

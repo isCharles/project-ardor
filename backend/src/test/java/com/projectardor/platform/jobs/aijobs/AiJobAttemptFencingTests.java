@@ -33,7 +33,7 @@ class AiJobAttemptFencingTests {
     @AfterEach void close() { if(dataSource!=null) dataSource.destroy(); }
     private AiJobStore.Job attempt(int number) {
         return new AiJobStore.Job(id,owner,AiJobType.LEARNING_EVALUATE,UUID.randomUUID(),"fixture","{}",
-                "RUNNING",number,null,null,null,original,original,null);
+                "RUNNING",number,5,0,null,null,null,original,original,null,null);
     }
     private String status() { return jdbc.queryForObject("SELECT status FROM ai_jobs",String.class); }
 

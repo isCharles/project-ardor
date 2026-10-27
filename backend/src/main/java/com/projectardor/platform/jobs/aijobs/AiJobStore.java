@@ -17,10 +17,12 @@ public class AiJobStore {
     private static final RowMapper<Job> MAPPER = (rs, row) -> new Job(rs.getObject("id", UUID.class),
             rs.getObject("user_id", UUID.class), AiJobType.valueOf(rs.getString("job_type")),
             rs.getObject("resource_id", UUID.class), rs.getString("request_hash"), rs.getString("payload"),
-            rs.getString("status"), rs.getInt("attempts"), rs.getString("result_path"),
-            rs.getString("error_code"), rs.getString("error_message"), rs.getTimestamp("created_at").toInstant(),
+            rs.getString("status"), rs.getInt("attempts"), rs.getInt("max_attempts"), rs.getInt("priority"),
+            rs.getString("result_path"), rs.getString("error_code"), rs.getString("error_message"),
+            rs.getTimestamp("created_at").toInstant(),
             rs.getTimestamp("started_at") == null ? null : rs.getTimestamp("started_at").toInstant(),
-            rs.getTimestamp("finished_at") == null ? null : rs.getTimestamp("finished_at").toInstant());
+            rs.getTimestamp("finished_at") == null ? null : rs.getTimestamp("finished_at").toInstant(),
+            rs.getTimestamp("retry_after") == null ? null : rs.getTimestamp("retry_after").toInstant());
     private final JdbcTemplate jdbc;
     private final long staleSeconds;
     public AiJobStore(JdbcTemplate jdbc,@org.springframework.beans.factory.annotation.Value("${app.ai-jobs.stale-after:5m}") java.time.Duration staleAfter) {
@@ -29,13 +31,13 @@ public class AiJobStore {
         this.staleSeconds=staleAfter.getSeconds();
     }
 
-    public Job enqueue(UUID userId, UUID requestId, AiJobType type, UUID resourceId, String payload) {
+    public Job enqueue(UUID userId, UUID requestId, AiJobType type, UUID resourceId, String payload, int priority) {
         UUID id = requestId == null ? UUID.randomUUID() : requestId;
         String hash = hash(type + ":" + resourceId + ":" + payload);
         int inserted = jdbc.update("""
-                INSERT INTO ai_jobs(id, user_id, job_type, resource_id, request_hash, payload)
-                VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb)) ON CONFLICT DO NOTHING
-                """, id, userId, type.name(), resourceId, hash, payload);
+                INSERT INTO ai_jobs(id, user_id, job_type, resource_id, request_hash, payload, priority)
+                VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb), ?) ON CONFLICT DO NOTHING
+                """, id, userId, type.name(), resourceId, hash, payload, priority);
         if (inserted == 0) {
             var existing = jdbc.query("SELECT * FROM ai_jobs WHERE id = ? AND user_id = ?", MAPPER, id, userId);
             if (existing.isEmpty()) {
@@ -70,9 +72,10 @@ public class AiJobStore {
     public Optional<Job> claimNext() {
         return jdbc.query("""
                 WITH picked AS (SELECT id FROM ai_jobs WHERE status = 'QUEUED'
-                    ORDER BY created_at, id FOR UPDATE SKIP LOCKED LIMIT 1)
+                    AND (retry_after IS NULL OR retry_after <= CURRENT_TIMESTAMP)
+                    ORDER BY priority DESC, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1)
                 UPDATE ai_jobs j SET status = 'RUNNING', attempts = attempts + 1,
-                    started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, retry_after = NULL
                 FROM picked WHERE j.id = picked.id RETURNING j.*
                 """, MAPPER).stream().findFirst();
     }
@@ -93,13 +96,45 @@ public class AiJobStore {
                 """, code, message.substring(0, Math.min(500, message.length())), job.id(), job.userId(), job.attempts());
     }
 
+    public void requeue(Job job, Instant retryAfter) {
+        jdbc.update("""
+                UPDATE ai_jobs SET status = 'QUEUED', retry_after = ?,
+                    error_code = NULL, error_message = NULL,
+                    started_at = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ? AND status = 'RUNNING' AND attempts = ?
+                """, retryAfter == null ? null : java.sql.Timestamp.from(retryAfter),
+                job.id(), job.userId(), job.attempts());
+    }
+
+    public void deadLetter(Job job, String code, String message) {
+        jdbc.update("""
+                UPDATE ai_jobs SET status = 'DEAD', error_code = ?, error_message = ?,
+                    finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ? AND status = 'RUNNING' AND attempts = ?
+                """, code, message.substring(0, Math.min(500, message.length())),
+                job.id(), job.userId(), job.attempts());
+    }
+
+    public Job cancel(UUID userId, UUID id) {
+        Job job = get(userId, id);
+        if (!"QUEUED".equals(job.status())) throw new IllegalStateException("只有排队中的任务可以取消");
+        jdbc.update("""
+                UPDATE ai_jobs SET status = 'CANCELED', finished_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ? AND status = 'QUEUED'
+                """, id, userId);
+        return get(userId, id);
+    }
+
     public Job retry(UUID userId, UUID id) {
         Job job = get(userId, id);
-        if (!"FAILED".equals(job.status())) throw new IllegalStateException("只有失败任务可以重试");
+        if (!"FAILED".equals(job.status()) && !"DEAD".equals(job.status()))
+            throw new IllegalStateException("只有失败或死信任务可以重试");
         jdbc.update("""
                 UPDATE ai_jobs SET status = 'QUEUED', error_code = NULL, error_message = NULL,
-                    started_at = NULL, finished_at = NULL, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND user_id = ? AND status = 'FAILED'
+                    started_at = NULL, finished_at = NULL, retry_after = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ? AND status IN ('FAILED','DEAD')
                 """, id, userId);
         return get(userId, id);
     }
@@ -110,12 +145,25 @@ public class AiJobStore {
     }
 
     public void recoverStale() {
+        Instant backoff = Instant.now().plusSeconds(Math.min(staleSeconds, 60));
         jdbc.update("""
-                UPDATE ai_jobs SET status = 'FAILED', error_code = 'AI_JOB_INTERRUPTED',
-                    error_message = '评估中断，原提交已保留，可重试', finished_at = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE status = 'RUNNING' AND updated_at < CURRENT_TIMESTAMP - (CAST(? AS double precision) * INTERVAL '1 second')
-                """,staleSeconds);
+                UPDATE ai_jobs SET status = 'QUEUED', retry_after = ?,
+                    error_code = 'AI_JOB_INTERRUPTED',
+                    error_message = '评估中断，自动排队重试',
+                    started_at = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE status = 'RUNNING'
+                    AND updated_at < CURRENT_TIMESTAMP - (CAST(? AS double precision) * INTERVAL '1 second')
+                """, java.sql.Timestamp.from(backoff), staleSeconds);
+    }
+
+    public int queuePosition(Job job) {
+        Integer pos = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM ai_jobs
+                WHERE status = 'QUEUED'
+                  AND (retry_after IS NULL OR retry_after <= CURRENT_TIMESTAMP)
+                  AND (priority > ? OR (priority = ? AND created_at < ?))
+                """, Integer.class, job.priority(), job.priority(), job.createdAt());
+        return pos == null ? 0 : pos;
     }
 
     private String hash(String value) {
@@ -124,6 +172,6 @@ public class AiJobStore {
     }
 
     public record Job(UUID id, UUID userId, AiJobType type, UUID resourceId, String requestHash, String payload,
-            String status, int attempts, String resultPath, String errorCode, String errorMessage,
-            Instant createdAt, Instant startedAt, Instant finishedAt) {}
+            String status, int attempts, int maxAttempts, int priority, String resultPath, String errorCode,
+            String errorMessage, Instant createdAt, Instant startedAt, Instant finishedAt, Instant retryAfter) {}
 }
