@@ -376,8 +376,12 @@ time,
 .ardor-composer-footer { container-type: inline-size; }
 .ardor-composer-footer > div > button { flex-shrink: 0; }
 @container (max-width: 340px) {
+  .ardor-composer-footer { gap: 0; }
+  .ardor-composer-footer > div:first-child { gap: 2px; }
+  .ardor-composer-footer > div:first-child > button { width: 24px; min-width: 24px; height: 28px; }
+  .ardor-composer-footer [data-approval-trigger] { width: 24px; min-width: 24px; height: 28px; }
   [data-composer-actions] { gap: 2px; }
-  [data-composer-actions] > button { width: 32px; min-width: 32px; }
+  [data-composer-actions] > button { width: 28px; min-width: 28px; }
   [data-composer-actions] > button[aria-pressed="true"] > span[aria-hidden] { display: none; }
   [data-reasoning-depth] { padding-inline: 4px; gap: 3px; }
   [data-reasoning-label] { display: none; }

@@ -33,7 +33,7 @@ class CareerAgentRuntimeIntegrationTests {
         when(f.traces.enabled()).thenReturn(true);
         when(f.traces.startSpan(eq(f.user), eq(requestId), isNull(), eq("RUN"), eq("agent.run"), any())).thenReturn(rootSpan);
         when(f.traces.startSpan(eq(f.user), eq(requestId), eq(rootSpan), eq("CONTEXT"), eq("context.load"), any())).thenReturn(contextSpan);
-        when(f.runs.begin(eq(f.user), eq(requestId), eq(f.conversation.getId()), anyString(), isNull(), isNull(), anyList(), any(), any(), anyList())).thenReturn(true);
+        when(f.runs.begin(eq(f.user), eq(requestId), eq(f.conversation.getId()), anyString(), isNull(), isNull(), anyList(), any(), any(), anyList(), anyList())).thenReturn(true);
         when(f.compactor.prepare(any(), any(), anyString(), any(), any(), anyList(), any(), anyString(), any()))
                 .thenThrow(new AgentContextLimitException());
         var failedRun = mock(AgentRunStore.AgentRun.class);
@@ -61,7 +61,7 @@ class CareerAgentRuntimeIntegrationTests {
         assertThat(f.events.stream().filter(event -> "context".equals(event.type())).map(AgentStreamEvent::contextUsage))
                 .extracting(AgentContextUsage::state).containsExactly("PREPARING", "READY");
         var trace = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(f.conversations).appendExchange(any(), any(), anyString(), anyString(), trace.capture(), anyList());
+        verify(f.conversations).appendExchange(any(), any(), anyString(), anyString(), trace.capture(), anyList(), eq(false), anyList());
         assertThat(JsonMapper.builder().build().readTree(trace.getValue()).path("contextUsage").path("state").asText()).isEqualTo("READY");
         verify(f.factory, never()).create(any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
     }
@@ -97,7 +97,7 @@ class CareerAgentRuntimeIntegrationTests {
         assertThat(java.util.stream.IntStream.range(0, f.events.size()).filter(i -> "intermediate".equals(f.events.get(i).type())).findFirst().orElseThrow())
                 .isLessThan(java.util.stream.IntStream.range(0, f.events.size()).filter(i -> "tool_start".equals(f.events.get(i).type())).findFirst().orElseThrow());
         var trace = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(f.conversations).appendExchange(any(), any(), anyString(), eq("Final result."), trace.capture(), anyList());
+        verify(f.conversations).appendExchange(any(), any(), anyString(), eq("Final result."), trace.capture(), anyList(), eq(false), anyList());
         assertThat(trace.getValue()).contains("COMMENTARY", "I'll inspect the resumes.").doesNotContain("Final result.");
     }
 
@@ -129,7 +129,7 @@ class CareerAgentRuntimeIntegrationTests {
         };
         f.run("Please check my resumes");
         assertThat(f.events).anyMatch(event -> "intermediate".equals(event.type()) && "Checking resumes.".equals(event.content()));
-        verify(f.conversations).appendExchange(any(), any(), anyString(), eq("Final result."), contains("Checking resumes."), anyList());
+        verify(f.conversations).appendExchange(any(), any(), anyString(), eq("Final result."), contains("Checking resumes."), anyList(), eq(false), anyList());
     }
 
     @Test void failedUserInstructionsRemainAfterCompaction() {
@@ -187,9 +187,35 @@ class CareerAgentRuntimeIntegrationTests {
         assertThat(f.events).noneMatch(event -> "done".equals(event.type()));
     }
 
+    @Test void imageOnlyMessageReachesTheStreamingModelAsMultimodalContent() {
+        var f = new Fixture();
+        var config = new LlmConfigService.LlmRuntimeConfig(LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "gpt-4o", "synthetic-only");
+        UUID imageId = UUID.randomUUID();
+        when(f.catalog.resolve(eq(f.user), any())).thenReturn(new AgentModelCatalogService.Resolved("PRIMARY", config));
+        when(f.factory.createStreaming(eq(config), any(ReasoningDepth.class), any(), anyList())).thenReturn(f.model);
+        when(f.compactor.prepare(eq(f.user), eq(f.conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), any()))
+                .thenAnswer(call -> new AgentContextCompactor.Prepared(call.getArgument(2), List.of(), 0, 0, 10, null, ""));
+        var multimodal = List.<dev.langchain4j.data.message.Content>of(
+                dev.langchain4j.data.message.TextContent.from("请查看并理解用户附带的图片。"),
+                dev.langchain4j.data.message.ImageContent.from("aGVsbG8=", "image/png"));
+        when(f.images.contents(eq(f.user), anyString(), eq(List.of(imageId)))).thenReturn(multimodal);
+
+        f.service.chatStream(f.user, f.conversation.getId(), "", null, null, List.of(), null,
+                ReasoningDepth.AUTO, null, List.of(imageId), new CareerAgentService.StreamSink() {
+                    public void send(AgentStreamEvent event) { f.events.add(event); }
+                    public void complete() {}
+                });
+
+        assertThat(f.requests).singleElement().satisfies(request -> assertThat(request.messages())
+                .contains(dev.langchain4j.data.message.UserMessage.from(multimodal)));
+        assertThat(f.events).anyMatch(event -> "done".equals(event.type()));
+        verify(f.conversations).appendExchange(eq(f.user), eq(f.conversation), eq(""), anyString(), anyString(),
+                anyList(), eq(false), eq(List.of(imageId)));
+    }
+
     @Test void persistenceFailureReportsErrorAndReleasesLock() {
         var f = new Fixture();
-        when(f.conversations.appendExchange(any(), any(), anyString(), anyString(), anyString(), anyList()))
+        when(f.conversations.appendExchange(any(), any(), anyString(), anyString(), anyString(), anyList(), eq(false), anyList()))
                 .thenThrow(new IllegalStateException("synthetic save failure"));
         f.run("请只读分析"); f.run("继续");
         assertThat(f.events.stream().filter(event -> "error".equals(event.type()))).hasSize(2);
@@ -287,6 +313,8 @@ class CareerAgentRuntimeIntegrationTests {
         final io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
         final AgentMetrics metrics = new AgentMetrics(registry);
+        final AgentModelCatalogService catalog = mock(AgentModelCatalogService.class);
+        final com.projectardor.assistant.conversation.service.ChatImageService images = mock(com.projectardor.assistant.conversation.service.ChatImageService.class);
         final ResumeReads resumeReads = mock(ResumeReads.class);
         final List<AgentStreamEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
         final List<ChatRequest> requests = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -295,14 +323,16 @@ class CareerAgentRuntimeIntegrationTests {
             handler.onPartialResponse("Synthetic final answer");
             handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from("Synthetic final answer")).build());
         };
+        final StreamingChatModel model = new StreamingChatModel() {
+            @Override public void doChat(ChatRequest request, StreamingChatResponseHandler handler) { requests.add(request); reply.accept(request, handler); }
+        };
         final CareerAgentService service;
         Fixture() { this(Duration.ofMinutes(10)); }
         Fixture(Duration timeout) {
             var config = new LlmConfigService.LlmRuntimeConfig(LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "fixture-model", "synthetic-only");
-            var catalog = mock(AgentModelCatalogService.class);
             when(catalog.resolve(eq(user), any())).thenReturn(new AgentModelCatalogService.Resolved("PRIMARY", config));
             when(conversations.requireActive(user, conversation.getId())).thenReturn(conversation);
-            when(conversations.appendExchange(any(), any(), anyString(), anyString(), anyString(), anyList())).thenAnswer(call -> List.of(
+            when(conversations.appendExchange(any(), any(), anyString(), anyString(), anyString(), anyList(), eq(false), anyList())).thenAnswer(call -> List.of(
                     ConversationMessage.user(user, conversation.getId(), call.getArgument(2)), ConversationMessage.assistant(user, conversation.getId(), call.getArgument(3))));
             var tools = mock(CareerAgentTools.class);
             var bound = mock(CareerAgentTools.BoundCareerTools.class, RETURNS_SELF);
@@ -313,14 +343,11 @@ class CareerAgentRuntimeIntegrationTests {
             when(profiles.view(user)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(user, "Synthetic owner")));
             when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), any())).thenAnswer(call ->
                     new AgentContextCompactor.Prepared(call.getArgument(2), List.of(ConversationMessage.user(user, conversation.getId(), "Earlier user instruction")), 0, 0, 10, null, summary));
-            StreamingChatModel model = new StreamingChatModel() {
-                @Override public void doChat(ChatRequest request, StreamingChatResponseHandler handler) { requests.add(request); reply.accept(request, handler); }
-            };
             when(factory.createStreaming(eq(config), any(ReasoningDepth.class), any(), anyList())).thenReturn(model);
             var approvals = mock(AgentToolApprovals.class); when(approvals.canRead(eq(user), any())).thenReturn(true);
             service = new CareerAgentService(conversations, runs, factory, tools, mock(LlmConfigService.class), mock(AgentMemoryService.class),
                     new AgentContextBuilder(embedding, compactor, profiles, tools), profiles, JsonMapper.builder().build(), progress, approvals,
-                    mock(AgentPermissionGrants.class), mock(AgentExecutionAuditStore.class), traces, catalog,
+                    mock(AgentPermissionGrants.class), mock(AgentExecutionAuditStore.class), traces, catalog, images,
                     mock(com.projectardor.platform.usage.UsageTokenStore.class), metrics,
                     Duration.ofSeconds(90), timeout);
         }

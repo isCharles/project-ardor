@@ -21,6 +21,7 @@ import com.projectardor.platform.model.llm.service.LlmConfigService;
 import com.projectardor.platform.identity.profile.service.ProfileService;
 import tools.jackson.databind.ObjectMapper;
 import com.projectardor.assistant.conversation.service.AgentConversationStore;
+import com.projectardor.assistant.conversation.service.ChatImageService;
 import com.projectardor.assistant.memory.service.AgentMemoryService;
 import com.projectardor.assistant.memory.service.AgentContextCompactor;
 import com.projectardor.assistant.memory.service.MemoryEmbeddingService;
@@ -35,7 +36,7 @@ class CareerAgentCancellationTests {
             mock(AgentContextBuilder.class), mock(ProfileService.class), mock(ObjectMapper.class),
             mock(AgentStreamProgress.class), mock(AgentToolApprovals.class), mock(AgentPermissionGrants.class),
             mock(AgentExecutionAuditStore.class), mock(AgentTraceStore.class), mock(AgentModelCatalogService.class),
-            mock(com.projectardor.platform.usage.UsageTokenStore.class), mock(AgentMetrics.class),
+            mock(ChatImageService.class), mock(com.projectardor.platform.usage.UsageTokenStore.class), mock(AgentMetrics.class),
             Duration.ofSeconds(90), Duration.ofMinutes(10));
 
     @Test

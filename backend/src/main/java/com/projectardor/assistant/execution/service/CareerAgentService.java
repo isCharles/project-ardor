@@ -38,6 +38,8 @@ import com.projectardor.platform.identity.profile.service.ProfileService;
 import tools.jackson.databind.ObjectMapper;
 
 import dev.langchain4j.memory.ChatMemory;
+import dev.langchain4j.data.message.Content;
+import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.TokenStream;
 import com.projectardor.assistant.conversation.service.AgentConversationStore;
@@ -63,6 +65,7 @@ public class CareerAgentService {
     private final AgentExecutionAuditStore executionAudit;
     private final AgentTraceStore traceStore;
     private final AgentModelCatalogService modelCatalog;
+    private final com.projectardor.assistant.conversation.service.ChatImageService images;
     private final com.projectardor.platform.usage.UsageTokenStore usageTokens;
     private final AgentMetrics agentMetrics;
     private final java.time.Duration silenceTimeout;
@@ -70,10 +73,14 @@ public class CareerAgentService {
     private final ConcurrentHashMap<UUID, ActiveStream> activeStreams = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Semaphore> userLocks = new ConcurrentHashMap<>();
     public void validateQueuedMessage(UUID userId, com.projectardor.assistant.conversation.web.AgentMessageRequest request) {
-        normalizeMessage(request.message());
+        normalizeMessage(request.message(), !request.imageIds().isEmpty());
         store.requireActive(userId, request.conversationId());
         resolveContexts(userId, request.contextType(), request.contextId(), request.contextReferences());
-        modelCatalog.resolve(userId, request.modelChoice());
+        var runtimeConfig = modelCatalog.resolve(userId, request.modelChoice()).config();
+        if (!request.imageIds().isEmpty()) {
+            AgentImageModelPolicy.requireSupport(runtimeConfig);
+            images.requireOwned(userId, request.imageIds());
+        }
     }
 
     public CareerAgentService(
@@ -89,6 +96,7 @@ public class CareerAgentService {
             AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals,
             AgentPermissionGrants permissionGrants, AgentExecutionAuditStore executionAudit,
             AgentTraceStore traceStore, AgentModelCatalogService modelCatalog,
+            com.projectardor.assistant.conversation.service.ChatImageService images,
             com.projectardor.platform.usage.UsageTokenStore usageTokens,
             AgentMetrics agentMetrics,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:90s}") java.time.Duration silenceTimeout,
@@ -108,6 +116,7 @@ public class CareerAgentService {
         this.executionAudit = executionAudit;
         this.traceStore = traceStore;
         this.modelCatalog = modelCatalog;
+        this.images = images;
         this.usageTokens = usageTokens;
         this.agentMetrics = agentMetrics;
         if (silenceTimeout.isNegative() || silenceTimeout.isZero() || totalTimeout.isNegative() || totalTimeout.isZero()) throw new IllegalArgumentException("Agent 运行期限必须大于零");
@@ -176,8 +185,15 @@ public class CareerAgentService {
     public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId,
             ReasoningDepth requestedDepth, String modelChoice) {
+        return chat(userId, conversationId, rawMessage, contextType, contextId, requestedReferences, requestId,
+                requestedDepth, modelChoice, List.of());
+    }
+
+    public AgentMessageResponse chat(UUID userId, UUID conversationId, String rawMessage, String contextType,
+            UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId,
+            ReasoningDepth requestedDepth, String modelChoice, List<UUID> imageIds) {
         return chatInternal(userId, conversationId, rawMessage, contextType, contextId, requestedReferences,
-                requestId, requestedDepth, false, modelChoice);
+                requestId, requestedDepth, false, modelChoice, imageIds);
     }
 
     /** Runs a scheduled automation: the prompt is persisted for model context but hidden from the transcript. */
@@ -193,28 +209,35 @@ public class CareerAgentService {
                 自动化任务：%s
                 """.formatted(prompt == null ? "" : prompt.strip());
         return chatInternal(userId, conversationId, executionPrompt, null, null, List.of(), null,
-                ReasoningDepth.AUTO, true, null, automationId);
+                ReasoningDepth.AUTO, true, null, automationId, List.of());
     }
 
     private AgentMessageResponse chatInternal(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
             boolean hiddenUserMessage) {
         return chatInternal(userId, conversationId, rawMessage, contextType, contextId, requestedReferences,
-                requestId, requestedDepth, hiddenUserMessage, null, null);
+                requestId, requestedDepth, hiddenUserMessage, null, null, List.of());
+    }
+
+    private AgentMessageResponse chatInternal(UUID userId, UUID conversationId, String rawMessage, String contextType,
+            UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
+            boolean hiddenUserMessage, String modelChoice, List<UUID> imageIds) {
+        return chatInternal(userId, conversationId, rawMessage, contextType, contextId, requestedReferences,
+                requestId, requestedDepth, hiddenUserMessage, modelChoice, null, imageIds);
     }
 
     private AgentMessageResponse chatInternal(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
             boolean hiddenUserMessage, String modelChoice) {
         return chatInternal(userId, conversationId, rawMessage, contextType, contextId, requestedReferences,
-                requestId, requestedDepth, hiddenUserMessage, modelChoice, null);
+                requestId, requestedDepth, hiddenUserMessage, modelChoice, null, List.of());
     }
 
     private AgentMessageResponse chatInternal(UUID userId, UUID conversationId, String rawMessage, String contextType,
             UUID contextId, List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
-            boolean hiddenUserMessage, String modelChoice, UUID jobId) {
+            boolean hiddenUserMessage, String modelChoice, UUID jobId, List<UUID> imageIds) {
         ReasoningDepth depth = ReasoningDepth.orAuto(requestedDepth);
-        String message = normalizeMessage(rawMessage);
+        String message = normalizeMessage(rawMessage, !imageIds.isEmpty());
         long startedAt = System.nanoTime();
         agentMetrics.recordRunStart();
         boolean success = false;
@@ -222,16 +245,20 @@ public class CareerAgentService {
         final Semaphore lock = userLocks.computeIfAbsent(userId, ignored -> new Semaphore(1));
         if (requestId != null) MDC.put("runId", requestId.toString());
         MDC.put("userId", userId.toString());
+        String modelText = message.isBlank() && !imageIds.isEmpty() ? "请查看并理解用户附带的图片。" : message;
         AgentRunTracer tracer = null;
         try {
             List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
-            String agentInput = contextBuilder.contextualMessage(userId, message, references);
+            String agentInput = contextBuilder.contextualMessage(userId, modelText, references);
             if (runStore.hasEarlierQueuedMessage(userId, requestId)) throw new IllegalStateException("已有排队消息，请按顺序处理");
             if (!lock.tryAcquire()) {
                 throw new IllegalStateException("Agent 正在处理上一条消息，请稍后再发送");
             }
             acquired = true;
             var runtimeConfig = modelCatalog.resolve(userId, modelChoice).config();
+            if (!imageIds.isEmpty()) AgentImageModelPolicy.requireSupport(runtimeConfig);
+            List<Content> userContents = imageIds.isEmpty() ? List.of(TextContent.from(agentInput))
+                    : images.contents(userId, agentInput, imageIds);
             Conversation conversation = conversationId == null
                     ? store.create(userId)
                     : store.requireActive(userId, conversationId);
@@ -242,7 +269,7 @@ public class CareerAgentService {
             AgentContextBuilder.Prepared promptContext;
             long prepareStartedAt = System.nanoTime();
             try {
-                promptContext = buildContext(userId, conversation.getId(), message, agentInput, runtimeConfig, depth, tracer, null);
+                promptContext = buildContext(userId, conversation.getId(), modelText, agentInput, runtimeConfig, depth, tracer, null);
             } catch (RuntimeException failure) {
                 if (contextSpan != null) tracer.finishChild(contextSpan, "FAILED", contextFailureCode(failure),
                         runtimeConfig.model(), null, null, java.util.Map.of());
@@ -276,14 +303,14 @@ public class CareerAgentService {
                     .toolExecutionErrorHandler(new AgentToolFailureHandler())
                     .toolArgumentsErrorHandler(new AgentToolArgumentsErrorHandler())
                     .build();
-            String answer = assistant.chat(agentInput);
+            String answer = assistant.chat(userContents);
             if (answer == null || answer.isBlank()) {
                 throw new LlmCallException("AGENT_EMPTY_RESPONSE", "Agent 没有返回可用内容", true, null);
             }
             List<ConversationMessage> saved = store.appendExchange(
                     userId, conversation, message, answer.strip(),
                     bound.pendingConfirmations().isEmpty() ? null
-                            : runTrace(1, List.of(), bound.pendingConfirmations()), references, hiddenUserMessage);
+                            : runTrace(1, List.of(), bound.pendingConfirmations()), references, hiddenUserMessage, imageIds);
             if (tracer != null) tracer.complete();
             recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
             success = true;
@@ -352,6 +379,13 @@ public class CareerAgentService {
     public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId,
             List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
             String modelChoice, StreamSink sink) {
+        chatStream(userId, conversationId, rawMessage, contextType, contextId, requestedReferences, requestId,
+                requestedDepth, modelChoice, List.of(), sink);
+    }
+
+    public void chatStream(UUID userId, UUID conversationId, String rawMessage, String contextType, UUID contextId,
+            List<AgentContextReferenceRequest> requestedReferences, UUID requestId, ReasoningDepth requestedDepth,
+            String modelChoice, List<UUID> imageIds, StreamSink sink) {
         ReasoningDepth depth = ReasoningDepth.orAuto(requestedDepth);
         long startedAt = System.nanoTime();
         agentMetrics.recordRunStart();
@@ -366,10 +400,11 @@ public class CareerAgentService {
         Semaphore lock = userLocks.computeIfAbsent(userId, ignored -> new Semaphore(1));
         boolean acquired = false;
         try {
-            String message = normalizeMessage(rawMessage);
+            String message = normalizeMessage(rawMessage, !imageIds.isEmpty());
             if (runStore.hasEarlierQueuedMessage(userId, requestId)) throw new IllegalStateException("已有排队消息，请按顺序处理");
             List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
-            String agentInput = contextBuilder.contextualMessage(userId, message, references);
+            String modelText = message.isBlank() && !imageIds.isEmpty() ? "请查看并理解用户附带的图片。" : message;
+            String agentInput = contextBuilder.contextualMessage(userId, modelText, references);
             if (!lock.tryAcquire()) {
                 sendStreamError(sink, new LlmCallException("AGENT_BUSY", "Agent 正在处理上一条消息，请稍后再发送", true, null), startedAt);
                 recordRunEndOnce(runEnded, startedAt, false, "AGENT_BUSY");
@@ -377,9 +412,12 @@ public class CareerAgentService {
             }
             acquired = true;
             var runtimeConfig = modelCatalog.resolve(userId, modelChoice).config();
+            if (!imageIds.isEmpty()) AgentImageModelPolicy.requireSupport(runtimeConfig);
+            List<Content> userContents = imageIds.isEmpty() ? List.of(TextContent.from(agentInput))
+                    : images.contents(userId, agentInput, imageIds);
             Conversation conversation = conversationId == null ? store.create(userId) : store.requireActive(userId, conversationId);
             UUID logicalActionId = requestId == null ? null : runStore.logicalActionId(userId, requestId,
-                    conversation.getId(), message, contextType, contextId, requestedReferences, depth);
+                    conversation.getId(), message, contextType, contextId, requestedReferences, depth, imageIds);
             // Register the in-process stream before the persisted row becomes RUNNING. Otherwise a
             // cancel/steer in the begin -> activeStreams window would find no executor and could only
             // fail (500) or overwrite a RUNNING row whose owner is about to start.
@@ -415,7 +453,7 @@ public class CareerAgentService {
             if (requestId != null) {
                 if (finished.get()) return;
                 if (!runStore.begin(userId, requestId, conversation.getId(), message,
-                        contextType, contextId, requestedReferences, logicalActionId, depth, references)) {
+                        contextType, contextId, requestedReferences, logicalActionId, depth, references, imageIds)) {
                     if (!finished.get()) {
                         sink.send(AgentStreamEvent.error("RUN_ALREADY_STARTED",
                                 "请求已被接收，请读取已有执行状态", false, elapsedMs(startedAt)));
@@ -457,7 +495,7 @@ public class CareerAgentService {
             long prepareStartedAt = System.nanoTime();
             try {
                 promptContext = lease.modelCall(() -> buildContext(userId, conversation.getId(),
-                        message, agentInput, runtimeConfig, depth, tracer, lease, contextObserver));
+                        modelText, agentInput, runtimeConfig, depth, tracer, lease, contextObserver));
             } catch (RuntimeException failure) {
                 if (contextSpan != null) tracer.finishChild(contextSpan, "FAILED", contextFailureCode(failure),
                         runtimeConfig.model(), null, null, java.util.Map.of());
@@ -510,7 +548,7 @@ public class CareerAgentService {
                 return;
             }
             sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
-            TokenStream stream = assistant.chat(agentInput)
+            TokenStream stream = assistant.chat(userContents)
                     .onIntermediateResponse(response -> {
                         if (finished.get() || lease.stopped()) return;
                         String text = response == null || response.aiMessage() == null ? "" : response.aiMessage().text();
@@ -588,8 +626,8 @@ public class CareerAgentService {
                             long totalElapsed = elapsedMs(startedAt);
                             String trace = runTrace(totalElapsed, persistedSteps, bound.pendingConfirmations(), streamProgress.get(userId, progressId));
                             List<ConversationMessage> saved = requestId == null
-                                    ? store.appendExchange(userId, conversation, message, answer.strip(), trace, references)
-                                    : runStore.complete(userId, requestId, conversation, message, answer.strip(), trace, references);
+                                    ? store.appendExchange(userId, conversation, message, answer.strip(), trace, references, false, imageIds)
+                                    : runStore.complete(userId, requestId, conversation, message, answer.strip(), trace, references, imageIds);
                             streamProgress.finish(progressId, false);
                             if (tracer != null) tracer.complete();
                             recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
@@ -902,9 +940,9 @@ public class CareerAgentService {
         return AgentConversationResponse.from(store.create(userId));
     }
 
-    private String normalizeMessage(String message) {
-        if (message == null || message.isBlank()) throw new IllegalArgumentException("消息不能为空");
-        String normalized = message.strip();
+    private String normalizeMessage(String message, boolean allowBlank) {
+        if (!allowBlank && (message == null || message.isBlank())) throw new IllegalArgumentException("消息不能为空");
+        String normalized = message == null ? "" : message.strip();
         if (normalized.length() > 50_000) throw new IllegalArgumentException("消息不能超过 50000 个字符");
         return normalized;
     }
@@ -1008,11 +1046,11 @@ public class CareerAgentService {
     }
 
     private interface CareerAssistant {
-        String chat(String userMessage);
+        String chat(List<Content> contents);
     }
 
     private interface StreamingCareerAssistant {
-        TokenStream chat(String userMessage);
+        TokenStream chat(List<Content> contents);
     }
 
     public interface StreamSink {

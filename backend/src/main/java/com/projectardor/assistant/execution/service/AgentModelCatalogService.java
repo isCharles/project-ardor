@@ -178,7 +178,7 @@ public class AgentModelCatalogService {
             var config = relayConfig(raw, model);
             return new Option(FALLBACK_PREFIX + model, model, config.provider().name(), true,
                     ModelReasoningPolicy.resolve(config, ReasoningDepth.AUTO).nativeControl(),
-                    ModelReasoningPolicy.levels(config));
+                    ModelReasoningPolicy.levels(config), AgentImageModelPolicy.supports(config));
         }).toList();
     }
 
@@ -245,7 +245,7 @@ public class AgentModelCatalogService {
     private Option option(String id, LlmConfigService.LlmRuntimeConfig config) {
         return new Option(id, config.model(), config.provider().name(),
                 true, ModelReasoningPolicy.resolve(config, ReasoningDepth.AUTO).nativeControl(),
-                ModelReasoningPolicy.levels(config));
+                ModelReasoningPolicy.levels(config), AgentImageModelPolicy.supports(config));
     }
 
     private LlmConfigService.LlmRuntimeConfig fallback(AuxiliaryApiConfigService.AuxiliaryRuntimeConfig config) {
@@ -259,7 +259,11 @@ public class AgentModelCatalogService {
     }
 
     public record Option(String id, String label, String provider, boolean available, boolean nativeControl,
-            List<ModelReasoningPolicy.Level> reasoningLevels) {
+            List<ModelReasoningPolicy.Level> reasoningLevels, boolean imageInput) {
+        public Option(String id, String label, String provider, boolean available, boolean nativeControl,
+                List<ModelReasoningPolicy.Level> reasoningLevels) {
+            this(id, label, provider, available, nativeControl, reasoningLevels, false);
+        }
     }
 
     public record Resolved(String id, LlmConfigService.LlmRuntimeConfig config) {

@@ -2,6 +2,7 @@ package com.projectardor.assistant.execution.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -124,6 +125,26 @@ class AgentRunStoreTests {
     }
 
     @Test
+    void imageIdsArePartOfTheRequestFingerprint() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID firstImage = UUID.randomUUID();
+        UUID secondImage = UUID.randomUUID();
+        when(jdbc.update(anyString(), any(), eq(userId), eq(conversationId), anyString(), eq("分析图片"), eq("[]")))
+                .thenReturn(1);
+
+        runs.begin(userId, UUID.randomUUID(), conversationId, "分析图片", null, null, List.of(),
+                null, com.projectardor.assistant.ReasoningDepth.AUTO, List.of(), List.of(firstImage));
+        runs.begin(userId, UUID.randomUUID(), conversationId, "分析图片", null, null, List.of(),
+                null, com.projectardor.assistant.ReasoningDepth.AUTO, List.of(), List.of(secondImage));
+
+        ArgumentCaptor<String> fingerprints = ArgumentCaptor.forClass(String.class);
+        verify(jdbc, org.mockito.Mockito.times(2)).update(anyString(), any(), eq(userId), eq(conversationId),
+                fingerprints.capture(), eq("分析图片"), eq("[]"));
+        assertThat(fingerprints.getAllValues().get(0)).isNotEqualTo(fingerprints.getAllValues().get(1));
+    }
+
+    @Test
     void failureUpdateDisablesRetryAfterAnyToolStarted() {
         UUID userId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
@@ -148,14 +169,14 @@ class AgentRunStoreTests {
         List<ConversationMessage> messages = List.of(
                 ConversationMessage.user(userId, conversation.getId(), "你好", List.of()),
                 ConversationMessage.assistant(userId, conversation.getId(), "你好！", null));
-        when(conversations.appendExchange(userId, conversation, "你好", "你好！", null, List.of()))
+        when(conversations.appendExchange(userId, conversation, "你好", "你好！", null, List.of(), false, List.of()))
                 .thenReturn(messages);
         when(jdbc.update(anyString(), eq(messages.get(1).getId()), eq(requestId), eq(userId))).thenReturn(1);
 
         assertThat(runs.complete(userId, requestId, conversation, "你好", "你好！", null, List.of()))
                 .isEqualTo(messages);
         InOrder order = inOrder(conversations, entityManager, jdbc);
-        order.verify(conversations).appendExchange(userId, conversation, "你好", "你好！", null, List.of());
+        order.verify(conversations).appendExchange(userId, conversation, "你好", "你好！", null, List.of(), false, List.of());
         order.verify(entityManager).flush();
         order.verify(jdbc).update(argThat(sql -> sql.contains("status IN ('RUNNING', 'INTERRUPTED')")),
                 eq(messages.get(1).getId()), eq(requestId), eq(userId));

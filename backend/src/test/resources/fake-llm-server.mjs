@@ -95,6 +95,7 @@ const transientAttempts = new Map();
 let delayedReplayRequests = 0;
 let delayedInterviewRequests = 0;
 let restartRequests = 0;
+let imageInputRequests = 0;
 let pendingLearningResponses = [];
 let learningFallbackTimer;
 
@@ -194,11 +195,19 @@ http.createServer((request, response) => {
     response.end(JSON.stringify({ count: delayedReplayRequests }));
     return;
   }
+  if (request.url === "/__probe/image-input") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({ count: imageInputRequests }));
+    return;
+  }
   let body = "";
   request.setEncoding("utf8");
   request.on("data", (chunk) => { body += chunk; });
   request.on("end", () => {
     const payload = JSON.parse(body || "{}");
+    const hasImageInput = Array.isArray(payload.messages) && payload.messages.some((message) =>
+      Array.isArray(message.content) && message.content.some((part) => part?.type === "image_url"));
+    if (hasImageInput) imageInputRequests++;
     if (payload.model === "final-minutes-failure-probe") {
       response.writeHead(400, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: { message: "Synthetic normalization failure" } }));

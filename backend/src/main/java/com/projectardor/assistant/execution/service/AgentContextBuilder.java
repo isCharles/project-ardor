@@ -50,6 +50,7 @@ public class AgentContextBuilder {
     private final ProfileService profileService;
     private final CareerAgentTools tools;
     private final ModelContextCapacity capacity;
+    private final com.projectardor.assistant.conversation.service.ChatImageService images;
 
     public AgentContextBuilder(MemoryEmbeddingService memoryEmbedding, AgentContextCompactor contextCompactor,
             ProfileService profileService, CareerAgentTools tools) {
@@ -57,14 +58,21 @@ public class AgentContextBuilder {
                 new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()));
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public AgentContextBuilder(MemoryEmbeddingService memoryEmbedding, AgentContextCompactor contextCompactor,
             ProfileService profileService, CareerAgentTools tools, ModelContextCapacity capacity) {
+        this(memoryEmbedding, contextCompactor, profileService, tools, capacity, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentContextBuilder(MemoryEmbeddingService memoryEmbedding, AgentContextCompactor contextCompactor,
+            ProfileService profileService, CareerAgentTools tools, ModelContextCapacity capacity,
+            com.projectardor.assistant.conversation.service.ChatImageService images) {
         this.memoryEmbedding = memoryEmbedding;
         this.contextCompactor = contextCompactor;
         this.profileService = profileService;
         this.tools = tools;
         this.capacity = capacity;
+        this.images = images;
     }
 
     public Prepared prepare(UUID userId, UUID conversationId, String message, String currentInput,
@@ -94,7 +102,8 @@ public class AgentContextBuilder {
                                     contextCompactor.budgetTokens(), null, 0, 0));
                         });
         List<HistoryTurn> history = new java.util.ArrayList<>(prepared.recentMessages().stream()
-                .map(item -> new HistoryTurn(item.getRole(), item.getContent(), item.getContextReferences(), item.getCreatedAt())).toList());
+                .map(item -> new HistoryTurn(item.getRole(), item.getContent(), item.getContextReferences(),
+                        item.getImageIds(), item.getCreatedAt())).toList());
         history.addAll(interruptedTurns);
         history.sort(java.util.Comparator.comparing(HistoryTurn::createdAt,
                 java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())));
@@ -103,8 +112,11 @@ public class AgentContextBuilder {
         ChatMemory memory = MessageWindowChatMemory.withMaxMessages(Math.max(40, history.size() + 26));
         if (!prepared.summaryContext().isBlank()) memory.add(AiMessage.from(prepared.summaryContext()));
         for (HistoryTurn turn : history) {
-            if ("USER".equals(turn.role())) memory.add(UserMessage.from(recoveredContextualMessage(userId, turn)));
-            else if ("ASSISTANT".equals(turn.role())) memory.add(AiMessage.from(turn.content()));
+            if ("USER".equals(turn.role())) {
+                String recovered = recoveredContextualMessage(userId, turn);
+                memory.add(turn.imageIds().isEmpty() ? UserMessage.from(recovered)
+                        : UserMessage.from(images.contents(userId, recovered, turn.imageIds())));
+            } else if ("ASSISTANT".equals(turn.role())) memory.add(AiMessage.from(turn.content()));
         }
         var attributes = new java.util.LinkedHashMap<String, Object>();
         long softBudget = prepared.budget() == null ? contextCompactor.budgetTokens() : prepared.budget().softInputTokens();
@@ -141,8 +153,15 @@ public class AgentContextBuilder {
             this(systemPrompt, memory, attributes, null);
         }
     }
-    public record HistoryTurn(String role, String content, List<AgentContextReference> contextReferences, Instant createdAt) {
-        public HistoryTurn { contextReferences = contextReferences == null ? List.of() : List.copyOf(contextReferences); }
+    public record HistoryTurn(String role, String content, List<AgentContextReference> contextReferences,
+            List<UUID> imageIds, Instant createdAt) {
+        public HistoryTurn(String role, String content, List<AgentContextReference> contextReferences, Instant createdAt) {
+            this(role, content, contextReferences, List.of(), createdAt);
+        }
+        public HistoryTurn {
+            contextReferences = contextReferences == null ? List.of() : List.copyOf(contextReferences);
+            imageIds = imageIds == null ? List.of() : List.copyOf(imageIds);
+        }
     }
 
     public String contextualMessage(UUID userId, String message, List<AgentContextReference> references) {

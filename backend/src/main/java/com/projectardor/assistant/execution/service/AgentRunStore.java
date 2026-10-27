@@ -70,7 +70,13 @@ public class AgentRunStore {
 
     public UUID logicalActionId(UUID userId, UUID requestId, UUID conversationId, String message,
             String contextType, UUID contextId, List<AgentContextReferenceRequest> references, ReasoningDepth depth) {
-        String hash = fingerprint(conversationId, message, contextType, contextId, references, depth, steeringSource(userId, requestId));
+        return logicalActionId(userId, requestId, conversationId, message, contextType, contextId, references, depth, List.of());
+    }
+
+    public UUID logicalActionId(UUID userId, UUID requestId, UUID conversationId, String message,
+            String contextType, UUID contextId, List<AgentContextReferenceRequest> references, ReasoningDepth depth,
+            List<UUID> imageIds) {
+        String hash = fingerprint(conversationId, message, contextType, contextId, references, depth, steeringSource(userId, requestId), imageIds);
         return jdbc.queryForList("""
                 SELECT CASE WHEN status IN ('INTERRUPTED', 'FAILED')
                                  AND (tool_started OR (logical_action_id IS NOT NULL AND logical_action_id <> id))
@@ -96,7 +102,15 @@ public class AgentRunStore {
     public boolean begin(UUID userId, UUID requestId, UUID conversationId, String message,
             String contextType, UUID contextId, List<AgentContextReferenceRequest> references,
             UUID logicalActionId, ReasoningDepth depth, List<AgentContextReference> resolvedReferences) {
-        String hash = fingerprint(conversationId, message, contextType, contextId, references, depth, steeringSource(userId, requestId));
+        return begin(userId, requestId, conversationId, message, contextType, contextId, references,
+                logicalActionId, depth, resolvedReferences, List.of());
+    }
+
+    public boolean begin(UUID userId, UUID requestId, UUID conversationId, String message,
+            String contextType, UUID contextId, List<AgentContextReferenceRequest> references,
+            UUID logicalActionId, ReasoningDepth depth, List<AgentContextReference> resolvedReferences,
+            List<UUID> imageIds) {
+        String hash = fingerprint(conversationId, message, contextType, contextId, references, depth, steeringSource(userId, requestId), imageIds);
         String contextJson = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(resolvedReferences);
         int inserted = logicalActionId == null
                 ? jdbc.update("""
@@ -261,6 +275,12 @@ public class AgentRunStore {
     @Transactional
     public List<ConversationMessage> complete(UUID userId, UUID requestId, Conversation conversation,
             String message, String answer, String trace, List<AgentContextReference> references) {
+        return complete(userId, requestId, conversation, message, answer, trace, references, List.of());
+    }
+
+    @Transactional
+    public List<ConversationMessage> complete(UUID userId, UUID requestId, Conversation conversation,
+            String message, String answer, String trace, List<AgentContextReference> references, List<UUID> imageIds) {
         AgentRun current = get(userId, requestId);
         if (!List.of("RUNNING", "INTERRUPTED").contains(current.status())) {
             throw new IllegalStateException("请求已结束，不能再次保存回复");
@@ -271,7 +291,7 @@ public class AgentRunStore {
             throw new IllegalStateException("本轮已停止，不能保存迟到的回复");
         }
         List<ConversationMessage> saved = conversations.appendExchange(
-                userId, conversation, message, answer, trace, references);
+                userId, conversation, message, answer, trace, references, false, imageIds);
         // The exchange is the server-side proof of request/assistant-message identity; the entity
         // fields are updated before the flush so the saved response already carries the run link.
         saved.get(0).linkRun(requestId, requestId);
@@ -375,7 +395,8 @@ public class AgentRunStore {
                 .stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
     }
     private String fingerprint(UUID conversationId, String message, String contextType, UUID contextId,
-            List<AgentContextReferenceRequest> references, ReasoningDepth requestedDepth, String steeringSource) {
+            List<AgentContextReferenceRequest> references, ReasoningDepth requestedDepth, String steeringSource,
+            List<UUID> imageIds) {
         StringBuilder input = new StringBuilder().append(conversationId).append('\n')
                 .append(message.length()).append(':').append(message).append('\n')
                 .append(contextType).append(':').append(contextId);
@@ -383,6 +404,9 @@ public class AgentRunStore {
             for (AgentContextReferenceRequest reference : references) {
                 input.append('\n').append(reference.type()).append(':').append(reference.id());
             }
+        }
+        if (imageIds != null) {
+            for (UUID imageId : imageIds) input.append("\nimage:").append(imageId);
         }
         ReasoningDepth depth = ReasoningDepth.orAuto(requestedDepth);
         if (depth != ReasoningDepth.AUTO) input.append("\nreasoning:").append(depth);
