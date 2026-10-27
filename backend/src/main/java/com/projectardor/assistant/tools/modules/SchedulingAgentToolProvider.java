@@ -49,8 +49,10 @@ public final class SchedulingAgentToolProvider implements AgentToolProvider {
                 @P(value = "到期或发生时间，必须是带时区的 ISO-8601；无截止时间的普通任务可传空字符串", required = false) String dueAt,
                 @P(value = "优先级：LOW、MEDIUM 或 HIGH", required = false) String priority,
                 @P(value = "关联的真实面试流程 UUID；不关联传空字符串", required = false) String jobOpportunityId) {
-            return calendarTaskService.createView(
+            return calendarTaskService.createViewOnce(
                     context.userId(),
+                    context.actionId(),
+                    context.runId(),
                     title,
                     description,
                     nullableInstant(dueAt),
