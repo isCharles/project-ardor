@@ -22,6 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { evaluateCase } from "./agent-eval-assertions.mjs";
+import { SseParser } from "./agent-eval-sse.mjs";
 
 if (process.env.ARDOR_EVAL_ALLOW_REAL_MODEL !== "true") {
   throw new Error("Set ARDOR_EVAL_ALLOW_REAL_MODEL=true to run against a real model.");
@@ -76,18 +77,6 @@ async function csrf() {
   return response.json();
 }
 
-function parseSse(buffer, onEvent) {
-  for (const block of buffer.split("\n\n").slice(0, -1)) {
-    for (const line of block.split("\n")) {
-      if (!line.startsWith("data:")) continue;
-      const payload = line.slice(5).trim();
-      if (!payload) continue;
-      try { onEvent(JSON.parse(payload)); } catch { /* Ignore malformed transport noise. */ }
-    }
-  }
-  return buffer.slice(buffer.lastIndexOf("\n\n") + 2);
-}
-
 async function runCase(item) {
   const requestId = randomUUID();
   const controller = new AbortController();
@@ -110,11 +99,13 @@ async function runCase(item) {
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
+    const parser = new SseParser((payload) => {
+      try { events.push(JSON.parse(payload)); }
+      catch { throw new Error("AGENT_STREAM_INVALID_EVENT: invalid event data"); }
+    });
     while (true) {
       const { value, done } = await reader.read();
-      buffer += decoder.decode(value, { stream: !done });
-      buffer = parseSse(buffer, (event) => events.push(event));
+      parser.push(decoder.decode(value, { stream: !done }), done);
       if (done) break;
     }
     const error = events.find((event) => event.type === "error");
