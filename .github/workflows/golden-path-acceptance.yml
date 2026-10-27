@@ -138,7 +138,7 @@ jobs:
               # Explicit deny fixture before enabling larger synthetic workflow quotas.
               docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET free_monthly_limit=0 WHERE feature='AGENT_CHAT'"
               ARDOR_ACCEPTANCE_EXPECT_QUOTA=true node backend/src/test/resources/stream-error-acceptance.mjs
-              docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET free_monthly_limit=GREATEST(free_monthly_limit,plus_monthly_limit)"
+              docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET free_monthly_limit=GREATEST(free_monthly_limit,plus_monthly_limit), free_weekly_limit=GREATEST(free_weekly_limit,plus_weekly_limit)"
               node backend/src/test/resources/interview-minutes-acceptance.mjs
               node backend/src/test/resources/golden-path-acceptance.mjs
               exit 0
