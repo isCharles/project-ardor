@@ -4,6 +4,22 @@ import http from "node:http";
 const expectedApiKey = process.env.ARDOR_FAKE_EXPECTED_API_KEY;
 if (expectedApiKey && expectedApiKey !== "fake-only") throw new Error("Only the synthetic recovery key is supported");
 
+function parseEvalSpecs(text) {
+  const match = String(text).match(/eval-tools:(\[[\s\S]*?\])\s*-->/);
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[1]);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseEvalAnswer(text) {
+  const match = String(text).match(/eval-answer:([^\n]*)/);
+  return match ? match[1].trim() : "已处理。";
+}
+
 const analysis = {
   overallScore: 82,
   categoryScores: { content: 84, impact: 76, clarity: 85, roleFit: 83 },
@@ -409,6 +425,34 @@ http.createServer((request, response) => {
       return;
     }
     const toolResults = payload.messages?.filter((message) => message.role === "tool") ?? [];
+    if (payload.model === "eval-script-probe" && Array.isArray(payload.tools)) {
+      // Business-evaluation driver: the user message carries a synthetic directive
+      // (eval-tools:[...]) so the same fake model can play any scripted case.
+      const lastUser = payload.messages?.filter((message) => message.role === "user").at(-1)?.content ?? "";
+      const specs = parseEvalSpecs(lastUser);
+      const next = specs[toolResults.length];
+      console.log(`eval-script-probe round=${toolResults.length} specs=${specs.length} next=${next?.name ?? "final"}`);
+      const message = next
+        ? { role: "assistant", content: null, tool_calls: [{ id: `eval-tool-${toolResults.length + 1}`, type: "function",
+          function: { name: next.name, arguments: JSON.stringify(next.arguments ?? {}) } }] }
+        : { role: "assistant", content: parseEvalAnswer(lastUser) };
+      if (payload.stream && !request.url.endsWith("/v1/messages")) {
+        response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache" });
+        const delta = next
+          ? { role: "assistant", tool_calls: [{ index: 0, id: `eval-tool-${toolResults.length + 1}`, type: "function",
+            function: { name: next.name, arguments: JSON.stringify(next.arguments ?? {}) } }] }
+          : { role: "assistant", content: parseEvalAnswer(lastUser) };
+        for (const [chunk, finish] of [[delta, null], [{}, next ? "tool_calls" : "stop"]]) {
+          response.write(`data: ${JSON.stringify({ id: "eval-script", object: "chat.completion.chunk", model: payload.model,
+            choices: [{ index: 0, delta: chunk, finish_reason: finish }] })}\n\n`);
+        }
+        response.end("data: [DONE]\n\n");
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      response.end(JSON.stringify({ model: payload.model, choices: [{ message }] }));
+      return;
+    }
     if (payload.model === "knowledge-module-probe" && isAgentRequest && !probeTool) {
       const available = new Set(payload.tools.map(tool => tool.function?.name));
       if (!["list_knowledge_documents", "search_knowledge", "research_knowledge_from_web", "delete_knowledge_document"]
@@ -552,4 +596,4 @@ http.createServer((request, response) => {
     else if (delayedReplay || payload.model === "async-evaluation-probe") setTimeout(respond, 1500);
     else respond();
   });
-}).listen(8090, "0.0.0.0");
+}).listen(Number(process.env.ARDOR_FAKE_PORT ?? 8090), "0.0.0.0");
