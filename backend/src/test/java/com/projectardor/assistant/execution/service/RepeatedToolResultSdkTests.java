@@ -101,6 +101,7 @@ class RepeatedToolResultSdkTests {
                 assertThat(toolResults.get(1).text()).contains("call-0").doesNotContain("synthetic-result-only-");
                 assertThat(toolResults.getLast().text()).isEqualTo(result);
                 assertThat(captured.get()).contains("call-0", "call-1", "call-2", "latest correction", "synthetic-result-only-");
+                assertThat(captured.get().split("synthetic-result-only-", -1).length - 1).isEqualTo(400);
                 assertThat(messages.stream().filter(ToolExecutionResultMessage.class::isInstance)
                         .map(ToolExecutionResultMessage.class::cast).map(ToolExecutionResultMessage::text)).containsOnly(result);
             } finally { server.stop(0); }
