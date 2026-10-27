@@ -39,7 +39,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class LearningPlanService {
     /** Versioned identity of the evaluation contract persisted with every graded attempt. */
-    static final String EVALUATION_PROMPT_VERSION = "learning-evaluation-v3";
+    static final String EVALUATION_PROMPT_VERSION = "learning-evaluation-v4";
 
     private final LearningPlanRepository repository;
     private final LearningAttemptRepository attempts;
@@ -127,7 +127,7 @@ public class LearningPlanService {
                     "学习主题：" + concept + "\n安排原因：" + (reason == null ? "用户主动学习" : reason));
             JsonNode root = jsonParser.parseObject(result.content());
             Map<String, Object> lesson = lesson(root.path("lesson"));
-            List<Map<String, Object>> exercises = exercises(root.path("exercises"));
+            List<Map<String, Object>> exercises = generatedExercises(userId, root.path("exercises"), concept, lesson);
             var candidate = LearningPlan.create(userId, requestId, requestHash, concept, reason, source, effectiveSourceId,
                     lesson, exercises, schedule, result.model());
             candidate.assignContext(resolved.kind(), resolved.resourceId(), resolved.recordId(), resolved.targetInterviewId(), resolved.targetRoundId());
@@ -255,11 +255,14 @@ public class LearningPlanService {
                         .filter(item -> Boolean.TRUE.equals(item.get("choiceCorrect"))).count() / gradedItems.size())
                 : modelScore;
         if (gradedScore < 0 || gradedScore > 100) throw new IllegalStateException("模型没有返回有效练习分数");
+        List<Map<String, Object>> followUps = gradedScore >= 80 || !node.path("nextExercises").isArray()
+                || node.path("nextExercises").isEmpty() ? List.of()
+                : optionalGeneratedExercises(userId, node.path("nextExercises"), plan.getConcept(), plan.getLesson());
         // The model call runs without a database lock. Recheck under a row lock and commit
         // the attempt row, its compatibility projection and calendar state in one transaction.
         return transactions.execute(status -> commitAttempt(userId, planId, attemptCountAtRead,
                 contentVersionAtRead, exercisesVersionAtRead, exercises, answers, gradedItems, node,
-                gradedScore, result.model(), requestId, expectedSchedule));
+                gradedScore, result.model(), requestId, expectedSchedule, followUps));
     }
 
     @Transactional(readOnly = true)
@@ -310,7 +313,7 @@ public class LearningPlanService {
     private LearningPlan commitAttempt(UUID userId, UUID planId, int expectedAttemptCount,
             int expectedContentVersion, int expectedExercisesVersion, List<Map<String, Object>> exercises,
             List<String> answers, List<Map<String, Object>> gradedItems, JsonNode node, int score,
-            String evaluationModel, UUID requestId, Instant expectedSchedule) {
+            String evaluationModel, UUID requestId, Instant expectedSchedule, List<Map<String, Object>> followUps) {
         LearningPlan plan = repository.findOwnedForUpdate(planId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("学习计划不存在"));
         if (requestId != null && attempts.findByUserIdAndRequestId(userId, requestId).isPresent()) return plan;
@@ -354,7 +357,7 @@ public class LearningPlanService {
         recordedAttempt.put("nextFocus", modelEvaluation.getOrDefault("nextFocus", ""));
         history.add(recordedAttempt);
         projection.put("attempts", history);
-        List<Map<String, Object>> followUps = score >= 80 ? List.of() : optionalExercises(node.path("nextExercises"));
+        // Follow-up generation and repair completed before the transaction acquired this row lock.
         Instant nextReview = score >= 80 ? null : java.util.Objects.equals(plan.getScheduledAt(), expectedSchedule)
                 ? tomorrowMorning(userId) : plan.getScheduledAt();
         // One immutable attempt row per graded round. attempt_no is assigned under the plan
@@ -448,14 +451,46 @@ public class LearningPlanService {
             // Stable question identity: attempt snapshots and follow-up sets keep referring to
             // the same exercise even if the plan is read again or a model regenerates wording.
             exercise.put("exerciseId", UUID.randomUUID().toString());
+            exercise.put("qualityVersion", LearningExerciseQuality.VERSION);
             values.add(exercise);
         }
         if (values.size() < 2) throw new IllegalStateException("模型返回的有效练习题少于 2 道");
         return values;
     }
 
-    private List<Map<String, Object>> optionalExercises(JsonNode nodes) {
-        try { return exercises(nodes); }
+    List<Map<String, Object>> generatedExercises(UUID userId, JsonNode nodes, String concept, Map<String, Object> lesson) {
+        var issues = LearningExerciseQuality.issues(nodes);
+        if (!issues.isEmpty()) {
+            JsonNode original = nodes;
+            var repair = llmGateway.completeJson(userId, """
+                    你是中文技术练习审校员。仅输出 {"exercises":[...]} JSON，不输出讲解、评分或其他字段。
+                    修正下列机械质量缺陷，保持主题、考点和题型；不要通过截短正确答案、灌水或篡改事实掩盖问题。
+                    MULTIPLE_CHOICE 返回 3–5 个 options、从 0 开始的 correctOption 和 rubric；
+                    TRUE_FALSE 返回布尔 correctAnswer 和 rubric，不返回 options；简答/场景题保留原题及 rubric。
+                    保持原数组题目数量与顺序，只修改有缺陷的选择题，不改其他题目。
+                    """ + LearningExerciseQuality.GUIDANCE,
+                    "主题：" + concept + "\n课程讲解：" + json(lesson) + "\n待修正题目：" + nodes
+                            + "\n检测到的问题：" + String.join("；", issues));
+            nodes = jsonParser.parseObject(repair.content()).path("exercises");
+            if (!nodes.isArray() || nodes.size() != original.size())
+                throw new IllegalStateException("修复后的题目数量发生变化");
+            var repaired = objectMapper.createArrayNode();
+            for (int i = 0; i < original.size(); i++) {
+                JsonNode before = original.get(i), after = nodes.get(i);
+                if (!before.path("type").equals(after.path("type")))
+                    throw new IllegalStateException("修复后的题型发生变化");
+                // This repair detects MCQ cues only; never rewrite short answers or true/false items.
+                repaired.add("MULTIPLE_CHOICE".equals(before.path("type").asText()) ? after : before);
+            }
+            nodes = repaired;
+            if (!LearningExerciseQuality.issues(nodes).isEmpty())
+                throw new IllegalStateException("新练习修复后仍存在重复选项或明显答案长度线索，请重试生成");
+        }
+        return exercises(nodes);
+    }
+
+    private List<Map<String, Object>> optionalGeneratedExercises(UUID userId, JsonNode nodes, String concept, Map<String, Object> lesson) {
+        try { return generatedExercises(userId, nodes, concept, lesson); }
         catch (IllegalStateException exception) { return List.of(); }
     }
 
@@ -497,10 +532,9 @@ public class LearningPlanService {
                 练习必须混合多种题型：至少一道 MULTIPLE_CHOICE（输出 options 和 correctOption，
                 correctOption 是正确选项下标，从 0 开始）和至少一道 TRUE_FALSE（输出 correctAnswer 布尔值，
                 不要输出 options）；其余可为 SHORT_ANSWER 或 SCENARIO。只有 MULTIPLE_CHOICE 需要 options；
-                其他题型不要输出 options、correctOption 或 correctAnswer。
+                TRUE_FALSE 只输出 correctAnswer，SHORT_ANSWER 和 SCENARIO 不输出 options、correctOption 或 correctAnswer。
                 练习必须检验理解与应用，不能只问定义，也不得虚构用户经历。
-                练习必须检验理解与应用，不能只问定义，也不得虚构用户经历。
-                """;
+                """ + LearningExerciseQuality.GUIDANCE;
     }
 
     private String evaluationPrompt() {
@@ -509,8 +543,8 @@ public class LearningPlanService {
                 格式：{"score":0,"feedback":"总体反馈","strengths":["..."],"gaps":["..."],
                 "questionFeedback":[{"exerciseId":"输入题目的原始 exerciseId","question":"原题","feedback":"针对该回答的解释","referenceAnswer":"简答题或场景题的参考答案"}],
                 "nextFocus":"下一步重点","nextExercises":[{"question":"新题",
-                "type":"SHORT_ANSWER 或 MULTIPLE_CHOICE 或 SCENARIO",
-                "options":["选项一","选项二","选项三"],"rubric":["评分要点"]}]}。
+                "type":"SHORT_ANSWER 或 MULTIPLE_CHOICE 或 TRUE_FALSE 或 SCENARIO",
+                "options":["选项一","选项二","选项三"],"correctOption":0,"correctAnswer":true,"rubric":["评分要点"]}]}。
                 score 是 0 到 100 的整数，只能依据评分要点和实际回答评分。
                 选择题（type=MULTIPLE_CHOICE）和判断题（type=TRUE_FALSE）的 options、标准答案和判定结果已由系统给出：
                 带 choiceCorrect 的题必须以它为准，答对就按满分计，答错指出正确选项即可；
@@ -524,8 +558,8 @@ public class LearningPlanService {
                 如果得分低于 80，必须根据薄弱点出 3 到 5 道不同于原题的新题，题型要混合：
                 至少一道 MULTIPLE_CHOICE（带 options 和 correctOption）、可以有 TRUE_FALSE（带 correctAnswer 布尔值），
                 其余为 SHORT_ANSWER 或 SCENARIO；如果得分达到 80，nextExercises 返回空数组。
-                只有 MULTIPLE_CHOICE 需要 options，其他题型不要输出 options。
-                """;
+                MULTIPLE_CHOICE 输出 options 和 correctOption；TRUE_FALSE 输出布尔 correctAnswer，不输出 options；其他题型不输出这些字段。
+                """ + LearningExerciseQuality.GUIDANCE;
     }
 
     private String json(Object value) {

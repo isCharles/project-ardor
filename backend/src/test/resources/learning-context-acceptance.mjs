@@ -105,7 +105,7 @@ const history=await a.request(attemptsPath);
 assert.equal(history.length,1,"One graded round must become one attempt row");
 const attempt=history[0];
 assert.equal(attempt.attemptNo,1);assert.equal(attempt.legacy,false);
-assert.equal(attempt.modelName,"golden-path-model");assert.equal(attempt.promptVersion,"learning-evaluation-v3");
+assert.equal(attempt.modelName,"golden-path-model");assert.equal(attempt.promptVersion,"learning-evaluation-v4");
 assert.deepEqual(attempt.answers,attemptAnswers);
 assert.deepEqual(attempt.exercises.map(item=>item.exerciseId),generatedExerciseIds,
   "The attempt snapshot must keep the ids of the exercise set that was actually answered");
