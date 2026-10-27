@@ -64,7 +64,7 @@ class AgentModelProtocolTests {
         when(protocol.reasoning(config,ReasoningDepth.DEEP)).thenReturn(profile);
         when(protocol.chat(eq(config),eq(profile),any(),eq(read),eq(0))).thenReturn(chat);
         var factory=new LangChainModelFactory(configs,"",0,connect,read,List.of(protocol,other));
-        assertThat(factory.create(config,ReasoningDepth.DEEP)).isSameAs(chat);
+        assertThat(factory.create(config,ReasoningDepth.DEEP).defaultRequestParameters()).isEqualTo(chat.defaultRequestParameters());
         var transport=org.mockito.ArgumentCaptor.forClass(HttpClientBuilder.class);
         verify(protocol).chat(eq(config),eq(profile),transport.capture(),eq(read),eq(0));
         assertThat(transport.getValue().connectTimeout()).isEqualTo(connect);
@@ -82,7 +82,7 @@ class AgentModelProtocolTests {
         var stream=mock(StreamingChatModel.class);
         when(protocol.streaming(eq(config),eq(profile),any(),eq(read))).thenReturn(stream);
         var factory=new LangChainModelFactory(configs,"",0,connect,read,List.of(protocol,other));
-        assertThat(factory.createStreaming(owner,ReasoningDepth.AUTO,new AgentStreamLease())).isSameAs(stream);
+        assertThat(factory.createStreaming(owner,ReasoningDepth.AUTO,new AgentStreamLease()).defaultRequestParameters()).isEqualTo(stream.defaultRequestParameters());
         var transport=org.mockito.ArgumentCaptor.forClass(HttpClientBuilder.class);
         verify(protocol).streaming(eq(config),eq(profile),transport.capture(),eq(read));
         assertThat(transport.getValue()).isInstanceOf(LeasedHttpClientBuilder.class);
