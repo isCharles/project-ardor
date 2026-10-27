@@ -100,6 +100,34 @@ class AgentModelCatalogServiceTests {
     }
 
     @Test
+    void repeatedUnknownDescriptionLabelsDoNotBypassTheCatalogCooldown() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM)).thenReturn(
+                Optional.of(new AuxiliaryApiConfigService.AuxiliaryRuntimeConfig(
+                        "OPENAI_COMPATIBLE", "https://relay.example", "known-relay-model", "relay-secret")));
+        when(discovery.list(org.mockito.ArgumentMatchers.eq(LlmProvider.OPENAI_COMPATIBLE),
+                org.mockito.ArgumentMatchers.eq("https://relay.example"), anyString()))
+                .thenReturn(List.of("known-relay-model"));
+        var catalog = new AgentModelCatalogService(llm, auxiliary, discovery);
+        catalog.options(user);
+        verify(discovery, times(1)).list(any(), anyString(), anyString());
+
+        assertThatThrownBy(() -> catalog.descriptionFingerprint(user, "missing-1"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> catalog.descriptionFingerprint(user, "missing-2"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> catalog.descriptionFingerprint(user, "missing-3"))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(discovery, times(2)).list(any(), anyString(), anyString());
+    }
+
+    @Test
     void unknownOrUnconfiguredFallbackFailsClearly() {
         UUID user = UUID.randomUUID();
         var llm = mock(LlmConfigService.class);

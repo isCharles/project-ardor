@@ -43,12 +43,14 @@ public class AgentModelCatalogService {
     private static final int MAX_RELAY_MODELS = 300;
     private static final int MAX_CATALOG_CACHE_ENTRIES = 256;
     private static final long CATALOG_CACHE_TTL_MILLIS = 60_000;
+    private static final long DESCRIPTION_REFRESH_COOLDOWN_MILLIS = 60_000;
     private static final int CATALOG_LOCK_STRIPES = 64;
 
     private final LlmConfigService llmConfigService;
     private final AuxiliaryApiConfigService auxiliaryConfigService;
     private final LlmModelDiscoveryService modelDiscoveryService;
     private final ConcurrentHashMap<UUID, CatalogEntry> catalogCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Long> descriptionRefreshAt = new ConcurrentHashMap<>();
     private final Object[] catalogLocks = createLockStripes(CATALOG_LOCK_STRIPES);
 
     public AgentModelCatalogService(LlmConfigService llmConfigService,
@@ -75,11 +77,23 @@ public class AgentModelCatalogService {
     public String descriptionFingerprint(UUID userId, String label) {
         String normalized = label == null ? "" : label.strip();
         Option option = findAvailableOption(userId, normalized).orElseGet(() -> {
-            catalogCache.remove(userId);
+            refreshCatalogForDescription(userId);
             return findAvailableOption(userId, normalized)
                     .orElseThrow(() -> new IllegalArgumentException("未知的模型选项"));
         });
         return descriptionFingerprint(resolve(userId, option.id()).config());
+    }
+
+    private void refreshCatalogForDescription(UUID userId) {
+        Object lock = catalogLocks[Math.floorMod(userId.hashCode(), catalogLocks.length)];
+        synchronized (lock) {
+            long now = System.currentTimeMillis();
+            Long last = descriptionRefreshAt.get(userId);
+            if (last != null && now - last < DESCRIPTION_REFRESH_COOLDOWN_MILLIS) return;
+            if (descriptionRefreshAt.size() >= MAX_CATALOG_CACHE_ENTRIES) descriptionRefreshAt.clear();
+            descriptionRefreshAt.put(userId, now);
+            catalogCache.remove(userId);
+        }
     }
 
     private Optional<Option> findAvailableOption(UUID userId, String label) {
