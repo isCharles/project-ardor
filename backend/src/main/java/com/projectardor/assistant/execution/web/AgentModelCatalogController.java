@@ -33,6 +33,9 @@ public class AgentModelCatalogController {
     @PostMapping("/description")
     public DescriptionResponse description(@AuthenticationPrincipal ArdorPrincipal principal,
             @RequestBody DescriptionRequest request) {
+        boolean available = catalog.options(principal.userId()).stream()
+                .anyMatch(option -> option.available() && option.label().equals(request.model()));
+        if (!available) throw new IllegalArgumentException("未知的模型选项");
         return new DescriptionResponse(descriptions.describe(principal.userId(), request.model(), request.locale()));
     }
 

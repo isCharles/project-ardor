@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 import com.projectardor.platform.model.llm.service.CompatibleLlmGateway;
 import com.projectardor.platform.model.websearch.service.TavilySearchService;
 import com.projectardor.platform.model.websearch.service.WebSearchResult;
+import com.projectardor.platform.usage.QuotaService;
+import com.projectardor.platform.usage.UsageFeature;
 
 @Service
 public class AgentModelDescriptionService {
@@ -30,22 +32,25 @@ public class AgentModelDescriptionService {
 
     private final TavilySearchService search;
     private final CompatibleLlmGateway llm;
+    private final QuotaService quotas;
     private final ConcurrentHashMap<CacheKey, CacheEntry> cache = new ConcurrentHashMap<>();
 
-    public AgentModelDescriptionService(TavilySearchService search, CompatibleLlmGateway llm) {
+    public AgentModelDescriptionService(TavilySearchService search, CompatibleLlmGateway llm, QuotaService quotas) {
         this.search = search;
         this.llm = llm;
+        this.quotas = quotas;
     }
 
     public String describe(UUID userId, String rawModel, String rawLocale) {
         String model = normalizeModel(rawModel);
         String locale = "zh".equals(rawLocale) ? "zh" : "en";
-        CacheKey key = new CacheKey(model.toLowerCase(Locale.ROOT), locale);
+        CacheKey key = new CacheKey(userId, model.toLowerCase(Locale.ROOT), locale);
         if (cache.size() >= MAX_CACHE_ENTRIES) cache.clear();
         return cache.compute(key, (ignored, existing) -> {
             if (existing != null && existing.createdAt() + CACHE_TTL.toMillis() > System.currentTimeMillis()) {
                 return existing;
             }
+            quotas.consume(userId, UsageFeature.KNOWLEDGE_RESEARCH, null);
             return new CacheEntry(research(userId, model, locale), System.currentTimeMillis());
         }).description();
     }
@@ -86,6 +91,6 @@ public class AgentModelDescriptionService {
         return cleaned.length() <= 1200 ? cleaned : cleaned.substring(0, 1200);
     }
 
-    private record CacheKey(String model, String locale) {}
+    private record CacheKey(UUID userId, String model, String locale) {}
     private record CacheEntry(String description, long createdAt) {}
 }

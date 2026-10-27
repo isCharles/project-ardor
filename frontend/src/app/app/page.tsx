@@ -337,7 +337,6 @@ export default function AgentHomePage() {
           setNativeReasoning(initial.nativeControl);
         }
         const researchModels = items.filter((item) => item.available);
-        const locale = navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
         let nextModel = 0;
         const research = async () => {
           while (active && nextModel < researchModels.length) {
@@ -345,7 +344,7 @@ export default function AgentHomePage() {
             let description = "";
             try {
               const result = await api<{ description: string }>("/api/agent/models/description", {
-                method: "POST", body: JSON.stringify({ model: item.label, locale }),
+                method: "POST", body: JSON.stringify({ model: item.label, locale: locale === "zh-CN" ? "zh" : "en" }),
               });
               description = result.description;
             } catch { /* Model selection remains available without a researched summary. */ }
@@ -361,7 +360,7 @@ export default function AgentHomePage() {
     reloadPermissions();
     window.addEventListener("ardor:permissions-changed", reloadPermissions);
     return () => { active = false; window.removeEventListener("ardor:permissions-changed", reloadPermissions); };
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     if (!memoryOpen) return;

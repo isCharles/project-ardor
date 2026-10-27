@@ -47,6 +47,7 @@ try {
   let failRename = true;
   let renameCalls = 0;
   let previewScenario = true;
+  const descriptionRequests = [];
   let conversation = { id: "chat-one", title: "Original chat", pinned: false, titleManuallySet: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   await context.addInitScript(() => { window.prompt = () => { throw new Error("Native prompt must not be used"); }; });
   const handleApi = async (route) => {
@@ -56,7 +57,10 @@ try {
     if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin };
     else if (path === "/api/agent/models/description") {
       const request = route.request().postDataJSON();
-      body = { description: request.model.includes("claude") ? "Flagship reasoning and coding" : "Fast, high-value everyday model" };
+      descriptionRequests.push(request);
+      body = { description: request.locale === "zh"
+        ? request.model.includes("claude") ? "旗舰推理与编程模型" : "高性价比日常模型"
+        : request.model.includes("claude") ? "Flagship reasoning and coding" : "Fast, high-value everyday model" };
     }
     else if (path === "/api/agent/models") body = [
       { id: "PRIMARY", label: "deepseek-v4-flash", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
@@ -287,6 +291,13 @@ try {
   await depth.getByText("Flagship reasoning and coding", { exact: true }).waitFor();
   assert.equal(await depth.getByText("Primary", { exact: true }).count(), 0);
   assert.equal(await depth.getByText("Relay", { exact: true }).count(), 0);
+  await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });
+  const chineseDepth = page.getByRole("dialog", { name: "模型与思考深度选项" });
+  await chineseDepth.getByText("高性价比日常模型", { exact: true }).waitFor();
+  await chineseDepth.getByText("旗舰推理与编程模型", { exact: true }).waitFor();
+  assert.ok(descriptionRequests.slice(-2).every((request) => request.locale === "zh"), "Application language must drive model research");
+  await page.evaluate(() => { localStorage.setItem("ardor:locale", "en"); window.dispatchEvent(new Event("ardor:locale-change")); });
+  await depth.getByText("Fast, high-value everyday model", { exact: true }).waitFor();
   await depth.getByRole("button", { name: /^Claude Opus 5\.5/ }).click();
   assert.equal(await page.locator('[data-model-choice]').getAttribute("data-model-choice"), "FALLBACK:claude-opus-5-5", "Friendly names must not change selection keys");
   await depth.getByRole("button", { name: /^DeepSeek V4 Flash/ }).click();
