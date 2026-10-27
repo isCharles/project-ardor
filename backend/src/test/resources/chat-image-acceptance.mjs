@@ -65,6 +65,9 @@ for (const client of [owner, other]) {
 await owner.request("/api/settings/llm", { method: "PUT", body: {
   provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "gpt-4o", apiKey: "fake-only",
 } });
+await other.request("/api/settings/llm", { method: "PUT", body: {
+  provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "gpt-4o", apiKey: "fake-only",
+} });
 
 const upload = await owner.upload("/api/agent/images", png, "image/png");
 assert.equal(upload.mediaType, "image/png");
