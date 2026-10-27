@@ -50,6 +50,13 @@ class ApprovedAgentToolsTests {
         }
     }
 
+    static class ThrowingTools {
+        @Tool(name = "fake_write", value = "写操作")
+        public String write(@P("值") String value) {
+            throw new IllegalArgumentException("时间必须使用带时区的 ISO-8601 格式");
+        }
+    }
+
     /** Names registered in ToolCatalog so the audit can resolve module/capability. */
     static class AuditTools {
         @Tool(name = "delete_memory", value = "提议删除记忆")
@@ -315,5 +322,30 @@ class ApprovedAgentToolsTests {
 
         assertThat(result).contains("RUN_STOPPED");
         verify(auditStore).finishToolCall(eq(row), eq(USER), eq("NOT_EXECUTED"), isNull(), eq("RUN_STOPPED"));
+    }
+
+    @Test
+    void thrownBusinessValidationIsRecordedAsFailedNotCompleted() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        when(permissions.autoApproves(USER, "fake_write")).thenReturn(true);
+        var tracer = mock(AgentRunTracer.class);
+        UUID span = UUID.randomUUID();
+        when(tracer.startChild(eq("TOOL"), eq("fake_write"), any())).thenReturn(span);
+        var executors = ApprovedAgentTools.wrap(new ThrowingTools(), USER, RUN, approvals, null,
+                new AgentToolTimings(), waiting -> {}, "帮我写", permissions, null, CONVERSATION, false, tracer);
+
+        String result;
+        try {
+            result = executors.values().iterator().next().execute(writeRequest(), null);
+        } catch (RuntimeException failure) {
+            result = "THREW:" + failure.getMessage();
+        }
+
+        assertThat(result).as("probe result").startsWith("THREW:");
+        verify(tracer).finishChild(eq(span), eq("FAILED"), eq("TOOL_FAILED"),
+                isNull(), isNull(), isNull(), any());
+        verify(tracer).recordToolExecuted();
     }
 }
