@@ -162,7 +162,8 @@ public class AiJobStore {
                 WHERE status = 'QUEUED'
                   AND (retry_after IS NULL OR retry_after <= CURRENT_TIMESTAMP)
                   AND (priority > ? OR (priority = ? AND created_at < ?))
-                """, Integer.class, job.priority(), job.priority(), job.createdAt());
+                """, Integer.class, job.priority(), job.priority(),
+                java.sql.Timestamp.from(job.createdAt()));
         return pos == null ? 0 : pos;
     }
 
