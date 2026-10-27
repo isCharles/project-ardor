@@ -6,9 +6,11 @@ import { api } from "@/lib/api";
 export type AiJobType = "LEARNING_CREATE" | "LEARNING_EVALUATE" | "REPLAY_EVALUATE" | "INTERVIEW_EVALUATE";
 export type AiJob = {
   id: string; type: AiJobType; resourceId: string | null;
-  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
-  attempts: number; resultPath: string | null; errorCode: string | null; errorMessage: string | null;
-  createdAt: string; startedAt: string | null; finishedAt: string | null;
+  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELED" | "DEAD";
+  attempts: number; maxAttempts: number; priority: number;
+  resultPath: string | null; errorCode: string | null; errorMessage: string | null;
+  createdAt: string; startedAt: string | null; finishedAt: string | null; retryAfter: string | null;
+  queuePosition: number;
   estimateMinSeconds: number; estimateMaxSeconds: number;
 };
 export function jobPending(job: AiJob | null) { return job?.status === "QUEUED" || job?.status === "RUNNING"; }

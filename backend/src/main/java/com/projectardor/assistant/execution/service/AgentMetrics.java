@@ -138,4 +138,32 @@ public final class AgentMetrics {
             timeToFirstToken.record(java.time.Duration.ofNanos(durationNanos));
         } catch (RuntimeException ignored) { }
     }
+
+    public void recordJobCompletion(String jobType, String status) {
+        try {
+            Counter.builder("ardor.agent.job.completions")
+                    .tag("type", jobType)
+                    .tag("status", status)
+                    .register(registry)
+                    .increment();
+        } catch (RuntimeException ignored) { }
+    }
+
+    public void recordJobRetry(String jobType) {
+        try {
+            Counter.builder("ardor.agent.job.retries")
+                    .tag("type", jobType)
+                    .register(registry)
+                    .increment();
+        } catch (RuntimeException ignored) { }
+    }
+
+    public void recordJobDeadLetter(String jobType) {
+        try {
+            Counter.builder("ardor.agent.job.dead_letters")
+                    .tag("type", jobType)
+                    .register(registry)
+                    .increment();
+        } catch (RuntimeException ignored) { }
+    }
 }

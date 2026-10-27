@@ -24,7 +24,7 @@ public class BackgroundTaskService {
     }
     public void retry(UUID userId, String kind, UUID id, String token) {
         var task = store.get(userId,kind,id);
-        if (!"FAILED".equals(task.status())) throw new IllegalStateException("只有失败任务可以重试");
+        if (!"FAILED".equals(task.status()) && !"DEAD".equals(task.status())) throw new IllegalStateException("只有失败或死信任务可以重试");
         var handler=handlers.get(task.kind());
         if (handler == null) throw new IllegalArgumentException("此任务类型不支持重试");
         store.read(userId,kind,id,token);

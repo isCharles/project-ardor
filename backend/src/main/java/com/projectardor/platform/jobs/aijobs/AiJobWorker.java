@@ -1,5 +1,6 @@
 package com.projectardor.platform.jobs.aijobs;
 
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -8,16 +9,20 @@ import java.util.concurrent.Semaphore;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import jakarta.annotation.PreDestroy;
+import com.projectardor.assistant.execution.service.AgentMetrics;
 import com.projectardor.platform.model.llm.service.LlmCallException;
 
 @Component
 public class AiJobWorker {
     private final AiJobStore store;
     private final AiJobService service;
+    private final AgentMetrics metrics;
     private final Semaphore slots = new Semaphore(2);
     private final ConcurrentHashMap<UUID, AiJobStore.Job> active = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newFixedThreadPool(2, Thread.ofPlatform().name("ai-evaluation-", 0).factory());
-    public AiJobWorker(AiJobStore store, AiJobService service) { this.store = store; this.service = service; }
+    public AiJobWorker(AiJobStore store, AiJobService service, AgentMetrics metrics) {
+        this.store = store; this.service = service; this.metrics = metrics;
+    }
 
     @Scheduled(fixedDelay = 1000)
     public void poll() {
@@ -28,19 +33,48 @@ public class AiJobWorker {
             var job = next.get();
             active.put(job.id(), job);
             try { executor.execute(() -> {
-                try { store.complete(job, service.perform(job)); }
-                catch (RuntimeException failure) {
-                    String code = failure instanceof LlmCallException llm ? llm.getCode() : "AI_EVALUATION_FAILED";
-                    String message = failure instanceof LlmCallException || failure instanceof IllegalStateException || failure instanceof IllegalArgumentException
-                            ? failure.getMessage() : "评估未完成，原提交已保留，请重试";
-                    store.fail(job, code, message == null ? "评估未完成，请重试" : message);
-                } finally { active.remove(job.id()); slots.release(); }
+                try {
+                    store.complete(job, service.perform(job));
+                    metrics.recordJobCompletion(job.type().name(), "COMPLETED");
+                } catch (RuntimeException failure) { handleFailure(job, failure); }
+                finally { active.remove(job.id()); slots.release(); }
             }); } catch (RuntimeException rejected) {
                 active.remove(job.id());
-                store.fail(job, "AI_JOB_INTERRUPTED", "评估未启动，原提交已保留，可重试");
+                store.requeue(job, Instant.now().plusSeconds(30));
+                metrics.recordJobRetry(job.type().name());
                 throw rejected;
             }
         } catch (RuntimeException failure) { slots.release(); throw failure; }
+    }
+
+    void handleFailure(AiJobStore.Job job, RuntimeException failure) {
+        boolean retryable = isRetryable(failure);
+        int attempt = job.attempts();
+        int max = job.maxAttempts();
+        if (retryable && attempt < max) {
+            long backoffSeconds = Math.min(30L * (1L << (attempt - 1)), 600L);
+            store.requeue(job, Instant.now().plusSeconds(backoffSeconds));
+            metrics.recordJobRetry(job.type().name());
+        } else if (retryable) {
+            store.deadLetter(job, "AI_JOB_EXHAUSTED",
+                    "评估在 " + attempt + " 次尝试后仍未完成，已转入死信，可手动重试");
+            metrics.recordJobDeadLetter(job.type().name());
+        } else {
+            String code = failure instanceof LlmCallException llm ? llm.getCode() : "AI_EVALUATION_FAILED";
+            String message = failure instanceof LlmCallException || failure instanceof IllegalStateException
+                    || failure instanceof IllegalArgumentException
+                    ? failure.getMessage() : "评估未完成，原提交已保留，请重试";
+            store.fail(job, code, message == null ? "评估未完成，请重试" : message);
+            metrics.recordJobCompletion(job.type().name(), "FAILED");
+        }
+    }
+
+    private boolean isRetryable(RuntimeException failure) {
+        if (failure instanceof LlmCallException llm) return llm.isRetryable();
+        Throwable cause = failure.getCause();
+        return failure instanceof java.util.concurrent.RejectedExecutionException
+                || cause instanceof java.net.http.HttpTimeoutException
+                || cause instanceof java.net.ConnectException;
     }
 
     @Scheduled(fixedDelayString = "${app.ai-jobs.maintenance-delay:30s}")

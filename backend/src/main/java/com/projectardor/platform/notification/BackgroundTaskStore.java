@@ -15,7 +15,7 @@ public class BackgroundTaskStore {
     private final JdbcTemplate jdbc;
     public BackgroundTaskStore(JdbcTemplate jdbc) { this.jdbc = jdbc; }
     private static final String SELECT = """
-        SELECT c.*, (c.status IN ('COMPLETED','FAILED') AND NOT EXISTS (
+        SELECT c.*, (c.status IN ('COMPLETED','FAILED','DEAD','CANCELED') AND NOT EXISTS (
             SELECT 1 FROM background_task_reads r WHERE r.user_id=c.user_id
               AND r.kind=c.kind AND r.task_id=c.id AND r.completion_token=c.completion_token)) AS unread
         FROM background_task_catalog c WHERE c.user_id=?
@@ -43,7 +43,7 @@ public class BackgroundTaskStore {
         long active = 0;
         var rows = jdbc.queryForList("""
                 SELECT module, COUNT(*) FILTER (WHERE status IN ('QUEUED','RUNNING')) AS active,
-                COUNT(*) FILTER (WHERE status IN ('COMPLETED','FAILED') AND NOT EXISTS (
+                COUNT(*) FILTER (WHERE status IN ('COMPLETED','FAILED','DEAD','CANCELED') AND NOT EXISTS (
                     SELECT 1 FROM background_task_reads r WHERE r.user_id=c.user_id AND r.kind=c.kind
                     AND r.task_id=c.id AND r.completion_token=c.completion_token)) AS unread
                 FROM background_task_catalog c WHERE user_id=? GROUP BY module
@@ -56,13 +56,13 @@ public class BackgroundTaskStore {
     }
     public void read(UUID userId, String kind, UUID id, String token) {
         var task = get(userId, kind, id);
-        if (!List.of("COMPLETED","FAILED").contains(task.status()) || !task.completionToken().equals(token))
+        if (!List.of("COMPLETED","FAILED","DEAD","CANCELED").contains(task.status()) || !task.completionToken().equals(token))
             throw new IllegalStateException("任务状态已更新，请刷新后查看");
         if (!task.unread()) return;
         int changed = jdbc.update("""
                 INSERT INTO background_task_reads(user_id,kind,task_id,completion_token)
                 SELECT user_id,kind,id,completion_token FROM background_task_catalog
-                WHERE user_id=? AND kind=? AND id=? AND completion_token=? AND status IN ('COMPLETED','FAILED')
+                WHERE user_id=? AND kind=? AND id=? AND completion_token=? AND status IN ('COMPLETED','FAILED','DEAD','CANCELED')
                 ON CONFLICT(user_id,kind,task_id,completion_token) DO NOTHING
                 """, userId, kind, id, token);
         if (changed == 0) {
@@ -75,7 +75,7 @@ public class BackgroundTaskStore {
         jdbc.update("""
                 INSERT INTO background_task_reads(user_id,kind,task_id,completion_token)
                 SELECT user_id,kind,id,completion_token FROM background_task_catalog
-                WHERE user_id=? AND module=? AND status IN ('COMPLETED','FAILED')
+                WHERE user_id=? AND module=? AND status IN ('COMPLETED','FAILED','DEAD','CANCELED')
                 ON CONFLICT(user_id,kind,task_id,completion_token) DO NOTHING
                 """, userId, module);
     }
