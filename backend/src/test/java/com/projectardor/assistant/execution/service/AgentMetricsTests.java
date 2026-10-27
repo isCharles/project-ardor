@@ -108,6 +108,23 @@ class AgentMetricsTests {
     }
 
     @Test
+    void queueClaimsFailuresAndJobWaitsAreCounted() {
+        metrics.recordQueueClaim(Duration.ofSeconds(12).toNanos());
+        metrics.recordQueueClaim(Duration.ofSeconds(3).toNanos());
+        metrics.recordQueueFailure("interrupted");
+        metrics.recordJobClaim("LEARNING_EVALUATE", Duration.ofSeconds(40).toNanos());
+
+        assertThat(registry.get("ardor.agent.queue.wait").timer().count()).isEqualTo(2);
+        assertThat(registry.get("ardor.agent.queue.wait").timer().takeSnapshot().max(
+                java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(12.0);
+        assertThat(registry.get("ardor.agent.queue.claims").counter().count()).isEqualTo(2.0);
+        assertThat(registry.get("ardor.agent.queue.failures").tag("reason", "interrupted").counter().count())
+                .isEqualTo(1.0);
+        assertThat(registry.get("ardor.agent.job.wait").tag("type", "LEARNING_EVALUATE").timer().count())
+                .isEqualTo(1);
+    }
+
+    @Test
     void compactionCountersSeparateWrittenSummariesFromFailures() {
         metrics.recordCompaction(false);
         metrics.recordCompaction(false);
