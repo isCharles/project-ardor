@@ -40,6 +40,8 @@ public final class AgentMetrics {
 
     private final Counter compactions;
     private final Counter compactionFailures;
+    private final Timer queueWait;
+    private final Counter queueClaims;
 
     public AgentMetrics(MeterRegistry registry) {
         this.registry = registry;
@@ -100,6 +102,14 @@ public final class AgentMetrics {
                 .register(registry);
         this.compactionFailures = Counter.builder("ardor.agent.context.compaction.failures")
                 .description("Context summary attempts that produced no usable summary")
+                .register(registry);
+
+        this.queueWait = Timer.builder("ardor.agent.queue.wait")
+                .description("Time a queued chat message waited before a worker claimed it")
+                .publishPercentileHistogram()
+                .register(registry);
+        this.queueClaims = Counter.builder("ardor.agent.queue.claims")
+                .description("Queued chat messages claimed by a worker")
                 .register(registry);
     }
 
@@ -185,6 +195,34 @@ public final class AgentMetrics {
     public void recordToolBusiness(long durationNanos) {
         try {
             toolBusiness.record(java.time.Duration.ofNanos(durationNanos));
+        } catch (RuntimeException ignored) { }
+    }
+
+    public void recordQueueClaim(long waitNanos) {
+        try {
+            queueWait.record(java.time.Duration.ofNanos(Math.max(0, waitNanos)));
+            queueClaims.increment();
+        } catch (RuntimeException ignored) { }
+    }
+
+    public void recordQueueFailure(String reason) {
+        try {
+            Counter.builder("ardor.agent.queue.failures")
+                    .description("Queued chat messages that never started or ended interrupted")
+                    .tag("reason", reason == null ? "unknown" : reason)
+                    .register(registry)
+                    .increment();
+        } catch (RuntimeException ignored) { }
+    }
+
+    public void recordJobClaim(String jobType, long waitNanos) {
+        try {
+            Timer.builder("ardor.agent.job.wait")
+                    .description("Time an AI job stayed QUEUED before a worker claimed it")
+                    .tag("type", jobType)
+                    .publishPercentileHistogram()
+                    .register(registry)
+                    .record(java.time.Duration.ofNanos(Math.max(0, waitNanos)));
         } catch (RuntimeException ignored) { }
     }
 

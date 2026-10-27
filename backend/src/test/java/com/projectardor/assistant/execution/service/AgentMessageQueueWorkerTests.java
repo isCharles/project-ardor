@@ -41,7 +41,8 @@ class AgentMessageQueueWorkerTests {
             return null;
         }).when(service).chatStream(eq(owner), eq(input.conversationId()), eq(input.message()), isNull(), isNull(),
                 eq(List.of()), eq(id), eq(ReasoningDepth.DEEP), isNull(), any(CareerAgentService.StreamSink.class));
-        var worker = new AgentMessageQueueWorker(queue, service, runs);
+        var worker = new AgentMessageQueueWorker(queue, service, runs,
+                new AgentMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
         try {
             worker.poll();
             if (thrown) verify(queue, timeout(2000)).interrupted(item);

@@ -1,5 +1,7 @@
 package com.projectardor.assistant.execution.service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
@@ -17,10 +19,12 @@ public class AgentMessageQueueWorker {
     private final AgentMessageQueue queue;
     private final CareerAgentService agent;
     private final AgentRunStore runs;
+    private final AgentMetrics metrics;
     private final Semaphore slots = new Semaphore(2);
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    public AgentMessageQueueWorker(AgentMessageQueue queue, CareerAgentService agent, AgentRunStore runs) {
-        this.queue = queue; this.agent = agent; this.runs = runs;
+    public AgentMessageQueueWorker(AgentMessageQueue queue, CareerAgentService agent, AgentRunStore runs,
+            AgentMetrics metrics) {
+        this.queue = queue; this.agent = agent; this.runs = runs; this.metrics = metrics;
     }
     @Scheduled(fixedDelay = 1000)
     public void poll() {
@@ -30,8 +34,13 @@ public class AgentMessageQueueWorker {
             var next = queue.claimNext();
             if (next.isEmpty()) { slots.release(); return; }
             var item = next.get();
+            metrics.recordQueueClaim(Duration.between(item.createdAt(), Instant.now()).toNanos());
             try { executor.execute(() -> dispatch(item)); }
-            catch (RuntimeException rejected) { queue.notStarted(item); slots.release(); }
+            catch (RuntimeException rejected) {
+                queue.notStarted(item);
+                metrics.recordQueueFailure("executor_rejected");
+                slots.release();
+            }
         } catch (RuntimeException failure) { slots.release(); throw failure; }
     }
     private void dispatch(AgentMessageQueue.Item item) {
@@ -55,14 +64,20 @@ public class AgentMessageQueueWorker {
                                 try { runs.get(item.userId(), item.id()); queue.reconcile(); }
                                 catch (ResourceNotFoundException neverStarted) {
                                     if ("AGENT_BUSY".equals(errorCode.get())) queue.notStarted(item);
-                                    else queue.failedBeforeStart(item);
+                                    else {
+                                        queue.failedBeforeStart(item);
+                                        metrics.recordQueueFailure("failed_before_start");
+                                    }
                                 }
                             } finally { slot.close(); }
                         }
                     });
         } catch (RuntimeException failure) {
             if (released.compareAndSet(false, true)) {
-                try { queue.interrupted(item); } finally { slot.close(); }
+                try {
+                    queue.interrupted(item);
+                    metrics.recordQueueFailure("interrupted");
+                } finally { slot.close(); }
             }
         }
     }

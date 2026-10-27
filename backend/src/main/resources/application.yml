@@ -73,6 +73,10 @@ app:
     proxy-port: ${ARDOR_HTTP_PROXY_PORT:0}
     connect-timeout: ${ARDOR_HTTP_CONNECT_TIMEOUT:10s}
     read-timeout: ${ARDOR_HTTP_READ_TIMEOUT:120s}
+  model:
+    max-concurrent-calls: ${ARDOR_MODEL_MAX_CONCURRENT_CALLS:8}
+  observability:
+    queue-sample-interval: ${ARDOR_QUEUE_SAMPLE_INTERVAL:15s}
   speech:
     openai-voice: ${ARDOR_OPENAI_TTS_VOICE:alloy}
     dashscope-voice: ${ARDOR_DASHSCOPE_TTS_VOICE:Cherry}
