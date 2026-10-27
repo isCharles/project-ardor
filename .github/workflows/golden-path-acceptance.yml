@@ -17,7 +17,10 @@ permissions:
 jobs:
   golden-path:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    # The frontend build step normally takes under a minute, but run 40494111197
+    # spent 10m40s in it and brought the job to 16m32s of the old 18-minute limit.
+    # Keep a margin so runner variance does not masquerade as a failing change.
+    timeout-minutes: 25
     env:
       DATABASE_URL: jdbc:postgresql://127.0.0.1:5432/ardor
       DATABASE_USER: ardor
