@@ -206,17 +206,19 @@ public class CareerAgentService {
         long startedAt = System.nanoTime();
         agentMetrics.recordRunStart();
         boolean success = false;
+        boolean acquired = false;
+        final Semaphore lock = userLocks.computeIfAbsent(userId, ignored -> new Semaphore(1));
         if (requestId != null) MDC.put("runId", requestId.toString());
         MDC.put("userId", userId.toString());
-        List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
-        String agentInput = contextBuilder.contextualMessage(userId, message, references);
-        Semaphore lock = userLocks.computeIfAbsent(userId, ignored -> new Semaphore(1));
-        if (runStore.hasEarlierQueuedMessage(userId, requestId)) throw new IllegalStateException("已有排队消息，请按顺序处理");
-        if (!lock.tryAcquire()) {
-            throw new IllegalStateException("Agent 正在处理上一条消息，请稍后再发送");
-        }
         AgentRunTracer tracer = null;
         try {
+            List<AgentContextReference> references = resolveContexts(userId, contextType, contextId, requestedReferences);
+            String agentInput = contextBuilder.contextualMessage(userId, message, references);
+            if (runStore.hasEarlierQueuedMessage(userId, requestId)) throw new IllegalStateException("已有排队消息，请按顺序处理");
+            if (!lock.tryAcquire()) {
+                throw new IllegalStateException("Agent 正在处理上一条消息，请稍后再发送");
+            }
+            acquired = true;
             var runtimeConfig = modelCatalog.resolve(userId, modelChoice).config();
             Conversation conversation = conversationId == null
                     ? store.create(userId)
@@ -307,7 +309,7 @@ public class CareerAgentService {
             agentMetrics.recordRunEnd(System.nanoTime() - startedAt, success, success ? null : "AGENT_CALL_FAILED");
             MDC.remove("runId");
             MDC.remove("userId");
-            lock.release();
+            if (acquired) lock.release();
         }
     }
 
@@ -341,6 +343,7 @@ public class CareerAgentService {
         if (requestId != null) MDC.put("runId", requestId.toString());
         MDC.put("userId", userId.toString());
         AtomicBoolean finished = new AtomicBoolean();
+        AtomicBoolean runEnded = new AtomicBoolean();
         AtomicReference<UUID> persistedRun = new AtomicReference<>();
         AtomicReference<AgentRunTracer> traceRef = new AtomicReference<>();
         AtomicReference<AgentStreamLease> leaseRef = new AtomicReference<>();
@@ -354,6 +357,7 @@ public class CareerAgentService {
             String agentInput = contextBuilder.contextualMessage(userId, message, references);
             if (!lock.tryAcquire()) {
                 sendStreamError(sink, new LlmCallException("AGENT_BUSY", "Agent 正在处理上一条消息，请稍后再发送", true, null), startedAt);
+                recordRunEndOnce(runEnded, startedAt, false, "AGENT_BUSY");
                 return;
             }
             acquired = true;
@@ -374,7 +378,7 @@ public class CareerAgentService {
                         : "TOTAL".equals(reason) ? "AGENT_RUN_DEADLINE" : "AGENT_UPSTREAM_SILENT";
                 if (interruptedTrace != null) interruptedTrace.fail(errorCode);
                 recordAgentUsage(userId, requestId, interruptedTrace, runtimeConfig.model());
-                agentMetrics.recordRunEnd(System.nanoTime() - startedAt, false, errorCode);
+                recordRunEndOnce(runEnded, startedAt, false, errorCode);
                 toolApprovals.close(userId, requestId);
                 streamProgress.finish(progressId, true);
                 try {
@@ -403,6 +407,7 @@ public class CareerAgentService {
                         sink.complete();
                     }
                     lease.stop(() -> { activeStreams.remove(progressId); lock.release(); });
+                    recordRunEndOnce(runEnded, startedAt, false, "RUN_ALREADY_STARTED");
                     return;
                 }
                 persistedRun.set(requestId);
@@ -568,7 +573,7 @@ public class CareerAgentService {
                             recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
                             long firstPartialMs = firstPartialDelayMs(startedAt, firstPartialAt.get());
                             if (firstPartialMs >= 0) agentMetrics.recordTimeToFirstToken(java.time.Duration.ofMillis(firstPartialMs).toNanos());
-                            agentMetrics.recordRunEnd(System.nanoTime() - startedAt, true, null);
+                            recordRunEndOnce(runEnded, startedAt, true, null);
                             log.info("Agent stream completed: userId={}, conversationId={}, partialChunks={}, firstPartialMs={}, totalMs={}",
                                     userId, conversation.getId(), partialChunks.get(), firstPartialMs, elapsedMs(startedAt));
                             bound.pendingConfirmations().forEach(
@@ -578,7 +583,7 @@ public class CareerAgentService {
                         } catch (RuntimeException exception) {
                             if (tracer != null) tracer.fail("AGENT_COMPLETION_FAILED");
                             recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
-                            agentMetrics.recordRunEnd(System.nanoTime() - startedAt, false, "AGENT_COMPLETION_FAILED");
+                            recordRunEndOnce(runEnded, startedAt, false, "AGENT_COMPLETION_FAILED");
                             streamProgress.finish(progressId, true);
                             sendStreamError(sink, exception, startedAt, userId, persistedRun.get());
                         } finally {
@@ -591,7 +596,7 @@ public class CareerAgentService {
                         lease.fence();
                         if (tracer != null) tracer.fail("AGENT_STREAM_FAILED");
                         recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
-                        agentMetrics.recordRunEnd(System.nanoTime() - startedAt, false, "AGENT_STREAM_FAILED");
+                        recordRunEndOnce(runEnded, startedAt, false, "AGENT_STREAM_FAILED");
                         streamProgress.finish(progressId, true);
                         try { sendStreamError(sink, classifyStreamFailure(exception), startedAt, userId, persistedRun.get()); }
                         finally {
@@ -605,7 +610,7 @@ public class CareerAgentService {
                 if (leaseRef.get() != null) leaseRef.get().fence();
                 AgentRunTracer failedTrace = traceRef.get();
                 if (failedTrace != null) failedTrace.fail("AGENT_STREAM_SETUP_FAILED");
-                agentMetrics.recordRunEnd(System.nanoTime() - startedAt, false, "AGENT_STREAM_SETUP_FAILED");
+                recordRunEndOnce(runEnded, startedAt, false, "AGENT_STREAM_SETUP_FAILED");
                 try {
                     sendStreamError(sink, exception, startedAt, userId, persistedRun.get());
                 } finally {
@@ -619,6 +624,13 @@ public class CareerAgentService {
                 }
             }
         }
+    }
+
+    /** End a run exactly once even when a late callback races a completion or error path. */
+    private void recordRunEndOnce(java.util.concurrent.atomic.AtomicBoolean ended, long startedAt,
+            boolean success, String errorCode) {
+        if (!ended.compareAndSet(false, true)) return;
+        agentMetrics.recordRunEnd(System.nanoTime() - startedAt, success, errorCode);
     }
 
     private void recordAgentUsage(UUID userId, UUID requestId, AgentRunTracer tracer, String model) {
