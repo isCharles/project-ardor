@@ -81,7 +81,8 @@ public final class AgentModelTraceListener implements ChatModelListener {
         Integer output = usage == null ? null : usage.outputTokenCount();
         AiMessage message = response == null ? null : response.aiMessage();
         boolean toolRound = message != null && message.hasToolExecutionRequests();
-        tracer.recordLlm(input, output, toolRound);
+        int requestedTools = toolRound ? message.toolExecutionRequests().size() : 0;
+        tracer.recordLlm(purpose, input, output, toolRound, requestedTools);
         if (metrics != null) metrics.recordLlmCall(durationNanos, input, output, model, false);
         if (span == null) return;
         Map<String, Object> attributes = new LinkedHashMap<>();
@@ -104,7 +105,7 @@ public final class AgentModelTraceListener implements ChatModelListener {
     public void onError(ChatModelErrorContext context) {
         UUID span = takeSpan(context.attributes());
         long durationNanos = elapsedNanos(context.attributes());
-        tracer.recordLlm(null, null, false);
+        tracer.recordLlm(purpose, null, null, false, 0);
         if (metrics != null) metrics.recordLlmCall(durationNanos, null, null, model, true);
         if (span == null) return;
         String errorCode = context.error() == null ? "LLM_CALL_FAILED" : context.error().getClass().getSimpleName();

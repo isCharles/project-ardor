@@ -6,6 +6,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.assistant.execution.service.AgentRunStore;
@@ -27,15 +28,20 @@ public class AgentTraceController {
 
     @GetMapping("/{requestId}/trace")
     public AgentTraceResponse trace(@AuthenticationPrincipal ArdorPrincipal principal,
-            @PathVariable UUID requestId) {
-        var spans = traceStore.find(principal.userId(), requestId);
-        if (spans.isEmpty()) {
+            @PathVariable UUID requestId,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "128") int limit) {
+        var root = traceStore.findRoot(principal.userId(), requestId).orElse(null);
+        var page = traceStore.findPage(principal.userId(), requestId, offset, limit);
+        if (root == null && page.spans().isEmpty()) {
             // Same response for unknown and foreign runs: never reveal ownership.
             throw new ResourceNotFoundException("执行记录不存在");
         }
         return AgentTraceResponse.from(requestId,
                 runStore.get(principal.userId(), requestId).conversationId(),
-                spans.stream().map(AgentTraceSpanResponse::from).toList());
+                root == null ? null : AgentTraceSpanResponse.from(root),
+                page.spans().stream().map(AgentTraceSpanResponse::from).toList(),
+                page.totalSpans(), page.nextOffset());
     }
 }
 

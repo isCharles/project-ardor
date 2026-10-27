@@ -23,10 +23,15 @@ public final class AgentRunTracer {
     private final String promptVersion;
     private final UUID rootSpanId;
     private final AtomicInteger llmCalls = new AtomicInteger();
+    private final AtomicInteger assistantCalls = new AtomicInteger();
+    private final AtomicInteger summaryCalls = new AtomicInteger();
     private final AtomicInteger modelCallSequence = new AtomicInteger();
     private final java.util.concurrent.atomic.AtomicReference<UUID> contextSpan = new java.util.concurrent.atomic.AtomicReference<>();
     private final AtomicInteger toolCalls = new AtomicInteger();
+    private final AtomicInteger requestedToolCalls = new AtomicInteger();
+    private final AtomicInteger executedToolCalls = new AtomicInteger();
     private final AtomicInteger loopRounds = new AtomicInteger();
+    private final AtomicInteger usageMissingCalls = new AtomicInteger();
     private final AtomicLong inputTokens = new AtomicLong();
     private final AtomicLong outputTokens = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -76,16 +81,30 @@ public final class AgentRunTracer {
     }
 
     public void recordLlm(Integer inTokens, Integer outTokens, boolean toolRound) {
+        recordLlm("ASSISTANT", inTokens, outTokens, toolRound, 0);
+    }
+
+    /** Counts one LLM invocation by purpose, including calls whose provider omitted usage. */
+    public void recordLlm(String purpose, Integer inTokens, Integer outTokens, boolean toolRound, int requestedTools) {
         // Metering is a run fact, not a side effect of optional span persistence.
         if (closed.get()) return;
         llmCalls.incrementAndGet();
+        if ("CONTEXT_COMPACTION".equals(purpose)) summaryCalls.incrementAndGet();
+        else assistantCalls.incrementAndGet();
         if (toolRound) loopRounds.incrementAndGet();
+        if (requestedTools > 0) requestedToolCalls.addAndGet(requestedTools);
+        if (inTokens == null || outTokens == null) usageMissingCalls.incrementAndGet();
         if (inTokens != null) inputTokens.addAndGet(Math.max(0, inTokens));
         if (outTokens != null) outputTokens.addAndGet(Math.max(0, outTokens));
     }
 
     public void recordTool() {
         if (!closed.get()) toolCalls.incrementAndGet();
+    }
+
+    /** A wrapper invocation that actually reached the business delegate. */
+    public void recordToolExecuted() {
+        if (!closed.get()) executedToolCalls.incrementAndGet();
     }
 
     public void complete() {
@@ -100,10 +119,19 @@ public final class AgentRunTracer {
         boolean observable = active();
         if (!closed.compareAndSet(false, true)) return;
         if (!observable) return;
+        Map<String, Object> summary = new java.util.LinkedHashMap<>();
+        summary.put("llmCalls", llmCalls.get());
+        summary.put("assistantCalls", assistantCalls.get());
+        summary.put("summaryCalls", summaryCalls.get());
+        summary.put("toolCalls", toolCalls.get());
+        summary.put("requestedToolCalls", requestedToolCalls.get());
+        summary.put("executedToolCalls", executedToolCalls.get());
+        summary.put("loopRounds", loopRounds.get());
+        summary.put("usageMissingCalls", usageMissingCalls.get());
         store.finishSpan(userId, rootSpanId, status, errorCode, model, promptVersion,
                 (int) Math.min(Integer.MAX_VALUE, inputTokens.get()),
                 (int) Math.min(Integer.MAX_VALUE, outputTokens.get()),
-                Map.of("llmCalls", llmCalls.get(), "toolCalls", toolCalls.get(), "loopRounds", loopRounds.get()));
+                summary);
         store.updateRunAggregates(userId, runId, llmCalls.get(), toolCalls.get(), loopRounds.get(),
                 inputTokens.get(), outputTokens.get(), model, promptVersion);
     }
@@ -118,8 +146,13 @@ public final class AgentRunTracer {
     public String model() { return model; }
     public String promptVersion() { return promptVersion; }
     public int llmCalls() { return llmCalls.get(); }
+    public int assistantCalls() { return assistantCalls.get(); }
+    public int summaryCalls() { return summaryCalls.get(); }
     public int toolCalls() { return toolCalls.get(); }
+    public int requestedToolCalls() { return requestedToolCalls.get(); }
+    public int executedToolCalls() { return executedToolCalls.get(); }
     public int loopRounds() { return loopRounds.get(); }
+    public int usageMissingCalls() { return usageMissingCalls.get(); }
     public long inputTokens() { return inputTokens.get(); }
     public long outputTokens() { return outputTokens.get(); }
     public boolean closed() { return closed.get(); }

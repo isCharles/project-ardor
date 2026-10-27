@@ -202,7 +202,11 @@ final class ApprovedAgentTools {
                 UUID traceSpan = tracer == null ? null : tracer.startChild("TOOL", tool, toolAttributes);
                 if (tracer != null) tracer.recordTool();
                 AtomicBoolean executed = new AtomicBoolean();
-                Supplier<String> call = () -> { executed.set(true); return delegate.execute(request, memoryId); };
+                Supplier<String> call = () -> {
+                    executed.set(true);
+                    if (tracer != null) tracer.recordToolExecuted();
+                    return delegate.execute(request, memoryId);
+                };
                 String outcome = "COMPLETED";
                 String errorCode = null;
                 String auditResult = null;
