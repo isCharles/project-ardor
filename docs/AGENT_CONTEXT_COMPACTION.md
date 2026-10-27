@@ -51,6 +51,11 @@ system prompt
 - keeps every uncovered message verbatim if summarization is unavailable or below the trigger;
 - advances coverage only through messages actually sent to the summarizer. The 12,000-character
   batch target never marks an omitted suffix covered; an oversized first message stays whole.
+- rejects generated summaries over 4,000 UTF-16 code units instead of saving a truncated result.
+  On rejection, previous coverage remains unchanged and uncovered messages stay in the prompt;
+  the hard input fence may reject the request if that complete history still exceeds capacity.
+  This prevents application-side truncation from silently dropping the end of a summary, but does
+  not prove a provider returned a complete or semantically faithful summary.
 
 On a model request that reaches the soft budget, exact duplicate read-only tool results are
 reduced only when the same registered tool, exact arguments, result text, error status and
