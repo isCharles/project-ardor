@@ -115,7 +115,9 @@ public class LangChainModelFactory {
             model = protocol.chat(config,profile,httpClientBuilder(),readTimeout,
                     MODEL_INTERNAL_RETRIES, listeners);
         }
-        return ContextBudgetedModels.chat(model, contextBudget.resolve(config, profile.maxTokens()), AgentRequestTokens.estimator(config));
+        var budget = contextBudget.resolve(config, profile.maxTokens());
+        var estimator = AgentRequestTokens.estimator(config);
+        return RepeatedToolResultCompactor.chat(ContextBudgetedModels.chat(model, budget, estimator), budget, estimator);
     }
 
     public StreamingChatModel createStreaming(UUID userId) {
@@ -144,7 +146,9 @@ public class LangChainModelFactory {
         } else {
             model = protocol.streaming(config,profile,transport,readTimeout, listeners);
         }
-        return ContextBudgetedModels.streaming(TimedStreamingModel.wrap(model), contextBudget.resolve(config, profile.maxTokens()), AgentRequestTokens.estimator(config));
+        var budget = contextBudget.resolve(config, profile.maxTokens());
+        var estimator = AgentRequestTokens.estimator(config);
+        return RepeatedToolResultCompactor.streaming(ContextBudgetedModels.streaming(TimedStreamingModel.wrap(model), budget, estimator), budget, estimator);
     }
 
     private JdkHttpClientBuilder httpClientBuilder() {

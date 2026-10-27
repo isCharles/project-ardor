@@ -41,8 +41,9 @@ system prompt
 - loads owner-scoped visible messages;
 - finds the latest durable summary and the messages it already covers;
 - keeps the latest `app.agent.context.recent-messages` (default 8) verbatim;
-- compacts only when the older range has at least 8 messages or the estimated history exceeds
-  `app.agent.context.max-history-tokens` (default 12000);
+- compacts at the configured soft input budget after accounting for system prompt, tools,
+  references, history, output reserve and safety margin; an unknown model window uses the
+  configured fallback rather than treating it as a known capacity;
 - asks the active chat model for a structured summary;
 - stores the summary in `conversation_summaries` with version, covered message ID, covered count,
   token count and model;
@@ -50,6 +51,16 @@ system prompt
 - keeps every uncovered message verbatim if summarization is unavailable or below the trigger;
 - advances coverage only through messages actually sent to the summarizer. The 12,000-character
   batch target never marks an omitted suffix covered; an oversized first message stays whole.
+
+On a model request that reaches the soft budget, exact duplicate read-only tool results are
+reduced only when the same registered tool, exact arguments, result text, error status and
+attributes occur at least three times. The first and last results stay complete; intermediate
+results retain their original call IDs and explicitly refer to the first full result. Ambiguous
+IDs, SDK-flagged errors, non-text results, short results and write or unregistered tools are never reduced.
+Only a request copy changes: the live chat memory, durable records, tool calls and user messages
+remain untouched. Request telemetry and the hard input fence see the same compacted request.
+This exact-match optimization does not establish semantic relevance or make a partially different
+result safe to discard.
 
 The JSON-encoded summary is placed in a historical **assistant data message**, never interpolated
 into the system instruction or presented as a new user command. Raw generated text cannot close
@@ -106,4 +117,5 @@ app:
 - Summaries are prompt data, not a user-editable record. They are owner-scoped and cascade-delete
   with the conversation.
 - Tool observations are not currently persisted in `messages`; only final assistant answers are.
-  Compressing tool evidence therefore needs a separate evidence table/tool-result context layer.
+  Exact deduplication above applies to the current request's tool loop, not durable cross-turn
+  evidence. Broader tool-evidence retrieval needs a separate owner-scoped evidence layer.
