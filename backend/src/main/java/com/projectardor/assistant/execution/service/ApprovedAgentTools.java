@@ -237,7 +237,7 @@ final class ApprovedAgentTools {
                     return returned;
                 } catch (RuntimeException failure) {
                     outcome = "FAILED";
-                    errorCode = "TOOL_FAILED";
+                    errorCode = failureCode(failure);
                     throw failure;
                 } finally {
                     finishAudit(executionAudit, row, userId, outcome, auditResult, errorCode);
@@ -257,6 +257,14 @@ final class ApprovedAgentTools {
         }
         }
         return result;
+    }
+
+    private static String failureCode(Throwable failure) {
+        Throwable cause = failure instanceof dev.langchain4j.exception.ToolExecutionException
+                && failure.getCause() != null ? failure.getCause() : failure;
+        if (cause instanceof IllegalArgumentException) return "INVALID_ARGUMENTS";
+        if (cause instanceof com.projectardor.common.web.ResourceNotFoundException) return "RESOURCE_NOT_FOUND";
+        return "TOOL_FAILED";
     }
 
     private static UUID startToolSpan(AgentRunTracer tracer, ToolExecutionRequest request, String tool,

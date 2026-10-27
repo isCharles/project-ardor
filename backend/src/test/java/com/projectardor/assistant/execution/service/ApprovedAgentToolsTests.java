@@ -326,7 +326,7 @@ class ApprovedAgentToolsTests {
     }
 
     @Test
-    void thrownBusinessValidationIsRecordedAsFailedNotCompleted() {
+    void thrownBusinessValidationIsRecordedAsInvalidArgumentsNotCompleted() {
         AgentToolApprovals approvals = mock(AgentToolApprovals.class);
         when(approvals.canPropose(USER, RUN)).thenReturn(true);
         AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
@@ -345,7 +345,7 @@ class ApprovedAgentToolsTests {
         }
 
         assertThat(result).as("probe result").startsWith("THREW:");
-        verify(tracer).finishChild(eq(span), eq("FAILED"), eq("TOOL_FAILED"),
+        verify(tracer).finishChild(eq(span), eq("FAILED"), eq("INVALID_ARGUMENTS"),
                 isNull(), isNull(), isNull(), any());
         verify(tracer).recordToolExecuted();
     }
