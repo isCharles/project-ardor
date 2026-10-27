@@ -29,7 +29,22 @@ public class AgentTraceStore {
 
     private static final Logger log = LoggerFactory.getLogger(AgentTraceStore.class);
     private static final int MAX_ATTRIBUTE_CHARS = 4_000;
-    private static final int MAX_SPANS = 128;
+    public static final int DEFAULT_SPAN_LIMIT = 128;
+    private static final int MAX_SPAN_LIMIT = 500;
+    private static final String SPAN_COLUMNS = """
+            id, run_id, parent_span_id, kind, name, status, started_at, finished_at,
+            COALESCE(duration_ms, CASE WHEN finished_at IS NULL THEN NULL
+                ELSE GREATEST(1, (EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)::bigint) END) AS duration_ms,
+            model, prompt_version, input_tokens, output_tokens, error_code, attributes::text AS attributes
+            """;
+    private final org.springframework.jdbc.core.RowMapper<Span> spanMapper = (rs, row) -> new Span(
+            rs.getObject("id", UUID.class), rs.getObject("run_id", UUID.class),
+            rs.getObject("parent_span_id", UUID.class), rs.getString("kind"), rs.getString("name"),
+            rs.getString("status"), rs.getTimestamp("started_at").toInstant(),
+            rs.getTimestamp("finished_at") == null ? null : rs.getTimestamp("finished_at").toInstant(),
+            (Long) rs.getObject("duration_ms"), rs.getString("model"), rs.getString("prompt_version"),
+            (Integer) rs.getObject("input_tokens"), (Integer) rs.getObject("output_tokens"),
+            rs.getString("error_code"), jsonMap(rs.getString("attributes")));
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -94,25 +109,40 @@ public class AgentTraceStore {
     }
 
     public List<Span> find(UUID userId, UUID runId) {
-        if (userId == null || runId == null) return List.of();
-        return jdbc.query("""
-                SELECT id, run_id, parent_span_id, kind, name, status, started_at, finished_at,
-                       COALESCE(duration_ms, CASE WHEN finished_at IS NULL THEN NULL
-                           ELSE GREATEST(1, (EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)::bigint) END) AS duration_ms,
-                       model, prompt_version, input_tokens, output_tokens, error_code, attributes::text AS attributes
+        return findPage(userId, runId, 0, DEFAULT_SPAN_LIMIT).spans();
+    }
+
+    /**
+     * Offset pages let callers read every span of a long run. The page carries the total count and
+     * the next offset so truncation is explicit instead of looking like a complete trace.
+     */
+    public SpanPage findPage(UUID userId, UUID runId, int offset, int limit) {
+        if (userId == null || runId == null) return new SpanPage(List.of(), 0, 0, 0, null);
+        int safeOffset = Math.max(0, offset);
+        int safeLimit = Math.max(1, Math.min(MAX_SPAN_LIMIT, limit));
+        Integer counted = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM agent_trace_spans WHERE user_id = ? AND run_id = ?",
+                Integer.class, userId, runId);
+        int totalSpans = counted == null ? 0 : counted;
+        List<Span> spans = jdbc.query("SELECT " + SPAN_COLUMNS + """
                 FROM agent_trace_spans
                 WHERE user_id = ? AND run_id = ?
                 ORDER BY started_at, created_at, id
-                LIMIT ?
-                """, (rs, row) -> new Span(
-                        rs.getObject("id", UUID.class), rs.getObject("run_id", UUID.class),
-                        rs.getObject("parent_span_id", UUID.class), rs.getString("kind"), rs.getString("name"),
-                        rs.getString("status"), rs.getTimestamp("started_at").toInstant(),
-                        rs.getTimestamp("finished_at") == null ? null : rs.getTimestamp("finished_at").toInstant(),
-                        (Long) rs.getObject("duration_ms"), rs.getString("model"), rs.getString("prompt_version"),
-                        (Integer) rs.getObject("input_tokens"), (Integer) rs.getObject("output_tokens"),
-                        rs.getString("error_code"), jsonMap(rs.getString("attributes"))),
-                userId, runId, MAX_SPANS);
+                OFFSET ? LIMIT ?
+                """, spanMapper, userId, runId, safeOffset, safeLimit);
+        int next = safeOffset + spans.size();
+        Integer nextOffset = next < totalSpans ? next : null;
+        return new SpanPage(spans, totalSpans, safeOffset, safeLimit, nextOffset);
+    }
+
+    public java.util.Optional<Span> findRoot(UUID userId, UUID runId) {
+        if (userId == null || runId == null) return java.util.Optional.empty();
+        return jdbc.query("SELECT " + SPAN_COLUMNS + """
+                FROM agent_trace_spans
+                WHERE user_id = ? AND run_id = ? AND kind = 'RUN'
+                ORDER BY started_at, created_at, id
+                LIMIT 1
+                """, spanMapper, userId, runId).stream().findFirst();
     }
 
     public void updateRunAggregates(UUID userId, UUID runId, int llmCalls, int toolCalls, int loopRounds,
@@ -172,6 +202,9 @@ public class AgentTraceStore {
         if (writeFailures != null) writeFailures.increment();
         log.warn("Agent trace write dropped: operation={}, key={}, failure={}",
                 operation, key, failure.getClass().getSimpleName());
+    }
+
+    public record SpanPage(List<Span> spans, int totalSpans, int offset, int limit, Integer nextOffset) {
     }
 
     public record Span(UUID id, UUID runId, UUID parentSpanId, String kind, String name, String status,

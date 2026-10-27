@@ -112,9 +112,10 @@ class ModularAgentToolsTests {
         UUID id = UUID.randomUUID();
         var bound = tools().bind(owner, "删除知识文档", run);
         when(knowledge.get(owner, id)).thenThrow(new ResourceNotFoundException("知识文档不存在"));
-        assertThat(execute(wrapped(bound, null, null), "delete_knowledge_document",
+        assertThatThrownBy(() -> execute(wrapped(bound, null, null), "delete_knowledge_document",
                 "{\"documentId\":\"" + id + "\"}"))
-                .contains("知识文档不存在").doesNotContain("CONFIRMATION_REQUIRED");
+                .isInstanceOf(dev.langchain4j.exception.ToolExecutionException.class)
+                .hasMessageContaining("知识文档不存在");
         assertThat(bound.pendingConfirmations()).isEmpty();
         verify(knowledge).get(owner, id);
         verify(knowledge, never()).delete(any(), any());
@@ -228,8 +229,8 @@ class ModularAgentToolsTests {
         verifyNoInteractions(service);
         UUID id = UUID.randomUUID();
         when(service.getView(owner, id)).thenThrow(new ResourceNotFoundException("自动化任务不存在"));
-        assertThat(execute(wrapped(bound, null, null), "delete_automation", "{\"automationId\":\"" + id + "\"}"))
-                .contains("不存在");
+        assertThatThrownBy(() -> execute(wrapped(bound, null, null), "delete_automation",
+                "{\"automationId\":\"" + id + "\"}")).hasMessageContaining("不存在");
         assertThat(bound.pendingConfirmations()).isEmpty();
         verify(service, never()).delete(any(), any());
     }
@@ -356,9 +357,13 @@ class ModularAgentToolsTests {
             assertThat(card.label()).isEqualTo(view.originalFilename());
             assertThat(card.endpoint()).isEqualTo("/api/resumes/" + resume);
         });
-        assertThat(execute(executors, "delete_resume", "{\"resumeId\":\"" + missing + "\"}")).contains("简历不存在");
+        assertThatThrownBy(() -> execute(executors, "delete_resume", "{\"resumeId\":\"" + missing + "\"}"))
+                .isInstanceOf(dev.langchain4j.exception.ToolExecutionException.class)
+                .hasMessageContaining("简历不存在");
         assertThat(bound.pendingConfirmations()).hasSize(1);
-        assertThat(execute(executors, "get_resume_analysis", "{\"resumeId\":\"bad-id\"}")).contains("简历 ID 格式不正确");
+        assertThatThrownBy(() -> execute(executors, "get_resume_analysis", "{\"resumeId\":\"bad-id\"}"))
+                .isInstanceOf(dev.langchain4j.exception.ToolExecutionException.class)
+                .hasMessageContaining("简历 ID 格式不正确");
         var lease = new AgentStreamLease(); lease.fence();
         assertThat(execute(wrapped(bound, lease, null), "get_resume_analysis", args)).contains("RUN_STOPPED");
         verify(service, never()).analysisForResume(any(), any());
@@ -416,7 +421,9 @@ class ModularAgentToolsTests {
             assertThat(card.label()).isEqualTo("Owned rule（Weekly）");
             assertThat(card.endpoint()).isEqualTo("/api/calendar/series/" + ruleId);
         });
-        assertThat(execute(executors, "delete_calendar_task", "{\"taskId\":\"" + missing + "\"}")).contains("日程不存在");
+        assertThatThrownBy(() -> execute(executors, "delete_calendar_task", "{\"taskId\":\"" + missing + "\"}"))
+                .isInstanceOf(dev.langchain4j.exception.ToolExecutionException.class)
+                .hasMessageContaining("日程不存在");
         assertThat(bound.pendingConfirmations()).hasSize(2);
         verify(calendar, never()).delete(any(), any()); verify(series, never()).cancel(any(), any());
         verify(calendar, never()).get(any(), any()); verify(series, never()).get(any(), any());

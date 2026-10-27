@@ -33,6 +33,26 @@ class AgentRunTracerTests {
     }
 
     @Test
+    void separatesAssistantSummaryToolAndMissingUsageCounters() {
+        AgentTraceStore store = mock(AgentTraceStore.class);
+        AgentRunTracer tracer = AgentRunTracer.begin(store, UUID.randomUUID(), UUID.randomUUID(), null, "fixture", null);
+        tracer.recordLlm("CONTEXT_COMPACTION", 10, 5, false, 0);
+        tracer.recordLlm("ASSISTANT", 120, 40, true, 2);
+        tracer.recordLlm("ASSISTANT", null, 12, false, 0);
+        tracer.recordTool();
+        tracer.recordTool();
+        tracer.recordToolExecuted();
+        tracer.complete();
+        assertThat(tracer.llmCalls()).isEqualTo(3);
+        assertThat(tracer.assistantCalls()).isEqualTo(2);
+        assertThat(tracer.summaryCalls()).isEqualTo(1);
+        assertThat(tracer.requestedToolCalls()).isEqualTo(2);
+        assertThat(tracer.toolCalls()).isEqualTo(2);
+        assertThat(tracer.executedToolCalls()).isEqualTo(1);
+        assertThat(tracer.usageMissingCalls()).isEqualTo(1);
+    }
+
+    @Test
     void missingRootSpanDoesNotLoseUsageOrKeepAnEndedRunOpen() {
         AgentTraceStore store = mock(AgentTraceStore.class);
         when(store.enabled()).thenReturn(true);

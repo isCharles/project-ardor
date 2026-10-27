@@ -120,7 +120,15 @@ final class ApprovedAgentTools {
             if (allowedTools != null && !allowedTools.contains(method.getAnnotation(Tool.class).name())) continue;
             var specification = ToolSpecifications.toolSpecificationFrom(method);
             if (!names.add(specification.name())) throw new IllegalStateException("工具重复登记：" + specification.name());
-            var delegate = new DefaultToolExecutor(toolObject, method);
+            // Business validation failures must reach the wrapper as exceptions. The default
+            // executor turns them into ordinary result text, which would make a failed write
+            // look COMPLETED and executed in the trace.
+            var delegate = DefaultToolExecutor.builder()
+                    .object(toolObject)
+                    .originalMethod(method)
+                    .methodToInvoke(method)
+                    .propagateToolExecutionExceptions(true)
+                    .build();
             result.put(specification, (request, memoryId) -> {
                 if (!specification.name().equals(request.name())) throw new IllegalArgumentException("工具名称不匹配");
                 String tool = specification.name();
@@ -202,7 +210,11 @@ final class ApprovedAgentTools {
                 UUID traceSpan = tracer == null ? null : tracer.startChild("TOOL", tool, toolAttributes);
                 if (tracer != null) tracer.recordTool();
                 AtomicBoolean executed = new AtomicBoolean();
-                Supplier<String> call = () -> { executed.set(true); return delegate.execute(request, memoryId); };
+                Supplier<String> call = () -> {
+                    executed.set(true);
+                    if (tracer != null) tracer.recordToolExecuted();
+                    return delegate.execute(request, memoryId);
+                };
                 String outcome = "COMPLETED";
                 String errorCode = null;
                 String auditResult = null;
