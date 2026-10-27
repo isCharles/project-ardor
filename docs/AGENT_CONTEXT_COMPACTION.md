@@ -109,6 +109,81 @@ app:
       max-history-tokens: 200000
 ```
 
+## Context comparison experiment
+
+`ContextComparisonExperimentTests` runs the same tagged synthetic conversation through the
+production `AgentContextBuilder` / `AgentContextCompactor` / `AgentContextBudgetPolicy` /
+`RepeatedToolResultCompactor` pipeline in three views:
+
+- `RAW`: every persisted message verbatim;
+- `SUMMARY`: durable summary plus recent turns produced by the real compactor;
+- `SUMMARY_REPEAT`: the same summary view with three identical large read results compacted in
+  the current request.
+
+Fixtures use 20, 80 and 200 user turns. Turns 1–4 carry tags for a hard constraint, a later
+correction, an entity UUID and an unresolved decision. The final probe asks to schedule an
+interview at a time the constraint forbids, so a missing constraint is observable as a
+`violatingSideEffects` count. The summarizer is a deterministic fixture that preserves every
+tag it receives; the experiment proves the pipeline and accounting, not a provider's summary
+quality.
+
+Run it with:
+
+```bash
+cd backend
+mvn -q -B -Dtest=ContextComparisonExperimentTests test
+```
+
+The report is written to `backend/target/context-comparison/report.json`. It records, per mode:
+
+- `finalPromptTokens`: the assembled final request, including the three read results;
+- `conversationTokens`: every regular turn prompt plus the final request;
+- `summaryOverheadTokens`: summarizer prompt and output tokens, including the first truncated
+  attempt and its retry;
+- `totalTokens`: `conversationTokens + summaryOverheadTokens`;
+- `retainedFacts` / `totalFacts` and `missingTags` for the four tagged facts;
+- `violatingSideEffects` from the deterministic probe policy;
+- `summaryLatencyMs`: virtual fixture time, not a provider latency measurement;
+- `overSoftBudget`, `windowKnown`, `windowTokens`, `hardInputTokens`, and a separate projection
+  against a known 32,768-token window.
+
+Deterministic sample from the current fixture (approximate char/2 estimator):
+
+| turns | mode | finalPromptTokens | conversationTokens | summaryOverheadTokens | totalTokens | summaryCalls |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 20 | RAW | 24,327 | 196,474 | 0 | 196,474 | 0 |
+| 20 | SUMMARY | 15,159 | 165,394 | 14,998 | 180,392 | 3 |
+| 20 | SUMMARY_REPEAT | 13,092 | 163,327 | 14,998 | 178,325 | 3 |
+| 80 | RAW | 75,207 | 2,800,594 | 0 | 2,800,594 | 0 |
+| 80 | SUMMARY | 18,551 | 771,050 | 61,414 | 832,464 | 11 |
+| 80 | SUMMARY_REPEAT | 16,484 | 768,983 | 61,414 | 830,397 | 11 |
+| 200 | RAW | 176,967 | 17,167,234 | 0 | 17,167,234 | 0 |
+| 200 | SUMMARY | 19,399 | 1,981,514 | 160,098 | 2,141,612 | 28 |
+| 200 | SUMMARY_REPEAT | 17,332 | 1,979,447 | 160,098 | 2,139,545 | 28 |
+
+All modes retain 4/4 tagged facts and report 0 violating side effects. The lossy control
+(a fixture summarizer that drops tags) retains 0/4 and reports 1 violating side effect, so the
+retention metric is not vacuous.
+
+The fixture model window is unknown: `windowTokens` and `hardInputTokens` stay `null`, and the
+12,000-token soft threshold never acts as a hard limit. A 200-turn raw prompt is 176,967 tokens
+at the probe and is still assembled in the experiment rather than reported as a failure. The
+projection against a known 32,768-token window marks raw 80/200 as over-window and lists them
+separately; only the 20-turn raw view fits, so only that case is used for a token-saving
+comparison. The summary views fit the projected window at every size.
+
+Two boundaries matter when reading the numbers:
+
+- the 12,000-token budget covers history before the in-run tool results; a summary view can
+  therefore assemble to ~19k tokens once three large read results are added, while still being
+  below a 32k model window. This is why the window stays explicitly unknown without a
+  configured capacity;
+- summary latency is virtual fixture time and total tokens include the failed first attempt and
+  its retry; neither is a real-provider measurement.
+
+Real-model results, provider latency and semantic summary quality require a separate authorized
+run. This experiment makes no historical-improvement or universal-lossless claim.
+
 ## Limitations
 
 - This first version compacts **text transcript**. Images, audio and video are not yet accepted
