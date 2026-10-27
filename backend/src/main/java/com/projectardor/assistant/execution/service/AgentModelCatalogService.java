@@ -1,6 +1,11 @@
 package com.projectardor.assistant.execution.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -38,11 +43,13 @@ public class AgentModelCatalogService {
     private static final int MAX_RELAY_MODELS = 300;
     private static final int MAX_CATALOG_CACHE_ENTRIES = 256;
     private static final long CATALOG_CACHE_TTL_MILLIS = 60_000;
+    private static final int CATALOG_LOCK_STRIPES = 64;
 
     private final LlmConfigService llmConfigService;
     private final AuxiliaryApiConfigService auxiliaryConfigService;
     private final LlmModelDiscoveryService modelDiscoveryService;
     private final ConcurrentHashMap<UUID, CatalogEntry> catalogCache = new ConcurrentHashMap<>();
+    private final Object[] catalogLocks = createLockStripes(CATALOG_LOCK_STRIPES);
 
     public AgentModelCatalogService(LlmConfigService llmConfigService,
             AuxiliaryApiConfigService auxiliaryConfigService,
@@ -53,13 +60,57 @@ public class AgentModelCatalogService {
     }
 
     public List<Option> options(UUID userId) {
-        if (catalogCache.size() >= MAX_CATALOG_CACHE_ENTRIES) catalogCache.clear();
-        return catalogCache.compute(userId, (ignored, existing) -> {
-            if (existing != null && existing.createdAt() + CATALOG_CACHE_TTL_MILLIS > System.currentTimeMillis()) {
-                return existing;
-            }
-            return new CatalogEntry(loadOptions(userId), System.currentTimeMillis());
-        }).options();
+        CatalogEntry existing = catalogCache.get(userId);
+        if (isFresh(existing)) return existing.options();
+        synchronized (catalogLocks[Math.floorMod(userId.hashCode(), catalogLocks.length)]) {
+            existing = catalogCache.get(userId);
+            if (isFresh(existing)) return existing.options();
+            if (catalogCache.size() >= MAX_CATALOG_CACHE_ENTRIES) catalogCache.clear();
+            List<Option> options = loadOptions(userId);
+            catalogCache.put(userId, new CatalogEntry(options, System.currentTimeMillis()));
+            return options;
+        }
+    }
+
+    public String descriptionFingerprint(UUID userId, String label) {
+        String normalized = label == null ? "" : label.strip();
+        Option option = findAvailableOption(userId, normalized).orElseGet(() -> {
+            catalogCache.remove(userId);
+            return findAvailableOption(userId, normalized)
+                    .orElseThrow(() -> new IllegalArgumentException("未知的模型选项"));
+        });
+        return descriptionFingerprint(resolve(userId, option.id()).config());
+    }
+
+    private Optional<Option> findAvailableOption(UUID userId, String label) {
+        return options(userId).stream()
+                .filter(candidate -> candidate.available() && candidate.label().equals(label))
+                .findFirst();
+    }
+
+    private static boolean isFresh(CatalogEntry entry) {
+        return entry != null && entry.createdAt() + CATALOG_CACHE_TTL_MILLIS > System.currentTimeMillis();
+    }
+
+    private static Object[] createLockStripes(int size) {
+        Object[] locks = new Object[size];
+        Arrays.setAll(locks, ignored -> new Object());
+        return locks;
+    }
+
+    private static String descriptionFingerprint(LlmConfigService.LlmRuntimeConfig config) {
+        String material = config.provider().name() + "|" + normalizedBaseUrl(config.baseUrl())
+                + "|" + Optional.ofNullable(config.model()).orElse("");
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(material.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("无法计算模型配置指纹", unavailable);
+        }
+    }
+
+    private static String normalizedBaseUrl(String baseUrl) {
+        return Optional.ofNullable(baseUrl).orElse("").strip().replaceAll("/+$", "").toLowerCase(Locale.ROOT);
     }
 
     private List<Option> loadOptions(UUID userId) {

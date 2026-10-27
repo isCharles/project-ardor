@@ -6,7 +6,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -18,6 +17,7 @@ import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 
 class AgentModelCatalogControllerTests {
 
+    private static final String FINGERPRINT = "0".repeat(64);
     private final UUID user = UUID.randomUUID();
     private final ArdorPrincipal principal = new ArdorPrincipal(user, "fixture@ardor.invalid", "unused", true, UserRole.USER);
     private final AgentModelCatalogService catalog = mock(AgentModelCatalogService.class);
@@ -26,8 +26,8 @@ class AgentModelCatalogControllerTests {
 
     @Test
     void describesAnAvailableModelFromTheUsersCatalog() {
-        when(catalog.options(user)).thenReturn(List.of(option("example-model", true)));
-        when(descriptions.describe(user, "example-model", "zh")).thenReturn("高性价比模型");
+        when(catalog.descriptionFingerprint(user, "example-model")).thenReturn(FINGERPRINT);
+        when(descriptions.describe(user, "example-model", "zh", FINGERPRINT)).thenReturn("高性价比模型");
 
         var response = controller.description(principal,
                 new AgentModelCatalogController.DescriptionRequest("example-model", "zh"));
@@ -37,7 +37,10 @@ class AgentModelCatalogControllerTests {
 
     @Test
     void rejectsArbitraryAndUnavailableModelsBeforeResearch() {
-        when(catalog.options(user)).thenReturn(List.of(option("disabled-model", false)));
+        when(catalog.descriptionFingerprint(user, "invented-model"))
+                .thenThrow(new IllegalArgumentException("未知的模型选项"));
+        when(catalog.descriptionFingerprint(user, "disabled-model"))
+                .thenThrow(new IllegalArgumentException("未知的模型选项"));
 
         assertThatThrownBy(() -> controller.description(principal,
                 new AgentModelCatalogController.DescriptionRequest("invented-model", "en")))
@@ -46,10 +49,5 @@ class AgentModelCatalogControllerTests {
                 new AgentModelCatalogController.DescriptionRequest("disabled-model", "en")))
                 .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(descriptions);
-    }
-
-    private static AgentModelCatalogService.Option option(String model, boolean available) {
-        return new AgentModelCatalogService.Option("FALLBACK:" + model, model, "OPENAI_COMPATIBLE",
-                available, true, List.of());
     }
 }

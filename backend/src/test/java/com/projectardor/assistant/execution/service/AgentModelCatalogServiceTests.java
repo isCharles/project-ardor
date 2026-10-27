@@ -58,6 +58,48 @@ class AgentModelCatalogServiceTests {
     }
 
     @Test
+    void descriptionFingerprintIdentifiesTheResolvedApiConfigurationWithoutLeakingSecrets() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM)).thenReturn(Optional.empty());
+        var catalog = new AgentModelCatalogService(llm, auxiliary, discovery);
+
+        String fingerprint = catalog.descriptionFingerprint(user, "deepseek-v4-flash");
+
+        assertThat(fingerprint).matches("[0-9a-f]{64}").doesNotContain("primary-secret");
+        assertThat(catalog.descriptionFingerprint(user, "deepseek-v4-flash")).isEqualTo(fingerprint);
+        assertThatThrownBy(() -> catalog.descriptionFingerprint(user, "missing-model"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未知");
+    }
+
+    @Test
+    void descriptionFingerprintRefreshesTheCatalogWhenANewModelAppears() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(new AuxiliaryApiConfigService.AuxiliaryRuntimeConfig(
+                        "OPENAI_COMPATIBLE", "https://relay.example", "new-relay-model", "relay-secret")));
+        when(discovery.list(org.mockito.ArgumentMatchers.eq(LlmProvider.OPENAI_COMPATIBLE),
+                org.mockito.ArgumentMatchers.eq("https://relay.example"), anyString()))
+                .thenReturn(List.of("new-relay-model"));
+        var catalog = new AgentModelCatalogService(llm, auxiliary, discovery);
+        assertThat(catalog.options(user)).extracting(AgentModelCatalogService.Option::label)
+                .doesNotContain("new-relay-model");
+
+        assertThat(catalog.descriptionFingerprint(user, "new-relay-model")).matches("[0-9a-f]{64}");
+    }
+
+    @Test
     void unknownOrUnconfiguredFallbackFailsClearly() {
         UUID user = UUID.randomUUID();
         var llm = mock(LlmConfigService.class);

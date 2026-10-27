@@ -45,15 +45,19 @@ function ModelIcon({ label }: { label: string }) {
  * Combined model + reasoning picker in the composer, following the same compact
  * two-row shape as Codex/DSH: model identity first, then a single reasoning-level row.
  */
-export function ReasoningControl({ value, onChange, disabled, nativeControl, models = [], model, onModelChange }: {
+export function ReasoningControl({ value, onChange, disabled, nativeControl, models = [], model, onModelChange, onOpenChange }: {
   value: Depth; onChange: (depth: Depth) => void; disabled: boolean; nativeControl: boolean;
   models?: ModelOption[]; model?: string; onModelChange?: (model: string) => void;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ left: number; bottom: number; width: number; maxHeight: number } | null>(null);
   const popup = useRef<HTMLDivElement>(null);
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false), popup);
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
