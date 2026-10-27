@@ -6,9 +6,9 @@ import java.util.List;
 import com.projectardor.platform.usage.QuotaRequestId;
 import com.projectardor.assistant.ReasoningDepth;
 
-import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Size;
 
+@ChatMessageContent
 public record AgentMessageRequest(
         UUID conversationId,
         @Size(max = 50000, message = "消息不能超过 50000 个字符")
@@ -27,11 +27,6 @@ public record AgentMessageRequest(
 
     public AgentMessageRequest {
         imageIds = imageIds == null ? List.of() : List.copyOf(imageIds);
-    }
-
-    @AssertTrue(message = "消息或图片不能为空")
-    public boolean hasContent() {
-        return message != null && !message.isBlank() || !imageIds.isEmpty();
     }
 
     public AgentMessageRequest(UUID conversationId, String message, String contextType, UUID contextId,
