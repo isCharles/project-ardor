@@ -43,6 +43,26 @@ V33 新增 PostgreSQL `ai_jobs` 表，原提交及状态持久化。Worker 使�
 
 任务暂不自动清理；不得把包含用户答案的 payload 输出到日志、公开接口或管理员正文视图。未来可配置保留周期、任务优先级与基于历史耗时的估算。轮询不是模型 token 流；对话仍使用现有流式通道。
 
+## 队列观测与共享模型容量
+
+采样任务每 15 秒读取一次队列表（`app.observability.queue-sample-interval`，环境变量 `ARDOR_QUEUE_SAMPLE_INTERVAL`），因此仪表盘反映的是最近一次采样，而非抓取瞬间。数据库不可用时只跳过本轮采样，不影响请求处理。
+
+| 指标 | 含义 |
+| --- | --- |
+| `ardor_agent_queue_depth{status}` | 聊天消息按 `QUEUED`/`DISPATCHING`/`RUNNING` 的数量 |
+| `ardor_agent_queue_oldest_queued_seconds` | 最早一条排队消息的等待秒数，持续增长表示整体积压 |
+| `ardor_agent_queue_claims`、`ardor_agent_queue_wait` | 已领取数量与领取前等待时间，用于吞吐和等待分布 |
+| `ardor_agent_queue_failures{reason}` | 未能开始或中断的消息数；`reason` 区分执行器拒绝、启动失败与未知结果 |
+| `ardor_ai_jobs_depth{status}` | 后台 AI 任务按 `QUEUED`/`RUNNING` 的数量 |
+| `ardor_ai_jobs_oldest_queued_seconds{priority}` | 各优先级最早排队任务的等待秒数；低优先级持续偏大即饥饿信号 |
+| `ardor_agent_job_completions{type,status}`、`ardor_agent_job_retries`、`ardor_agent_job_dead_letters` | 后台任务吞吐、失败、重试与死信 |
+| `ardor_agent_job_wait{type}` | 后台任务从入队到被领取的等待时间 |
+| `ardor_model_capacity_in_use`、`ardor_model_capacity_rejections{surface}` | 共享模型槽位占用与因容量已满被拒绝的调用数 |
+
+聊天任务按 `sequence` 决定顺序，没有独立的优先级列，因此以整体最早排队年龄观察积压；后台 AI 任务按会员优先级区分，低优先级年龄持续增长才说明饥饿。系统不自动提升老旧任务的优先级，需要人工或后续策略处理。
+
+在线聊天流式调用、摘要/标题等辅助对话和后台 JSON 评估共用同一进程内的模型并发上限：`app.model.max-concurrent-calls`（环境变量 `ARDOR_MODEL_MAX_CONCURRENT_CALLS`，默认 8）。容量满时立即以可重试的 `LLM_BUSY` 拒绝，不排队等待：在线请求表现为可重试的 `AGENT_TEMPORARILY_UNAVAILABLE`，由浏览器显式重试；后台任务按 30 秒起步、指数增长的退避重新排队，达到 `max_attempts` 后进入死信。供应商返回的 429 也归类为同一可重试错误，走相同退避。该上限是防止单个部署打爆供应商配额的护栏，不是完整的 QPM/TPM 平台：不按用户或模型分别限速，不跨实例共享信号量，也不保证多副本下的全局并发。
+
 ## 验证
 
 使用隔离数据库与假模型验证 202 立即返回、失败不计分、重试只计一次、跨账号拒绝访问、历史答案保留和模拟面试评价。浏览器验证提交后跳到日历、返回获取反馈，及回放失败后保留草稿再重试。不得对真实用户数据库运行验收造数。

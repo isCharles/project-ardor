@@ -61,17 +61,17 @@ public class QueueDepthMetrics {
     @Scheduled(fixedDelayString = "${app.observability.queue-sample-interval:15s}")
     public void sample() {
         try {
-            agentDepth.register(rows(AGENT_DEPTH_SQL, "status"));
+            agentDepth.register(rows(AGENT_DEPTH_SQL, "status", "n"));
             agentOldestQueued.register(List.of(MultiGauge.Row.of(Tags.empty(), scalar(AGENT_OLDEST_SQL))));
-            jobDepth.register(rows(JOB_DEPTH_SQL, "status"));
-            jobOldestQueued.register(rows(JOB_OLDEST_SQL, "priority"));
+            jobDepth.register(rows(JOB_DEPTH_SQL, "status", "n"));
+            jobOldestQueued.register(rows(JOB_OLDEST_SQL, "priority", "age"));
         } catch (RuntimeException ignored) { }
     }
 
-    private List<MultiGauge.Row<?>> rows(String sql, String tagName) {
+    private List<MultiGauge.Row<Number>> rows(String sql, String tagName, String valueName) {
         return jdbc.queryForList(sql).stream()
                 .map(row -> MultiGauge.Row.of(
-                        Tags.of(tagName, String.valueOf(row.get(tagName))), number(row.get("n"))))
+                        Tags.of(tagName, String.valueOf(row.get(tagName))), number(row.get(valueName))))
                 .toList();
     }
 

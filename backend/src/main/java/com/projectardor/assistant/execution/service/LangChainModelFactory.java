@@ -54,6 +54,13 @@ public class LangChainModelFactory {
                         200000, .75, .05), new ModelCallCapacity(8));
     }
 
+    /** Compatibility for SDK tests that supply their own context budget. */
+    public LangChainModelFactory(LlmConfigService configService,String proxyHost,int proxyPort,Duration connectTimeout,
+            Duration readTimeout,List<AgentModelProtocol> protocols,AgentContextBudgetPolicy contextBudget) {
+        this(configService,proxyHost,proxyPort,connectTimeout,readTimeout,protocols,contextBudget,
+                new ModelCallCapacity(8));
+    }
+
     @org.springframework.beans.factory.annotation.Autowired
     public LangChainModelFactory(LlmConfigService configService,
             @Value("${app.http.proxy-host:}") String proxyHost,
@@ -121,9 +128,9 @@ public class LangChainModelFactory {
         }
         var budget = contextBudget.resolve(config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
-        return CapacityLimitedModels.chat(
-                RepeatedToolResultCompactor.chat(ContextBudgetedModels.chat(model, budget, estimator), budget, estimator),
-                capacity);
+        return RepeatedToolResultCompactor.chat(
+                ContextBudgetedModels.chat(CapacityLimitedModels.chat(model, capacity), budget, estimator),
+                budget, estimator);
     }
 
     public StreamingChatModel createStreaming(UUID userId) {
@@ -154,11 +161,11 @@ public class LangChainModelFactory {
         }
         var budget = contextBudget.resolve(config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
-        return CapacityLimitedModels.streaming(
-                RepeatedToolResultCompactor.streaming(
-                        ContextBudgetedModels.streaming(TimedStreamingModel.wrap(model), budget, estimator),
+        return RepeatedToolResultCompactor.streaming(
+                ContextBudgetedModels.streaming(
+                        TimedStreamingModel.wrap(CapacityLimitedModels.streaming(model, capacity)),
                         budget, estimator),
-                capacity);
+                budget, estimator);
     }
 
     private JdkHttpClientBuilder httpClientBuilder() {
