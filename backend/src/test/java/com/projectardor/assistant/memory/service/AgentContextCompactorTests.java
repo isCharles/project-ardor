@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -199,6 +200,56 @@ class AgentContextCompactorTests {
         assertThat(prepared.compactedMessages()).isZero();
         org.mockito.Mockito.verify(fixture.summaries(), org.mockito.Mockito.never())
                 .save(any(), any(), anyInt(), any(), anyInt(), anyString(), anyInt(), any());
+    }
+
+    @Test void oversizedGeneratedSummaryDoesNotAdvanceCoverageOrDiscardItsTail() {
+        var fixture = fixture(24, 100);
+        when(fixture.model().chat(anyString())).thenReturn("summary ".repeat(600) + "CRITICAL CORRECTION AT THE END");
+        var states = new ArrayList<String>();
+        var prepared = fixture.compactor().prepare(fixture.user(), fixture.conversation(), "system", config(),
+                ReasoningDepth.AUTO, List.of(), () -> true, "", states::add);
+        assertThat(states).containsExactly("COMPACTING", "COMPACTION_FAILED");
+        assertThat(prepared.recentMessages()).containsExactlyElementsOf(fixture.messages());
+        assertThat(prepared.summaryVersion()).isZero();
+        assertThat(prepared.compactedMessages()).isZero();
+        verify(fixture.summaries(), never()).save(any(), any(), anyInt(), any(), anyInt(), anyString(), anyInt(), any());
+    }
+
+    @Test void oversizedNewSummaryRetainsPreviousCoverageAndAllNewerMessages() {
+        var fixture = fixture(24, 100);
+        var previous = new ConversationSummaryStore.Summary(UUID.randomUUID(), 3, fixture.messages().get(3).getId(), 4,
+                "previous verified summary", 5, "fixture", Instant.now());
+        when(fixture.summaries().latest(fixture.user(), fixture.conversation())).thenReturn(Optional.of(previous));
+        when(fixture.model().chat(anyString())).thenReturn("x".repeat(4001));
+        var prepared = fixture.compactor().prepare(fixture.user(), fixture.conversation(), "system", config(), ReasoningDepth.AUTO);
+        assertThat(prepared.summaryVersion()).isEqualTo(3);
+        assertThat(prepared.summaryContext()).contains("previous verified summary");
+        assertThat(prepared.recentMessages()).containsExactlyElementsOf(fixture.messages().subList(4, 24));
+        assertThat(prepared.compactedMessages()).isZero();
+        verify(fixture.summaries(), never()).save(any(), any(), anyInt(), any(), anyInt(), anyString(), anyInt(), any());
+    }
+
+    @Test void summaryExactlyAtLimitIsKeptInFull() {
+        var fixture = fixture(24, 100);
+        String summary = "x".repeat(3993) + "ENDMARK";
+        when(fixture.model().chat(anyString())).thenReturn(summary);
+        var prepared = fixture.compactor().prepare(fixture.user(), fixture.conversation(), "system", config(), ReasoningDepth.AUTO);
+        assertThat(prepared.summaryContext()).contains("ENDMARK");
+        assertThat(prepared.compactedMessages()).isGreaterThan(0);
+        verify(fixture.summaries()).save(any(), any(), anyInt(), any(), anyInt(), org.mockito.ArgumentMatchers.eq(summary), anyInt(), any());
+    }
+
+    @Test void rejectedOversizedSummaryStillEnforcesKnownHardWindow() {
+        var fixture = fixture(24, 300);
+        var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
+        when(capacity.resolve(any())).thenReturn(6000L);
+        var budget = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
+        var compactor = new AgentContextCompactor(fixture.store(), fixture.summaries(), fixture.factory(), 4, 1000, budget, null);
+        when(fixture.model().chat(anyString())).thenReturn("x".repeat(4001));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> compactor.prepare(fixture.user(), fixture.conversation(),
+                "system", config(), ReasoningDepth.AUTO))
+                .isInstanceOf(com.projectardor.assistant.execution.service.AgentContextLimitException.class);
+        verify(fixture.summaries(), never()).save(any(), any(), anyInt(), any(), anyInt(), anyString(), anyInt(), any());
     }
 
     @Test

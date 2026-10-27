@@ -181,7 +181,14 @@ public class AgentContextCompactor {
         }
         if (summary == null || summary.isBlank()) return null;
         requireActive(active);
-        String trimmed = summary.length() > 4000 ? summary.substring(0, 4000) + "…" : summary;
+        // Never advance coverage after truncating the generated summary: the omitted tail may
+        // contain a correction or a constraint. Keep uncovered messages and let the hard fence
+        // reject an oversized request if necessary.
+        if (summary.length() > 4000) {
+            log.warn("Context summary exceeds storage limit: conversationId={}", conversationId);
+            return null;
+        }
+        String trimmed = summary;
         int version = previous.map(ConversationSummaryStore.Summary::version).orElse(0) + 1;
         UUID coveredMessageId = older.get(included - 1).getId();
         int tokenCount = estimator.estimateTokenCountInText(trimmed);
