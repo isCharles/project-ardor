@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { scoreCase } from "./agent-eval-assertions.mjs";
 import { buildReport } from "./agent-eval-report.mjs";
 import { SseParser } from "./agent-eval-sse.mjs";
+import { fetchCompleteTrace } from "./agent-eval-trace.mjs";
 
 if (process.env.ARDOR_ACCEPTANCE_DISPOSABLE_DB !== "true") {
   throw new Error("E2E evaluation requires ARDOR_ACCEPTANCE_DISPOSABLE_DB=true");
@@ -165,11 +166,8 @@ async function drive(client, plan, timeoutMs = 60_000) {
 async function trace(client, requestId) {
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
-      const response = await client.raw(`/api/agent/runs/${requestId}/trace`);
-      if (response.ok) {
-        const body = await response.json();
-        if (Array.isArray(body.spans) && body.spans.length > 0) return body;
-      }
+      const body = await fetchCompleteTrace((requestPath) => client.raw(requestPath), requestId);
+      if (body) return body;
     } catch { /* trace may not be persisted yet */ }
     await sleep(200);
   }

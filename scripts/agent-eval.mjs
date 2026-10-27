@@ -38,6 +38,7 @@ import { scoreCase } from "./agent-eval-assertions.mjs";
 import { buildReport } from "./agent-eval-report.mjs";
 import { diffReports, formatDiff } from "./agent-eval-diff.mjs";
 import { SseParser } from "./agent-eval-sse.mjs";
+import { fetchCompleteTrace } from "./agent-eval-trace.mjs";
 
 if (process.env.ARDOR_EVAL_ALLOW_REAL_MODEL !== "true") {
   throw new Error("Set ARDOR_EVAL_ALLOW_REAL_MODEL=true to run against a real model.");
@@ -102,14 +103,12 @@ async function csrf() {
 }
 
 async function fetchTrace(requestId) {
-  try {
-    const response = await fetch(`${base}/api/agent/runs/${requestId}/trace`, {
+  return fetchCompleteTrace(
+    (requestPath) => fetch(`${base}${requestPath}`, {
       headers: { Cookie: cookieJar, Accept: "application/json" },
-    });
-    return response.ok ? await response.json() : null;
-  } catch {
-    return null;
-  }
+    }),
+    requestId,
+  );
 }
 
 async function cancelRun(requestId) {
