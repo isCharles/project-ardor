@@ -41,13 +41,14 @@ public class AgentContextCompactor {
     private final int maxHistoryTokens;
     private final AgentContextBudgetPolicy budgetPolicy;
     private final AgentToolSchemaCatalog schemas;
+    private final ConversationStructureExtractor structureExtractor;
 
     public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
             LangChainModelFactory modelFactory,
             int recentMessages, int maxRawMessages, int maxHistoryTokens) {
         this(conversations, summaries, modelFactory, recentMessages, maxHistoryTokens,
                 new AgentContextBudgetPolicy(new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()),
-                        maxHistoryTokens, .75, .05), null);
+                        maxHistoryTokens, .75, .05), null, new ConversationStructureExtractor());
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -56,6 +57,14 @@ public class AgentContextCompactor {
             @Value("${app.agent.context.recent-messages:8}") int recentMessages,
             @Value("${app.agent.context.max-history-tokens:12000}") int maxHistoryTokens,
             AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas) {
+        this(conversations, summaries, modelFactory, recentMessages, maxHistoryTokens, budgetPolicy, schemas,
+                new ConversationStructureExtractor());
+    }
+
+    public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
+            LangChainModelFactory modelFactory, int recentMessages, int maxHistoryTokens,
+            AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas,
+            ConversationStructureExtractor structureExtractor) {
         this.conversations = conversations;
         this.summaries = summaries;
         this.modelFactory = modelFactory;
@@ -63,6 +72,7 @@ public class AgentContextCompactor {
         this.maxHistoryTokens = Math.max(1000, maxHistoryTokens);
         this.budgetPolicy = budgetPolicy;
         this.schemas = schemas;
+        this.structureExtractor = structureExtractor;
     }
 
     public Prepared prepare(UUID userId, UUID conversationId, String systemPrompt,
@@ -149,46 +159,45 @@ public class AgentContextCompactor {
             List<ConversationMessage> older, TokenCountEstimator estimator,
             List<dev.langchain4j.model.chat.listener.ChatModelListener> listeners,
             java.util.function.BooleanSupplier active) {
-        StringBuilder prompt = new StringBuilder("""
-                你是 Ardor 的上下文压缩器。请把旧对话压缩成可继续工作的结构化摘要。
-                只保留：用户目标、稳定事实与偏好、已做决定、未完成任务、关键实体 ID、用户纠正、未解决问题、工具结果中的关键结论。
-                不保留寒暄、重复内容、模型猜测；不编造。用中文输出，最多 900 字。
+        String existingSummary = previous.map(ConversationSummaryStore.Summary::content).orElse("");
+        var extraction = structureExtractor.extract(older);
+        String prompt = structureExtractor.buildStructuredSummaryPrompt(existingSummary, older, extraction);
 
-                已有摘要：
-                """);
-        prompt.append(previous.map(ConversationSummaryStore.Summary::content).orElse("（无）"));
-        prompt.append("\n\n需要并入摘要的旧对话：\n");
         int used = 0;
         int included = 0;
         for (ConversationMessage message : older) {
             String content = message.getContent() == null ? "" : message.getContent();
-            // Keep an oversized first message whole; never mark truncated content covered.
             if (included > 0 && used + content.length() > 12_000) break;
-            prompt.append(message.getRole()).append(": ").append(content).append('\n');
             used += content.length();
             included++;
         }
-        String summary;
+
+        String rawSummary;
         requireActive(active);
         try {
             ChatModel model = modelFactory.create(config, depth, listeners);
-            summary = model.chat(prompt.toString());
+            rawSummary = model.chat(prompt);
         } catch (RuntimeException unavailable) {
             requireActive(active);
             log.warn("Context summarization unavailable: conversationId={}, type={}", conversationId,
                     unavailable.getClass().getSimpleName());
             return null;
         }
-        if (summary == null || summary.isBlank()) return null;
+        if (rawSummary == null || rawSummary.isBlank()) return null;
         requireActive(active);
-        // Never advance coverage after truncating the generated summary: the omitted tail may
-        // contain a correction or a constraint. Keep uncovered messages and let the hard fence
-        // reject an oversized request if necessary.
-        if (summary.length() > 4000) {
-            log.warn("Context summary exceeds storage limit: conversationId={}", conversationId);
+
+        String summaryContent = parseStructuredSummary(rawSummary, extraction);
+        if (summaryContent == null) {
+            log.debug("Structured summary parsing failed, using raw text: conversationId={}", conversationId);
+            summaryContent = rawSummary;
+        }
+
+        if (summaryContent.length() > 4000) {
+            log.warn("Context summary exceeds storage limit: conversationId={}, length={}", conversationId, summaryContent.length());
             return null;
         }
-        String trimmed = summary;
+
+        String trimmed = summaryContent;
         int version = previous.map(ConversationSummaryStore.Summary::version).orElse(0) + 1;
         UUID coveredMessageId = older.get(included - 1).getId();
         int tokenCount = estimator.estimateTokenCountInText(trimmed);
@@ -196,6 +205,43 @@ public class AgentContextCompactor {
         var saved = summaries.save(userId, conversationId, version, coveredMessageId, coveredCount, trimmed,
                 tokenCount, config.model());
         return new CompactionResult(saved, trimmed);
+    }
+
+    private String parseStructuredSummary(String rawOutput, ConversationStructureExtractor.ExtractionResult extraction) {
+        String json = extractJson(rawOutput);
+        if (json == null) return null;
+
+        StructuredSummary structured = StructuredSummary.fromJson(json);
+        if (structured == null) return null;
+
+        if (!structured.hasMinimumStructure()) {
+            log.debug("Structured summary lacks minimum required fields");
+            return null;
+        }
+
+        if (extraction.hasExtractedStructure()) {
+            validateExtractionCoverage(structured, extraction);
+        }
+
+        return structured.toPlainText();
+    }
+
+    private String extractJson(String text) {
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return text.substring(start, end + 1);
+        }
+        return null;
+    }
+
+    private void validateExtractionCoverage(StructuredSummary summary,
+            ConversationStructureExtractor.ExtractionResult extraction) {
+        int extracted = extraction.goals().size() + extraction.decisions().size() + extraction.corrections().size();
+        int preserved = summary.estimatedInformationDensity();
+        if (extracted > 0 && preserved == 0) {
+            log.warn("Structured summary lost all extracted information: extracted={}, preserved={}", extracted, preserved);
+        }
     }
 
     private static void requireActive(java.util.function.BooleanSupplier active) {
