@@ -60,6 +60,17 @@ endpoint is exposed alongside `/actuator/metrics`.
 |-------------------------------|---------|----------------|--------------------------------------------|
 | `ardor.agent.stream.ttft`     | Timer   | —              | Time from run start to first streamed token|
 
+### Context compaction
+
+| Metric                                    | Type    | Tags | Description                                        |
+|-------------------------------------------|---------|------|----------------------------------------------------|
+| `ardor.agent.context.compactions`         | Counter | —    | Context summaries written for agent conversations  |
+| `ardor.agent.context.compaction.failures` | Counter | —    | Summary attempts that produced no usable summary   |
+
+These two counters show how often a conversation rewrites its summary. A
+conversation that sits near the soft budget rewrites on nearly every turn
+(see `docs/CONTEXT_USAGE.md`), which is a cost signal rather than an error.
+
 ### Existing
 
 | Metric                          | Type    | Description                                    |
@@ -72,6 +83,7 @@ endpoint is exposed alongside `/actuator/metrics`.
 
 - `CareerAgentService` — run start/end, TTFT, tool duration
 - `AgentModelTraceListener` — LLM call duration, tokens, errors
+- `AgentContextCompactor` — summary written/failed counters
 
 Both sync (`chatInternal`) and streaming (`chatStream`) paths are instrumented.
 Metrics recording is fire-and-forget: a `RuntimeException` from the meter

@@ -37,7 +37,7 @@ class AgentContextCompactorTests {
         var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
         when(capacity.resolve(any())).thenReturn(1048576L);
         var policy = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
-        var compactor = new AgentContextCompactor(f.store(), f.summaries(), f.factory(), 4, 1000, policy, null);
+        var compactor = new AgentContextCompactor(f.store(), f.summaries(), f.factory(), 4, 1000, policy, null, null);
         var prepared = compactor.prepare(f.user(), f.conversation(), "system", config(), ReasoningDepth.AUTO);
         assertThat(prepared.recentMessages()).containsExactlyElementsOf(f.messages());
         assertThat(prepared.compactedMessages()).isZero();
@@ -52,10 +52,26 @@ class AgentContextCompactorTests {
         var schemas = mock(com.projectardor.assistant.tools.AgentToolSchemaCatalog.class);
         when(schemas.specifications()).thenReturn(List.of(dev.langchain4j.agent.tool.ToolSpecification.builder()
                 .name("read_owned_resource").description("tool ".repeat(4000)).build()));
-        var compactor = new AgentContextCompactor(f.store(), f.summaries(), f.factory(), 4, 1000, policy, schemas);
+        var compactor = new AgentContextCompactor(f.store(), f.summaries(), f.factory(), 4, 1000, policy, schemas, null);
         var prepared = compactor.prepare(f.user(), f.conversation(), "system", config(), ReasoningDepth.AUTO);
         assertThat(prepared.compactedMessages()).isPositive();
         assertThat(prepared.recentMessages()).containsExactlyElementsOf(f.messages().subList(20,24));
+    }
+
+    @Test void eachWrittenSummaryIsCountedForOperators() {
+        var f = fixture(24, 20);
+        var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
+        when(capacity.resolve(any())).thenReturn(16000L);
+        var policy = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
+        var schemas = mock(com.projectardor.assistant.tools.AgentToolSchemaCatalog.class);
+        when(schemas.specifications()).thenReturn(List.of(dev.langchain4j.agent.tool.ToolSpecification.builder()
+                .name("read_owned_resource").description("tool ".repeat(4000)).build()));
+        var registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        var compactor = new AgentContextCompactor(f.store(), f.summaries(), f.factory(), 4, 1000, policy, schemas,
+                new com.projectardor.assistant.execution.service.AgentMetrics(registry));
+        compactor.prepare(f.user(), f.conversation(), "system", config(), ReasoningDepth.AUTO);
+        assertThat(registry.get("ardor.agent.context.compactions").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("ardor.agent.context.compaction.failures").counter().count()).isZero();
     }
 
     @Test void oversizedCurrentRequestIsRejectedBeforeSpendingTokensOnAnIneffectiveSummary() {
@@ -63,7 +79,7 @@ class AgentContextCompactorTests {
         var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
         when(capacity.resolve(any())).thenReturn(16000L);
         var policy = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
-        var compactor = new AgentContextCompactor(f.store(), f.summaries(), f.factory(), 4, 1000, policy, null);
+        var compactor = new AgentContextCompactor(f.store(), f.summaries(), f.factory(), 4, 1000, policy, null, null);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> compactor.prepare(f.user(), f.conversation(), "system", config(),
                 ReasoningDepth.AUTO, List.of(), () -> true, "reference ".repeat(5000)))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("减少引用");
@@ -248,7 +264,7 @@ class AgentContextCompactorTests {
         var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
         when(capacity.resolve(any())).thenReturn(6000L);
         var budget = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
-        var compactor = new AgentContextCompactor(fixture.store(), fixture.summaries(), fixture.factory(), 4, 1000, budget, null);
+        var compactor = new AgentContextCompactor(fixture.store(), fixture.summaries(), fixture.factory(), 4, 1000, budget, null, null);
         when(fixture.model().chat(any(ChatRequest.class))).thenReturn(response("x".repeat(4001)));
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> compactor.prepare(fixture.user(), fixture.conversation(),
                 "system", config(), ReasoningDepth.AUTO))

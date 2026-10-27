@@ -45,13 +45,14 @@ public class AgentContextCompactor {
     private final AgentContextBudgetPolicy budgetPolicy;
     private final AgentToolSchemaCatalog schemas;
     private final ConversationStructureExtractor structureExtractor;
+    private final com.projectardor.assistant.execution.service.AgentMetrics metrics;
 
     public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
             LangChainModelFactory modelFactory,
             int recentMessages, int maxRawMessages, int maxHistoryTokens) {
         this(conversations, summaries, modelFactory, recentMessages, maxHistoryTokens,
                 new AgentContextBudgetPolicy(new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()),
-                        maxHistoryTokens, .75, .05), null, new ConversationStructureExtractor());
+                        maxHistoryTokens, .75, .05), null, new ConversationStructureExtractor(), null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -59,15 +60,17 @@ public class AgentContextCompactor {
             LangChainModelFactory modelFactory,
             @Value("${app.agent.context.recent-messages:8}") int recentMessages,
             @Value("${app.agent.context.max-history-tokens:12000}") int maxHistoryTokens,
-            AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas) {
+            AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas,
+            com.projectardor.assistant.execution.service.AgentMetrics metrics) {
         this(conversations, summaries, modelFactory, recentMessages, maxHistoryTokens, budgetPolicy, schemas,
-                new ConversationStructureExtractor());
+                new ConversationStructureExtractor(), metrics);
     }
 
     public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
             LangChainModelFactory modelFactory, int recentMessages, int maxHistoryTokens,
             AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas,
-            ConversationStructureExtractor structureExtractor) {
+            ConversationStructureExtractor structureExtractor,
+            com.projectardor.assistant.execution.service.AgentMetrics metrics) {
         this.conversations = conversations;
         this.summaries = summaries;
         this.modelFactory = modelFactory;
@@ -76,6 +79,7 @@ public class AgentContextCompactor {
         this.budgetPolicy = budgetPolicy;
         this.schemas = schemas;
         this.structureExtractor = structureExtractor;
+        this.metrics = metrics;
     }
 
     public Prepared prepare(UUID userId, UUID conversationId, String systemPrompt,
@@ -142,6 +146,7 @@ public class AgentContextCompactor {
                 compactedCount = newCovered - covered;
                 effectiveRecent = visible.subList(newCovered, visible.size());
             } else status.accept("COMPACTION_FAILED");
+            if (metrics != null) metrics.recordCompaction(compacted == null);
         }
         // Generated text is data, never interpolated into the system instruction.
         String summaryContext = currentSummary.isBlank() ? "" :
