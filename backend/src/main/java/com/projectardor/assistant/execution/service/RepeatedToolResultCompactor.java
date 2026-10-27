@@ -62,10 +62,11 @@ final class RepeatedToolResultCompactor {
             if (indexes.size() < 3) continue;
             String firstId = ((ToolExecutionResultMessage) messages.get(indexes.getFirst())).id();
             for (int i = 1; i < indexes.size() - 1; i++) {
-                if (copy == null) copy = new ArrayList<>(messages);
                 int position = indexes.get(i);
                 var original = (ToolExecutionResultMessage) messages.get(position);
                 String note = "[重复的只读工具结果：与调用 ID " + firstId + " 的完整结果完全一致。]";
+                if (note.length() >= original.text().length()) continue;
+                if (copy == null) copy = new ArrayList<>(messages);
                 copy.set(position, ToolExecutionResultMessage.builder().id(original.id()).toolName(original.toolName())
                         .text(note).isError(original.isError()).attributes(original.attributes()).build());
             }

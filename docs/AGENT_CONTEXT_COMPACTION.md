@@ -56,7 +56,7 @@ On a model request that reaches the soft budget, exact duplicate read-only tool 
 reduced only when the same registered tool, exact arguments, result text, error status and
 attributes occur at least three times. The first and last results stay complete; intermediate
 results retain their original call IDs and explicitly refer to the first full result. Ambiguous
-IDs, errors, non-text results, short results and write or unregistered tools are never reduced.
+IDs, SDK-flagged errors, non-text results, short results and write or unregistered tools are never reduced.
 Only a request copy changes: the live chat memory, durable records, tool calls and user messages
 remain untouched. Request telemetry and the hard input fence see the same compacted request.
 This exact-match optimization does not establish semantic relevance or make a partially different

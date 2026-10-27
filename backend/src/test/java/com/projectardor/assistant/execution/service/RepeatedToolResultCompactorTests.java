@@ -22,6 +22,7 @@ class RepeatedToolResultCompactorTests {
     @Test void duplicateReadResultsShrinkOnlyInRequestCopyAndKeepFirstLastAndAllCallPairs() {
         List<ChatMessage> messages = repeated("list_learning_plans", "{}", RESULT, 4);
         var request = ChatRequest.builder().messages(messages).build();
+        assertThat(RepeatedToolResultCompactor.compact(request, new AgentContextBudgetPolicy.Budget(null, 100000, null, 0, 0), null)).isSameAs(request);
         var compacted = RepeatedToolResultCompactor.compact(request, budget, null);
         assertThat(compacted).isNotSameAs(request);
         assertThat(compacted.messages()).hasSameSizeAs(messages);
@@ -66,6 +67,12 @@ class RepeatedToolResultCompactorTests {
     @Test void transformedRequestReachesListenersAndHardLimitFenceBeforeTransport() {
         var delegate = mock(StreamingChatModel.class);
         when(delegate.defaultRequestParameters()).thenReturn(dev.langchain4j.model.chat.request.ChatRequestParameters.builder().build());
+        var observed = new java.util.concurrent.atomic.AtomicReference<ChatRequest>();
+        when(delegate.listeners()).thenReturn(List.of(new dev.langchain4j.model.chat.listener.ChatModelListener() {
+            @Override public void onRequest(dev.langchain4j.model.chat.listener.ChatModelRequestContext context) {
+                observed.set(context.chatRequest());
+            }
+        }));
         var guarded = ContextBudgetedModels.streaming(delegate, budget, null);
         var wrapped = RepeatedToolResultCompactor.streaming(guarded, budget, null);
         var handler = mock(StreamingChatResponseHandler.class);
@@ -74,6 +81,7 @@ class RepeatedToolResultCompactorTests {
         wrapped.chat(request, handler);
         var captured = org.mockito.ArgumentCaptor.forClass(ChatRequest.class);
         verify(delegate).doChat(captured.capture(), any());
+        assertThat(observed.get().messages()).isEqualTo(captured.getValue().messages());
         assertThat(AgentRequestTokens.estimate(captured.getValue(), null)).isLessThanOrEqualTo(budget.hardInputTokens());
         verify(handler, never()).onError(any());
     }
