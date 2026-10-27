@@ -2,6 +2,7 @@ package com.projectardor.assistant.execution.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -15,6 +16,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -34,6 +36,11 @@ class AgentModelDescriptionServiceTests {
     private final CompatibleLlmGateway llm = mock(CompatibleLlmGateway.class);
     private final QuotaService quotas = mock(QuotaService.class);
 
+    @BeforeEach
+    void searchIsConfigured() {
+        when(search.available(any())).thenReturn(true);
+    }
+
     @Test
     void researchesModelAndCachesTheConciseDescription() {
         when(search.search(eq(user), anyString())).thenReturn(new WebSearchResult("model", List.of(
@@ -48,7 +55,7 @@ class AgentModelDescriptionServiceTests {
 
         verify(search, times(1)).search(eq(user), anyString());
         verify(llm, times(1)).completeJson(eq(user), anyString(), anyString());
-        verify(quotas, times(1)).consume(user, UsageFeature.KNOWLEDGE_RESEARCH, null);
+        verify(quotas, times(1)).consume(user, UsageFeature.MODEL_DESCRIPTION, null);
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
         verify(llm).completeJson(eq(user), anyString(), prompt.capture());
         assertThat(prompt.getValue()).contains("example-fast", "Official model", "published low pricing");
@@ -90,19 +97,31 @@ class AgentModelDescriptionServiceTests {
         assertThat(service.describe(other, "example-model", "en")).isEqualTo("Second user");
         assertThat(service.describe(user, "example-model", "en")).isEqualTo("First user");
 
-        verify(quotas).consume(user, UsageFeature.KNOWLEDGE_RESEARCH, null);
-        verify(quotas).consume(other, UsageFeature.KNOWLEDGE_RESEARCH, null);
+        verify(quotas).consume(user, UsageFeature.MODEL_DESCRIPTION, null);
+        verify(quotas).consume(other, UsageFeature.MODEL_DESCRIPTION, null);
+    }
+
+    @Test
+    void unconfiguredSearchDoesNotConsumeTheDescriptionAllowance() {
+        when(search.available(user)).thenReturn(false);
+        var service = new AgentModelDescriptionService(search, llm, quotas);
+
+        assertThatThrownBy(() -> service.describe(user, "example-model", "en"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("尚未配置");
+        verifyNoInteractions(quotas, llm);
     }
 
     @Test
     void quotaDenialPreventsPaidResearch() {
-        doThrow(new QuotaExceededException(UsageFeature.KNOWLEDGE_RESEARCH,
+        doThrow(new QuotaExceededException(UsageFeature.MODEL_DESCRIPTION,
                 QuotaStore.Decision.MONTHLY_LIMIT, Instant.parse("2026-11-01T00:00:00Z")))
-                .when(quotas).consume(user, UsageFeature.KNOWLEDGE_RESEARCH, null);
+                .when(quotas).consume(user, UsageFeature.MODEL_DESCRIPTION, null);
         var service = new AgentModelDescriptionService(search, llm, quotas);
 
         assertThatThrownBy(() -> service.describe(user, "example-model", "en"))
                 .isInstanceOf(QuotaExceededException.class);
-        verifyNoInteractions(search, llm);
+        verifyNoInteractions(llm);
+        verify(search, times(0)).search(any(), anyString());
     }
 }

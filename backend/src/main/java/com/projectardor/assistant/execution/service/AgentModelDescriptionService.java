@@ -50,7 +50,8 @@ public class AgentModelDescriptionService {
             if (existing != null && existing.createdAt() + CACHE_TTL.toMillis() > System.currentTimeMillis()) {
                 return existing;
             }
-            quotas.consume(userId, UsageFeature.KNOWLEDGE_RESEARCH, null);
+            if (!search.available(userId)) throw new IllegalStateException("联网搜索尚未配置");
+            quotas.consume(userId, UsageFeature.MODEL_DESCRIPTION, null);
             return new CacheEntry(research(userId, model, locale), System.currentTimeMillis());
         }).description();
     }

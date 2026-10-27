@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -38,6 +40,8 @@ class AgentModelCatalogServiceTests {
 
         var catalog = new AgentModelCatalogService(llm, auxiliary, discovery);
         var options = catalog.options(user);
+        assertThat(catalog.options(user)).isEqualTo(options);
+        verify(discovery, times(3)).list(any(), anyString(), anyString());
 
         assertThat(options.getFirst().id()).isEqualTo(AgentModelCatalogService.PRIMARY);
         assertThat(options).extracting(AgentModelCatalogService.Option::id)

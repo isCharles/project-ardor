@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
@@ -35,10 +36,13 @@ public class AgentModelCatalogService {
     public static final String FALLBACK = "FALLBACK";
     public static final String FALLBACK_PREFIX = "FALLBACK:";
     private static final int MAX_RELAY_MODELS = 300;
+    private static final int MAX_CATALOG_CACHE_ENTRIES = 256;
+    private static final long CATALOG_CACHE_TTL_MILLIS = 60_000;
 
     private final LlmConfigService llmConfigService;
     private final AuxiliaryApiConfigService auxiliaryConfigService;
     private final LlmModelDiscoveryService modelDiscoveryService;
+    private final ConcurrentHashMap<UUID, CatalogEntry> catalogCache = new ConcurrentHashMap<>();
 
     public AgentModelCatalogService(LlmConfigService llmConfigService,
             AuxiliaryApiConfigService auxiliaryConfigService,
@@ -49,6 +53,16 @@ public class AgentModelCatalogService {
     }
 
     public List<Option> options(UUID userId) {
+        if (catalogCache.size() >= MAX_CATALOG_CACHE_ENTRIES) catalogCache.clear();
+        return catalogCache.compute(userId, (ignored, existing) -> {
+            if (existing != null && existing.createdAt() + CATALOG_CACHE_TTL_MILLIS > System.currentTimeMillis()) {
+                return existing;
+            }
+            return new CatalogEntry(loadOptions(userId), System.currentTimeMillis());
+        }).options();
+    }
+
+    private List<Option> loadOptions(UUID userId) {
         List<Option> options = new ArrayList<>();
         try {
             options.add(option(PRIMARY, llmConfigService.getRuntimeConfig(userId)));
@@ -62,7 +76,7 @@ public class AgentModelCatalogService {
                         () -> options.add(new Option(FALLBACK, "Fallback model", "OPENAI_COMPATIBLE", false, false,
                                 ModelReasoningPolicy.levels(new LlmConfigService.LlmRuntimeConfig(
                                         LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "unknown", "redacted")))));
-        return options;
+        return List.copyOf(options);
     }
 
     public Resolved resolve(UUID userId, String choice) {
@@ -185,4 +199,6 @@ public class AgentModelCatalogService {
 
     public record Resolved(String id, LlmConfigService.LlmRuntimeConfig config) {
     }
+
+    private record CatalogEntry(List<Option> options, long createdAt) {}
 }
