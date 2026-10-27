@@ -166,6 +166,16 @@ jobs:
           docker exec ardor-acceptance-postgres psql -U ardor -d ardor -v ON_ERROR_STOP=1 -c "UPDATE usage_policies SET user_minute_limit=GREATEST(user_minute_limit,30), global_minute_limit=GREATEST(global_minute_limit,1000) WHERE feature='AGENT_CHAT'"
           node backend/src/test/resources/agent-runtime-acceptance.mjs
 
+      - name: Run Agent business evaluation with business read-back
+        env:
+          ARDOR_BASE_URL: http://127.0.0.1:8080
+          ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
+          ARDOR_EVAL_E2E: "true"
+          ARDOR_EVAL_REPORT: ${{ runner.temp }}/agent-eval-e2e.json
+        run: |
+          test "$ARDOR_ACCEPTANCE_DISPOSABLE_DB" = true
+          node scripts/agent-eval-e2e.mjs
+
       - name: Verify semantic recall with repeated compaction and the default budget
         env:
           ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080

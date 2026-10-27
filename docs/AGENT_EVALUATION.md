@@ -93,13 +93,29 @@ node scripts/agent-eval.mjs
 失败分类：`EXPECTATION`（断言不满足）、`TIMEOUT`、`TRANSPORT`、服务端稳定错误码、`UNEXPECTED`。
 报告不记录 Prompt 正文、答案正文、API Key 或 Cookie。
 
+## 端到端业务 fixture（一次性栈，零成本）
+
+`scripts/agent-eval-e2e.mjs` 在一次性数据库与确定性 fake 模型上运行日历相关案例：为每个案例
+注册全新用户（真实数据隔离，不是换会话），通过 REST 播种初态，驱动真实 Agent 运行时，
+处理写入审批，运行结束后通过 REST 读回业务终态，再同时判定轨迹与数据库状态。覆盖读取、
+创建、修改、删除仅提案、澄清、错误参数、只读无写入、跨用户资源归属和先读后写多步。
+
+fake 模型新增 `eval-script-probe`：从用户消息中的 `eval-tools` 指令按轮次发出工具调用，
+最后返回 `eval-answer`。CI 在配额放宽后运行该驱动；本机一次性栈验证 9/9 通过：
+taskSuccess 9/9、paramValid 6/7（错误参数案例按预期为 false）、toolExecuted 3/3、
+safeRejection 2/2、环境错误 0/9。
+
+该驱动暴露了一个真实口径问题：工具校验/业务错误以文本结果返回时，轨迹仍记为
+`COMPLETED` 且 `executed=true`。评分器现在检查工具结果的短错误预览并据此判定失败；
+产品侧应改为记录 `FAILED` span 与稳定 errorCode，归入指标/Trace 批次。
+
 ## 限制
 
 - 零成本演示使用合成轨迹，只验证框架与合同，不代表真实模型质量；
-- 当前主要依据录制轨迹判定，尚未在 CI 中端到端读回业务数据库终态；`fixture` 已声明终态，
-  端到端驱动接入前不宣称业务读回已验收；
+- 端到端驱动当前只覆盖日历相关 9 个案例；记忆、面试、知识库等仍以轨迹评分为主，
+  尚未全部读回业务终态；
 - 轨迹只保留最早 128 个 span（静默截断），超长运行的评分可能漏掉后续工具；该问题在
   指标/Trace 口径批次修复；
-- 返回业务错误但 span 仍为 `COMPLETED` 且无错误属性的调用，需要工具结果级断言补充；
+- 工具业务错误目前靠结果预览的启发式识别；产品尚未记录 `FAILED` span 与稳定 errorCode；
 - 工具 schema 哈希需要外部导出的 schema 快照，缺失时报告为 `null` 而非伪造；
 - 语义正确性、真实供应商的摘要质量与 tokenizer 精度不在本批次范围。
