@@ -186,7 +186,7 @@ public class AgentContextCompactor {
             try {
                 ChatModel model = modelFactory.create(config, depth, listeners);
                 ChatRequest request = ChatRequest.builder().messages(UserMessage.from(prompt)).build();
-                response = model.doChat(request);
+                response = model.chat(request);
             } catch (RuntimeException unavailable) {
                 requireActive(active);
                 log.warn("Context summarization unavailable: conversationId={}, type={}", conversationId,
