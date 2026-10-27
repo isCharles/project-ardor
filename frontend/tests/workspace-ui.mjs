@@ -54,6 +54,10 @@ try {
     const path = url.pathname;
     let body = {};
     if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin };
+    else if (path === "/api/agent/models/description") {
+      const request = route.request().postDataJSON();
+      body = { description: request.model.includes("claude") ? "Flagship reasoning and coding" : "Fast, high-value everyday model" };
+    }
     else if (path === "/api/agent/models") body = [
       { id: "PRIMARY", label: "deepseek-v4-flash", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
       { id: "FALLBACK:claude-opus-5-5", label: "claude-opus-5-5", provider: "ANTHROPIC_COMPATIBLE", available: true, nativeControl: true },
@@ -279,6 +283,10 @@ try {
   const depth = page.getByRole("dialog", { name: "Model and thinking depth options" });
   assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "AUTO", "Provider default remains the default");
   await depth.getByText("DeepSeek V4 Flash", { exact: true }).waitFor();
+  await depth.getByText("Fast, high-value everyday model", { exact: true }).waitFor();
+  await depth.getByText("Flagship reasoning and coding", { exact: true }).waitFor();
+  assert.equal(await depth.getByText("Primary", { exact: true }).count(), 0);
+  assert.equal(await depth.getByText("Relay", { exact: true }).count(), 0);
   await depth.getByRole("button", { name: /^Claude Opus 5\.5/ }).click();
   assert.equal(await page.locator('[data-model-choice]').getAttribute("data-model-choice"), "FALLBACK:claude-opus-5-5", "Friendly names must not change selection keys");
   await depth.getByRole("button", { name: /^DeepSeek V4 Flash/ }).click();

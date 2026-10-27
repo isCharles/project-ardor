@@ -336,6 +336,24 @@ export default function AgentHomePage() {
           setModelChoice(initial.id);
           setNativeReasoning(initial.nativeControl);
         }
+        const researchModels = items.filter((item) => item.available);
+        const locale = navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+        let nextModel = 0;
+        const research = async () => {
+          while (active && nextModel < researchModels.length) {
+            const item = researchModels[nextModel++];
+            let description = "";
+            try {
+              const result = await api<{ description: string }>("/api/agent/models/description", {
+                method: "POST", body: JSON.stringify({ model: item.label, locale }),
+              });
+              description = result.description;
+            } catch { /* Model selection remains available without a researched summary. */ }
+            if (active) setModelOptions((current) => current.map((option) =>
+              option.id === item.id ? { ...option, description } : option));
+          }
+        };
+        void Promise.all(Array.from({ length: Math.min(3, researchModels.length) }, research));
       }).catch(() => undefined);
     }).catch(() => undefined);
     const reloadPermissions = () => { void api<{ mode?: ApprovalMode }>("/api/agent/permissions")
