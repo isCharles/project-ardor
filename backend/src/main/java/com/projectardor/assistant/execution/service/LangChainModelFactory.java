@@ -49,7 +49,7 @@ public class LangChainModelFactory {
             List<AgentModelProtocol> protocols) {
         this(configService, proxyHost, proxyPort, connectTimeout, readTimeout, protocols,
                 new AgentContextBudgetPolicy(new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()),
-                        12000, .75, .05));
+                        200000, .75, .05));
     }
 
     @org.springframework.beans.factory.annotation.Autowired

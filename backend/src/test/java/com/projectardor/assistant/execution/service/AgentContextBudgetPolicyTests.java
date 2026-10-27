@@ -16,11 +16,18 @@ class AgentContextBudgetPolicyTests {
         assertThat(budget.exceedsHardLimit(budget.hardInputTokens() + 1)).isTrue();
     }
 
-    @Test void unknownCapacityRemainsUnknownRatherThanPromotingApplicationBudgetToModelWindow() {
+    @Test void unknownCapacityUsesTwoHundredThousandTokenApplicationBudgetWithoutInventingAWindow() {
         var capacity = mock(ModelContextCapacity.class);
-        var budget = new AgentContextBudgetPolicy(capacity, 12000, .75, .05).resolve(null, 4096);
+        var budget = new AgentContextBudgetPolicy(capacity, 200000, .75, .05).resolve(null, 4096);
         assertThat(budget.windowTokens()).isNull();
         assertThat(budget.hardInputTokens()).isNull();
+        assertThat(budget.shouldCompact(199999)).isFalse();
+        assertThat(budget.shouldCompact(200000)).isTrue();
+    }
+
+    @Test void unknownCapacityStillSupportsAnExplicitSmallerApplicationBudget() {
+        var capacity = mock(ModelContextCapacity.class);
+        var budget = new AgentContextBudgetPolicy(capacity, 12000, .75, .05).resolve(null, 4096);
         assertThat(budget.shouldCompact(11999)).isFalse();
         assertThat(budget.shouldCompact(12000)).isTrue();
     }

@@ -13,7 +13,7 @@ public final class AgentContextBudgetPolicy {
     private final double safetyRatio;
 
     public AgentContextBudgetPolicy(ModelContextCapacity capacity,
-            @Value("${app.agent.context.max-history-tokens:12000}") int unknownSoftLimit,
+            @Value("${app.agent.context.max-history-tokens:200000}") int unknownSoftLimit,
             @Value("${app.agent.context.soft-utilization:0.75}") double softRatio,
             @Value("${app.agent.context.safety-reserve-ratio:0.05}") double safetyRatio) {
         if (!Double.isFinite(softRatio) || softRatio <= 0 || softRatio >= 1

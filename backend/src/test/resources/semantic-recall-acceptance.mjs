@@ -5,7 +5,9 @@ if (process.env.ARDOR_ACCEPTANCE_DISPOSABLE_DB !== "true") throw new Error("Disp
 const base = process.env.ARDOR_ACCEPTANCE_API_BASE ?? "http://127.0.0.1:8080";
 const model = process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090";
 const turns = Number(process.env.ARDOR_ACCEPTANCE_SEMANTIC_TURNS ?? 100);
-const ceiling = Number(process.env.ARDOR_ACCEPTANCE_CONTEXT_CEILING ?? 40_000);
+const repeatedCompaction = process.env.ARDOR_ACCEPTANCE_SEMANTIC_MODE !== "default";
+const modelId = repeatedCompaction ? "semantic-recall-probe" : "semantic-recall-default-probe";
+const ceiling = Number(process.env.ARDOR_ACCEPTANCE_CONTEXT_CEILING ?? (repeatedCompaction ? 60_000 : 220_000));
 const marker = `ARDOR-RECALL-${Math.floor(Math.random() * 90_000) + 10_000}`;
 const planted = `我的项目暗号是 ${marker}，请记住。`;
 const filler = "Synthetic source material for budget growth. ".repeat(100);
@@ -40,7 +42,7 @@ const owner = new Client();
 await owner.request("/api/auth/register", { method: "POST", expected: 201,
   body: { email: `recall-${randomUUID()}@ardor.invalid`, password: `Synthetic-${randomUUID()}!` } });
 await owner.request("/api/settings/llm", { method: "PUT", body: {
-  provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "semantic-recall-probe", apiKey: "fake-only",
+  provider: "OPENAI_COMPATIBLE", baseUrl: model, model: modelId, apiKey: "fake-only",
 } });
 const conversation = await owner.request("/api/agent/conversations", { method: "POST", expected: 201 });
 
@@ -60,6 +62,8 @@ for (let turn = 1; turn <= turns; turn++) {
     const usage = event.contextUsage;
     if (usage.state === "COMPACTING") compactions++;
     if (usage.state === "READY") {
+      if (!repeatedCompaction) assert.equal(usage.compressionBudgetTokens, 200_000,
+        `turn ${turn} must use the unknown-window application default`);
       maxEstimated = Math.max(maxEstimated, usage.estimatedTokens);
       maxSummaryVersion = Math.max(maxSummaryVersion, usage.summaryVersion ?? 0);
     }
@@ -72,17 +76,27 @@ const assistants = state.messages.filter((message) => message.role === "ASSISTAN
 assert.equal(state.messages.filter((message) => message.role === "USER").length, turns,
   "Compaction must never delete original user messages");
 assert.equal(assistants.length, turns);
-assert.ok(compactions >= 2, `The run must rewrite the summary more than once, saw ${compactions}`);
-assert.ok(maxSummaryVersion >= 2, `Summary generations must advance, saw ${maxSummaryVersion}`);
+if (repeatedCompaction) {
+  assert.ok(compactions >= 2, `The run must rewrite the summary more than once, saw ${compactions}`);
+  assert.ok(maxSummaryVersion >= 2, `Summary generations must advance, saw ${maxSummaryVersion}`);
+} else {
+  assert.ok(compactions <= 20,
+    `The default 200K budget must avoid per-turn compaction, saw ${compactions}; largest estimate ${maxEstimated}`);
+  assert.equal(maxSummaryVersion, compactions, "Summary generations must match actual compaction passes");
+}
 assert.ok(maxEstimated <= ceiling,
-  `Compaction must bound the prompt; largest request estimate was ${maxEstimated} tokens`);
+  `The request estimate must stay within the expected budget; largest estimate was ${maxEstimated} tokens`);
 
 const answer = assistants.at(-1).content;
-assert.ok(answer.includes("present-summary"),
-  `A fact stated ${turns} turns earlier must survive through the summary, got: ${answer}`);
-assert.ok(!answer.includes("present-raw"),
-  "The planted message must already be compacted out of raw history, otherwise this proves nothing");
+const recalledThroughSummary = repeatedCompaction || compactions > 0;
+const expectedRecall = recalledThroughSummary ? "present-summary" : "present-raw";
+const unexpectedRecall = recalledThroughSummary ? "present-raw" : "present-summary";
+assert.ok(answer.includes(expectedRecall),
+  `A fact stated ${turns} turns earlier must survive through ${expectedRecall}, got: ${answer}`);
+assert.ok(!answer.includes(unexpectedRecall),
+  `The fact arrived through an unexpected context path: ${answer}`);
 
-console.log(`Semantic recall acceptance: a fact planted in turn 1 was still visible after ${turns} turns, `
-  + `${compactions} compaction passes and summary generation ${maxSummaryVersion}; original messages retained, `
-  + `largest request estimate ${maxEstimated} tokens (synthetic model, not vendor tokenizer precision).`);
+console.log(`Semantic recall acceptance (${repeatedCompaction ? "64K window" : "default 200K budget"}): `
+  + `a fact planted in turn 1 was still visible after ${turns} turns, ${compactions} compaction passes and `
+  + `summary generation ${maxSummaryVersion}; original messages retained, largest request estimate `
+  + `${maxEstimated} tokens (synthetic model, not vendor tokenizer precision).`);
