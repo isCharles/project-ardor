@@ -7,7 +7,7 @@ const model = process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090";
 const turns = Number(process.env.ARDOR_ACCEPTANCE_SEMANTIC_TURNS ?? 100);
 const repeatedCompaction = process.env.ARDOR_ACCEPTANCE_SEMANTIC_MODE !== "default";
 const modelId = repeatedCompaction ? "semantic-recall-probe" : "semantic-recall-default-probe";
-const ceiling = Number(process.env.ARDOR_ACCEPTANCE_CONTEXT_CEILING ?? (repeatedCompaction ? 40_000 : 200_000));
+const ceiling = Number(process.env.ARDOR_ACCEPTANCE_CONTEXT_CEILING ?? (repeatedCompaction ? 60_000 : 200_000));
 const marker = `ARDOR-RECALL-${Math.floor(Math.random() * 90_000) + 10_000}`;
 const planted = `我的项目暗号是 ${marker}，请记住。`;
 const filler = "Synthetic source material for budget growth. ".repeat(100);

@@ -127,7 +127,7 @@ jobs:
       - name: Run end-to-end Golden Path
         shell: bash
         run: |
-          java -jar backend/target/ardor-backend-0.7.0.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s --app.agent.context.windows.semantic-recall-probe=65536 > "$RUNNER_TEMP/backend.log" 2>&1 &
+          java -jar backend/target/ardor-backend-0.7.0.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s --app.agent.context.windows.semantic-recall-probe=65536 --app.agent.context.windows.runtime-integration-probe=16384 > "$RUNNER_TEMP/backend.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/backend.pid"
           for attempt in {1..90}; do
             if curl --silent --fail http://127.0.0.1:8080/actuator/health \
