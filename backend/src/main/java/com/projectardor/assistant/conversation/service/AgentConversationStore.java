@@ -23,13 +23,20 @@ public class AgentConversationStore {
     private final ConversationRepository conversationRepository;
     private final ConversationMessageRepository messageRepository;
     private final ApplicationEventPublisher events;
+    private final ChatImageService images;
 
-    public AgentConversationStore(
-            ConversationRepository conversationRepository,
+    public AgentConversationStore(ConversationRepository conversationRepository,
             ConversationMessageRepository messageRepository, ApplicationEventPublisher events) {
+        this(conversationRepository, messageRepository, events, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentConversationStore(ConversationRepository conversationRepository,
+            ConversationMessageRepository messageRepository, ApplicationEventPublisher events, ChatImageService images) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.events = events;
+        this.images = images;
     }
 
     @Transactional(readOnly = true)
@@ -101,17 +108,29 @@ public class AgentConversationStore {
     public List<ConversationMessage> appendExchange(
             UUID userId, Conversation conversation, String userText, String assistantText, String runTrace,
             List<AgentContextReference> contextReferences, boolean hiddenUserMessage) {
+        return appendExchange(userId, conversation, userText, assistantText, runTrace, contextReferences,
+                hiddenUserMessage, List.of());
+    }
+
+    @Transactional
+    public List<ConversationMessage> appendExchange(
+            UUID userId, Conversation conversation, String userText, String assistantText, String runTrace,
+            List<AgentContextReference> contextReferences, boolean hiddenUserMessage, List<UUID> imageIds) {
         // The title is derived from the first exchange and then left alone; asking the
         // model again on every turn rewrites the sidebar name mid-conversation.
         boolean firstExchange = messageRepository.countByUserIdAndConversationId(
                 userId, conversation.getId()) == 0;
         ConversationMessage userMessage = hiddenUserMessage
                 ? ConversationMessage.hiddenUser(userId, conversation.getId(), userText)
-                : ConversationMessage.user(userId, conversation.getId(), userText, contextReferences);
+                : ConversationMessage.user(userId, conversation.getId(), userText, contextReferences, imageIds);
         List<ConversationMessage> saved = messageRepository.saveAll(List.of(
                 userMessage,
                 ConversationMessage.assistant(userId, conversation.getId(), assistantText, runTrace)));
-        if (!hiddenUserMessage) conversation.titleFromFirstMessage(userText);
+        if (!imageIds.isEmpty()) {
+            messageRepository.flush();
+            images.attach(userId, userMessage.getId(), imageIds);
+        }
+        if (!hiddenUserMessage) conversation.titleFromFirstMessage(userText.isBlank() ? "图片消息" : userText);
         conversation.touch();
         conversationRepository.save(conversation);
         if (firstExchange && !hiddenUserMessage) {

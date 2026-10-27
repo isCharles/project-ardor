@@ -9,7 +9,7 @@ import { modelDisplayName } from "@/lib/model-display-name";
 
 type Depth = "AUTO" | "QUICK" | "STANDARD" | "DEEP";
 export type ReasoningLevel = { value: Depth; label: string };
-export type ModelOption = { id: string; label: string; provider: string; available: boolean; nativeControl: boolean; reasoningLevels?: ReasoningLevel[]; description?: string };
+export type ModelOption = { id: string; label: string; provider: string; available: boolean; nativeControl: boolean; imageInput?: boolean; reasoningLevels?: ReasoningLevel[]; description?: string };
 const defaultLevels: ReasoningLevel[] = [
   { value: "QUICK", label: "Low" },
   { value: "STANDARD", label: "High" },

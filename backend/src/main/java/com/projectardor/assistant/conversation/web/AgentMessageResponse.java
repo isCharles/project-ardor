@@ -13,6 +13,7 @@ public record AgentMessageResponse(
         String role,
         String content,
         List<AgentContextReference> contextReferences,
+        List<UUID> imageIds,
         String runTrace,
         Instant createdAt,
         UUID requestId,
@@ -22,12 +23,12 @@ public record AgentMessageResponse(
     public AgentMessageResponse(UUID id, UUID conversationId, String role, String content,
             List<AgentContextReference> references, String trace, Instant createdAt, UUID requestId,
             java.util.Map<String, String> proposalResolutions) {
-        this(id, conversationId, role, content, references, trace, createdAt, requestId,
+        this(id, conversationId, role, content, references, List.of(), trace, createdAt, requestId,
                 proposalResolutions, requestId);
     }
     public AgentMessageResponse(UUID id, UUID conversationId, String role, String content,
             List<AgentContextReference> references, String trace, Instant createdAt, UUID requestId) {
-        this(id, conversationId, role, content, references, trace, createdAt, requestId,
+        this(id, conversationId, role, content, references, List.of(), trace, createdAt, requestId,
                 java.util.Map.of(), requestId);
     }
     public AgentMessageResponse(UUID id, UUID conversationId, String role, String content,
@@ -37,7 +38,7 @@ public record AgentMessageResponse(
     public static AgentMessageResponse from(ConversationMessage message) {
         return new AgentMessageResponse(
                 message.getId(), message.getConversationId(), message.getRole(),
-                message.getContent(), message.getContextReferences(), message.getRunTrace(), message.getCreatedAt(),
+                message.getContent(), message.getContextReferences(), message.getImageIds(), message.getRunTrace(), message.getCreatedAt(),
                 message.getRequestId(),
                 message.getProposalResolutions(), message.getRunId());
     }

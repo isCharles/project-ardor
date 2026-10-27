@@ -38,13 +38,13 @@ class AgentMessageQueueWorkerTests {
         when(runs.get(owner, id)).thenThrow(new ResourceNotFoundException("请求记录不存在"));
         doAnswer(call -> {
             if (thrown) throw new IllegalStateException("Unknown outcome");
-            CareerAgentService.StreamSink sink = call.getArgument(9);
+            CareerAgentService.StreamSink sink = call.getArgument(10);
             sink.send(AgentStreamEvent.error(code, "Synthetic failure", false, 0));
             sink.complete();
             sink.complete(); // Duplicate transport callbacks cannot release slots or dispatch again.
             return null;
         }).when(service).chatStream(eq(owner), eq(input.conversationId()), eq(input.message()), isNull(), isNull(),
-                eq(List.of()), eq(id), eq(ReasoningDepth.DEEP), isNull(), any(CareerAgentService.StreamSink.class));
+                eq(List.of()), eq(id), eq(ReasoningDepth.DEEP), isNull(), eq(List.of()), any(CareerAgentService.StreamSink.class));
         var worker = new AgentMessageQueueWorker(queue, service, runs,
                 new AgentMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
         try {
@@ -53,7 +53,7 @@ class AgentMessageQueueWorkerTests {
             else if (requeue) verify(queue, timeout(2000)).notStarted(item);
             else verify(queue, timeout(2000)).failedBeforeStart(item);
             verify(service, times(1)).chatStream(eq(owner), eq(input.conversationId()), eq(input.message()), isNull(), isNull(),
-                    eq(List.of()), eq(id), eq(ReasoningDepth.DEEP), isNull(), any(CareerAgentService.StreamSink.class));
+                    eq(List.of()), eq(id), eq(ReasoningDepth.DEEP), isNull(), eq(List.of()), any(CareerAgentService.StreamSink.class));
             if (!requeue) verify(queue, never()).notStarted(item);
         } finally { worker.stop(); }
     }
@@ -74,12 +74,12 @@ class AgentMessageQueueWorkerTests {
         var started = new CountDownLatch(2);
         var release = new CountDownLatch(1);
         doAnswer(call -> {
-            CareerAgentService.StreamSink sink = call.getArgument(9);
+            CareerAgentService.StreamSink sink = call.getArgument(10);
             started.countDown();
             release.await(5, TimeUnit.SECONDS);
             sink.complete();
             return null;
-        }).when(service).chatStream(any(), any(), any(), any(), any(), any(), any(), any(), any(),
+        }).when(service).chatStream(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
                 any(CareerAgentService.StreamSink.class));
         when(runs.get(any(), any())).thenThrow(new ResourceNotFoundException("请求记录不存在"));
         var worker = new AgentMessageQueueWorker(queue, service, runs,

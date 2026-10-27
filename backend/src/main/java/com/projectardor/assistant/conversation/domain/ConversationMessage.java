@@ -39,6 +39,10 @@ public class ConversationMessage {
     private List<AgentContextReference> contextReferences = new ArrayList<>();
 
     @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "image_ids", nullable = false, columnDefinition = "jsonb")
+    private List<UUID> imageIds = new ArrayList<>();
+
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "tool_calls", columnDefinition = "jsonb")
     private String runTrace;
 
@@ -86,8 +90,14 @@ public class ConversationMessage {
 
     public static ConversationMessage user(UUID userId, UUID conversationId, String content,
             List<AgentContextReference> contextReferences) {
+        return user(userId, conversationId, content, contextReferences, List.of());
+    }
+
+    public static ConversationMessage user(UUID userId, UUID conversationId, String content,
+            List<AgentContextReference> contextReferences, List<UUID> imageIds) {
         ConversationMessage message = user(userId, conversationId, content);
         message.contextReferences = contextReferences == null ? new ArrayList<>() : new ArrayList<>(contextReferences);
+        message.imageIds = imageIds == null ? new ArrayList<>() : new ArrayList<>(imageIds);
         return message;
     }
 
@@ -121,6 +131,7 @@ public class ConversationMessage {
     public String getRole() { return role; }
     public String getContent() { return content; }
     public List<AgentContextReference> getContextReferences() { return List.copyOf(contextReferences); }
+    public List<UUID> getImageIds() { return List.copyOf(imageIds); }
     public String getRunTrace() { return runTrace; }
     public java.util.Map<String, String> getProposalResolutions() { return java.util.Map.copyOf(proposalResolutions); }
     public UUID getRequestId() { return requestId; }

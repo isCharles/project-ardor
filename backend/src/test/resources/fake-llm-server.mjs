@@ -95,6 +95,9 @@ const transientAttempts = new Map();
 let delayedReplayRequests = 0;
 let delayedInterviewRequests = 0;
 let restartRequests = 0;
+let imageInputRequests = 0;
+let cancelHoldRequests = 0;
+let pendingCancelResponses = [];
 let pendingLearningResponses = [];
 let learningFallbackTimer;
 
@@ -119,6 +122,10 @@ function completionFor(payload) {
     }
     const latest = payload.messages?.filter(message => message.role === "user").at(-1);
     const latestText = typeof latest?.content === "string" ? latest.content : JSON.stringify(latest?.content ?? "");
+    if (latestText.includes("RECOVERY-CHECK")) {
+      // Only a recovered interrupted turn puts its text back into the provider request.
+      return { recall: input.includes("CANCEL-HOLD") ? "recovered" : "missing" };
+    }
     if (latestText.includes("RECALL-CHECK")) {
       // Distinguish "still visible as a raw message" from "survived into the summary".
       const recall = input.includes("我的项目暗号是") ? "present-raw" : marker ? "present-summary" : "missing";
@@ -194,11 +201,43 @@ http.createServer((request, response) => {
     response.end(JSON.stringify({ count: delayedReplayRequests }));
     return;
   }
+  if (request.url === "/__probe/image-input") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({ count: imageInputRequests }));
+    return;
+  }
+  if (request.url === "/__probe/cancel-hold") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({ count: cancelHoldRequests }));
+    return;
+  }
+  if (request.url === "/__probe/release-cancel-hold") {
+    const released = pendingCancelResponses.length;
+    const pending = pendingCancelResponses;
+    pendingCancelResponses = [];
+    pending.forEach((resolve) => resolve());
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({ released }));
+    return;
+  }
   let body = "";
   request.setEncoding("utf8");
   request.on("data", (chunk) => { body += chunk; });
-  request.on("end", () => {
+  request.on("end", async () => {
     const payload = JSON.parse(body || "{}");
+    const hasImageInput = Array.isArray(payload.messages) && payload.messages.some((message) =>
+      Array.isArray(message.content) && message.content.some((part) => part?.type === "image_url"));
+    if (hasImageInput) imageInputRequests++;
+    const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
+    const latestUser = payload.messages?.filter((message) => message.role === "user").at(-1);
+    const latestUserText = Array.isArray(latestUser?.content)
+      ? latestUser.content.filter((part) => part?.type === "text").map((part) => part.text ?? "").join("\n")
+      : String(latestUser?.content ?? "");
+    if (isAgentRequest && latestUserText.includes("CANCEL-HOLD")) {
+      cancelHoldRequests++;
+      await new Promise((resolve) => pendingCancelResponses.push(resolve));
+      if (response.destroyed || response.writableEnded) return;
+    }
     if (payload.model === "final-minutes-failure-probe") {
       response.writeHead(400, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: { message: "Synthetic normalization failure" } }));
@@ -223,7 +262,6 @@ http.createServer((request, response) => {
     if (payload.model === "async-evaluation-probe" && body.includes("面试评价官")) delayedInterviewRequests++;
     const probeTool = payload.tools?.find((tool) => tool.function?.name === "tool_calling_probe");
     const hasToolResult = payload.messages?.some((message) => message.role === "tool");
-    const isAgentRequest = payload.tools?.some((tool) => tool.function?.name === "list_resumes");
     if (payload.model === "learning-module-probe" && isAgentRequest) {
       const required = ["list_learning_plans", "get_learning_plan", "create_learning_plan", "update_learning_plan", "begin_learning_plan", "delete_learning_plan"];
       const message = String(payload.messages.filter(item => item.role === "user").at(-1)?.content);

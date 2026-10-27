@@ -78,7 +78,7 @@ class AgentControllerCancellationTests {
         var release = new java.util.concurrent.CountDownLatch(1);
         var exited = new java.util.concurrent.CountDownLatch(1);
         org.mockito.Mockito.doAnswer(invocation -> {
-            var sink = invocation.getArgument(9, CareerAgentService.StreamSink.class);
+            var sink = invocation.getArgument(10, CareerAgentService.StreamSink.class);
             entered.countDown();
             try {
                 sink.send(AgentStreamEvent.status("正在整理对话上下文", 0));
@@ -95,7 +95,7 @@ class AgentControllerCancellationTests {
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any());
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
         try {
             var result = mvc.perform(post("/api/agent/messages/stream").with(user(principal)).with(csrf())
                     .contentType("application/json").content("{\"message\":\"合成请求\"}"))

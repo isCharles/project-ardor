@@ -6,13 +6,20 @@ import { useDismiss } from "./overlay";
 import { useLocale } from "@/lib/locale";
 import type { AgentFeature } from "@/lib/agent-features";
 
-export function ServicePicker({ features, selected, draft, choose, remove }: {
+export function ServicePicker({ features, selected, draft, choose, remove, manualOpen: controlledOpen, onManualOpenChange }: {
   features: AgentFeature[]; selected?: AgentFeature; draft: string;
   choose: (feature: AgentFeature) => void; remove: () => void;
+  manualOpen?: boolean; onManualOpenChange?: (open: boolean) => void;
 }) {
   const { locale, t } = useLocale();
   const descriptionId = useId();
-  const [manualOpen, setManualOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const manualOpen = controlledOpen ?? internalOpen;
+  const setManualOpen = (open: boolean | ((current: boolean) => boolean)) => {
+    const next = typeof open === "function" ? open(manualOpen) : open;
+    if (controlledOpen === undefined) setInternalOpen(next);
+    onManualOpenChange?.(next);
+  };
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null);
   const match = draft.match(/^[@$]([^\s]*)/);
   const open = manualOpen || (!!match && draft !== dismissedDraft);

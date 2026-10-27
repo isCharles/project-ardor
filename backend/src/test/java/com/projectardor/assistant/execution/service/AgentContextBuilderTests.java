@@ -25,9 +25,9 @@ import dev.langchain4j.model.TokenCountEstimator;
 class AgentContextBuilderTests {
     @Test void observedContextReportsFailureAndMeasuredPromptWithoutInventingModelCapacity() {
         var f = new Fixture();
-        when(f.compactor.prepare(eq(f.owner), eq(f.conversation), anyString(), eq(f.config), any(), anyList(), any(), anyString(), any()))
+        when(f.compactor.prepare(eq(f.owner), eq(f.conversation), anyString(), eq(f.config), any(), anyList(), any(), anyString(), anyInt(), any()))
                 .thenAnswer(call -> {
-                    java.util.function.Consumer<String> observer = call.getArgument(8);
+                    java.util.function.Consumer<String> observer = call.getArgument(9);
                     observer.accept("COMPACTING"); observer.accept("COMPACTION_FAILED");
                     return f.compactor.prepare(f.owner, f.conversation, call.getArgument(2), f.config,
                             ReasoningDepth.AUTO, List.of(), () -> true, "current");
@@ -79,11 +79,65 @@ class AgentContextBuilderTests {
         var result = f.builder.prepare(f.owner, f.conversation, "Current task", input, f.config, ReasoningDepth.AUTO, null, null,
                 List.of(new AgentContextBuilder.HistoryTurn("USER", interrupted, List.of(), Instant.now())));
         var pending = ArgumentCaptor.forClass(String.class);
-        verify(f.compactor).prepare(eq(f.owner), eq(f.conversation), anyString(), eq(f.config), eq(ReasoningDepth.AUTO), anyList(), any(), pending.capture());
+        verify(f.compactor).prepare(eq(f.owner), eq(f.conversation), anyString(), eq(f.config), eq(ReasoningDepth.AUTO), anyList(), any(), pending.capture(), eq(0));
         assertThat(pending.getValue()).contains(input, interrupted);
         assertThat(result.attributes()).containsEntry("contextBudgetTokens", 1000).containsEntry("overContextBudget", true);
         assertThat((Long) result.attributes().get("assembledEstimatedTokens")).isGreaterThan(1000L);
         assertThat(result.memory().messages().toString()).contains(interrupted, "Earlier user");
+    }
+
+    @Test void textOnlyModelReceivesAPlaceholderInsteadOfPriorImages() {
+        var f = new Fixture();
+        var images = mock(com.projectardor.assistant.conversation.service.ChatImageService.class);
+        var builder = new AgentContextBuilder(f.embedding, f.compactor, f.profiles, f.tools,
+                new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()), images);
+        var imageId = UUID.randomUUID();
+        var stopped = new AgentContextBuilder.HistoryTurn("USER", "看图", List.of(), List.of(imageId), Instant.now());
+        var result = builder.prepare(f.owner, f.conversation, "继续", "继续", f.config,
+                ReasoningDepth.AUTO, null, null, List.of(stopped));
+        assertThat(result.memory().messages().toString()).contains("当前模型不支持图片输入");
+        assertThat(result.memory().messages().toString()).doesNotContain("image/png");
+        verifyNoInteractions(images);
+    }
+
+    @Test void supportedModelRestoresHistoryImagesThroughTheOwnerScopedStore() {
+        var f = new Fixture();
+        var images = mock(com.projectardor.assistant.conversation.service.ChatImageService.class);
+        var builder = new AgentContextBuilder(f.embedding, f.compactor, f.profiles, f.tools,
+                new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()), images);
+        var vision = new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "gpt-4o", "redacted");
+        when(f.compactor.prepare(eq(f.owner), eq(f.conversation), anyString(), eq(vision), any(), anyList(),
+                any(), anyString(), anyInt())).thenAnswer(call ->
+                new AgentContextCompactor.Prepared(call.getArgument(2),
+                        List.of(ConversationMessage.user(f.owner, f.conversation, "Earlier user")),
+                        2, 4, 10, new CharacterEstimator(), "SUMMARY-DATA"));
+        var imageId = UUID.randomUUID();
+        var restored = List.<dev.langchain4j.data.message.Content>of(
+                dev.langchain4j.data.message.TextContent.from("看图"),
+                dev.langchain4j.data.message.ImageContent.from("aGVsbG8=", "image/png"));
+        when(images.historyContents(f.owner, "看图", List.of(imageId))).thenReturn(restored);
+        var stopped = new AgentContextBuilder.HistoryTurn("USER", "看图", List.of(), List.of(imageId), Instant.now());
+
+        var result = builder.prepare(f.owner, f.conversation, "继续", "继续", vision,
+                ReasoningDepth.AUTO, null, null, List.of(stopped));
+
+        assertThat(result.memory().messages())
+                .contains(dev.langchain4j.data.message.UserMessage.from(restored));
+    }
+
+    @Test void currentImagesAreCountedOnceInTheBudgetAndCompactionCall() {
+        var f = new Fixture();
+        var without = f.builder.prepare(f.owner, f.conversation, "Current", "Current", f.config,
+                ReasoningDepth.AUTO, null, null, List.of(), List.of());
+        var withImage = f.builder.prepare(f.owner, f.conversation, "Current", "Current", f.config,
+                ReasoningDepth.AUTO, null, null, List.of(), List.of(UUID.randomUUID()));
+        long delta = ((Number) withImage.attributes().get("assembledEstimatedTokens")).longValue()
+                - ((Number) without.attributes().get("assembledEstimatedTokens")).longValue();
+        // The prompt carries a live timestamp, so allow for tiny second-boundary length drift.
+        assertThat(delta).isBetween((long) AgentRequestTokens.IMAGE_TOKENS, (long) AgentRequestTokens.IMAGE_TOKENS + 20);
+        verify(f.compactor).prepare(eq(f.owner), eq(f.conversation), anyString(), eq(f.config), any(),
+                anyList(), any(), anyString(), eq(1));
     }
 
     private static final class Fixture {
@@ -100,6 +154,9 @@ class AgentContextBuilderTests {
             when(profiles.view(owner)).thenReturn(new ProfileView("Synthetic owner", "", List.of(), "Asia/Shanghai"));
             when(compactor.budgetTokens()).thenReturn(12000);
             when(compactor.prepare(eq(owner), eq(conversation), anyString(), eq(config), any(), anyList(), any(), anyString())).thenAnswer(call ->
+                    new AgentContextCompactor.Prepared(call.getArgument(2), List.of(ConversationMessage.user(owner, conversation, "Earlier user")),
+                            2, 4, 10, new CharacterEstimator(), "SUMMARY-DATA"));
+            when(compactor.prepare(eq(owner), eq(conversation), anyString(), eq(config), any(), anyList(), any(), anyString(), anyInt())).thenAnswer(call ->
                     new AgentContextCompactor.Prepared(call.getArgument(2), List.of(ConversationMessage.user(owner, conversation, "Earlier user")),
                             2, 4, 10, new CharacterEstimator(), "SUMMARY-DATA"));
         }

@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  Activity, Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, ChevronDown, FileSearch, FileText, Square,
-  MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, Target, Trash2, Upload, X,
+  Activity, Archive, ArrowUp, BookOpenText, Brain, BrainCircuit, Check, ChevronDown, FileSearch, FileText, Image as ImageIcon,
+  LoaderCircle, MoreHorizontal, PanelLeftOpen, Paperclip, Pencil, Pin, Plus, RotateCcw, Search, Square, Target, Trash2, Upload, X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -36,7 +36,8 @@ import { useLocale } from "@/lib/locale";
 import { useTypewriter } from "@/lib/use-typewriter";
 
 type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING" | "SERVICE"; id: string; label: string };
-type AgentMessage = { id: string; requestId?: string; runId?: string | null; conversationId: string; role: "USER" | "ASSISTANT"; content: string; contextReferences?: SelectedContext[]; runTrace?: string | null; proposalResolutions?: Record<string, string>; createdAt: string };
+type AgentMessage = { id: string; requestId?: string; runId?: string | null; conversationId: string; role: "USER" | "ASSISTANT"; content: string; imageIds?: string[]; contextReferences?: SelectedContext[]; runTrace?: string | null; proposalResolutions?: Record<string, string>; createdAt: string };
+type ChatImage = { localId: string; file: File; fileName: string; previewUrl: string; status: "uploading" | "ready" | "error"; id?: string; mediaType?: string; error?: string };
 type Conversation = { id: string; title: string; pinned: boolean; titleManuallySet?: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
 type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null };
@@ -150,7 +151,17 @@ function sortConversations(items: Conversation[]) {
 
 const MAX_MESSAGE_RETRIES = 5;
 const MAX_MESSAGE_LENGTH = 50_000;
+const MAX_CHAT_IMAGES = 4;
+const CHAT_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const IMAGE_MODEL_ERROR = "当前模型不支持图片，请切换支持图片的模型";
 type ReasoningDepth = "AUTO" | "QUICK" | "STANDARD" | "DEEP";
+
+function MessageImages({ imageIds, alt }: { imageIds?: string[]; alt: string }) {
+  if (!imageIds?.length) return null;
+  return <div data-message-images className={`mb-2 grid max-w-lg gap-2 ${imageIds.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+    {imageIds.slice(0, MAX_CHAT_IMAGES).map((id) => <img key={id} src={`/api/agent/images/${encodeURIComponent(id)}`} alt={alt} className="max-h-80 w-full rounded-xl bg-white/60 object-contain" />)}
+  </div>;
+}
 
 function outgoingKey(accountId: string | null, conversationId: string) {
   return `ardor:outgoing:${accountId}:${conversationId}`;
@@ -240,6 +251,7 @@ export default function AgentHomePage() {
     setModelPickerOpen(open);
     if (!open) cancelModelDescriptions(true);
   }, [cancelModelDescriptions]);
+  const imageInputSupported = modelOptions.find((item) => item.id === modelChoice)?.imageInput === true;
   const [titleWatch, setTitleWatch] = useState<{ id: string; title: string } | null>(null);
   const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
@@ -274,6 +286,9 @@ export default function AgentHomePage() {
   const [selectedContexts, setSelectedContexts] = useState<SelectedContext[]>([]);
   const [features, setFeatures] = useState<AgentFeature[]>([]);
   const featuresRef = useRef<AgentFeature[]>([]);
+  const [servicePickerOpen, setServicePickerOpen] = useState(false);
+  const [chatImages, setChatImages] = useState<ChatImage[]>([]);
+  const chatImagesRef = useRef<ChatImage[]>([]);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const attachmentRef = useDismiss<HTMLDivElement>(attachmentOpen, () => setAttachmentOpen(false));
   const [isAdmin, setIsAdmin] = useState(false);
@@ -293,7 +308,12 @@ export default function AgentHomePage() {
   const endRef = useRef<HTMLDivElement>(null);
   const runStartedAt = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
+  const imageUploadRef = useRef<HTMLInputElement>(null);
   const runningRunId = runningRun?.id;
+  useEffect(() => { chatImagesRef.current = chatImages; }, [chatImages]);
+  useEffect(() => () => {
+    for (const image of chatImagesRef.current) URL.revokeObjectURL(image.previewUrl);
+  }, []);
   const learningRequestIds = confirmations.filter((item) => item.kind === "learning_plan" && ["PENDING", "GENERATING", "FAILED", "EXPIRED"].includes(item.state)).map((item) => item.learningPlan?.requestId).filter(Boolean).join(",");
   const generatingLearning = confirmations.some((item) => item.state === "GENERATING");
   const previousLearningStates = useRef(new Map<string, string>());
@@ -452,6 +472,8 @@ export default function AgentHomePage() {
         if (!selected || !selected.available) return;
         setModelChoice(value);
         setNativeReasoning(selected.nativeControl);
+        if (chatImages.length > 0 && selected.imageInput !== true) setError(IMAGE_MODEL_ERROR);
+        else if (error === IMAGE_MODEL_ERROR) setError("");
         try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:model-choice:${reasoningAccount.current}`, value); }
         catch { /* The current selection remains usable when browser storage is unavailable. */ }
       }} />;
@@ -767,6 +789,7 @@ export default function AgentHomePage() {
     if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false);
     if (conversationId === state?.conversationId) return;
     window.history.replaceState(null, "", `/app?conversation=${conversationId}`);
+    clearChatImages();
     setError(""); setRunningRun(null); setHasQueuedMessages(false); setRunThinking(""); setStreamProgress(null); setConfirmations([]); setMenuId(null);
     try { await load(conversationId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "无法载入会话"); }
@@ -774,6 +797,7 @@ export default function AgentHomePage() {
 
   async function newConversation() {
     if (busy) return;
+    clearChatImages();
     setError("");
     setRunningRun(null);
     setHasQueuedMessages(false);
@@ -839,7 +863,18 @@ export default function AgentHomePage() {
 
   async function send(text: string) {
     const message = text.trim();
-    if (!message) return;
+    const sentImages = [...chatImagesRef.current];
+    if (!message && sentImages.length === 0) return;
+    if (sentImages.some((image) => image.status === "uploading")) {
+      setError(t("Wait for the images to finish uploading before sending.", "请等待图片上传完成后再发送。"));
+      return;
+    }
+    if (sentImages.some((image) => image.status === "error")) {
+      setError(t("Remove images that failed to upload before sending.", "请先移除上传失败的图片再发送。"));
+      return;
+    }
+    if (sentImages.length > 0 && !imageInputSupported) { setError(IMAGE_MODEL_ERROR); return; }
+    const sentImageIds = sentImages.map((image) => image.id!);
     if (message.length > MAX_MESSAGE_LENGTH) {
       setError(`这条消息有 ${message.length.toLocaleString()} 个字符，单条最多 ${MAX_MESSAGE_LENGTH.toLocaleString()} 个字符。请删减或分段发送。`);
       return;
@@ -847,7 +882,7 @@ export default function AgentHomePage() {
     if (busy || runningRun || hasQueuedMessages) {
       if (busy && !streamAccepted || queueSubmitting.current || !state?.conversationId) return;
       queueSubmitting.current = true;
-      const payload = { conversationId: state.conversationId, message, reasoningDepth, modelChoice,
+      const payload = { conversationId: state.conversationId, message, imageIds: sentImageIds, reasoningDepth, modelChoice,
         contextReferences: selectedContexts.map(({ type, id }) => ({ type, id })) };
       const slot = `ardor:queue-submit:${reasoningAccount.current}:${state.conversationId}`;
       try {
@@ -863,6 +898,7 @@ export default function AgentHomePage() {
           window.sessionStorage.removeItem(draftStorageKey(state.conversationId));
         }
         setDraft((current) => current.trim() === message ? "" : current);
+        clearSentChatImages(sentImages);
         if (unchanged) setSelectedContexts((current) => {
           if (JSON.stringify(current.map(({ type, id }) => ({ type, id }))) !== JSON.stringify(payload.contextReferences)) return current;
           window.sessionStorage.removeItem(`${draftStorageKey(state.conversationId)}:service:${reasoningAccount.current}`);
@@ -889,6 +925,7 @@ export default function AgentHomePage() {
     window.sessionStorage.removeItem(`${savedDraftKey}:references`);
     setDraft("");
     setSelectedContexts([]);
+    clearSentChatImages(sentImages);
     setError(""); setRetryFailures([]); setRunSteps([]); setRunThinking(""); setStreamProgress(null); setTerminalRunId(null); setStreamPhase("WAITING_DATA");
     setConfirmations((current) => current.filter((item) => item.kind === "learning_plan"));
     setRunElapsed(0); runStartedAt.current = Date.now(); setStreamAccepted(false); setBusy(true);
@@ -915,10 +952,10 @@ export default function AgentHomePage() {
       if (!activeConversationId) throw new Error("无法创建新对话");
       const activeConversation = conversations.find((item) => item.id === activeConversationId);
       if (messages.length === 0 && (!activeConversation || activeConversation.title === "新对话")) {
-        const title = conversationTitle(message);
+        const title = conversationTitle(message) || t("Image message", "图片消息");
         setConversations((current) => current.map((item) => item.id === activeConversationId ? { ...item, title } : item));
       }
-      const optimistic: AgentMessage = { id: optimisticId, requestId, conversationId: activeConversationId, role: "USER", content: message, contextReferences: sentContexts, createdAt: "" };
+      const optimistic: AgentMessage = { id: optimisticId, requestId, conversationId: activeConversationId, role: "USER", content: message, imageIds: sentImageIds, contextReferences: sentContexts, createdAt: "" };
       if (messages.length === 0) {
         setLeavingEmptyState(true);
         await new Promise((resolve) => window.setTimeout(resolve, 260));
@@ -949,7 +986,7 @@ export default function AgentHomePage() {
           let streamFailure: AgentStreamEvent | null = null;
           let stopDispatched = false;
           if (retry > 0) setMessages((current) => current.map((item) => item.id === pendingAssistantId ? { ...item, content: "" } : item));
-          await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { requestId, conversationId: activeConversationId, message, reasoningDepth, modelChoice, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
+          await streamApi<AgentStreamEvent>("/api/agent/messages/stream", { requestId, conversationId: activeConversationId, message, imageIds: sentImageIds, reasoningDepth, modelChoice, contextReferences: sentContexts.map(({ type, id }) => ({ type, id })) }, (event) => {
             // A stop can race with initial acceptance. Only a real server event
             // proves this run exists; never send cancellation to a future UUID.
             if (sendControl.signal.aborted && event.type !== "error" && !stopDispatched) {
@@ -995,7 +1032,7 @@ export default function AgentHomePage() {
               if (["analyze_resume", "organize_interview_recap", "research_knowledge_from_web"].includes(event.toolName)) window.dispatchEvent(new Event("ardor:background-refresh"));
             } else if (event.type === "done" && event.messageId && event.conversationId) {
               const currentConversation = conversations.find((item) => item.id === event.conversationId);
-              if (!currentConversation?.titleManuallySet) setTitleWatch({ id: event.conversationId, title: currentConversation?.title ?? conversationTitle(message) });
+              if (!currentConversation?.titleManuallySet) setTitleWatch({ id: event.conversationId, title: currentConversation?.title ?? (conversationTitle(message) || t("Image message", "图片消息")) });
               assistant = { id: event.messageId, conversationId: event.conversationId, role: "ASSISTANT", content: event.content ?? "", createdAt: new Date().toISOString() };
               proposalSources.current.set(requestId, event.messageId);
               setConfirmations((current) => current.map((item) => {
@@ -1089,6 +1126,11 @@ export default function AgentHomePage() {
       if (!conversationId || !readOutgoing(reasoningAccount.current, conversationId)) {
         setDraft((current) => current || message);
         if (!readSavedDraft(conversationId)) window.sessionStorage.setItem(savedDraftKey, message);
+        if (sentImages.length > 0 && chatImagesRef.current.length === 0) {
+          const restored = sentImages.map((image) => ({ ...image, previewUrl: URL.createObjectURL(image.file) }));
+          chatImagesRef.current = restored;
+          setChatImages(restored);
+        }
         setSelectedContexts((current) => {
           const restored = current.length ? current : sentContexts;
           window.sessionStorage.setItem(`${savedDraftKey}:references`, JSON.stringify(restored.filter(item => item.type !== "SERVICE")));
@@ -1170,6 +1212,64 @@ export default function AgentHomePage() {
       setAttachmentOpen(false); setNotice("简历已加入资料库，并附加到这条消息。你可以让 Ardor 分析或管理它。");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "简历上传失败"); }
     finally { setBusy(false); if (uploadRef.current) uploadRef.current.value = ""; }
+  }
+
+  function clearSentChatImages(images: ChatImage[]) {
+    const sentLocalIds = new Set(images.map((image) => image.localId));
+    const remaining = chatImagesRef.current.filter((image) => !sentLocalIds.has(image.localId));
+    for (const image of images) URL.revokeObjectURL(image.previewUrl);
+    chatImagesRef.current = remaining;
+    setChatImages(remaining);
+  }
+
+  function clearChatImages() {
+    clearSentChatImages(chatImagesRef.current);
+  }
+
+  function removeChatImage(localId: string) {
+    const image = chatImagesRef.current.find((item) => item.localId === localId);
+    if (image) clearSentChatImages([image]);
+  }
+
+  async function uploadChatImages(files: File[]) {
+    if (!files.length) return;
+    if (!imageInputSupported) { setError(IMAGE_MODEL_ERROR); return; }
+    const supported = files.filter((file) => CHAT_IMAGE_TYPES.has(file.type));
+    const hasUnsupported = supported.length !== files.length;
+    if (hasUnsupported) setError(t("Only PNG, JPEG, WebP and GIF images are supported.", "仅支持 PNG、JPEG、WebP 和 GIF 图片。"));
+    const available = Math.max(0, MAX_CHAT_IMAGES - chatImagesRef.current.length);
+    const hasTooMany = supported.length > available;
+    if (hasTooMany) setError(t("You can attach up to 4 images per message.", "每条消息最多上传 4 张图片。"));
+    const accepted = supported.slice(0, available);
+    if (!accepted.length) return;
+    setAttachmentOpen(false);
+    const pending: ChatImage[] = accepted.map((file) => ({
+      localId: crypto.randomUUID(), file, fileName: file.name, previewUrl: URL.createObjectURL(file), status: "uploading",
+    }));
+    const next = [...chatImagesRef.current, ...pending];
+    chatImagesRef.current = next;
+    setChatImages(next);
+    if (!hasUnsupported && !hasTooMany) setError("");
+    try {
+      await Promise.all(pending.map(async (item) => {
+        const body = new FormData(); body.append("file", item.file);
+        try {
+          const uploaded = await api<{ id: string; mediaType: string }>("/api/agent/images", { method: "POST", body });
+          const updated = chatImagesRef.current.map((image) => image.localId === item.localId
+            ? { ...image, id: uploaded.id, mediaType: uploaded.mediaType, status: "ready" as const, error: undefined } : image);
+          chatImagesRef.current = updated;
+          setChatImages(updated);
+        } catch (reason) {
+          const message = reason instanceof Error ? reason.message : t("Image upload failed", "图片上传失败");
+          const updated = chatImagesRef.current.map((image) => image.localId === item.localId
+            ? { ...image, status: "error" as const, error: message } : image);
+          chatImagesRef.current = updated;
+          setChatImages(updated);
+        }
+      }));
+    } finally {
+      if (imageUploadRef.current) imageUploadRef.current.value = "";
+    }
   }
 
   function toggleContext(context: SelectedContext) {
@@ -1282,7 +1382,7 @@ export default function AgentHomePage() {
 
   function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void send(draft); }
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (/^[@$]/.test(draft) && event.key === "ArrowDown") {
+    if ((servicePickerOpen || /^[@$]/.test(draft)) && event.key === "ArrowDown") {
       const option = document.querySelector<HTMLButtonElement>("[data-service-option]");
       if (option) { event.preventDefault(); option.focus(); return; }
     }
@@ -1291,7 +1391,7 @@ export default function AgentHomePage() {
 
   function servicePicker() {
     const selected = features.find((feature) => selectedContexts.some((context) => context.type === "SERVICE" && context.id === feature.id));
-    return <ServicePicker features={features} selected={selected} draft={draft} choose={(feature) => {
+    return <ServicePicker features={features} selected={selected} draft={draft} manualOpen={servicePickerOpen} onManualOpenChange={setServicePickerOpen} choose={(feature) => {
       setSelectedContexts((current) => {
         const references = current.filter((item) => item.type !== "SERVICE").slice(-4);
         window.sessionStorage.setItem(`${draftStorageKey(state?.conversationId)}:references`, JSON.stringify(references));
@@ -1307,12 +1407,27 @@ export default function AgentHomePage() {
 
   function attachmentPicker() {
     const option = (context: SelectedContext, icon: React.ReactNode) => <button type="button" key={`${context.type}-${context.id}`} onClick={() => toggleContext(context)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left hover:bg-stone-100">{icon}<span className="min-w-0 flex-1 truncate">{context.label}</span>{selectedContexts.some((item) => item.type === context.type && item.id === context.id) && <Check className="size-3.5 text-violet-600" />}</button>;
-    return <div ref={attachmentRef} className="relative"><input ref={uploadRef} type="file" accept=".pdf,.docx" className="hidden" onChange={(event) => void uploadResume(event.target.files?.[0])} /><button type="button" aria-label={t("Add attachments", "添加资料")} title={t("Add attachments", "添加资料")} aria-expanded={attachmentOpen} onClick={() => void openAttachments()} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Plus className="size-4" /></button>{attachmentOpen && <div role="region" aria-label={t("Attachments", "附件")} className="absolute bottom-11 left-0 z-30 max-h-96 w-80 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 text-sm shadow-2xl"><button type="button" onClick={() => uploadRef.current?.click()} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-stone-100"><Upload className="size-4" />{t("Upload resume", "上传简历")}</button>{resumeOptions.map((resume) => option({ type: "RESUME", id: resume.id, label: resume.originalFilename }, <FileSearch className="size-4 shrink-0 text-blue-500" />))}{recapOptions.map((recap) => option({ type: "RECAP", id: recap.id, label: recap.title }, <FileText className="size-4 shrink-0 text-violet-500" />))}{knowledgeOptions.map((document) => option({ type: "KNOWLEDGE", id: document.id, label: document.title }, <BookOpenText className="size-4 shrink-0 text-cyan-600" />))}{learningOptions.map((plan) => option({ type: "LEARNING", id: plan.id, label: plan.concept }, <BrainCircuit className="size-4 shrink-0 text-rose-500" />))}</div>}</div>;
+    return <div ref={attachmentRef} className="relative"><input ref={uploadRef} type="file" accept=".pdf,.docx" className="hidden" onChange={(event) => void uploadResume(event.target.files?.[0])} /><input ref={imageUploadRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="hidden" onChange={(event) => void uploadChatImages(Array.from(event.target.files ?? []))} /><button type="button" aria-label={t("Add attachments", "添加资料")} title={t("Add attachments", "添加资料")} aria-expanded={attachmentOpen} onClick={() => void openAttachments()} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Paperclip className="size-4" /></button>{attachmentOpen && <div role="region" aria-label={t("Attachments", "附件")} className="absolute bottom-11 left-0 z-30 max-h-96 w-80 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-2 text-sm shadow-2xl"><button type="button" onClick={() => { if (imageInputSupported) imageUploadRef.current?.click(); else setError(IMAGE_MODEL_ERROR); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-stone-100"><ImageIcon className="size-4" />{t("Upload chat images", "上传聊天图片")}</button><button type="button" onClick={() => uploadRef.current?.click()} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 hover:bg-stone-100"><Upload className="size-4" />{t("Upload resume", "上传简历")}</button>{resumeOptions.map((resume) => option({ type: "RESUME", id: resume.id, label: resume.originalFilename }, <FileSearch className="size-4 shrink-0 text-blue-500" />))}{recapOptions.map((recap) => option({ type: "RECAP", id: recap.id, label: recap.title }, <FileText className="size-4 shrink-0 text-violet-500" />))}{knowledgeOptions.map((document) => option({ type: "KNOWLEDGE", id: document.id, label: document.title }, <BookOpenText className="size-4 shrink-0 text-cyan-600" />))}{learningOptions.map((plan) => option({ type: "LEARNING", id: plan.id, label: plan.concept }, <BrainCircuit className="size-4 shrink-0 text-rose-500" />))}</div>}</div>;
+  }
+
+  function chatImagePreviews() {
+    if (!chatImages.length) return null;
+    return <div data-chat-image-previews className="mx-3 mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {chatImages.map((image) => <figure key={image.localId} className="relative min-w-0 overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
+        <img src={image.previewUrl} alt={image.fileName} className="h-28 w-full object-contain" />
+        <button type="button" aria-label={t("Remove chat image", "移除聊天图片")} onClick={() => removeChatImage(image.localId)} className="absolute right-1 top-1 rounded-full bg-stone-950/65 p-1 text-white hover:bg-stone-950"><X className="size-3.5" /></button>
+        <figcaption className={`flex min-h-7 items-center gap-1 truncate px-2 py-1 text-[11px] ${image.status === "error" ? "text-red-600" : "text-stone-500"}`} title={image.error ?? image.fileName}>
+          {image.status === "uploading" && <LoaderCircle className="size-3 shrink-0 animate-spin" />}
+          <span className="truncate">{image.status === "uploading" ? t("Uploading…", "上传中…") : image.status === "error" ? image.error : image.fileName}</span>
+        </figcaption>
+      </figure>)}
+    </div>;
   }
 
   function composerFooter() {
     return <div data-composer-footer className="ardor-composer-footer flex items-center justify-between gap-1 px-1 pb-1">
       <div className="flex shrink-0 items-center gap-1">
+        <button type="button" aria-label={t("Choose service", "选择功能")} title={t("Choose service", "选择功能")} aria-expanded={servicePickerOpen} onClick={() => setServicePickerOpen((open) => !open)} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Plus className="size-4" /></button>
         {attachmentPicker()}{permissionPicker()}
       </div>
       <div data-composer-actions className="flex min-w-0 items-center justify-end gap-1">
@@ -1320,7 +1435,7 @@ export default function AgentHomePage() {
           usage={liveContext?.conversationId === state?.conversationId ? liveContext?.usage : streamProgress?.contextUsage ?? messages.slice().reverse().map(item => savedRunTrace(item.runTrace)?.contextUsage).find(Boolean)} />
         {reasoningPicker()}
         <ChatVoiceButton disabled={!state?.llmConfigured} onTranscript={(text) => { setDraft((current) => current.trim() ? `${current.trim()} ${text}` : text); setError(""); }} onError={setError} />
-        {isRunning && !draft.trim() ? <Button type="button" aria-label={t("Stop", "停止")} disabled={cancelPending} onClick={() => void cancelExecution()} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800 disabled:opacity-50"><Square className="size-3 fill-current" /></Button> : <Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || !draft.trim() || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button>}
+        {isRunning && !draft.trim() && chatImages.length === 0 ? <Button type="button" aria-label={t("Stop", "停止")} disabled={cancelPending} onClick={() => void cancelExecution()} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800 disabled:opacity-50"><Square className="size-3 fill-current" /></Button> : <Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || (!draft.trim() && chatImages.length === 0) || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button>}
       </div>
     </div>;
   }
@@ -1458,6 +1573,7 @@ export default function AgentHomePage() {
                   {liveTrace}
                   {(visibleError || visibleRetryFailures.length > 0) && <div role="alert" className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{visibleRetryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{visibleRetryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
                   <form onSubmit={submit} className="mx-auto mt-8 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
+                    {chatImagePreviews()}
                     {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
                     <div className="relative">
@@ -1473,7 +1589,7 @@ export default function AgentHomePage() {
                 {messages.map((message) => (
                   <article key={message.id} className={`flex gap-3 ${message.role === "USER" ? "justify-end" : "justify-start"}`}>
                     {message.role === "USER" ? (
-                      <div className="flex max-w-[86%] flex-col items-end"><div className="rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7">{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" />{context.type === "SERVICE" ? <Link href={featureHref(features.find((feature) => feature.id === context.id)?.key)} className="truncate text-violet-700 underline underline-offset-2">{locale === "en" ? features.find((feature) => feature.id === context.id)?.englishLabel ?? context.label : context.label}</Link> : <span className="truncate">{context.label}</span>}</span>)}</div>}<div className="whitespace-pre-wrap">{message.content}</div></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 px-1 text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time></div>
+                      <div className="flex max-w-[86%] flex-col items-end"><div className="rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7"><MessageImages imageIds={message.imageIds} alt={t("Attached chat image", "聊天图片")} />{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" />{context.type === "SERVICE" ? <Link href={featureHref(features.find((feature) => feature.id === context.id)?.key)} className="truncate text-violet-700 underline underline-offset-2">{locale === "en" ? features.find((feature) => feature.id === context.id)?.englishLabel ?? context.label : context.label}</Link> : <span className="truncate">{context.label}</span>}</span>)}</div>}<div className="whitespace-pre-wrap">{message.content}</div></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 px-1 text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time></div>
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         {message === liveAssistant && liveTrace}
@@ -1506,6 +1622,7 @@ export default function AgentHomePage() {
             </div>
             {visibleError && <div role="alert" className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
             <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
+              {chatImagePreviews()}
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
               <div className="relative">

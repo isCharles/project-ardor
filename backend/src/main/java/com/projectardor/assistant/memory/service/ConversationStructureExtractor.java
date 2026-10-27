@@ -116,6 +116,7 @@ public class ConversationStructureExtractor {
                 }
 
                 只保留重要信息，不保留寒暄、重复内容、模型猜测；不编造。用中文输出。
+                图片消息只记录“用户发送过图片”这一事实；摘要看不到图片内容，不得描述或猜测图片内容。
                 确保JSON格式正确，可被解析。
 
                 """);
@@ -134,9 +135,11 @@ public class ConversationStructureExtractor {
         int included = 0;
         for (ConversationMessage message : older) {
             String content = message.getContent() == null ? "" : message.getContent();
-            if (included > 0 && used + content.length() > 12_000) break;
-            prompt.append(message.getRole()).append(": ").append(content).append('\n');
-            used += content.length();
+            String imageMarker = message.getImageIds().isEmpty() ? ""
+                    : " [附带 " + message.getImageIds().size() + " 张图片，内容不可见]";
+            if (included > 0 && used + content.length() + imageMarker.length() > 12_000) break;
+            prompt.append(message.getRole()).append(": ").append(content).append(imageMarker).append('\n');
+            used += content.length() + imageMarker.length();
             included++;
         }
 

@@ -137,7 +137,7 @@ public class AgentController {
             @Valid @RequestBody AgentMessageRequest request) {
         return agentService.chat(principal.userId(), request.conversationId(), request.message(), request.contextType(),
                 request.contextId(), request.contextReferences(), request.requestId(), request.reasoningDepth(),
-                request.modelChoice());
+                request.modelChoice(), request.imageIds());
     }
 
     @PostMapping(value = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -169,7 +169,7 @@ public class AgentController {
         Thread.ofVirtual().name("ardor-agent-request").start(() -> {
             try {
                 agentService.chatStream(userId, request.conversationId(), request.message(), request.contextType(), request.contextId(),
-                        request.contextReferences(), request.requestId(), request.reasoningDepth(), request.modelChoice(), sink);
+                        request.contextReferences(), request.requestId(), request.reasoningDepth(), request.modelChoice(), request.imageIds(), sink);
             } catch (RuntimeException unexpected) {
                 sink.send(AgentStreamEvent.error("AGENT_STREAM_FAILED",
                         "请求未能继续，请查看运行记录后重试", false, 0));
