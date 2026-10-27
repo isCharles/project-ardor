@@ -194,6 +194,76 @@ class CareerAgentRuntimeIntegrationTests {
         f.run("请只读分析"); f.run("继续");
         assertThat(f.events.stream().filter(event -> "error".equals(event.type()))).hasSize(2);
         assertThat(f.events).noneMatch(event -> "AGENT_BUSY".equals(event.errorCode()) || "done".equals(event.type()));
+        assertThat(f.registry.get("ardor.agent.run.active").gauge().value()).isZero();
+        assertThat(f.registry.get("ardor.agent.run.errors").counter().count()).isEqualTo(2.0);
+    }
+
+    @Test void completedRunEndsTheActiveGaugeExactlyOnce() {
+        var f = new Fixture();
+        f.run("请只读分析");
+        assertThat(f.registry.get("ardor.agent.run.active").gauge().value()).isZero();
+        assertThat(f.registry.get("ardor.agent.run.successes").counter().count()).isEqualTo(1.0);
+        assertThat(f.registry.get("ardor.agent.run.errors").counter().count()).isZero();
+    }
+
+    @Test void busyRejectionEndsItsOwnRunWithoutLeakingTheGauge() throws Exception {
+        var f = new Fixture();
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        f.reply = (request, handler) -> {
+            entered.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException expected) {
+                Thread.currentThread().interrupt();
+            }
+            handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from("first answer")).build());
+        };
+        var first = java.util.concurrent.CompletableFuture.runAsync(() -> f.run("第一条"));
+        try {
+            assertThat(entered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            f.run("第二条");
+            assertThat(f.events).anyMatch(event -> "AGENT_BUSY".equals(event.errorCode()));
+        } finally {
+            release.countDown();
+        }
+        first.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        for (int i = 0; i < 100 && f.events.stream().noneMatch(event -> "done".equals(event.type())); i++) {
+            f.service.watchStreams();
+            Thread.sleep(5);
+        }
+        assertThat(f.events.stream().filter(event -> "done".equals(event.type()))).hasSize(1);
+        assertThat(f.registry.get("ardor.agent.run.active").gauge().value()).isZero();
+        assertThat(f.registry.get("ardor.agent.run.successes").counter().count()).isEqualTo(1.0);
+        assertThat(f.registry.get("ardor.agent.run.errors").counter().count()).isEqualTo(1.0);
+    }
+
+    @Test void rejectedDuplicateStartDoesNotLeakTheActiveGauge() {
+        var f = new Fixture();
+        UUID requestId = UUID.randomUUID();
+        when(f.runs.begin(eq(f.user), eq(requestId), eq(f.conversation.getId()), anyString(), isNull(), isNull(),
+                anyList(), any(), any(), anyList())).thenReturn(false);
+        f.service.chatStream(f.user, f.conversation.getId(), "重复请求", null, null, List.of(), requestId,
+                new CareerAgentService.StreamSink() {
+                    public void send(AgentStreamEvent event) { f.events.add(event); }
+                    public void complete() {}
+                });
+        assertThat(f.events).anyMatch(event -> "RUN_ALREADY_STARTED".equals(event.errorCode()));
+        assertThat(f.registry.get("ardor.agent.run.active").gauge().value()).isZero();
+        assertThat(f.registry.get("ardor.agent.run.successes").counter().count()).isZero();
+        assertThat(f.registry.get("ardor.agent.run.errors").counter().count()).isEqualTo(1.0);
+        verify(f.factory, never()).createStreaming(any(LlmConfigService.LlmRuntimeConfig.class), any(), any(), anyList());
+    }
+
+    @Test void failedSyncRunEndsTheActiveGauge() {
+        var f = new Fixture();
+        UUID requestId = UUID.randomUUID();
+        when(f.runs.hasEarlierQueuedMessage(eq(f.user), eq(requestId))).thenReturn(true);
+        assertThatThrownBy(() -> f.service.chat(f.user, f.conversation.getId(), "同步请求", null, null,
+                List.of(), requestId, ReasoningDepth.AUTO)).isInstanceOf(IllegalStateException.class);
+        assertThat(f.registry.get("ardor.agent.run.active").gauge().value()).isZero();
+        assertThat(f.registry.get("ardor.agent.run.successes").counter().count()).isZero();
+        assertThat(f.registry.get("ardor.agent.run.errors").counter().count()).isEqualTo(1.0);
     }
 
     private static void expire(Fixture f, java.util.concurrent.CompletableFuture<Void> execution) throws Exception {
@@ -214,6 +284,9 @@ class CareerAgentRuntimeIntegrationTests {
         final AgentContextCompactor compactor = mock(AgentContextCompactor.class);
         final LangChainModelFactory factory = mock(LangChainModelFactory.class);
         final AgentTraceStore traces = mock(AgentTraceStore.class);
+        final io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        final AgentMetrics metrics = new AgentMetrics(registry);
         final ResumeReads resumeReads = mock(ResumeReads.class);
         final List<AgentStreamEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
         final List<ChatRequest> requests = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -248,7 +321,7 @@ class CareerAgentRuntimeIntegrationTests {
             service = new CareerAgentService(conversations, runs, factory, tools, mock(LlmConfigService.class), mock(AgentMemoryService.class),
                     new AgentContextBuilder(embedding, compactor, profiles, tools), profiles, JsonMapper.builder().build(), progress, approvals,
                     mock(AgentPermissionGrants.class), mock(AgentExecutionAuditStore.class), traces, catalog,
-                    mock(com.projectardor.platform.usage.UsageTokenStore.class), mock(AgentMetrics.class),
+                    mock(com.projectardor.platform.usage.UsageTokenStore.class), metrics,
                     Duration.ofSeconds(90), timeout);
         }
         void run(String message) { service.chatStream(user, conversation.getId(), message, null, null, new CareerAgentService.StreamSink() {
