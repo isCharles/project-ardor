@@ -92,7 +92,7 @@ function releaseLearningResponses() {
 
 function completionFor(payload) {
   const input = JSON.stringify(payload);
-  if (payload.model === "semantic-recall-probe") {
+  if (["semantic-recall-probe", "semantic-recall-default-probe"].includes(payload.model)) {
     const marker = input.match(/ARDOR-RECALL-\d+/)?.[0] ?? null;
     if (input.includes("你是 Ardor 的上下文压缩器")) {
       return {

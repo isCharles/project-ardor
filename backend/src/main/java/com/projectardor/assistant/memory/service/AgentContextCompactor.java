@@ -59,7 +59,7 @@ public class AgentContextCompactor {
     public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
             LangChainModelFactory modelFactory,
             @Value("${app.agent.context.recent-messages:8}") int recentMessages,
-            @Value("${app.agent.context.max-history-tokens:12000}") int maxHistoryTokens,
+            @Value("${app.agent.context.max-history-tokens:200000}") int maxHistoryTokens,
             AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas,
             com.projectardor.assistant.execution.service.AgentMetrics metrics) {
         this(conversations, summaries, modelFactory, recentMessages, maxHistoryTokens, budgetPolicy, schemas,

@@ -106,7 +106,7 @@ app:
     context:
       recent-messages: 8
       max-raw-messages: 24
-      max-history-tokens: 12000
+      max-history-tokens: 200000
 ```
 
 ## Limitations
