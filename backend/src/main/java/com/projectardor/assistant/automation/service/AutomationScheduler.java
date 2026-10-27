@@ -72,7 +72,7 @@ public class AutomationScheduler {
     private RunResult execute(Automation automation, Instant now) {
         var conversation = agent.createConversation(automation.getUserId());
         UUID conversationId = conversation.id();
-        agent.chatAutomation(automation.getUserId(), conversationId, automation.getPrompt());
+        agent.chatAutomation(automation.getUserId(), conversationId, automation.getPrompt(), automation.getId());
         String title = automation.getTitle() + " · " + TITLE_TIME.format(now);
         agent.renameConversation(automation.getUserId(), conversationId, title);
         return new RunResult(conversationId, title);

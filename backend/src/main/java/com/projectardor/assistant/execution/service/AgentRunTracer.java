@@ -35,6 +35,8 @@ public final class AgentRunTracer {
     private final AtomicLong inputTokens = new AtomicLong();
     private final AtomicLong outputTokens = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final java.util.concurrent.ConcurrentHashMap<String, UUID> toolCallParents =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     private AgentRunTracer(AgentTraceStore store, UUID userId, UUID runId, UUID conversationId,
             String model, String promptVersion, UUID rootSpanId) {
@@ -49,10 +51,18 @@ public final class AgentRunTracer {
 
     public static AgentRunTracer begin(AgentTraceStore store, UUID userId, UUID runId, UUID conversationId,
             String model, String promptVersion) {
-        UUID root = store == null ? null : store.startSpan(userId, runId, null, "RUN", "agent.run",
-                Map.of("conversationId", conversationId == null ? "" : conversationId.toString(),
-                        "model", model == null ? "" : model,
-                        "promptVersion", promptVersion == null ? "" : promptVersion));
+        return begin(store, userId, runId, conversationId, model, promptVersion, null);
+    }
+
+    public static AgentRunTracer begin(AgentTraceStore store, UUID userId, UUID runId, UUID conversationId,
+            String model, String promptVersion, UUID jobId) {
+        Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+        attributes.put("conversationId", conversationId == null ? "" : conversationId.toString());
+        attributes.put("model", model == null ? "" : model);
+        attributes.put("promptVersion", promptVersion == null ? "" : promptVersion);
+        attributes.put("originRun", runId == null ? "" : runId.toString());
+        attributes.put("jobId", jobId == null ? "" : jobId.toString());
+        UUID root = store == null ? null : store.startSpan(userId, runId, null, "RUN", "agent.run", attributes);
         return new AgentRunTracer(store, userId, runId, conversationId, model,
                 promptVersion == null ? PROMPT_VERSION : promptVersion, root);
     }
@@ -71,6 +81,16 @@ public final class AgentRunTracer {
 
     public UUID contextSpanId() { return contextSpan.get(); }
     public int nextModelCall() { return modelCallSequence.incrementAndGet(); }
+
+    /** Links a parsed tool-call id to the LLM span that requested it. */
+    public void bindToolCall(String toolCallId, UUID llmSpanId) {
+        if (toolCallId == null || toolCallId.isBlank() || llmSpanId == null) return;
+        toolCallParents.put(toolCallId, llmSpanId);
+    }
+
+    public UUID toolCallParent(String toolCallId) {
+        return toolCallId == null ? null : toolCallParents.get(toolCallId);
+    }
 
     public void finishChild(UUID spanId, String status, String errorCode, String modelName,
             Integer inTokens, Integer outTokens, Map<String, Object> attributes) {

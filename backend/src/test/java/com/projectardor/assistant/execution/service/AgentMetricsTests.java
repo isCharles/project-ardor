@@ -77,6 +77,37 @@ class AgentMetricsTests {
     }
 
     @Test
+    void phaseTimersSeparatePreparationApprovalAndBusinessTime() {
+        metrics.recordContextPrepare(Duration.ofMillis(120).toNanos());
+        metrics.recordApprovalWait(Duration.ofSeconds(30).toNanos());
+        metrics.recordToolBusiness(Duration.ofMillis(40).toNanos());
+
+        assertThat(registry.get("ardor.agent.context.prepare.duration").timer().count()).isEqualTo(1);
+        assertThat(registry.get("ardor.agent.tool.approval.wait").timer().count()).isEqualTo(1);
+        assertThat(registry.get("ardor.agent.tool.business.duration").timer().count()).isEqualTo(1);
+        assertThat(registry.get("ardor.agent.tool.approval.wait").timer().takeSnapshot().max(
+                java.util.concurrent.TimeUnit.MILLISECONDS)).isEqualTo(30_000.0);
+    }
+
+    @Test
+    void prometheusExpositionExposesRecomputableHistograms() {
+        var prometheus = new io.micrometer.prometheusmetrics.PrometheusMeterRegistry(
+                io.micrometer.prometheusmetrics.PrometheusConfig.DEFAULT);
+        var prometheusMetrics = new AgentMetrics(prometheus);
+        prometheusMetrics.recordRunEnd(Duration.ofMillis(100).toNanos(), true, null);
+        prometheusMetrics.recordContextPrepare(Duration.ofMillis(120).toNanos());
+        prometheusMetrics.recordApprovalWait(Duration.ofSeconds(30).toNanos());
+        prometheusMetrics.recordToolBusiness(Duration.ofMillis(40).toNanos());
+
+        String exposition = prometheus.scrape();
+        assertThat(exposition)
+                .contains("ardor_agent_run_duration_seconds_bucket")
+                .contains("ardor_agent_context_prepare_duration_seconds_bucket")
+                .contains("ardor_agent_tool_approval_wait_seconds_bucket")
+                .contains("ardor_agent_tool_business_duration_seconds_bucket");
+    }
+
+    @Test
     void compactionCountersSeparateWrittenSummariesFromFailures() {
         metrics.recordCompaction(false);
         metrics.recordCompaction(false);
