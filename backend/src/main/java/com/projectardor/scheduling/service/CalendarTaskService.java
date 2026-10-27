@@ -23,9 +23,16 @@ public class CalendarTaskService {
         return CalendarTaskView.from(get(userId, taskId));
     }
     private final CalendarTaskRepository repository;
+    private final CalendarTaskAgentSlots agentSlots;
 
     public CalendarTaskService(CalendarTaskRepository repository) {
+        this(repository, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public CalendarTaskService(CalendarTaskRepository repository, CalendarTaskAgentSlots agentSlots) {
         this.repository = repository;
+        this.agentSlots = agentSlots;
     }
 
     @Transactional(readOnly = true)
@@ -37,6 +44,25 @@ public class CalendarTaskService {
     public CalendarTaskView createView(UUID userId, String title, String description, Instant dueAt,
             CalendarTaskPriority priority, CalendarTaskSource source, UUID jobOpportunityId) {
         return flushedView(create(userId, title, description, dueAt, priority, source, jobOpportunityId));
+    }
+
+    /**
+     * Agent entry point: the same logical action writes at most one task per semantic identity,
+     * so a committed write whose response was lost is returned instead of duplicated.
+     */
+    @Transactional
+    public CalendarTaskView createViewOnce(UUID userId, UUID logicalActionId, UUID runId, String title,
+            String description, Instant dueAt, CalendarTaskPriority priority, CalendarTaskSource source,
+            UUID jobOpportunityId) {
+        if (agentSlots == null || logicalActionId == null || runId == null)
+            return createView(userId, title, description, dueAt, priority, source, jobOpportunityId);
+        String semantic = CalendarTaskAgentSlots.semanticKey(title, dueAt, priority, jobOpportunityId);
+        var existing = agentSlots.existing(userId, logicalActionId, runId, semantic);
+        if (existing.isPresent()) return detail(userId, existing.get());
+        CalendarTaskView created = flushedView(create(userId, title, description, dueAt, priority, source, jobOpportunityId));
+        agentSlots.record(userId, logicalActionId, runId, semantic,
+                CalendarTaskAgentSlots.callSignature(description), created.id());
+        return created;
     }
 
     @Transactional

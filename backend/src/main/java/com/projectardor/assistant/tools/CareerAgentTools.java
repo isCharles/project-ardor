@@ -258,7 +258,8 @@ public class CareerAgentTools {
             this.logicalActionId = logicalActionId;
             this.runRequestId = runRequestId;
             var context = new AgentToolContext(userId, this::propose, this::untrustedContent,
-                    logicalActionId == null ? runRequestId : logicalActionId, this::proposeLearningPlan);
+                    logicalActionId == null ? runRequestId : logicalActionId, runRequestId,
+                    this::proposeLearningPlan);
             moduleTools = toolProviders.stream().map(provider ->
                     java.util.Objects.requireNonNull(provider.bind(context), "Tool provider returned no bound object")).toList();
         }

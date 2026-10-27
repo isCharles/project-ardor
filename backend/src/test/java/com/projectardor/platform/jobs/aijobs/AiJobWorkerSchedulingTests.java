@@ -3,13 +3,20 @@ package com.projectardor.platform.jobs.aijobs;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.projectardor.assistant.execution.service.AgentMetrics;
@@ -20,6 +27,14 @@ class AiJobWorkerSchedulingTests {
     private final AiJobService service = mock(AiJobService.class);
     private final AgentMetrics metrics = mock(AgentMetrics.class);
     private final AiJobWorker worker = new AiJobWorker(store, service, metrics);
+
+    @BeforeEach
+    void currentAttemptWinsByDefault() {
+        lenient().when(store.requeue(any(), any())).thenReturn(true);
+        lenient().when(store.deadLetter(any(), any(), any())).thenReturn(true);
+        lenient().when(store.fail(any(), any(), any())).thenReturn(true);
+        lenient().when(store.complete(any(), any())).thenReturn(true);
+    }
 
     private AiJobStore.Job job(int attempts, int maxAttempts) {
         return new AiJobStore.Job(UUID.randomUUID(), UUID.randomUUID(), AiJobType.LEARNING_EVALUATE,
@@ -85,5 +100,31 @@ class AiJobWorkerSchedulingTests {
         worker.handleFailure(j, failure);
         verify(store).requeue(eq(j), org.mockito.ArgumentMatchers.argThat(
                 (Instant retryAfter) -> retryAfter.isBefore(Instant.now().plusSeconds(601))));
+    }
+
+    @Test
+    void configuredCapacityBoundsConcurrentClaims() throws Exception {
+        var claimed = new AtomicInteger();
+        var job = job(1, 5);
+        when(store.claimNext()).thenAnswer(call -> {
+            claimed.incrementAndGet();
+            return Optional.of(job);
+        });
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(service.perform(any())).thenAnswer(call -> {
+            started.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return "ok";
+        });
+        var limited = new AiJobWorker(store, service, metrics, 1);
+
+        limited.poll();
+        assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+        limited.poll();
+        assertThat(claimed.get()).isEqualTo(1);
+        release.countDown();
+        verify(store, org.mockito.Mockito.timeout(2000)).complete(eq(job), eq("ok"));
+        limited.stop();
     }
 }
