@@ -351,6 +351,28 @@ class ApprovedAgentToolsTests {
     }
 
     @Test
+    void approvalWaitAndBusinessTimeAreMeasuredSeparately() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        when(permissions.autoApproves(USER, "fake_write")).thenReturn(true);
+        var ticks = new java.util.concurrent.atomic.AtomicLong();
+        AgentToolTimings timings = new AgentToolTimings(
+                () -> ticks.getAndAdd(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(10)));
+        var executors = ApprovedAgentTools.wrap(new FakeTools(), USER, RUN, approvals, null, timings,
+                waiting -> {}, "帮我写", permissions, null, CONVERSATION, false, null);
+        ToolExecutionRequest request = ToolExecutionRequest.builder().id("call-write-1")
+                .name("fake_write").arguments("{\"value\":\"hi\"}").build();
+
+        executors.values().iterator().next().execute(request, null);
+
+        var timing = timings.remove("call-write-1");
+        assertThat(timing.approvalWaitMs()).isEqualTo(10);
+        assertThat(timing.businessMs()).isEqualTo(10);
+        assertThat(timing.executed()).isTrue();
+    }
+
+    @Test
     void toolSpanUsesTheRequestingLlmAsParentAndCarriesTheToolCallId() {
         AgentToolApprovals approvals = mock(AgentToolApprovals.class);
         when(approvals.canPropose(USER, RUN)).thenReturn(true);
