@@ -45,7 +45,7 @@ ARDOR_ACCEPTANCE_SEMANTIC_MODE=default \
   node backend/src/test/resources/semantic-recall-acceptance.mjs
 ```
 
-脚本在第 1 轮埋入随机暗号，之后持续对话到百轮，断言：最终回答仍能引用该事实；摘要版本与压缩次数一致并推进；重复压缩模式至少两次、默认 200K 预算模式不超过 20 次；请求估算不超过配额上限；原始用户/助手消息全部保留；最终 Run 状态为 `COMPLETED`。
+脚本在第 1 轮埋入随机暗号，之后持续对话到百轮，断言：最终回答仍能引用该事实；摘要版本与压缩次数一致并推进；重复压缩模式至少两次、默认 200K 预算模式不超过 20 次；请求估算不超过配额上限；原始用户/助手消息全部保留；最终 Run 状态为 `COMPLETED`。随后在模型已接收请求后取消一轮，断言 Run 为 `INTERRUPTED`、取消状态如实进入历史、被取消的指令仍进入下一轮模型请求；最后分页读取对话 trace，核对 `轮数 + 2` 条 Run、状态分布和可计时 span。对话时间总览的浏览器验收见 `frontend/tests/agent-trace-ui.mjs`（105/400 轮、分页与时间条位置）。
 
 **自动入口 2**：`ContextComparisonExperimentTests`（PR #249）复用真实 Builder/Compactor/Budget/重复结果压缩，对 20/80/200 轮合成对话比较原文、摘要、摘要+重复只读结果压缩三种视图。报告在 `backend/target/context-comparison/report.json`，逐模式记录最终请求 Token、含摘要与重试的会话总 Token、摘要额外时延、标签保留分子/分母和违规副作用；未知窗口保持 `null`，80/200 轮原文超 32K 已知窗口时单列为失败样本，未当作节省。
 

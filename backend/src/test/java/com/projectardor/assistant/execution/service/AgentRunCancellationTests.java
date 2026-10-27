@@ -158,7 +158,8 @@ class AgentRunCancellationTests {
         List<ConversationMessage> saved = List.of(
                 ConversationMessage.user(owner, conversation.getId(), "合成消息", List.of()),
                 ConversationMessage.assistant(owner, conversation.getId(), "迟到的回复", null));
-        when(conversations.appendExchange(any(), any(), anyString(), anyString(), any(), any())).thenReturn(saved);
+        when(conversations.appendExchange(any(), any(), anyString(), anyString(), any(), any(),
+                org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyList())).thenReturn(saved);
 
         // Only an explicit cancel is final. A stale "unconfirmed" interruption stays completable so a
         // slow but live run can still save its real reply.

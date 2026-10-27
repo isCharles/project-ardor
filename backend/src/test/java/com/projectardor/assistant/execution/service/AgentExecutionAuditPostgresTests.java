@@ -293,7 +293,8 @@ class AgentExecutionAuditPostgresTests {
                 org.mockito.ArgumentMatchers.any(Conversation.class),
                 org.mockito.ArgumentMatchers.eq("帮我安排学习计划"),
                 org.mockito.ArgumentMatchers.eq("建议如下"),
-                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(saved);
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyList())).thenReturn(saved);
 
         List<ConversationMessage> completed = runs.complete(owner, run, domainConversation,
                 "帮我安排学习计划", "建议如下", null, List.of());
