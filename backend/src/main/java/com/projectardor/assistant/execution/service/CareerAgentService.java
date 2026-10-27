@@ -467,6 +467,17 @@ public class CareerAgentService {
             }
             sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
             TokenStream stream = assistant.chat(agentInput)
+                    .onIntermediateResponse(response -> {
+                        if (finished.get() || lease.stopped()) return;
+                        String text = response == null || response.aiMessage() == null ? "" : response.aiMessage().text();
+                        text = text == null ? "" : text.strip();
+                        if (text.isBlank()) text = streamProgress.pendingAnswer(progressId).strip();
+                        if (text.codePointCount(0, text.length()) > 1200)
+                            text = text.substring(0, text.offsetByCodePoints(0, 1200)) + "…";
+                        streamProgress.intermediate(progressId, text);
+                        if (!text.isBlank()) persistedSteps.add(new RunStep(text, 0, "COMMENTARY"));
+                        sink.send(AgentStreamEvent.intermediate(text));
+                    })
                     .beforeToolExecution(before -> {
                         if (!lease.toolWaiting()) throw new java.util.concurrent.CancellationException("本轮已停止");
                         String name = before.request().name();

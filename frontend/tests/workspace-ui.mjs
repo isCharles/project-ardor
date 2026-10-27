@@ -83,9 +83,17 @@ try {
       await new Promise((resolve) => { releaseStream = resolve; });
       displayedMessages = [
         { id: "sent-user", conversationId: conversation.id, role: "USER", content: sentMessage.message, contextReferences: sentMessage.contextReferences.map((reference) => ({ ...reference, label: "学习" })), createdAt: new Date().toISOString() },
-        { id: "sent-assistant", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic agent reply", runTrace: JSON.stringify({ elapsedMs: 42000, status: "COMPLETED", steps: [{ label: "Read plans", elapsedMs: 40003, approvalWaitMs: 40000, businessMs: 3, status: "COMPLETED" }, { label: "Denied tool", elapsedMs: 1200, approvalWaitMs: 1200, businessMs: 0, status: "NOT_EXECUTED" }], thinkingOutput: "Synthetic public reasoning", firstOutputMs: 80 }), createdAt: new Date().toISOString() },
+        { id: "sent-assistant", conversationId: conversation.id, role: "ASSISTANT", content: "Synthetic agent reply", runTrace: JSON.stringify({ elapsedMs: 42000, status: "COMPLETED", steps: [{ label: "I'll inspect the plans.", elapsedMs: 0, status: "COMMENTARY" }, { label: "Read plans", elapsedMs: 40003, approvalWaitMs: 40000, businessMs: 3, status: "COMPLETED" }, { label: "Denied tool", elapsedMs: 1200, approvalWaitMs: 1200, businessMs: 0, status: "NOT_EXECUTED" }], thinkingOutput: "Synthetic public reasoning", firstOutputMs: 80 }), createdAt: new Date().toISOString() },
       ];
-      return route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "thinking", content: "Synthetic public reasoning" })}\n\ndata: ${JSON.stringify({ type: "done", conversationId: conversation.id, messageId: "sent-assistant", content: "Synthetic agent reply", elapsedMs: 100 })}\n\n` });
+      return route.fulfill({ contentType: "text/event-stream", body: [
+        { type: "thinking", content: "Synthetic public reasoning" },
+        { type: "delta", content: "I'll inspect the plans." },
+        { type: "intermediate", content: "I'll inspect the plans." },
+        { type: "tool_start", toolName: "list_learning_plans", label: "Read plans" },
+        { type: "tool_end", toolName: "list_learning_plans", label: "Read plans", elapsedMs: 4, toolStatus: "COMPLETED" },
+        { type: "delta", content: "Synthetic agent reply" },
+        { type: "done", conversationId: conversation.id, messageId: "sent-assistant", content: "Synthetic agent reply", elapsedMs: 100 },
+      ].map(event => `data: ${JSON.stringify(event)}\n\n`).join("") });
     }
     else if (path === "/api/agent") body = { conversationId: url.searchParams.get("conversationId") || conversation.id, llmConfigured: true, displayName: "Fixture", conversations: [conversation, ...(previewScenario ? [{ ...conversation, id: "chat-two", title: "Second preview chat" }] : [])], archivedConversations: [], messages: url.searchParams.get("conversationId") === "chat-two" ? [{ id: "preview-message", role: "ASSISTANT", content: "Second conversation content", createdAt: new Date().toISOString() }] : displayedMessages, memory: { content: "", updatedAt: null } };
     else if (path === "/api/agent/conversations/chat-one") {
@@ -140,7 +148,7 @@ try {
     else if (path === "/api/agent/runs/latest" && activeRun) body = activeRun;
     else if (path.endsWith("/progress") && activeRun) body = activeRun.status === "FAILED"
       ? { phase: "FAILED", label: "Stopped", thinkingOutput: "Saved public reasoning", answerPartial: "Saved incomplete answer", elapsedMs: 1200, steps: [{ label: "Recovered read plans", elapsedMs: 4, status: "COMPLETED" }] }
-      : { phase: activeRun?.progressPhase ?? "WAITING_DATA", label: "Waiting", thinkingOutput: activeRun?.progressPhase === "THINKING" ? "Provider supplied reasoning" : "", answerPartial: "", silentSeconds: 40 };
+      : { phase: activeRun?.progressPhase ?? "WAITING_DATA", label: "Waiting", thinkingOutput: activeRun?.progressPhase === "THINKING" ? "Provider supplied reasoning" : "", answerPartial: "", silentSeconds: 40, steps: activeRun?.showCommentary ? [{ label: "Recovered live commentary", elapsedMs: 0, status: "COMMENTARY" }] : [] };
     else if (path.startsWith("/api/agent/runs")) return route.fulfill(retryProbe || quotaProbe ? { status: 404, json: { message: "Not accepted" } } : { status: 204 });
     else if (path === "/api/agent/reasoning") body = { nativeControl: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
@@ -460,6 +468,8 @@ try {
     return !!(trace.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING);
   }), "Execution process must precede the final answer");
   await replyTrace.locator(":scope > summary").click();
+  await replyTrace.getByText("I'll inspect the plans.", { exact: true }).waitFor();
+  assert.equal(await replyArticle.locator(".ardor-markdown").innerText(), "Synthetic agent reply", "Intermediate text must not be repeated in the final answer");
   const reasoning = replyTrace.locator("details");
   await reasoning.locator("summary").click();
   await reasoning.getByText("Synthetic public reasoning", { exact: true }).waitFor();
@@ -476,7 +486,7 @@ try {
   assert.equal(await replyTrace.getAttribute("open"), null, "Reload restores one collapsed trace");
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   // Reconnect to an accepted run: it is history, never the next-message draft.
-  activeRun = { id: "accepted-run", conversationId: conversation.id, message: "Accepted message after disconnect", status: "RUNNING", label: "Waiting", createdAt: new Date().toISOString() };
+  activeRun = { id: "accepted-run", conversationId: conversation.id, message: "Accepted message after disconnect", status: "RUNNING", label: "Waiting", showCommentary: true, createdAt: new Date().toISOString() };
   permissions = [{ id: "permission-two", tool: "add_memory", arguments: '{"memory":"Fixture"}', status: "PENDING", expiresAt: new Date(Date.now() + 120000).toISOString() }];
   await page.evaluate(({ accountId, conversationId }) => {
     window.sessionStorage.setItem(`ardor:outgoing:${accountId}:${conversationId}`, JSON.stringify({
@@ -485,6 +495,7 @@ try {
   }, { accountId: userId, conversationId: conversation.id });
   await page.reload();
   await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).waitFor();
+  await page.getByText("Recovered live commentary", { exact: true }).waitFor();
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   assert.equal(await draftBox.isEnabled(), true);
   assert.equal(await toolPermissions.count(), 0, "Ordinary writes must not show permission prompts");

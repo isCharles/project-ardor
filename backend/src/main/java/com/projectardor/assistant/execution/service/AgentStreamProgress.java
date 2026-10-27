@@ -27,6 +27,22 @@ public class AgentStreamProgress {
     public void begin(UUID userId, UUID requestId) { entries.put(requestId, new Entry(userId, clock.instant())); }
     public void thinking(UUID requestId, String text) { observe(requestId, "THINKING", text); }
     public void answer(UUID requestId, String text) { observe(requestId, "OUTPUT", text); }
+    String pendingAnswer(UUID requestId) {
+        Entry entry = entries.get(requestId);
+        if (entry == null) return "";
+        synchronized (entry) { return entry.finishedAt == null ? entry.answer.toString() : ""; }
+    }
+    /** A tool round has ended; its streamed text is process commentary, not the final answer. */
+    public void intermediate(UUID requestId, String commentary) {
+        Entry entry = entries.get(requestId);
+        if (entry != null) synchronized (entry) {
+            if (entry.finishedAt != null) return;
+            entry.answer.setLength(0);
+            if (commentary != null && !commentary.isBlank() && entry.steps.size() < 32)
+                entry.steps.add(new Step(commentary, 0, "COMMENTARY", null, null));
+            entry.revision++;
+        }
+    }
     public void context(UUID requestId, AgentContextUsage usage) {
         Entry entry = entries.get(requestId);
         if (entry != null) synchronized (entry) {

@@ -79,6 +79,28 @@ class CareerAgentRuntimeIntegrationTests {
         assertThat(f.events.stream().filter(event -> "done".equals(event.type()))).hasSize(2);
     }
 
+    @Test void intermediateModelTextBecomesWorkHistoryAndFinalReplyStaysSeparate() {
+        var f = new Fixture();
+        f.reply = (request, handler) -> {
+            if (request.messages().stream().noneMatch(message -> message instanceof dev.langchain4j.data.message.ToolExecutionResultMessage)) {
+                var call = dev.langchain4j.agent.tool.ToolExecutionRequest.builder().id("read-1").name("list_resumes").arguments("{}").build();
+                handler.onPartialResponse("I'll inspect the resumes.");
+                handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from("I'll inspect the resumes.", List.of(call))).build());
+            } else {
+                handler.onPartialResponse("Final result.");
+                handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from("Final result.")).build());
+            }
+        };
+        f.run("Please check my resumes");
+        assertThat(f.events).anyMatch(event -> "intermediate".equals(event.type()) && "I'll inspect the resumes.".equals(event.content()));
+        assertThat(f.events).anyMatch(event -> "done".equals(event.type()) && "Final result.".equals(event.content()));
+        assertThat(java.util.stream.IntStream.range(0, f.events.size()).filter(i -> "intermediate".equals(f.events.get(i).type())).findFirst().orElseThrow())
+                .isLessThan(java.util.stream.IntStream.range(0, f.events.size()).filter(i -> "tool_start".equals(f.events.get(i).type())).findFirst().orElseThrow());
+        var trace = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(f.conversations).appendExchange(any(), any(), anyString(), eq("Final result."), trace.capture(), anyList());
+        assertThat(trace.getValue()).contains("COMMENTARY", "I'll inspect the resumes.").doesNotContain("Final result.");
+    }
+
     @Test void ordinaryToolLoopPreservesReadsWithoutTheOldThreeToolGraphLimit() {
         var f = new Fixture();
         f.reply = (request, handler) -> {
@@ -92,6 +114,22 @@ class CareerAgentRuntimeIntegrationTests {
         verify(f.resumeReads, times(4)).listResumes();
         assertThat(f.requests).hasSize(2);
         assertThat(f.events.stream().filter(event -> "done".equals(event.type()))).hasSize(1);
+        assertThat(f.events.stream().filter(event -> "intermediate".equals(event.type())))
+                .allSatisfy(event -> assertThat(event.content()).isEmpty());
+    }
+
+    @Test void streamedCommentaryIsRetainedWhenIntermediateResponseOmitsItsText() {
+        var f = new Fixture();
+        f.reply = (request, handler) -> {
+            if (request.messages().stream().noneMatch(message -> message instanceof dev.langchain4j.data.message.ToolExecutionResultMessage)) {
+                var call = dev.langchain4j.agent.tool.ToolExecutionRequest.builder().id("read-1").name("list_resumes").arguments("{}").build();
+                handler.onPartialResponse("Checking resumes.");
+                handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from(List.of(call))).build());
+            } else handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from("Final result.")).build());
+        };
+        f.run("Please check my resumes");
+        assertThat(f.events).anyMatch(event -> "intermediate".equals(event.type()) && "Checking resumes.".equals(event.content()));
+        verify(f.conversations).appendExchange(any(), any(), anyString(), eq("Final result."), contains("Checking resumes."), anyList());
     }
 
     @Test void failedUserInstructionsRemainAfterCompaction() {

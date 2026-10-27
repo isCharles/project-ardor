@@ -38,7 +38,7 @@ export function ExecutionTrace({ title, elapsed, thinking, steps, children, acti
         </summary>
         <div className="mt-2 space-y-2 border-l border-stone-200/70 pl-4">
           {thinking && <details ref={thinkingRef}><summary className="w-fit cursor-pointer py-1">{t("Model reasoning output", "模型思考输出")}</summary><div className="max-h-64 overflow-auto whitespace-pre-wrap break-words py-2 leading-6 [overflow-wrap:anywhere]">{thinking}</div></details>}
-          {steps.map((step, index) => <div key={`${step.label}-${index}`} className="flex items-center gap-2"><CheckCircle2 className={`size-3.5 shrink-0 ${step.status === "FAILED" ? "text-rose-500" : step.status === "NOT_EXECUTED" ? "text-amber-500" : "text-stone-400"}`} /><span>{step.label}</span>{step.done === false ? <span className="ml-auto text-stone-400">{t("In progress", "进行中")}</span> : <ToolDuration {...step} />}</div>)}
+          {steps.map((step, index) => <div key={`${step.label}-${index}`} className="flex items-start gap-2"><CheckCircle2 className={`mt-0.5 size-3.5 shrink-0 ${step.status === "FAILED" ? "text-rose-500" : step.status === "NOT_EXECUTED" ? "text-amber-500" : "text-stone-400"}`} /><span className="min-w-0 whitespace-pre-wrap break-words">{step.label}</span>{step.status === "COMMENTARY" ? null : step.done === false ? <span className="ml-auto text-stone-400">{t("In progress", "进行中")}</span> : <ToolDuration {...step} />}</div>)}
           {children}
         </div>
       </details>
