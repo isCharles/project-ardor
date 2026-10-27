@@ -3,6 +3,7 @@ package com.projectardor.assistant.execution.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -347,5 +348,26 @@ class ApprovedAgentToolsTests {
         verify(tracer).finishChild(eq(span), eq("FAILED"), eq("TOOL_FAILED"),
                 isNull(), isNull(), isNull(), any());
         verify(tracer).recordToolExecuted();
+    }
+
+    @Test
+    void toolSpanUsesTheRequestingLlmAsParentAndCarriesTheToolCallId() {
+        AgentToolApprovals approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(USER, RUN)).thenReturn(true);
+        AgentPermissionGrants permissions = mock(AgentPermissionGrants.class);
+        when(permissions.autoApproves(USER, "fake_write")).thenReturn(true);
+        var tracer = mock(AgentRunTracer.class);
+        UUID llmSpan = UUID.randomUUID(), toolSpan = UUID.randomUUID();
+        when(tracer.toolCallParent("call-write-1")).thenReturn(llmSpan);
+        when(tracer.startChild(eq(llmSpan), eq("TOOL"), eq("fake_write"), any())).thenReturn(toolSpan);
+        var executors = ApprovedAgentTools.wrap(new FakeTools(), USER, RUN, approvals, null,
+                new AgentToolTimings(), waiting -> {}, "帮我写", permissions, null, CONVERSATION, false, tracer);
+        ToolExecutionRequest request = ToolExecutionRequest.builder().id("call-write-1")
+                .name("fake_write").arguments("{\"value\":\"hi\"}").build();
+
+        assertThat(executors.values().iterator().next().execute(request, null)).isEqualTo("executed:hi");
+
+        verify(tracer).startChild(eq(llmSpan), eq("TOOL"), eq("fake_write"),
+                argThat(attributes -> "call-write-1".equals(attributes.get("toolCallId"))));
     }
 }

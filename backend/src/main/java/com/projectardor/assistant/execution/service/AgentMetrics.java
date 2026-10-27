@@ -34,6 +34,9 @@ public final class AgentMetrics {
     private final Counter toolCallErrors;
 
     private final Timer timeToFirstToken;
+    private final Timer approvalWait;
+    private final Timer toolBusiness;
+    private final Timer contextPrepare;
 
     private final Counter compactions;
     private final Counter compactionFailures;
@@ -43,6 +46,7 @@ public final class AgentMetrics {
 
         this.runDuration = Timer.builder("ardor.agent.run.duration")
                 .description("Total wall-clock duration of an agent run")
+                .publishPercentileHistogram()
                 .register(registry);
         this.runSuccesses = Counter.builder("ardor.agent.run.successes")
                 .description("Agent runs that completed successfully")
@@ -54,6 +58,7 @@ public final class AgentMetrics {
 
         this.llmCallDuration = Timer.builder("ardor.agent.llm.call.duration")
                 .description("Duration of each LLM call within an agent run")
+                .publishPercentileHistogram()
                 .register(registry);
         this.llmInputTokens = Counter.builder("ardor.agent.llm.tokens.input")
                 .description("Total input tokens consumed by LLM calls")
@@ -67,6 +72,7 @@ public final class AgentMetrics {
 
         this.toolCallDuration = Timer.builder("ardor.agent.tool.call.duration")
                 .description("Duration of each tool execution within an agent run")
+                .publishPercentileHistogram()
                 .register(registry);
         this.toolCallErrors = Counter.builder("ardor.agent.tool.call.errors")
                 .description("Tool executions that failed")
@@ -74,6 +80,19 @@ public final class AgentMetrics {
 
         this.timeToFirstToken = Timer.builder("ardor.agent.stream.ttft")
                 .description("Time from run start to first streamed token")
+                .publishPercentileHistogram()
+                .register(registry);
+        this.approvalWait = Timer.builder("ardor.agent.tool.approval.wait")
+                .description("Time a tool waited for user approval before execution or rejection")
+                .publishPercentileHistogram()
+                .register(registry);
+        this.toolBusiness = Timer.builder("ardor.agent.tool.business.duration")
+                .description("Time spent inside the business tool delegate, excluding approval wait")
+                .publishPercentileHistogram()
+                .register(registry);
+        this.contextPrepare = Timer.builder("ardor.agent.context.prepare.duration")
+                .description("Prompt assembly and optional context-summary time before the first model call")
+                .publishPercentileHistogram()
                 .register(registry);
 
         this.compactions = Counter.builder("ardor.agent.context.compactions")
@@ -105,6 +124,7 @@ public final class AgentMetrics {
         try {
             Timer llmByModel = Timer.builder("ardor.agent.llm.call.duration")
                     .tag("model", model == null ? "unknown" : model)
+                    .publishPercentileHistogram()
                     .register(registry);
             llmByModel.record(java.time.Duration.ofNanos(durationNanos));
             if (inputTokens != null && inputTokens > 0) {
@@ -132,6 +152,7 @@ public final class AgentMetrics {
         try {
             Timer toolByName = Timer.builder("ardor.agent.tool.call.duration")
                     .tag("tool", toolName == null ? "unknown" : toolName)
+                    .publishPercentileHistogram()
                     .register(registry);
             toolByName.record(java.time.Duration.ofNanos(durationNanos));
             if (error) {
@@ -146,6 +167,24 @@ public final class AgentMetrics {
     public void recordTimeToFirstToken(long durationNanos) {
         try {
             timeToFirstToken.record(java.time.Duration.ofNanos(durationNanos));
+        } catch (RuntimeException ignored) { }
+    }
+
+    public void recordContextPrepare(long durationNanos) {
+        try {
+            contextPrepare.record(java.time.Duration.ofNanos(durationNanos));
+        } catch (RuntimeException ignored) { }
+    }
+
+    public void recordApprovalWait(long durationNanos) {
+        try {
+            approvalWait.record(java.time.Duration.ofNanos(durationNanos));
+        } catch (RuntimeException ignored) { }
+    }
+
+    public void recordToolBusiness(long durationNanos) {
+        try {
+            toolBusiness.record(java.time.Duration.ofNanos(durationNanos));
         } catch (RuntimeException ignored) { }
     }
 

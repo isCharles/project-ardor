@@ -33,6 +33,32 @@ class AgentRunTracerTests {
     }
 
     @Test
+    void bindsParsedToolCallsToTheRequestingLlmSpan() {
+        AgentTraceStore store = mock(AgentTraceStore.class);
+        AgentRunTracer tracer = AgentRunTracer.begin(store, UUID.randomUUID(), UUID.randomUUID(), null, "fixture", null);
+        UUID llmSpan = UUID.randomUUID();
+        tracer.bindToolCall("call-1", llmSpan);
+        assertThat(tracer.toolCallParent("call-1")).isEqualTo(llmSpan);
+        assertThat(tracer.toolCallParent("call-missing")).isNull();
+        tracer.bindToolCall("", llmSpan);
+        assertThat(tracer.toolCallParent("")).isNull();
+    }
+
+    @Test
+    void runRootRecordsOriginRunAndAutomationJob() {
+        AgentTraceStore store = mock(AgentTraceStore.class);
+        UUID user = UUID.randomUUID(), run = UUID.randomUUID(), job = UUID.randomUUID();
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<Map<String, Object>> attributes =
+                org.mockito.ArgumentCaptor.forClass(Map.class);
+        when(store.startSpan(eq(user), eq(run), isNull(), eq("RUN"), eq("agent.run"), attributes.capture()))
+                .thenReturn(UUID.randomUUID());
+        AgentRunTracer.begin(store, user, run, null, "fixture", "v1", job);
+        assertThat(attributes.getValue()).containsEntry("originRun", run.toString())
+                .containsEntry("jobId", job.toString());
+    }
+
+    @Test
     void separatesAssistantSummaryToolAndMissingUsageCounters() {
         AgentTraceStore store = mock(AgentTraceStore.class);
         AgentRunTracer tracer = AgentRunTracer.begin(store, UUID.randomUUID(), UUID.randomUUID(), null, "fixture", null);
