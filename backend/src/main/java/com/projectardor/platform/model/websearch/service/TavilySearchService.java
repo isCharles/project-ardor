@@ -31,6 +31,15 @@ public class TavilySearchService {
         return execute(configService.requireApiKey(userId), query, 5);
     }
 
+    public boolean available(UUID userId) {
+        try {
+            configService.requireApiKey(userId);
+            return true;
+        } catch (IllegalStateException unavailable) {
+            return false;
+        }
+    }
+
     public WebSearchTestResponse test(UUID userId, WebSearchConfigRequest request) {
         return testApiKey(configService.apiKeyForTest(userId, request));
     }

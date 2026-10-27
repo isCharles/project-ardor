@@ -10,6 +10,7 @@ export const usageFeatureLabels: Record<string, string> = {
   KNOWLEDGE_UPLOAD: "知识上传",
   KNOWLEDGE_SEARCH: "知识检索",
   KNOWLEDGE_RESEARCH: "联网研究",
+  MODEL_DESCRIPTION: "模型简述",
   CONNECTION_TEST: "连接测试",
   VOICE_ASR: "语音转录",
   VOICE_TTS: "语音生成",

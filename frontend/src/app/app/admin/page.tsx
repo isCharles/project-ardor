@@ -38,8 +38,8 @@ export default function AdminPage() {
     AGENT_CHAT: "Agent chat", RESUME_ANALYSIS: "Resume analysis", INTERVIEW_CREATE: "Mock interviews",
     INTERVIEW_EVALUATION: "Interview evaluation", INTERVIEW_RECAP: "Interview recaps", INTERVIEW_REPLAY: "Interview replay",
     LEARNING_PLAN: "Learning plans", LEARNING_ATTEMPT: "Learning exercises", KNOWLEDGE_UPLOAD: "Knowledge uploads",
-    KNOWLEDGE_SEARCH: "Knowledge search", KNOWLEDGE_RESEARCH: "Web research", CONNECTION_TEST: "Connection tests",
-    VOICE_ASR: "Voice transcription", VOICE_TTS: "Voice synthesis",
+    KNOWLEDGE_SEARCH: "Knowledge search", KNOWLEDGE_RESEARCH: "Web research", MODEL_DESCRIPTION: "Model descriptions",
+    CONNECTION_TEST: "Connection tests", VOICE_ASR: "Voice transcription", VOICE_TTS: "Voice synthesis",
   };
   const featureLabel = (feature: string) => locale === "en" ? englishUsageLabels[feature] ?? feature : usageFeatureLabels[feature] ?? feature;
   const [overview, setOverview] = useState<Overview | null>(null);

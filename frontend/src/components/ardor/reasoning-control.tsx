@@ -9,7 +9,7 @@ import { modelDisplayName } from "@/lib/model-display-name";
 
 type Depth = "AUTO" | "QUICK" | "STANDARD" | "DEEP";
 export type ReasoningLevel = { value: Depth; label: string };
-export type ModelOption = { id: string; label: string; provider: string; available: boolean; nativeControl: boolean; reasoningLevels?: ReasoningLevel[] };
+export type ModelOption = { id: string; label: string; provider: string; available: boolean; nativeControl: boolean; reasoningLevels?: ReasoningLevel[]; description?: string };
 const defaultLevels: ReasoningLevel[] = [
   { value: "QUICK", label: "Low" },
   { value: "STANDARD", label: "High" },
@@ -45,15 +45,19 @@ function ModelIcon({ label }: { label: string }) {
  * Combined model + reasoning picker in the composer, following the same compact
  * two-row shape as Codex/DSH: model identity first, then a single reasoning-level row.
  */
-export function ReasoningControl({ value, onChange, disabled, nativeControl, models = [], model, onModelChange }: {
+export function ReasoningControl({ value, onChange, disabled, nativeControl, models = [], model, onModelChange, onOpenChange }: {
   value: Depth; onChange: (depth: Depth) => void; disabled: boolean; nativeControl: boolean;
   models?: ModelOption[]; model?: string; onModelChange?: (model: string) => void;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ left: number; bottom: number; width: number; maxHeight: number } | null>(null);
   const popup = useRef<HTMLDivElement>(null);
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false), popup);
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
@@ -80,7 +84,7 @@ export function ReasoningControl({ value, onChange, disabled, nativeControl, mod
       <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
         {models.map((item) => <button key={item.id} type="button" disabled={!item.available} aria-pressed={item.id === selected?.id} onClick={() => { onModelChange?.(item.id); }} className={`flex w-full items-center gap-2 rounded-2xl px-2.5 py-2 text-left transition ${item.id === selected?.id ? "bg-violet-50" : "hover:bg-stone-100"} disabled:cursor-not-allowed disabled:opacity-45`}>
           <ModelIcon label={item.label} />
-          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-stone-800" title={item.label}>{modelDisplayName(item.label)}</span><span className="block truncate text-[10px] text-stone-400">{item.id === "PRIMARY" ? t("Primary", "主力") : t("Relay", "中转站")}{!item.available ? ` · ${t("Not configured", "未配置")}` : ""}</span></span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-stone-800" title={item.label}>{modelDisplayName(item.label)}</span><span className="block truncate text-[10px] text-stone-400">{!item.available ? t("Not configured", "未配置") : item.description == null ? t("Researching model", "正在调研") : item.description || t("No model summary", "暂无简述")}</span></span>
           {item.id === selected?.id && <Check className="size-3.5 shrink-0 text-violet-600" />}
         </button>)}
         {models.length === 0 && <p className="px-3 py-4 text-xs text-stone-400">{t("No models available.", "暂无可用模型。")}</p>}

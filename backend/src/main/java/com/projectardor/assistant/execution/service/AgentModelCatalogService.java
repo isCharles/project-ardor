@@ -1,11 +1,17 @@
 package com.projectardor.assistant.execution.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
@@ -35,10 +41,17 @@ public class AgentModelCatalogService {
     public static final String FALLBACK = "FALLBACK";
     public static final String FALLBACK_PREFIX = "FALLBACK:";
     private static final int MAX_RELAY_MODELS = 300;
+    private static final int MAX_CATALOG_CACHE_ENTRIES = 256;
+    private static final long CATALOG_CACHE_TTL_MILLIS = 60_000;
+    private static final long DESCRIPTION_REFRESH_COOLDOWN_MILLIS = 60_000;
+    private static final int CATALOG_LOCK_STRIPES = 64;
 
     private final LlmConfigService llmConfigService;
     private final AuxiliaryApiConfigService auxiliaryConfigService;
     private final LlmModelDiscoveryService modelDiscoveryService;
+    private final ConcurrentHashMap<UUID, CatalogEntry> catalogCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Long> descriptionRefreshAt = new ConcurrentHashMap<>();
+    private final Object[] catalogLocks = createLockStripes(CATALOG_LOCK_STRIPES);
 
     public AgentModelCatalogService(LlmConfigService llmConfigService,
             AuxiliaryApiConfigService auxiliaryConfigService,
@@ -49,6 +62,72 @@ public class AgentModelCatalogService {
     }
 
     public List<Option> options(UUID userId) {
+        CatalogEntry existing = catalogCache.get(userId);
+        if (isFresh(existing)) return existing.options();
+        synchronized (catalogLocks[Math.floorMod(userId.hashCode(), catalogLocks.length)]) {
+            existing = catalogCache.get(userId);
+            if (isFresh(existing)) return existing.options();
+            if (catalogCache.size() >= MAX_CATALOG_CACHE_ENTRIES) catalogCache.clear();
+            List<Option> options = loadOptions(userId);
+            catalogCache.put(userId, new CatalogEntry(options, System.currentTimeMillis()));
+            return options;
+        }
+    }
+
+    public String descriptionFingerprint(UUID userId, String label) {
+        String normalized = label == null ? "" : label.strip();
+        Option option = findAvailableOption(userId, normalized).orElseGet(() -> {
+            refreshCatalogForDescription(userId);
+            return findAvailableOption(userId, normalized)
+                    .orElseThrow(() -> new IllegalArgumentException("未知的模型选项"));
+        });
+        return descriptionFingerprint(resolve(userId, option.id()).config());
+    }
+
+    private void refreshCatalogForDescription(UUID userId) {
+        Object lock = catalogLocks[Math.floorMod(userId.hashCode(), catalogLocks.length)];
+        synchronized (lock) {
+            long now = System.currentTimeMillis();
+            Long last = descriptionRefreshAt.get(userId);
+            if (last != null && now - last < DESCRIPTION_REFRESH_COOLDOWN_MILLIS) return;
+            if (descriptionRefreshAt.size() >= MAX_CATALOG_CACHE_ENTRIES) descriptionRefreshAt.clear();
+            descriptionRefreshAt.put(userId, now);
+            catalogCache.remove(userId);
+        }
+    }
+
+    private Optional<Option> findAvailableOption(UUID userId, String label) {
+        return options(userId).stream()
+                .filter(candidate -> candidate.available() && candidate.label().equals(label))
+                .findFirst();
+    }
+
+    private static boolean isFresh(CatalogEntry entry) {
+        return entry != null && entry.createdAt() + CATALOG_CACHE_TTL_MILLIS > System.currentTimeMillis();
+    }
+
+    private static Object[] createLockStripes(int size) {
+        Object[] locks = new Object[size];
+        Arrays.setAll(locks, ignored -> new Object());
+        return locks;
+    }
+
+    private static String descriptionFingerprint(LlmConfigService.LlmRuntimeConfig config) {
+        String material = config.provider().name() + "|" + normalizedBaseUrl(config.baseUrl())
+                + "|" + Optional.ofNullable(config.model()).orElse("");
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(material.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("无法计算模型配置指纹", unavailable);
+        }
+    }
+
+    private static String normalizedBaseUrl(String baseUrl) {
+        return Optional.ofNullable(baseUrl).orElse("").strip().replaceAll("/+$", "").toLowerCase(Locale.ROOT);
+    }
+
+    private List<Option> loadOptions(UUID userId) {
         List<Option> options = new ArrayList<>();
         try {
             options.add(option(PRIMARY, llmConfigService.getRuntimeConfig(userId)));
@@ -62,7 +141,7 @@ public class AgentModelCatalogService {
                         () -> options.add(new Option(FALLBACK, "Fallback model", "OPENAI_COMPATIBLE", false, false,
                                 ModelReasoningPolicy.levels(new LlmConfigService.LlmRuntimeConfig(
                                         LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "unknown", "redacted")))));
-        return options;
+        return List.copyOf(options);
     }
 
     public Resolved resolve(UUID userId, String choice) {
@@ -185,4 +264,6 @@ public class AgentModelCatalogService {
 
     public record Resolved(String id, LlmConfigService.LlmRuntimeConfig config) {
     }
+
+    private record CatalogEntry(List<Option> options, long createdAt) {}
 }

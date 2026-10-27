@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -38,6 +40,8 @@ class AgentModelCatalogServiceTests {
 
         var catalog = new AgentModelCatalogService(llm, auxiliary, discovery);
         var options = catalog.options(user);
+        assertThat(catalog.options(user)).isEqualTo(options);
+        verify(discovery, times(3)).list(any(), anyString(), anyString());
 
         assertThat(options.getFirst().id()).isEqualTo(AgentModelCatalogService.PRIMARY);
         assertThat(options).extracting(AgentModelCatalogService.Option::id)
@@ -51,6 +55,76 @@ class AgentModelCatalogServiceTests {
                 .isEqualTo(LlmProvider.ANTHROPIC_COMPATIBLE);
         assertThat(catalog.resolve(user, AgentModelCatalogService.FALLBACK).config().apiKey())
                 .isEqualTo("fallback-secret");
+    }
+
+    @Test
+    void descriptionFingerprintIdentifiesTheResolvedApiConfigurationWithoutLeakingSecrets() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM)).thenReturn(Optional.empty());
+        var catalog = new AgentModelCatalogService(llm, auxiliary, discovery);
+
+        String fingerprint = catalog.descriptionFingerprint(user, "deepseek-v4-flash");
+
+        assertThat(fingerprint).matches("[0-9a-f]{64}").doesNotContain("primary-secret");
+        assertThat(catalog.descriptionFingerprint(user, "deepseek-v4-flash")).isEqualTo(fingerprint);
+        assertThatThrownBy(() -> catalog.descriptionFingerprint(user, "missing-model"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("未知");
+    }
+
+    @Test
+    void descriptionFingerprintRefreshesTheCatalogWhenANewModelAppears() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(new AuxiliaryApiConfigService.AuxiliaryRuntimeConfig(
+                        "OPENAI_COMPATIBLE", "https://relay.example", "new-relay-model", "relay-secret")));
+        when(discovery.list(org.mockito.ArgumentMatchers.eq(LlmProvider.OPENAI_COMPATIBLE),
+                org.mockito.ArgumentMatchers.eq("https://relay.example"), anyString()))
+                .thenReturn(List.of("new-relay-model"));
+        var catalog = new AgentModelCatalogService(llm, auxiliary, discovery);
+        assertThat(catalog.options(user)).extracting(AgentModelCatalogService.Option::label)
+                .doesNotContain("new-relay-model");
+
+        assertThat(catalog.descriptionFingerprint(user, "new-relay-model")).matches("[0-9a-f]{64}");
+    }
+
+    @Test
+    void repeatedUnknownDescriptionLabelsDoNotBypassTheCatalogCooldown() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM)).thenReturn(
+                Optional.of(new AuxiliaryApiConfigService.AuxiliaryRuntimeConfig(
+                        "OPENAI_COMPATIBLE", "https://relay.example", "known-relay-model", "relay-secret")));
+        when(discovery.list(org.mockito.ArgumentMatchers.eq(LlmProvider.OPENAI_COMPATIBLE),
+                org.mockito.ArgumentMatchers.eq("https://relay.example"), anyString()))
+                .thenReturn(List.of("known-relay-model"));
+        var catalog = new AgentModelCatalogService(llm, auxiliary, discovery);
+        catalog.options(user);
+        verify(discovery, times(1)).list(any(), anyString(), anyString());
+
+        assertThatThrownBy(() -> catalog.descriptionFingerprint(user, "missing-1"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> catalog.descriptionFingerprint(user, "missing-2"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> catalog.descriptionFingerprint(user, "missing-3"))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(discovery, times(2)).list(any(), anyString(), anyString());
     }
 
     @Test

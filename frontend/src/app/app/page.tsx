@@ -224,6 +224,22 @@ export default function AgentHomePage() {
   const [reasoningReady, setReasoningReady] = useState(false);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelChoice, setModelChoice] = useState("PRIMARY");
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelCatalogLocale, setModelCatalogLocale] = useState<string | null>(null);
+  const modelDescriptionToken = useRef(0);
+  const modelDescriptionAbort = useRef<AbortController | null>(null);
+  const describedLocale = useRef<string | null>(null);
+  const modelDescriptionQuotaStopped = useRef(false);
+  const cancelModelDescriptions = useCallback((allowResume: boolean) => {
+    modelDescriptionAbort.current?.abort();
+    modelDescriptionAbort.current = null;
+    modelDescriptionToken.current += 1;
+    if (allowResume) describedLocale.current = null;
+  }, []);
+  const handleModelPickerOpenChange = useCallback((open: boolean) => {
+    setModelPickerOpen(open);
+    if (!open) cancelModelDescriptions(true);
+  }, [cancelModelDescriptions]);
   const [titleWatch, setTitleWatch] = useState<{ id: string; title: string } | null>(null);
   const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
@@ -317,6 +333,10 @@ export default function AgentHomePage() {
 
   useEffect(() => {
     let active = true;
+    cancelModelDescriptions(false);
+    describedLocale.current = null;
+    setModelCatalogLocale(null);
+    setModelOptions((current) => current.map((option) => ({ ...option, description: undefined })));
     void api<{ id: string; admin: boolean }>("/api/auth/me").then((account) => {
       if (!active) return;
       setIsAdmin(account.admin === true);
@@ -328,6 +348,7 @@ export default function AgentHomePage() {
       void api<ModelOption[]>("/api/agent/models").then((items) => {
         if (!active || !Array.isArray(items)) return;
         setModelOptions(items);
+        setModelCatalogLocale(locale);
         const saved = window.sessionStorage.getItem(`ardor:model-choice:${account.id}`);
         const initial = items.find((item) => item.id === saved && item.available)
           ?? items.find((item) => item.id === "PRIMARY" && item.available)
@@ -343,6 +364,49 @@ export default function AgentHomePage() {
     reloadPermissions();
     window.addEventListener("ardor:permissions-changed", reloadPermissions);
     return () => { active = false; window.removeEventListener("ardor:permissions-changed", reloadPermissions); };
+  }, [locale, cancelModelDescriptions]);
+
+  useEffect(() => {
+    if (!modelPickerOpen || modelDescriptionQuotaStopped.current
+        || describedLocale.current === locale || modelCatalogLocale !== locale || modelOptions.length === 0) return;
+    describedLocale.current = locale;
+    const controller = new AbortController();
+    modelDescriptionAbort.current?.abort();
+    modelDescriptionAbort.current = controller;
+    const token = ++modelDescriptionToken.current;
+    const targets = modelOptions.filter((item) => item.available && item.description == null);
+    let nextTarget = 0;
+    let stopped = false;
+    const research = async () => {
+      while (!stopped && !controller.signal.aborted && nextTarget < targets.length) {
+        const item = targets[nextTarget++];
+        try {
+          const result = await api<{ description: string }>("/api/agent/models/description", {
+            method: "POST",
+            body: JSON.stringify({ model: item.label, locale: locale === "zh-CN" ? "zh" : "en" }),
+            signal: controller.signal,
+          });
+          if (token !== modelDescriptionToken.current || controller.signal.aborted) return;
+          setModelOptions((current) => current.map((option) =>
+            option.id === item.id ? { ...option, description: result.description } : option));
+        } catch (error) {
+          if (token !== modelDescriptionToken.current || controller.signal.aborted) return;
+          if (error instanceof ApiError && (error.status === 429 || error.body?.code === "QUOTA_EXCEEDED")) {
+            stopped = true;
+            modelDescriptionQuotaStopped.current = true;
+            return;
+          }
+          setModelOptions((current) => current.map((option) =>
+            option.id === item.id ? { ...option, description: "" } : option));
+        }
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(2, targets.length) }, research));
+  }, [locale, modelCatalogLocale, modelOptions, modelPickerOpen]);
+
+  useEffect(() => () => {
+    modelDescriptionAbort.current?.abort();
+    modelDescriptionAbort.current = null;
   }, []);
 
   useEffect(() => {
@@ -377,7 +441,7 @@ export default function AgentHomePage() {
 
   function reasoningPicker() {
     return <ReasoningControl value={reasoningDepth} disabled={!reasoningReady} nativeControl={nativeReasoning}
-      models={modelOptions} model={modelChoice}
+      models={modelOptions} model={modelChoice} onOpenChange={handleModelPickerOpenChange}
       onChange={(value) => {
         setReasoningDepth(value);
         try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:reasoning-depth:${reasoningAccount.current}`, value); }

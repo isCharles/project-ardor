@@ -47,6 +47,13 @@ try {
   let failRename = true;
   let renameCalls = 0;
   let previewScenario = true;
+  const descriptionRequests = [];
+  let descriptionQuotaExhausted = false;
+  const modelDescriptions = {
+    "deepseek-v4-flash": { en: "Fast, high-value everyday model", zh: "高性价比日常模型" },
+    "claude-opus-5-5": { en: "Flagship reasoning and coding", zh: "旗舰推理与编程模型" },
+    "long-context-research": { en: "Long-context research model", zh: "长上下文调研模型" },
+  };
   let conversation = { id: "chat-one", title: "Original chat", pinned: false, titleManuallySet: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   await context.addInitScript(() => { window.prompt = () => { throw new Error("Native prompt must not be used"); }; });
   const handleApi = async (route) => {
@@ -54,9 +61,19 @@ try {
     const path = url.pathname;
     let body = {};
     if (path === "/api/auth/me") body = { id: userId, email: "fixture@ardor.invalid", admin };
+    else if (path === "/api/agent/models/description") {
+      const request = route.request().postDataJSON();
+      descriptionRequests.push(request);
+      if (descriptionQuotaExhausted) {
+        return route.fulfill({ status: 429, json: { code: "QUOTA_EXCEEDED", message: "Synthetic summary quota reached", retryable: false } });
+      }
+      const localized = modelDescriptions[request.model] ?? { en: "Synthetic summary", zh: "合成简述" };
+      body = { description: request.locale === "zh" ? localized.zh : localized.en };
+    }
     else if (path === "/api/agent/models") body = [
       { id: "PRIMARY", label: "deepseek-v4-flash", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
       { id: "FALLBACK:claude-opus-5-5", label: "claude-opus-5-5", provider: "ANTHROPIC_COMPATIBLE", available: true, nativeControl: true },
+      { id: "FALLBACK:long-context-research", label: "long-context-research", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
     ];
     else if (path === "/api/agent/permissions") body = { globalLevel: 0, modules: [] };
     else if (path === "/api/agent/features") body = [
@@ -275,10 +292,24 @@ try {
   await page.getByRole("button", { name: "Add attachments" }).click();
   await page.keyboard.press("Escape");
   assert.equal(await page.getByRole("region", { name: "Attachments", exact: true }).count(), 0);
+  assert.equal(descriptionRequests.length, 0, "Model research must wait until the user opens the model picker");
   await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
   const depth = page.getByRole("dialog", { name: "Model and thinking depth options" });
   assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "AUTO", "Provider default remains the default");
   await depth.getByText("DeepSeek V4 Flash", { exact: true }).waitFor();
+  await depth.getByText("Fast, high-value everyday model", { exact: true }).waitFor();
+  await depth.getByText("Flagship reasoning and coding", { exact: true }).waitFor();
+  await depth.getByText("Long-context research model", { exact: true }).waitFor();
+  assert.equal(await depth.getByText("Primary", { exact: true }).count(), 0);
+  assert.equal(await depth.getByText("Relay", { exact: true }).count(), 0);
+  await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });
+  const chineseDepth = page.getByRole("dialog", { name: "模型与思考深度选项" });
+  await chineseDepth.getByText("高性价比日常模型", { exact: true }).waitFor();
+  await chineseDepth.getByText("旗舰推理与编程模型", { exact: true }).waitFor();
+  await chineseDepth.getByText("长上下文调研模型", { exact: true }).waitFor();
+  assert.ok(descriptionRequests.slice(-3).every((request) => request.locale === "zh"), "Application language must drive model research");
+  await page.evaluate(() => { localStorage.setItem("ardor:locale", "en"); window.dispatchEvent(new Event("ardor:locale-change")); });
+  await depth.getByText("Fast, high-value everyday model", { exact: true }).waitFor();
   await depth.getByRole("button", { name: /^Claude Opus 5\.5/ }).click();
   assert.equal(await page.locator('[data-model-choice]').getAttribute("data-model-choice"), "FALLBACK:claude-opus-5-5", "Friendly names must not change selection keys");
   await depth.getByRole("button", { name: /^DeepSeek V4 Flash/ }).click();
@@ -299,6 +330,18 @@ try {
   await depth.getByRole("button", { name: "High", exact: true }).click();
   assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "STANDARD");
   await page.screenshot({ path: ".next/reasoning-buttons.png" });
+  descriptionQuotaExhausted = true;
+  const descriptionQuotaStart = descriptionRequests.length;
+  await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });
+  await chineseDepth.getByText("正在调研").first().waitFor();
+  await page.waitForTimeout(500);
+  const descriptionQuotaCalls = descriptionRequests.length - descriptionQuotaStart;
+  assert.ok(descriptionQuotaCalls >= 1 && descriptionQuotaCalls <= 2,
+    `A quota denial must stop the remaining automatic model research, got ${descriptionQuotaCalls}`);
+  await page.evaluate(() => { localStorage.setItem("ardor:locale", "en"); window.dispatchEvent(new Event("ardor:locale-change")); });
+  await page.waitForTimeout(500);
+  assert.equal(descriptionRequests.length - descriptionQuotaStart, descriptionQuotaCalls,
+    "A stopped description budget must not resume automatically in the same page session");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Chat actions", exact: true }).click();
   await page.getByRole("button", { name: "Rename", exact: true }).click();
