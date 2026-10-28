@@ -124,6 +124,52 @@ class AgentPlanFencePostgresTests {
         }
     }
 
+    /**
+     * The plan lookups bind their parameters in predicate order on a real database, so a second
+     * proposal in the same run is refused by the durable plan rather than silently stacking revisions.
+     */
+    @Test void aSecondProposalInTheSameRunIsRefusedByTheStoredPlan() {
+        String url = System.getenv().getOrDefault("ARDOR_FENCING_TEST_JDBC_URL", "jdbc:postgresql://127.0.0.1:5432/ardor");
+        var root = new JdbcTemplate(new DriverManagerDataSource(url, "ardor", "acceptance-only"));
+        String schema = "ardor_plan_lookup_" + UUID.randomUUID().toString().replace("-", "");
+        root.execute("CREATE SCHEMA " + schema);
+        try {
+            var source = new DriverManagerDataSource(url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema + ",public",
+                    "ardor", "acceptance-only");
+            Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).load().migrate();
+            var jdbc = new JdbcTemplate(source);
+            UUID user = UUID.randomUUID(), foreign = UUID.randomUUID();
+            UUID conversation = UUID.randomUUID(), run = UUID.randomUUID();
+            for (UUID id : new UUID[]{user, foreign}) {
+                jdbc.update("INSERT INTO users(id,email,password_hash) VALUES(?,?,?)", id, id + "@ardor.invalid", "synthetic-only");
+            }
+            jdbc.update("INSERT INTO conversations(id,user_id) VALUES(?,?)", conversation, user);
+            jdbc.update("INSERT INTO agent_runs(id,user_id,conversation_id,request_hash,message,status) VALUES(?,?,?,?,'Synthetic turn','RUNNING')",
+                    run, user, conversation, "y".repeat(64));
+            var store = new AgentPlanStore(jdbc);
+            var traces = new AgentTraceStore(jdbc, JsonMapper.builder().build(), null, true, 30);
+            var tracer = AgentRunTracer.begin(traces, user, run, conversation, "synthetic-model", AgentRunTracer.PROMPT_VERSION);
+            var planning = new PlanningAgentTools(user, run, conversation,
+                    new AgentPlanner(JsonMapper.builder().build()), store, tracer);
+
+            assertThat(planning.proposePlan(GOAL, STEPS)).containsEntry("accepted", true);
+            // Distinct user and request ids are what made a swapped binding order invisible in mocks.
+            var stored = store.findByRequest(user, run).orElseThrow();
+            assertThat(stored.goal()).isEqualTo(GOAL);
+            assertThat(stored.steps()).hasSize(3);
+            assertThat(store.findByRequest(foreign, run)).as("another owner never sees this plan").isEmpty();
+            assertThat(store.findActiveByConversation(user, conversation)).map(AgentPlanStore.Plan::id)
+                    .contains(stored.id());
+            assertThat(store.findActiveByConversation(foreign, conversation)).isEmpty();
+
+            assertThat(planning.proposePlan(GOAL, STEPS)).containsEntry("accepted", false);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_plans", Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT revision FROM agent_plans LIMIT 1", Integer.class)).isZero();
+        } finally {
+            root.execute("DROP SCHEMA " + schema + " CASCADE");
+        }
+    }
+
     private static ToolExecutionRequest request(String tool) {
         return ToolExecutionRequest.builder().id("call-" + tool).name(tool)
                 .arguments("{\"note\":\"weakness\",\"content\":\"别的\",\"title\":\"复习\"}").build();

@@ -119,7 +119,7 @@ public class AgentPlanStore {
         return loadOne("""
                 SELECT id, user_id, request_id, conversation_id, goal, status, revision,
                        model_call_ceiling, model_calls_used, created_at, updated_at
-                FROM agent_plans WHERE user_id = ? AND request_id = ? ORDER BY revision DESC LIMIT 1
+                FROM agent_plans WHERE request_id = ? AND user_id = ? ORDER BY revision DESC LIMIT 1
                 """, requestId, userId);
     }
 
@@ -127,12 +127,13 @@ public class AgentPlanStore {
         return loadOne("""
                 SELECT id, user_id, request_id, conversation_id, goal, status, revision,
                        model_call_ceiling, model_calls_used, created_at, updated_at
-                FROM agent_plans WHERE user_id = ? AND conversation_id = ?
+                FROM agent_plans WHERE conversation_id = ? AND user_id = ?
                   AND status IN ('PROPOSED', 'RUNNING')
                 ORDER BY created_at DESC LIMIT 1
                 """, conversationId, userId);
     }
 
+    /** Every query here binds (primary key, user id); write the predicate in that order. */
     private Optional<Plan> loadOne(String sql, UUID primaryKey, UUID userId) {
         List<Plan> plans = jdbc.query(sql, (rs, rowNum) -> mapPlan(rs), primaryKey, userId);
         if (plans.isEmpty()) return Optional.empty();
