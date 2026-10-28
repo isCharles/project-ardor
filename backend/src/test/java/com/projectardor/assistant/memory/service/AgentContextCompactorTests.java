@@ -35,19 +35,19 @@ class AgentContextCompactorTests {
     @Test void manyMessagesAtLowKnownUtilizationStayVerbatimWithoutCallingSummaryModel() {
         var f = fixture(50, 80);
         var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
-        when(capacity.resolve(any())).thenReturn(1048576L);
+        when(capacity.resolve(any(), any())).thenReturn(1048576L);
         var policy = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
         var compactor = new AgentContextCompactor(f.store(), f.summaries(), f.factory(), 4, 1000, policy, null, null);
         var prepared = compactor.prepare(f.user(), f.conversation(), "system", config(), ReasoningDepth.AUTO);
         assertThat(prepared.recentMessages()).containsExactlyElementsOf(f.messages());
         assertThat(prepared.compactedMessages()).isZero();
-        verify(f.factory(), org.mockito.Mockito.never()).create(any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
+        verify(f.factory(), org.mockito.Mockito.never()).create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
     }
 
     @Test void toolDefinitionsCanTriggerBudgetCompactionEvenWhenHistoryAloneIsSmall() {
         var f = fixture(24, 20);
         var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
-        when(capacity.resolve(any())).thenReturn(16000L);
+        when(capacity.resolve(any(), any())).thenReturn(16000L);
         var policy = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
         var schemas = mock(com.projectardor.assistant.tools.AgentToolSchemaCatalog.class);
         when(schemas.specifications()).thenReturn(List.of(dev.langchain4j.agent.tool.ToolSpecification.builder()
@@ -61,7 +61,7 @@ class AgentContextCompactorTests {
     @Test void eachWrittenSummaryIsCountedForOperators() {
         var f = fixture(24, 20);
         var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
-        when(capacity.resolve(any())).thenReturn(16000L);
+        when(capacity.resolve(any(), any())).thenReturn(16000L);
         var policy = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
         var schemas = mock(com.projectardor.assistant.tools.AgentToolSchemaCatalog.class);
         when(schemas.specifications()).thenReturn(List.of(dev.langchain4j.agent.tool.ToolSpecification.builder()
@@ -77,13 +77,13 @@ class AgentContextCompactorTests {
     @Test void oversizedCurrentRequestIsRejectedBeforeSpendingTokensOnAnIneffectiveSummary() {
         var f = fixture(24, 20);
         var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
-        when(capacity.resolve(any())).thenReturn(16000L);
+        when(capacity.resolve(any(), any())).thenReturn(16000L);
         var policy = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
         var compactor = new AgentContextCompactor(f.store(), f.summaries(), f.factory(), 4, 1000, policy, null, null);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> compactor.prepare(f.user(), f.conversation(), "system", config(),
                 ReasoningDepth.AUTO, List.of(), () -> true, "reference ".repeat(5000)))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("减少引用");
-        verify(f.factory(), org.mockito.Mockito.never()).create(any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
+        verify(f.factory(), org.mockito.Mockito.never()).create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
         verify(f.summaries(), org.mockito.Mockito.never()).save(any(), any(), anyInt(), any(), anyInt(), anyString(), anyInt(), any());
     }
 
@@ -113,7 +113,7 @@ class AgentContextCompactorTests {
         var model = mock(ChatModel.class);
         when(model.chat(any(ChatRequest.class))).thenReturn(response("Preserved short-turn summary"));
         var factory = mock(LangChainModelFactory.class);
-        when(factory.create(any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList())).thenReturn(model);
+        when(factory.create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList())).thenReturn(model);
         var compactor = new AgentContextCompactor(store, summaries, factory, 4, 24, 1000);
         var config = new LlmConfigService.LlmRuntimeConfig(LlmProvider.ANTHROPIC_COMPATIBLE, "https://example.invalid", "synthetic", "synthetic-only");
         var result = compactor.prepare(user, conversation, "system", config, ReasoningDepth.AUTO, List.of(), () -> true, "reference ".repeat(500));
@@ -145,7 +145,7 @@ class AgentContextCompactorTests {
         ChatModel model = mock(ChatModel.class);
         when(model.chat(any(ChatRequest.class))).thenReturn(response("用户目标：找 Java 后端实习；未完成：补 MySQL。"));
         LangChainModelFactory factory = mock(LangChainModelFactory.class);
-        when(factory.create(any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList())).thenReturn(model);
+        when(factory.create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList())).thenReturn(model);
 
         AgentContextCompactor compactor = new AgentContextCompactor(conversations, summaries, factory, 4, 8, 1000);
         var prepared = compactor.prepare(userId, conversationId, "system", config(), ReasoningDepth.AUTO);
@@ -262,7 +262,7 @@ class AgentContextCompactorTests {
     @Test void rejectedOversizedSummaryStillEnforcesKnownHardWindow() {
         var fixture = fixture(24, 300);
         var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
-        when(capacity.resolve(any())).thenReturn(6000L);
+        when(capacity.resolve(any(), any())).thenReturn(6000L);
         var budget = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
         var compactor = new AgentContextCompactor(fixture.store(), fixture.summaries(), fixture.factory(), 4, 1000, budget, null, null);
         when(fixture.model().chat(any(ChatRequest.class))).thenReturn(response("x".repeat(4001)));
@@ -413,7 +413,7 @@ class AgentContextCompactorTests {
         ChatModel model = mock(ChatModel.class);
         when(model.chat(any(ChatRequest.class))).thenReturn(response("synthetic summary"));
         LangChainModelFactory factory = mock(LangChainModelFactory.class);
-        when(factory.create(any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList())).thenReturn(model);
+        when(factory.create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList())).thenReturn(model);
         return new Fixture(user, conversation, messages, summaries, model,
                 new AgentContextCompactor(store, summaries, factory, 4, 24, 1000), store, factory);
     }

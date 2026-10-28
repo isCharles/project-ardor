@@ -49,11 +49,24 @@ try {
   let previewScenario = true;
   const descriptionRequests = [];
   let descriptionQuotaExhausted = false;
+  let holdModels = true;
+  let releaseModels;
   const modelDescriptions = {
     "deepseek-v4-flash": { en: "Fast, high-value everyday model", zh: "高性价比日常模型" },
     "claude-opus-5-5": { en: "Flagship reasoning and coding", zh: "旗舰推理与编程模型" },
     "long-context-research": { en: "Long-context research model", zh: "长上下文调研模型" },
   };
+  const modelSettings = {};
+  let modelSettingsWrites = 0;
+  const catalogModelSeeds = () => [
+    { id: "PRIMARY", label: "deepseek-v4-flash", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true, settingsKey: "settings-primary" },
+    { id: "FALLBACK:claude-opus-5-5", label: "claude-opus-5-5", provider: "ANTHROPIC_COMPATIBLE", available: true, nativeControl: true, settingsKey: "settings-claude" },
+    { id: "FALLBACK:long-context-research", label: "long-context-research", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true, settingsKey: "settings-long" },
+    { id: "FALLBACK:deepseek-relay-alias", label: "deepseek-relay-alias", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true, settingsKey: "settings-primary" },
+  ];
+  const catalogModels = () => catalogModelSeeds().map((model) => ({
+    ...model, visible: true, thinkingEffort: "AUTO", contextWindowTokens: null, ...(modelSettings[model.settingsKey] ?? {}),
+  }));
   let conversation = { id: "chat-one", title: "Original chat", pinned: false, titleManuallySet: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   await context.addInitScript(() => { window.prompt = () => { throw new Error("Native prompt must not be used"); }; });
   const handleApi = async (route) => {
@@ -70,11 +83,22 @@ try {
       const localized = modelDescriptions[request.model] ?? { en: "Synthetic summary", zh: "合成简述" };
       body = { description: request.locale === "zh" ? localized.zh : localized.en };
     }
-    else if (path === "/api/agent/models") body = [
-      { id: "PRIMARY", label: "deepseek-v4-flash", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
-      { id: "FALLBACK:claude-opus-5-5", label: "claude-opus-5-5", provider: "ANTHROPIC_COMPATIBLE", available: true, nativeControl: true },
-      { id: "FALLBACK:long-context-research", label: "long-context-research", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
-    ];
+    else if (path === "/api/agent/models") {
+      if (holdModels) await new Promise((resolve) => { releaseModels = resolve; });
+      body = catalogModels();
+    }
+    else if (path === "/api/agent/models/settings") {
+      modelSettingsWrites++;
+      for (const setting of route.request().postDataJSON().settings ?? []) {
+        const model = catalogModelSeeds().find((candidate) => candidate.id === setting.modelChoice);
+        if (!model) continue;
+        modelSettings[model.settingsKey] = {
+          visible: setting.visible, thinkingEffort: setting.thinkingEffort,
+          contextWindowTokens: setting.contextWindowTokens,
+        };
+      }
+      body = catalogModels();
+    }
     else if (path === "/api/agent/permissions") body = { globalLevel: 0, modules: [] };
     else if (path === "/api/agent/features") body = [
       { key: "LEARNING", id: "f1111111-1111-3111-8111-111111111111", label: "学习", englishLabel: "Learning", description: "学习概念", englishDescription: "Learn concepts and practice" },
@@ -200,6 +224,21 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${origin}/app`);
+  const initialDraft = page.getByRole("textbox", { name: "Message Ardor", exact: true });
+  const initialSend = page.getByRole("button", { name: "Send", exact: true });
+  await page.waitForFunction(() => {
+    const trigger = document.querySelector('[data-reasoning-depth]');
+    return trigger instanceof HTMLButtonElement && trigger.disabled;
+  });
+  await initialDraft.fill("Catalog gate draft");
+  assert.equal(await initialSend.isDisabled(), true, "Sending must wait for model settings to load");
+  holdModels = false;
+  releaseModels?.();
+  await page.waitForFunction(() => {
+    const trigger = document.querySelector('[data-reasoning-depth]');
+    return trigger instanceof HTMLButtonElement && !trigger.disabled;
+  });
+  await initialDraft.fill("");
   async function assertComposerActions(label) {
     const footer = page.locator("[data-composer-footer]");
     const actions = footer.locator("[data-composer-actions]");
@@ -316,24 +355,52 @@ try {
   assert.equal(await page.locator('[data-model-choice]').getAttribute("data-model-choice"), "FALLBACK:claude-opus-5-5", "Friendly names must not change selection keys");
   await depth.getByRole("button", { name: /^DeepSeek V4 Flash/ }).click();
   assert.equal(await page.locator('[data-model-choice]').getAttribute("data-model-choice"), "PRIMARY");
-  for (const name of ["Auto", "Low", "High", "Max"]) await depth.getByRole("button", { name, exact: true }).waitFor();
-  for (const icon of ["color-deepseek.svg", "color-claude.svg"]) {
-    assert.equal(await depth.locator(`[style*="${icon}"]`).count(), 1, `Model must render its ${icon} mark`);
+  for (const [icon, count] of [["color-deepseek.svg", 2], ["color-claude.svg", 1]]) {
+    assert.equal(await depth.locator(`[style*="${icon}"]`).count(), count, `Model must render its ${icon} mark`);
     const asset = await context.request.get(`${origin}/model-icons/${icon}`);
     assert.equal(asset.status(), 200, `Model icon must be served: ${icon}`);
     assert.match(asset.headers()["content-type"], /image\/svg\+xml/);
   }
-  assert.equal(await depth.getByRole("slider").count(), 0, "Reasoning uses buttons, not the removed range slider");
-  await depth.getByRole("button", { name: "Max", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "DEEP");
-  await depth.getByRole("button", { name: "Low", exact: true }).click();
-  assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "QUICK");
-  await depth.getByRole("button", { name: "High", exact: true }).click();
+  assert.equal(await depth.getByRole("slider").count(), 0, "Reasoning uses controls, not the removed range slider");
+  assert.equal(await depth.getByRole("button", { name: /^(Auto|Low|High|Max)$/ }).count(), 0,
+    "Thinking depth must no longer occupy an inline picker row");
+  await depth.getByRole("button", { name: "Manage models", exact: true }).click();
+  const manage = page.getByRole("dialog", { name: "Manage models" });
+  assert.equal(await manage.locator("[data-model-setting]").count(), 3,
+    "Catalog entries resolving to one configuration must collapse into one settings row");
+  await manage.getByText(/Shared by 2 entries/).waitFor();
+  await manage.getByLabel("Thinking level: deepseek-v4-flash").selectOption("DEEP");
+  await manage.getByLabel("Context window: deepseek-v4-flash").selectOption("custom");
+  await manage.getByLabel("Window tokens: deepseek-v4-flash").fill("64000");
+  await manage.getByRole("button", { name: "Visible in picker: claude-opus-5-5" }).click();
+  await manage.getByRole("button", { name: "Save", exact: true }).click();
+  await manage.waitFor({ state: "hidden" });
+  assert.equal(modelSettingsWrites, 1);
+  assert.deepEqual(modelSettings["settings-primary"], { visible: true, thinkingEffort: "DEEP", contextWindowTokens: 64000 },
+    "Saving must send the exact per-model settings");
+  assert.equal(modelSettings["settings-claude"].visible, false);
+  assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "DEEP",
+    "The selected model's saved effort must drive requests");
+  await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
+  const filteredDepth = page.getByRole("dialog", { name: "Model and thinking depth options" });
+  assert.equal(await filteredDepth.getByRole("button", { name: /^Claude Opus 5\.5/ }).count(), 0,
+    "Hidden models must disappear from the picker");
+  await filteredDepth.getByText("DeepSeek Relay Alias", { exact: true }).waitFor();
+  await filteredDepth.getByRole("button", { name: "Manage models", exact: true }).click();
+  const manageAgain = page.getByRole("dialog", { name: "Manage models" });
+  assert.equal(await manageAgain.getByLabel("Thinking level: deepseek-v4-flash").inputValue(), "DEEP");
+  assert.equal(await manageAgain.getByLabel("Context window: deepseek-v4-flash").inputValue(), "custom");
+  assert.equal(await manageAgain.getByLabel("Window tokens: deepseek-v4-flash").inputValue(), "64000");
+  assert.equal(await manageAgain.getByRole("button", { name: "Visible in picker: claude-opus-5-5" }).getAttribute("aria-pressed"), "false");
+  await manageAgain.getByLabel("Thinking level: deepseek-v4-flash").selectOption("STANDARD");
+  await manageAgain.getByRole("button", { name: "Save", exact: true }).click();
+  await manageAgain.waitFor({ state: "hidden" });
+  assert.equal(modelSettingsWrites, 2);
   assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "STANDARD");
-  await page.screenshot({ path: ".next/reasoning-buttons.png" });
+  await page.screenshot({ path: ".next/model-settings.png" });
   descriptionQuotaExhausted = true;
   const descriptionQuotaStart = descriptionRequests.length;
+  await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
   await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });
   for (let attempt = 0; attempt < 60 && descriptionRequests.length === descriptionQuotaStart; attempt += 1) {
     await page.waitForTimeout(50);
@@ -500,9 +567,12 @@ try {
   assert.equal(await draftBox.isEnabled(), true);
   await draftBox.fill("Next message draft survives completion");
   await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
-  await page.getByRole("button", { name: "Low", exact: true }).click();
+  await page.getByRole("dialog", { name: "Model and thinking depth options" }).getByRole("button", { name: "Manage models", exact: true }).click();
+  const effortDialog = page.getByRole("dialog", { name: "Manage models" });
+  await effortDialog.getByLabel("Thinking level: deepseek-v4-flash").selectOption("QUICK");
+  await effortDialog.getByRole("button", { name: "Save", exact: true }).click();
+  await effortDialog.waitFor({ state: "hidden" });
   assert.equal(await page.getByRole("button", { name: "Model and thinking depth", exact: true }).getAttribute("data-reasoning-depth"), "QUICK");
-  await page.keyboard.press("Escape");
   await draftBox.click();
   releaseStream();
   await page.getByText("Synthetic agent reply", { exact: true }).waitFor();
@@ -594,8 +664,12 @@ try {
   assert.equal(await page.getByRole("button", { name: "Interrupt and handle now", exact: true }).count(), 0);
   await draftBox.fill("Queued follow-up two");
   await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
-  await page.getByRole("button", { name: "Max", exact: true }).click();
-  await page.keyboard.press("Escape");
+  await page.getByRole("dialog", { name: "Model and thinking depth options" }).getByRole("button", { name: "Manage models", exact: true }).click();
+  const deepDialog = page.getByRole("dialog", { name: "Manage models" });
+  await deepDialog.getByLabel("Thinking level: deepseek-v4-flash").selectOption("DEEP");
+  await deepDialog.getByRole("button", { name: "Save", exact: true }).click();
+  await deepDialog.waitFor({ state: "hidden" });
+  assert.equal(await page.getByRole("button", { name: "Model and thinking depth", exact: true }).getAttribute("data-reasoning-depth"), "DEEP");
   await draftBox.click();
   await Promise.all([
     page.waitForResponse((response) => response.url().endsWith("/api/agent/messages/steer") && response.request().method() === "POST"),

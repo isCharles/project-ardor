@@ -19,6 +19,7 @@ import { ChatVoiceButton } from "@/components/ardor/chat-voice-button";
 import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
 import { ConversationTitle } from "@/components/ardor/conversation-title";
 import { ReasoningControl, type ModelOption } from "@/components/ardor/reasoning-control";
+import { ModelSettingsDialog, type ModelSettingsUpdate } from "@/components/ardor/model-settings-dialog";
 import { ContextUsageIndicator, type ContextUsage } from "@/components/ardor/context-usage";
 import { ServicePicker } from "@/components/ardor/service-picker";
 import { type ToolMeasurement } from "@/components/ardor/tool-duration";
@@ -232,10 +233,12 @@ export default function AgentHomePage() {
         && typeof item.id === "string" && typeof item.label === "string").slice(0, 5);
     } catch { return []; }
   }, [draftStorageKey]);
-  const [reasoningReady, setReasoningReady] = useState(false);
+  const [modelCatalogState, setModelCatalogState] = useState<"LOADING" | "READY" | "FAILED">("LOADING");
+  const [modelCatalogRetry, setModelCatalogRetry] = useState(0);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelChoice, setModelChoice] = useState("PRIMARY");
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const [modelCatalogLocale, setModelCatalogLocale] = useState<string | null>(null);
   const modelDescriptionToken = useRef(0);
   const modelDescriptionAbort = useRef<AbortController | null>(null);
@@ -252,6 +255,19 @@ export default function AgentHomePage() {
     if (!open) cancelModelDescriptions(true);
   }, [cancelModelDescriptions]);
   const imageInputSupported = modelOptions.find((item) => item.id === modelChoice)?.imageInput === true;
+  useEffect(() => {
+    const selected = modelOptions.find((item) => item.id === modelChoice);
+    if (selected) setReasoningDepth(selected.thinkingEffort ?? "AUTO");
+  }, [modelChoice, modelOptions]);
+  useEffect(() => {
+    if (modelOptions.length === 0) return;
+    const current = modelOptions.find((item) => item.id === modelChoice);
+    if (current && current.available && current.visible !== false) return;
+    const fallback = modelOptions.find((item) => item.available && item.visible !== false);
+    if (!fallback) return;
+    setModelChoice(fallback.id);
+    setNativeReasoning(fallback.nativeControl);
+  }, [modelChoice, modelOptions]);
   const [titleWatch, setTitleWatch] = useState<{ id: string; title: string } | null>(null);
   const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
@@ -356,35 +372,34 @@ export default function AgentHomePage() {
     cancelModelDescriptions(false);
     describedLocale.current = null;
     setModelCatalogLocale(null);
+    setModelCatalogState("LOADING");
     setModelOptions((current) => current.map((option) => ({ ...option, description: undefined })));
     void api<{ id: string; admin: boolean }>("/api/auth/me").then((account) => {
       if (!active) return;
       setIsAdmin(account.admin === true);
       reasoningAccount.current = account.id;
-      try {
-        const saved = window.sessionStorage.getItem(`ardor:reasoning-depth:${account.id}`);
-        if (saved && ["AUTO", "QUICK", "STANDARD", "DEEP"].includes(saved)) setReasoningDepth(saved as ReasoningDepth);
-      } finally { setReasoningReady(true); }
       void api<ModelOption[]>("/api/agent/models").then((items) => {
         if (!active || !Array.isArray(items)) return;
         setModelOptions(items);
         setModelCatalogLocale(locale);
+        setModelCatalogState("READY");
         const saved = window.sessionStorage.getItem(`ardor:model-choice:${account.id}`);
-        const initial = items.find((item) => item.id === saved && item.available)
-          ?? items.find((item) => item.id === "PRIMARY" && item.available)
-          ?? items.find((item) => item.available);
+        const usable = (item: ModelOption) => item.available && item.visible !== false;
+        const initial = items.find((item) => item.id === saved && usable(item))
+          ?? items.find((item) => item.id === "PRIMARY" && usable(item))
+          ?? items.find(usable);
         if (initial) {
           setModelChoice(initial.id);
           setNativeReasoning(initial.nativeControl);
         }
-      }).catch(() => undefined);
-    }).catch(() => undefined);
+      }).catch(() => { if (active) setModelCatalogState("FAILED"); });
+    }).catch(() => { if (active) setModelCatalogState("FAILED"); });
     const reloadPermissions = () => { void api<{ mode?: ApprovalMode }>("/api/agent/permissions")
       .then((result) => { if (active) setPermissionMode(result.mode ?? "CUSTOM"); }).catch(() => undefined); };
     reloadPermissions();
     window.addEventListener("ardor:permissions-changed", reloadPermissions);
     return () => { active = false; window.removeEventListener("ardor:permissions-changed", reloadPermissions); };
-  }, [locale, cancelModelDescriptions]);
+  }, [locale, cancelModelDescriptions, modelCatalogRetry]);
 
   useEffect(() => {
     if (!modelPickerOpen || modelDescriptionQuotaStopped.current
@@ -394,7 +409,7 @@ export default function AgentHomePage() {
     modelDescriptionAbort.current?.abort();
     modelDescriptionAbort.current = controller;
     const token = ++modelDescriptionToken.current;
-    const targets = modelOptions.filter((item) => item.available && item.description == null);
+    const targets = modelOptions.filter((item) => item.available && item.visible !== false && item.description == null);
     let nextTarget = 0;
     let stopped = false;
     const research = async () => {
@@ -459,17 +474,23 @@ export default function AgentHomePage() {
     return () => { active = false; window.clearInterval(timer); };
   }, [busy, titleWatch]);
 
+  const saveModelSettings = useCallback(async (updates: ModelSettingsUpdate[]) => {
+    const items = await api<ModelOption[]>("/api/agent/models/settings", {
+      method: "PUT", body: JSON.stringify({ settings: updates }),
+    });
+    if (!Array.isArray(items)) throw new Error(t("Could not reload the model catalog", "无法重新加载模型目录"));
+    setModelOptions(items);
+    setModelCatalogLocale(locale);
+    setModelCatalogState("READY");
+  }, [locale, t]);
+
   function reasoningPicker() {
-    return <ReasoningControl value={reasoningDepth} disabled={!reasoningReady} nativeControl={nativeReasoning}
+    return <ReasoningControl value={reasoningDepth} disabled={modelCatalogState !== "READY"} nativeControl={nativeReasoning}
       models={modelOptions} model={modelChoice} onOpenChange={handleModelPickerOpenChange}
-      onChange={(value) => {
-        setReasoningDepth(value);
-        try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:reasoning-depth:${reasoningAccount.current}`, value); }
-        catch { /* The current selection remains usable when browser storage is unavailable. */ }
-      }}
+      onManageModels={() => setModelSettingsOpen(true)}
       onModelChange={(value) => {
         const selected = modelOptions.find((item) => item.id === value);
-        if (!selected || !selected.available) return;
+        if (!selected || !selected.available || selected.visible === false) return;
         setModelChoice(value);
         setNativeReasoning(selected.nativeControl);
         if (chatImages.length > 0 && selected.imageInput !== true) setError(IMAGE_MODEL_ERROR);
@@ -865,6 +886,12 @@ export default function AgentHomePage() {
     const message = text.trim();
     const sentImages = [...chatImagesRef.current];
     if (!message && sentImages.length === 0) return;
+    if (modelCatalogState !== "READY") {
+      setError(modelCatalogState === "FAILED"
+        ? t("Model settings failed to load. Retry before sending.", "模型设置加载失败，请重试后再发送。")
+        : t("Model settings are still loading. Try again in a moment.", "模型设置正在加载，请稍候再发送。"));
+      return;
+    }
     if (sentImages.some((image) => image.status === "uploading")) {
       setError(t("Wait for the images to finish uploading before sending.", "请等待图片上传完成后再发送。"));
       return;
@@ -1435,7 +1462,7 @@ export default function AgentHomePage() {
           usage={liveContext?.conversationId === state?.conversationId ? liveContext?.usage : streamProgress?.contextUsage ?? messages.slice().reverse().map(item => savedRunTrace(item.runTrace)?.contextUsage).find(Boolean)} />
         {reasoningPicker()}
         <ChatVoiceButton disabled={!state?.llmConfigured} onTranscript={(text) => { setDraft((current) => current.trim() ? `${current.trim()} ${text}` : text); setError(""); }} onError={setError} />
-        {isRunning && !draft.trim() && chatImages.length === 0 ? <Button type="button" aria-label={t("Stop", "停止")} disabled={cancelPending} onClick={() => void cancelExecution()} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800 disabled:opacity-50"><Square className="size-3 fill-current" /></Button> : <Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || (!draft.trim() && chatImages.length === 0) || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button>}
+        {isRunning && !draft.trim() && chatImages.length === 0 ? <Button type="button" aria-label={t("Stop", "停止")} disabled={cancelPending} onClick={() => void cancelExecution()} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800 disabled:opacity-50"><Square className="size-3 fill-current" /></Button> : <Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || (!draft.trim() && chatImages.length === 0) || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured || modelCatalogState !== "READY"} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button>}
       </div>
     </div>;
   }
@@ -1560,6 +1587,7 @@ export default function AgentHomePage() {
           </header>
 
           {!state?.llmConfigured && <div className="mx-4 mt-2 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 md:mx-8"><span>{t("Connect a tool-capable model to get started.", "配置一个支持 Tool Calling 的模型后，Ardor 才能开始工作。")}</span><Link href="/app/settings" className="shrink-0 font-medium underline underline-offset-4">{t("Settings", "去设置")}</Link></div>}
+          {modelCatalogState === "FAILED" && <div role="alert" className="mx-4 mt-2 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 md:mx-8"><span>{t("Model settings failed to load. Sending is paused until they are available.", "模型设置加载失败，恢复前暂不能发送消息。")}</span><button type="button" onClick={() => setModelCatalogRetry((current) => current + 1)} className="shrink-0 font-medium underline underline-offset-4">{t("Retry", "重试")}</button></div>}
           {notice && <button type="button" onClick={() => setNotice("")} className="mx-4 mt-2 rounded-2xl bg-emerald-50/90 px-4 py-3 text-left text-sm text-emerald-800 md:mx-8">{notice}</button>}
           {applicationReminder?.reminderDue && <div className="mx-4 mt-2 flex items-center gap-3 rounded-2xl border border-violet-100 bg-white/80 px-4 py-3 text-sm text-stone-700 shadow-sm md:mx-8"><Target className="size-4 shrink-0 text-violet-500" /><span className="flex-1">{t(`How many applications today? ${applicationReminder.weeklyCount}/${applicationReminder.weeklyGoal} this week`, `今天投了多少份？本周 ${applicationReminder.weeklyCount}/${applicationReminder.weeklyGoal}`)}</span><Link href="/app/applications" className="shrink-0 font-medium text-violet-700 hover:underline">{t("Log it", "记一下")}</Link><button type="button" onClick={() => void dismissApplicationReminder()} className="shrink-0 text-xs text-stone-400 hover:text-stone-700">{t("Skip today", "今天跳过")}</button></div>}
 
@@ -1634,6 +1662,8 @@ export default function AgentHomePage() {
           </div>}
         </section>
       </div>
+
+      {modelSettingsOpen && <ModelSettingsDialog models={modelOptions} onClose={() => setModelSettingsOpen(false)} onSave={saveModelSettings} />}
 
       {renaming && <AppDialog title={t("Rename chat", "重命名对话")} onClose={() => { if (!renamePending) setRenaming(null); }}>
         <form onSubmit={renameConversation}>

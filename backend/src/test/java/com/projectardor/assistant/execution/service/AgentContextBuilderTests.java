@@ -134,8 +134,10 @@ class AgentContextBuilderTests {
                 ReasoningDepth.AUTO, null, null, List.of(), List.of(UUID.randomUUID()));
         long delta = ((Number) withImage.attributes().get("assembledEstimatedTokens")).longValue()
                 - ((Number) without.attributes().get("assembledEstimatedTokens")).longValue();
-        // The prompt carries a live timestamp, so allow for tiny second-boundary length drift.
-        assertThat(delta).isBetween((long) AgentRequestTokens.IMAGE_TOKENS, (long) AgentRequestTokens.IMAGE_TOKENS + 20);
+        // The prompt carries a live timestamp, so allow for tiny second-boundary length drift in both directions.
+        long drift = 20;
+        assertThat(delta).isBetween((long) AgentRequestTokens.IMAGE_TOKENS - drift,
+                (long) AgentRequestTokens.IMAGE_TOKENS + drift);
         verify(f.compactor).prepare(eq(f.owner), eq(f.conversation), anyString(), eq(f.config), any(),
                 anyList(), any(), anyString(), eq(1));
     }

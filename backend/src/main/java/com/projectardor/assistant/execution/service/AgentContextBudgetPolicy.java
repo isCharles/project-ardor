@@ -26,7 +26,11 @@ public final class AgentContextBudgetPolicy {
     }
 
     public Budget resolve(LlmConfigService.LlmRuntimeConfig config, int outputTokens) {
-        Long window = capacity.resolve(config);
+        return resolve(null, config, outputTokens);
+    }
+
+    public Budget resolve(java.util.UUID userId, LlmConfigService.LlmRuntimeConfig config, int outputTokens) {
+        Long window = userId == null ? capacity.resolve(config) : capacity.resolve(userId, config);
         long output = Math.max(0, outputTokens);
         if (window == null || window <= 0) return new Budget(null, unknownSoftLimit, null, output, 0);
         long margin = (long) Math.ceil(window * safetyRatio);

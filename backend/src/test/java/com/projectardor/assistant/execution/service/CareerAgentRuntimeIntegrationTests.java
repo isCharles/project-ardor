@@ -47,7 +47,7 @@ class CareerAgentRuntimeIntegrationTests {
                 eq("fixture-model"), anyString(), isNull(), isNull(), any());
         assertThat(f.events).anyMatch(event -> "error".equals(event.type())
                 && "INVALID_STATE".equals(event.errorCode()) && !Boolean.TRUE.equals(event.retryable()));
-        verify(f.factory, never()).createStreaming(any(LlmConfigService.LlmRuntimeConfig.class), any(), any(), anyList());
+        verify(f.factory, never()).createStreaming(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(), any(), anyList());
         assertThat(f.requests).isEmpty();
     }
 
@@ -63,7 +63,7 @@ class CareerAgentRuntimeIntegrationTests {
         var trace = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(f.conversations).appendExchange(any(), any(), anyString(), anyString(), trace.capture(), anyList(), eq(false), anyList());
         assertThat(JsonMapper.builder().build().readTree(trace.getValue()).path("contextUsage").path("state").asText()).isEqualTo("READY");
-        verify(f.factory, never()).create(any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
+        verify(f.factory, never()).create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
     }
 
     @Test void generatedSummaryIsDataAndHistorySurvivesConsecutiveRuns() {
@@ -148,7 +148,7 @@ class CareerAgentRuntimeIntegrationTests {
         var vision = new LlmConfigService.LlmRuntimeConfig(LlmProvider.OPENAI_COMPATIBLE,
                 "https://example.invalid", "gpt-4o", "synthetic-only");
         when(f.catalog.resolve(eq(f.user), any())).thenReturn(new AgentModelCatalogService.Resolved("PRIMARY", vision));
-        when(f.factory.createStreaming(eq(vision), any(ReasoningDepth.class), any(), anyList())).thenReturn(f.model);
+        when(f.factory.createStreaming(any(), eq(vision), any(ReasoningDepth.class), any(), anyList())).thenReturn(f.model);
         when(f.compactor.prepare(eq(f.user), eq(f.conversation.getId()), anyString(), eq(vision), any(), anyList(),
                 any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any())).thenAnswer(call ->
                 new AgentContextCompactor.Prepared(call.getArgument(2), List.of(), 0, 0, 10, null, ""));
@@ -217,7 +217,7 @@ class CareerAgentRuntimeIntegrationTests {
         var config = new LlmConfigService.LlmRuntimeConfig(LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "gpt-4o", "synthetic-only");
         UUID imageId = UUID.randomUUID();
         when(f.catalog.resolve(eq(f.user), any())).thenReturn(new AgentModelCatalogService.Resolved("PRIMARY", config));
-        when(f.factory.createStreaming(eq(config), any(ReasoningDepth.class), any(), anyList())).thenReturn(f.model);
+        when(f.factory.createStreaming(any(), eq(config), any(ReasoningDepth.class), any(), anyList())).thenReturn(f.model);
         when(f.compactor.prepare(eq(f.user), eq(f.conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any()))
                 .thenAnswer(call -> new AgentContextCompactor.Prepared(call.getArgument(2), List.of(), 0, 0, 10, null, ""));
         var multimodal = List.<dev.langchain4j.data.message.Content>of(
@@ -303,7 +303,7 @@ class CareerAgentRuntimeIntegrationTests {
         assertThat(f.registry.get("ardor.agent.run.active").gauge().value()).isZero();
         assertThat(f.registry.get("ardor.agent.run.successes").counter().count()).isZero();
         assertThat(f.registry.get("ardor.agent.run.errors").counter().count()).isEqualTo(1.0);
-        verify(f.factory, never()).createStreaming(any(LlmConfigService.LlmRuntimeConfig.class), any(), any(), anyList());
+        verify(f.factory, never()).createStreaming(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(), any(), anyList());
     }
 
     @Test void failedSyncRunEndsTheActiveGauge() {
@@ -368,7 +368,7 @@ class CareerAgentRuntimeIntegrationTests {
             when(profiles.view(user)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(user, "Synthetic owner")));
             when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any())).thenAnswer(call ->
                     new AgentContextCompactor.Prepared(call.getArgument(2), List.of(ConversationMessage.user(user, conversation.getId(), "Earlier user instruction")), 0, 0, 10, null, summary));
-            when(factory.createStreaming(eq(config), any(ReasoningDepth.class), any(), anyList())).thenReturn(model);
+            when(factory.createStreaming(any(), eq(config), any(ReasoningDepth.class), any(), anyList())).thenReturn(model);
             var approvals = mock(AgentToolApprovals.class); when(approvals.canRead(eq(user), any())).thenReturn(true);
             service = new CareerAgentService(conversations, runs, factory, tools, mock(LlmConfigService.class), mock(AgentMemoryService.class),
                     new AgentContextBuilder(embedding, compactor, profiles, tools,

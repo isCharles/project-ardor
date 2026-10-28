@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, Cpu } from "lucide-react";
+import { Check, ChevronDown, Cpu, Settings2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDismiss } from "./overlay";
@@ -9,12 +9,7 @@ import { modelDisplayName } from "@/lib/model-display-name";
 
 type Depth = "AUTO" | "QUICK" | "STANDARD" | "DEEP";
 export type ReasoningLevel = { value: Depth; label: string };
-export type ModelOption = { id: string; label: string; provider: string; available: boolean; nativeControl: boolean; imageInput?: boolean; reasoningLevels?: ReasoningLevel[]; description?: string };
-const defaultLevels: ReasoningLevel[] = [
-  { value: "QUICK", label: "Low" },
-  { value: "STANDARD", label: "High" },
-  { value: "DEEP", label: "Max" },
-];
+export type ModelOption = { id: string; label: string; provider: string; available: boolean; nativeControl: boolean; imageInput?: boolean; reasoningLevels?: ReasoningLevel[]; description?: string; visible?: boolean; thinkingEffort?: Depth; contextWindowTokens?: number | null; settingsKey?: string };
 const levelLabels: Record<Depth, string> = { AUTO: "Auto", QUICK: "Low", STANDARD: "High", DEEP: "Max" };
 const iconRules: Array<[RegExp, string, string]> = [
   [/(?:^|[/:\s-])(?:gpt|chatgpt|o[134])(?:[/:\s-]|$)|openai/i, "lobe-openai.svg", "#e7f6ec"],
@@ -42,12 +37,13 @@ function ModelIcon({ label }: { label: string }) {
 }
 
 /**
- * Combined model + reasoning picker in the composer, following the same compact
- * two-row shape as Codex/DSH: model identity first, then a single reasoning-level row.
+ * Model picker in the composer. Thinking effort and context window live in the
+ * per-model settings dialog so the popover stays a pure model list.
  */
-export function ReasoningControl({ value, onChange, disabled, nativeControl, models = [], model, onModelChange, onOpenChange }: {
-  value: Depth; onChange: (depth: Depth) => void; disabled: boolean; nativeControl: boolean;
+export function ReasoningControl({ value, disabled, nativeControl, models = [], model, onModelChange, onManageModels, onOpenChange }: {
+  value: Depth; disabled: boolean; nativeControl: boolean;
   models?: ModelOption[]; model?: string; onModelChange?: (model: string) => void;
+  onManageModels?: () => void;
   onOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useLocale();
@@ -64,8 +60,8 @@ export function ReasoningControl({ value, onChange, disabled, nativeControl, mod
     window.addEventListener("resize", close);
     return () => window.removeEventListener("resize", close);
   }, [open]);
-  const selected = models.find((item) => item.id === model) ?? models[0];
-  const levelOptions = selected?.reasoningLevels?.length ? selected.reasoningLevels : defaultLevels;
+  const visibleModels = models.filter((item) => item.visible !== false);
+  const selected = visibleModels.find((item) => item.id === model) ?? visibleModels[0];
   const currentLabel = levelLabels[value];
   return <div ref={ref} className="relative min-w-0">
     <button data-reasoning-depth={value} data-model-choice={selected?.id} data-native-reasoning={nativeControl} type="button" disabled={disabled} aria-label={t("Model and thinking depth", "模型与思考深度")} aria-expanded={open} onClick={(event) => {
@@ -82,21 +78,18 @@ export function ReasoningControl({ value, onChange, disabled, nativeControl, mod
     {open && position && createPortal(<div ref={popup} role="dialog" aria-label={t("Model and thinking depth options", "模型与思考深度选项")} style={position} className="ardor-depth-popover fixed z-40 overflow-y-auto rounded-3xl border border-stone-200 bg-[#fcfcf9] p-3 shadow-xl">
       <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Models", "模型")}</div>
       <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
-        {models.map((item) => <button key={item.id} type="button" disabled={!item.available} aria-pressed={item.id === selected?.id} onClick={() => { onModelChange?.(item.id); }} className={`flex w-full items-center gap-2 rounded-2xl px-2.5 py-2 text-left transition ${item.id === selected?.id ? "bg-violet-50" : "hover:bg-stone-100"} disabled:cursor-not-allowed disabled:opacity-45`}>
+        {visibleModels.map((item) => <button key={item.id} type="button" disabled={!item.available} aria-pressed={item.id === selected?.id} onClick={() => { onModelChange?.(item.id); }} className={`flex w-full items-center gap-2 rounded-2xl px-2.5 py-2 text-left transition ${item.id === selected?.id ? "bg-violet-50" : "hover:bg-stone-100"} disabled:cursor-not-allowed disabled:opacity-45`}>
           <ModelIcon label={item.label} />
           <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-stone-800" title={item.label}>{modelDisplayName(item.label)}</span>{!item.available ? <span className="block truncate text-[10px] text-stone-400">{t("Not configured", "未配置")}</span> : item.description ? <span className="block truncate text-[10px] text-stone-400" title={item.description}>{item.description}</span> : null}</span>
           {item.id === selected?.id && <Check className="size-3.5 shrink-0 text-violet-600" />}
         </button>)}
-        {models.length === 0 && <p className="px-3 py-4 text-xs text-stone-400">{t("No models available.", "暂无可用模型。")}</p>}
+        {visibleModels.length === 0 && <p className="px-3 py-4 text-xs text-stone-400">{t("No models available.", "暂无可用模型。")}</p>}
       </div>
       <div className="my-2 h-px bg-stone-200/70" />
-      <div className="flex items-center justify-between gap-2 px-2">
-        <span className="shrink-0 text-xs font-medium text-stone-700">{t("Reasoning level", "推理等级")}</span>
-        <div className="flex flex-wrap items-center justify-end gap-1">
-          <button type="button" title={t("Provider default", "厂商默认")} aria-pressed={value === "AUTO"} onClick={() => onChange("AUTO")} className={`rounded-full px-2.5 py-1 text-[11px] transition ${value === "AUTO" ? "bg-emerald-100 font-medium text-emerald-800" : "text-stone-500 hover:bg-stone-100"}`}>Auto</button>
-          {levelOptions.map((level) => <button type="button" key={level.value} aria-pressed={value === level.value} onClick={() => onChange(level.value)} className={`rounded-full px-2.5 py-1 text-[11px] transition ${value === level.value ? "bg-violet-100 font-medium text-violet-800" : "text-stone-500 hover:bg-stone-100"}`}>{levelLabels[level.value]}</button>)}
-        </div>
-      </div>
+      <button type="button" aria-label={t("Manage models", "管理模型")} onClick={() => { setOpen(false); onManageModels?.(); }} className="flex w-full items-center justify-between gap-2 rounded-2xl px-2.5 py-2 text-xs text-stone-600 transition hover:bg-violet-50">
+        <span className="flex items-center gap-2"><Settings2 className="size-3.5 text-stone-400" />{t("Manage models", "管理模型")}</span>
+        <span className="text-[10px] text-stone-400">{t("Visibility, thinking, context window", "可见性、思考力度、上下文窗口")}</span>
+      </button>
     </div>, document.body)}
   </div>;
 }

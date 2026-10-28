@@ -140,7 +140,7 @@ public class AgentContextCompactor {
 
         TokenCountEstimator estimator = estimator(config);
         int output = modelFactory.maxOutputTokens(config, depth);
-        var budget = budgetPolicy.resolve(config, output > 0 ? output : 4096);
+        var budget = budgetPolicy.resolve(userId, config, output > 0 ? output : 4096);
         boolean imageCapable = com.projectardor.assistant.execution.service.AgentImageModelPolicy.supports(config);
         long pendingImageTokens = imageCapable ? (long) Math.max(0, pendingImages) * AgentRequestTokens.IMAGE_TOKENS : 0;
         long toolTokens = schemas == null ? 0 : schemas.specifications().stream()
@@ -208,7 +208,7 @@ public class AgentContextCompactor {
 
             ChatResponse response;
             try {
-                ChatModel model = modelFactory.create(config, depth, listeners);
+                ChatModel model = modelFactory.create(userId, config, depth, listeners);
                 ChatRequest request = ChatRequest.builder().messages(UserMessage.from(prompt)).build();
                 response = model.chat(request);
             } catch (RuntimeException unavailable) {
