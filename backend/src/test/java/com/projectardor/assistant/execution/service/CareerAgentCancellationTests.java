@@ -37,6 +37,7 @@ class CareerAgentCancellationTests {
             mock(AgentStreamProgress.class), mock(AgentToolApprovals.class), mock(AgentPermissionGrants.class),
             mock(AgentExecutionAuditStore.class), mock(AgentTraceStore.class), mock(AgentModelCatalogService.class),
             mock(ChatImageService.class), mock(com.projectardor.platform.usage.UsageTokenStore.class), mock(AgentMetrics.class),
+            mock(AgentPlanner.class), mock(AgentPlanStore.class),
             Duration.ofSeconds(90), Duration.ofMinutes(10));
 
     @Test

@@ -2,7 +2,9 @@ package com.projectardor.assistant.execution.service;
 
 import java.util.LinkedHashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -100,21 +102,33 @@ final class ApprovedAgentTools {
             String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
             UUID conversationId, boolean automation, AgentRunTracer tracer) {
         return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
-                executionAudit, conversationId, automation, tracer, null);
+                executionAudit, conversationId, automation, tracer, null, null);
+    }
+
+    /** The streaming run may also carry the plan proposed for this turn, which then limits writes. */
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
+            AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
+            String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
+            UUID conversationId, boolean automation, AgentRunTracer tracer, PlanningAgentTools planning) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
+                executionAudit, conversationId, automation, tracer, null, planning);
     }
 
     /** A graph phase may only see an explicit read-only subset of the tool surface. */
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
             AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
             String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
-            UUID conversationId, boolean automation, AgentRunTracer tracer, Set<String> allowedTools) {
+            UUID conversationId, boolean automation, AgentRunTracer tracer, Set<String> allowedTools,
+            PlanningAgentTools planning) {
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         Map<String, Boolean> attemptedWrites = new java.util.concurrent.ConcurrentHashMap<>();
         var automaticWriteOrdinal = new java.util.concurrent.atomic.AtomicInteger();
         AgentExecutionAuditStore.ToolCallContext auditContext =
                 AgentExecutionAuditStore.ToolCallContext.of(userId, conversationId, requestId);
         Set<String> names = new HashSet<>();
-        for (Object toolObject : AgentToolBundle.objects(bound)) {
+        List<Object> toolObjects = new java.util.ArrayList<>(AgentToolBundle.objects(bound));
+        if (planning != null) toolObjects.addAll(planning.toolObjects());
+        for (Object toolObject : toolObjects) {
         for (var method : toolObject.getClass().getMethods()) {
             if (!method.isAnnotationPresent(Tool.class)) continue;
             if (allowedTools != null && !allowedTools.contains(method.getAnnotation(Tool.class).name())) continue;
@@ -148,6 +162,18 @@ final class ApprovedAgentTools {
                     traceNotExecuted(tracer, request, tool, "TOOL_INTENT_NOT_PERMITTED");
                     timings.record(request.id(), requested, requested, false);
                     return "{\"status\":\"TOOL_NOT_PERMITTED\",\"message\":\"当前用户请求没有授权这次写入；未执行本次操作，不要重复调用或声称已完成。\"}";
+                }
+                if (actualWrite && planning != null) {
+                    // An accepted plan limits which writes this run may perform. A write that belongs
+                    // to no open step is refused here, before the user is ever asked to approve it.
+                    Optional<String> outsidePlan = planning.refusal(tool);
+                    if (outsidePlan.isPresent()) {
+                        UUID blockedRow = startAudit(executionAudit, auditContext, request, tool, "AUTO");
+                        finishAudit(executionAudit, blockedRow, userId, "NOT_EXECUTED", null, "PLAN_SCOPE_REFUSED");
+                        traceNotExecuted(tracer, request, tool, "PLAN_SCOPE_REFUSED");
+                        timings.record(request.id(), requested, requested, false);
+                        return outsidePlan.get();
+                    }
                 }
                 boolean allowed = (!destructive || proposal) && (proposal || read || requestId != null || automationWrite)
                         && (read ? approvals.canRead(userId, requestId)
@@ -242,6 +268,12 @@ final class ApprovedAgentTools {
                 } finally {
                     finishAudit(executionAudit, row, userId, outcome, auditResult, errorCode);
                     timings.record(request.id(), requested, approved, executed.get());
+                    if (planning != null) {
+                        // The plan is settled from what actually happened to this call, so a run that
+                        // talks its way to a claim cannot mark a step verified.
+                        planning.applyOutcome(tool, executed.get() && !"FAILED".equals(outcome),
+                                executed.get() && !"FAILED".equals(outcome) ? (auditResult != null ? auditResult : returned) : null);
+                    }
                     if (tracer != null && traceSpan != null) {
                         String spanStatus = "FAILED".equals(outcome) ? "FAILED"
                                 : "NOT_EXECUTED".equals(outcome) ? "NOT_EXECUTED" : "COMPLETED";

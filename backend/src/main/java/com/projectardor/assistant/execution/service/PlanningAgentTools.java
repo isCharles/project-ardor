@@ -48,6 +48,57 @@ public final class PlanningAgentTools implements AgentToolBundle {
         return Optional.ofNullable(plan);
     }
 
+    /**
+     * A write the still-open steps never asked for is refused here, before it can reach a business
+     * service: the plan limits what this run may do instead of merely describing it.
+     */
+    Optional<String> refusal(String tool) {
+        AgentPlanStore.Plan current = plan;
+        if (current == null || !current.active()) return Optional.empty();
+        return planner.refusal(current, tool);
+    }
+
+    /**
+     * Settles one recorded tool outcome against the plan. Verification comes from the execution
+     * fact — the call ran, or it was refused — never from the model's prose about it, and the tool
+     * result handed back to the model is left exactly as the business service returned it.
+     */
+    void applyOutcome(String tool, boolean executed, String result) {
+        AgentPlanStore.Plan current = plan;
+        if (current == null) return;
+        AgentPlanner.StepOutcome outcome = planner.attribute(current, tool, executed, result);
+        if (outcome.stepId() == null) return;
+        AgentPlanStore.Step step = current.steps().stream()
+                .filter(candidate -> candidate.id().equals(outcome.stepId())).findFirst().orElse(null);
+        if (outcome.verified()) {
+            store.verifyStep(userId, outcome.stepId(), step == null ? outcome.guidance() : step.doneWhen());
+        } else {
+            store.failStep(userId, outcome.stepId(), outcome.guidance());
+        }
+        recordStepSpan(outcome.stepIndex(), step == null ? tool : step.intent(), outcome.verified(), outcome.guidance());
+        // The next call is judged against the tools that are still open, not the step just settled.
+        plan = store.find(userId, current.id()).orElse(current);
+    }
+
+    /**
+     * Closes the plan with the run. Steps the run never reached stay recorded as skipped, so a trace
+     * reading shows "verified 2 of 4" rather than implying the goal was met.
+     */
+    void finish(String runStatus) {
+        AgentPlanStore.Plan held = plan;
+        if (held == null) return;
+        // The durable step states are what this run achieved, not whatever this object last saw.
+        AgentPlanStore.Plan current = store.find(userId, held.id()).orElse(held);
+        store.skipOpenSteps(userId, current.id());
+        boolean achieved = "COMPLETED".equals(runStatus) && current.verifiedSteps() == current.steps().size();
+        String planStatus = achieved ? "COMPLETED"
+                : "CANCELLED".equals(runStatus) ? "CANCELLED" : "FAILED";
+        store.finish(userId, current.id(), planStatus);
+        AgentPlanStore.Plan finalPlan = store.find(userId, current.id()).orElse(current);
+        plan = finalPlan;
+        finishPlanSpan(achieved ? "COMPLETED" : "FAILED", finalPlan);
+    }
+
     @Tool(name = "propose_plan", value = """
             仅当本轮任务同时涉及两个以上业务模块、且需要多个目标按顺序完成时调用，例如“结合面试薄弱点调整学习计划并检查日历冲突”。\
             普通问答、单项操作、同一模块内的多步操作都不要调用本工具，直接按正常流程完成。\
@@ -71,6 +122,7 @@ public final class PlanningAgentTools implements AgentToolBundle {
         int revision = existing.map(AgentPlanStore.Plan::revision).orElse(-1) + 1;
         UUID planId = store.create(userId, requestId, conversationId, goal, revision,
                 AgentPlanner.MODEL_CALL_CEILING, admission.steps());
+        store.markRunning(userId, planId);
         AgentPlanStore.Plan created = store.find(userId, planId).orElseThrow();
         plan = created;
         recordTrace(created);

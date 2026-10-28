@@ -68,6 +68,8 @@ public class CareerAgentService {
     private final com.projectardor.assistant.conversation.service.ChatImageService images;
     private final com.projectardor.platform.usage.UsageTokenStore usageTokens;
     private final AgentMetrics agentMetrics;
+    private final AgentPlanner planner;
+    private final AgentPlanStore planStore;
     private final java.time.Duration silenceTimeout;
     private final java.time.Duration totalTimeout;
     private final ConcurrentHashMap<UUID, ActiveStream> activeStreams = new ConcurrentHashMap<>();
@@ -99,6 +101,7 @@ public class CareerAgentService {
             com.projectardor.assistant.conversation.service.ChatImageService images,
             com.projectardor.platform.usage.UsageTokenStore usageTokens,
             AgentMetrics agentMetrics,
+            AgentPlanner planner, AgentPlanStore planStore,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:90s}") java.time.Duration silenceTimeout,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.total-timeout:10m}") java.time.Duration totalTimeout) {
         this.store = store;
@@ -119,6 +122,8 @@ public class CareerAgentService {
         this.images = images;
         this.usageTokens = usageTokens;
         this.agentMetrics = agentMetrics;
+        this.planner = planner;
+        this.planStore = planStore;
         if (silenceTimeout.isNegative() || silenceTimeout.isZero() || totalTimeout.isNegative() || totalTimeout.isZero()) throw new IllegalArgumentException("Agent 运行期限必须大于零");
         this.silenceTimeout = silenceTimeout; this.totalTimeout = totalTimeout;
     }
@@ -535,16 +540,21 @@ public class CareerAgentService {
             // the agent proposed, so each becomes a button in the transcript.
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId)
                     .withConversationId(conversation.getId());
+            // A plan is only meaningful for a persisted run: its steps are the resume guard, and the
+            // trace is where the verification of each step is recorded.
+            PlanningAgentTools planning = requestId == null ? null
+                    : new PlanningAgentTools(userId, requestId, conversation.getId(), planner, planStore, tracer);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, runtimeConfig, depth, lease, listeners))
                     .systemMessage(systemMessage).chatMemory(memory)
                     .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings,
                             sink::waitingForApproval, message, permissionGrants, executionAudit,
-                            conversation.getId(), false, tracer))
+                            conversation.getId(), false, tracer, planning))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12)
                     .toolExecutionErrorHandler(new AgentToolFailureHandler())
                     .toolArgumentsErrorHandler(new AgentToolArgumentsErrorHandler()).build();
             if (finished.get()) {
+                if (planning != null) planning.finish("CANCELLED");
                 if (tracer != null) tracer.fail("AGENT_RUN_CANCELLED");
                 recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
                 streamProgress.finish(progressId, true);
@@ -633,6 +643,7 @@ public class CareerAgentService {
                                     ? store.appendExchange(userId, conversation, message, answer.strip(), trace, references, false, imageIds)
                                     : runStore.complete(userId, requestId, conversation, message, answer.strip(), trace, references, imageIds);
                             streamProgress.finish(progressId, false);
+                            if (planning != null) planning.finish("COMPLETED");
                             if (tracer != null) tracer.complete();
                             recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
                             long firstPartialMs = firstPartialDelayMs(startedAt, firstPartialAt.get());
@@ -645,6 +656,7 @@ public class CareerAgentService {
                             sink.send(AgentStreamEvent.done(AgentMessageResponse.from(saved.get(1)), elapsedMs(startedAt)));
                             sink.complete();
                         } catch (RuntimeException exception) {
+                            if (planning != null) planning.finish("FAILED");
                             if (tracer != null) tracer.fail("AGENT_COMPLETION_FAILED");
                             recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
                             recordRunEndOnce(runEnded, startedAt, false, "AGENT_COMPLETION_FAILED");
@@ -658,6 +670,7 @@ public class CareerAgentService {
                     .onError(exception -> {
                         if (!finished.compareAndSet(false, true)) return;
                         lease.fence();
+                        if (planning != null) planning.finish("FAILED");
                         if (tracer != null) tracer.fail("AGENT_STREAM_FAILED");
                         recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
                         recordRunEndOnce(runEnded, startedAt, false, "AGENT_STREAM_FAILED");

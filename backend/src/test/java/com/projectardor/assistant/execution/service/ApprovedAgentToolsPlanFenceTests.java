@@ -1,0 +1,235 @@
+package com.projectardor.assistant.execution.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.jupiter.api.Test;
+
+import dev.langchain4j.agent.tool.P;
+import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.service.tool.ToolExecutor;
+import tools.jackson.databind.json.JsonMapper;
+
+/**
+ * The plan the model proposed has to bind the run that accepted it: a write outside its open steps is
+ * refused before anyone is asked to approve it, and each step is settled by what the call really did.
+ */
+class ApprovedAgentToolsPlanFenceTests {
+
+    private static final UUID USER = UUID.randomUUID();
+    private static final UUID RUN = UUID.randomUUID();
+    private static final UUID CONVERSATION = UUID.randomUUID();
+    private static final UUID PLAN = UUID.randomUUID();
+    private static final UUID READ_STEP = UUID.randomUUID();
+    private static final UUID LEARNING_STEP = UUID.randomUUID();
+    private static final UUID CALENDAR_STEP = UUID.randomUUID();
+    private static final UUID AUDIT_ROW = UUID.randomUUID();
+
+    private static final String GOAL = "结合面试薄弱点调整学习计划并排入日历";
+    private static final String STEPS = """
+            [{"intent":"读出最近面试的薄弱点","doneWhen":"已得到至少一条薄弱点结论","tools":["list_interview_recaps"],"effect":"READ"},
+             {"intent":"按薄弱点调整学习安排","doneWhen":"学习计划已更新","tools":["update_learning_plan"],"effect":"WRITE"},
+             {"intent":"把复习安排进日历","doneWhen":"日程已创建","tools":["create_calendar_task"],"effect":"WRITE"}]
+            """;
+
+    static class ProbeTools {
+        final AtomicInteger learning = new AtomicInteger();
+        final AtomicInteger calendar = new AtomicInteger();
+        final AtomicInteger offPlan = new AtomicInteger();
+
+        @Tool(name = "update_learning_plan", value = "调整学习计划")
+        public String updateLearningPlan(@P("说明") String note) {
+            learning.incrementAndGet();
+            return "{\"status\":\"OK\"}";
+        }
+
+        @Tool(name = "create_calendar_task", value = "创建日程")
+        public String createCalendarTask(@P("标题") String title) {
+            calendar.incrementAndGet();
+            // A write that reports it blocked itself must not be able to verify its step.
+            return "{\"status\":\"DUPLICATE_WRITE_BLOCKED\"}";
+        }
+
+        @Tool(name = "update_memory", value = "改写记忆")
+        public String updateMemory(@P("内容") String content) {
+            offPlan.incrementAndGet();
+            return "must never run";
+        }
+    }
+
+    private static List<AgentPlanStore.Step> openSteps() {
+        return List.of(
+                step(READ_STEP, 0, "读出最近面试的薄弱点", "已得到至少一条薄弱点结论", "list_interview_recaps", "READ"),
+                step(LEARNING_STEP, 1, "按薄弱点调整学习安排", "学习计划已更新", "update_learning_plan", "WRITE"),
+                step(CALENDAR_STEP, 2, "把复习安排进日历", "日程已创建", "create_calendar_task", "WRITE"));
+    }
+
+    private static AgentPlanStore.Step step(UUID id, int index, String intent, String doneWhen, String tool, String effect) {
+        return new AgentPlanStore.Step(id, index, intent, doneWhen, List.of(tool), effect,
+                AgentPlanStore.PENDING, null, null);
+    }
+
+    private static AgentPlanStore.Plan plan(List<AgentPlanStore.Step> steps) {
+        return new AgentPlanStore.Plan(PLAN, USER, RUN, CONVERSATION, GOAL, "RUNNING", 0,
+                AgentPlanner.MODEL_CALL_CEILING, 0, Instant.now(), steps);
+    }
+
+    /** Registers the plan through the real admission gate; only persistence is mocked. */
+    private static PlanningAgentTools proposedPlan(AgentPlanStore store, AgentRunTracer tracer) {
+        when(store.findByRequest(USER, RUN)).thenReturn(Optional.empty());
+        when(store.create(eq(USER), eq(RUN), eq(CONVERSATION), anyString(), anyInt(), anyInt(), anyList())).thenReturn(PLAN);
+        when(store.find(USER, PLAN)).thenReturn(Optional.of(plan(openSteps())));
+        when(store.markRunning(USER, PLAN)).thenReturn(1);
+        var planning = new PlanningAgentTools(USER, RUN, CONVERSATION,
+                new AgentPlanner(JsonMapper.builder().build()), store, tracer);
+        assertThat(planning.proposePlan(GOAL, STEPS)).containsEntry("accepted", true);
+        return planning;
+    }
+
+    private static Map<String, ToolExecutor> executors(ProbeTools tools, PlanningAgentTools planning,
+            AgentExecutionAuditStore audit, AgentRunTracer tracer, AgentPermissionGrants permissions) {
+        var approvals = mock(AgentToolApprovals.class);
+        when(approvals.canPropose(eq(USER), any())).thenReturn(true);
+        Map<String, ToolExecutor> byName = new LinkedHashMap<>();
+        ApprovedAgentTools.wrap(tools, USER, RUN, approvals, null, new AgentToolTimings(), waiting -> {},
+                        GOAL, permissions, audit, CONVERSATION, false, tracer, planning)
+                .forEach((specification, executor) -> byName.put(specification.name(), executor));
+        return byName;
+    }
+
+    private static AgentPermissionGrants autoApproving() {
+        var permissions = mock(AgentPermissionGrants.class);
+        when(permissions.autoApproves(eq(USER), anyString())).thenReturn(true);
+        when(permissions.requiresConfirmationForBatch(eq(USER), anyInt())).thenReturn(false);
+        return permissions;
+    }
+
+    private static ToolExecutionRequest request(String tool, String arguments) {
+        return ToolExecutionRequest.builder().id("call-" + tool).name(tool).arguments(arguments).build();
+    }
+
+    @Test
+    void inScopeWriteVerifiesItsStepWhileAnOffPlanWriteIsRefusedAndRecorded() {
+        var store = mock(AgentPlanStore.class);
+        var audit = mock(AgentExecutionAuditStore.class);
+        when(audit.startToolCall(any(), anyString(), anyString(), anyString(), anyString())).thenReturn(AUDIT_ROW);
+        var tracer = mock(AgentRunTracer.class);
+        UUID planSpan = UUID.randomUUID(), learningSpan = UUID.randomUUID(), blockedSpan = UUID.randomUUID();
+        when(tracer.startChild(eq("TOOL"), eq("update_learning_plan"), any())).thenReturn(learningSpan);
+        when(tracer.startChild(eq("TOOL"), eq("update_memory"), any())).thenReturn(blockedSpan);
+        UUID stepSpan = UUID.randomUUID();
+        when(tracer.startChild(eq("PLAN_STEP"), eq("plan.step.2"), any())).thenReturn(stepSpan);
+        var permissions = autoApproving();
+        var planning = proposedPlan(store, tracer);
+        var tools = new ProbeTools();
+        var byName = executors(tools, planning, audit, tracer, permissions);
+        assertThat(byName).containsKeys("propose_plan", "update_learning_plan", "update_memory");
+
+        assertThat(byName.get("update_learning_plan").execute(request("update_learning_plan", "{\"note\":\"weakness\"}"), null))
+                .contains("\"status\":\"OK\"");
+        assertThat(tools.learning).hasValue(1);
+        verify(store).verifyStep(eq(USER), eq(LEARNING_STEP), eq("学习计划已更新"));
+        verify(tracer).finishChild(eq(stepSpan), eq("COMPLETED"), isNull(), isNull(), isNull(), isNull(),
+                argThat((Map<String, Object> attributes) -> Boolean.TRUE.equals(attributes.get("verified"))));
+
+        String refused = byName.get("update_memory").execute(request("update_memory", "{\"content\":\"别的\"}"), null);
+        assertThat(refused).contains("PLAN_SCOPE_REFUSED");
+        assertThat(tools.offPlan).as("a write no open step asked for never reaches the business service").hasValue(0);
+        verify(audit).finishToolCall(AUDIT_ROW, USER, "NOT_EXECUTED", null, "PLAN_SCOPE_REFUSED");
+        verify(tracer).finishChild(eq(blockedSpan), eq("NOT_EXECUTED"), eq("PLAN_SCOPE_REFUSED"),
+                isNull(), isNull(), isNull(), any());
+        verify(permissions, never()).recordAutoApproval(eq(USER), eq(RUN), eq("update_memory"), anyString());
+    }
+
+    @Test
+    void aCallThatBlockedItselfFailsItsStepInsteadOfVerifyingIt() {
+        var store = mock(AgentPlanStore.class);
+        var tracer = mock(AgentRunTracer.class);
+        UUID stepSpan = UUID.randomUUID();
+        when(tracer.startChild(eq("TOOL"), anyString(), any())).thenReturn(UUID.randomUUID());
+        when(tracer.startChild(eq("PLAN_STEP"), eq("plan.step.3"), any())).thenReturn(stepSpan);
+        var planning = proposedPlan(store, tracer);
+        var byName = executors(new ProbeTools(), planning, null, tracer, autoApproving());
+
+        assertThat(byName.get("create_calendar_task").execute(request("create_calendar_task", "{\"title\":\"复习\"}"), null))
+                .contains("DUPLICATE_WRITE_BLOCKED");
+        verify(store).failStep(eq(USER), eq(CALENDAR_STEP), anyString());
+        verify(store, never()).verifyStep(eq(USER), eq(CALENDAR_STEP), anyString());
+        verify(tracer).finishChild(eq(stepSpan), eq("FAILED"), eq("STEP_UNVERIFIED"), isNull(), isNull(), isNull(),
+                argThat((Map<String, Object> attributes) -> Boolean.FALSE.equals(attributes.get("verified"))));
+    }
+
+    @Test
+    void finishingTheRunKeepsUnreachedStepsVisibleAndClosesThePlanSpan() {
+        var store = mock(AgentPlanStore.class);
+        var tracer = mock(AgentRunTracer.class);
+        UUID planSpan = UUID.randomUUID();
+        when(tracer.startChild(eq("PLAN"), anyString(), any())).thenReturn(planSpan);
+        var planning = proposedPlan(store, tracer);
+
+        planning.finish("COMPLETED");
+
+        verify(store).skipOpenSteps(USER, PLAN);
+        verify(store).finish(USER, PLAN, "FAILED");
+        verify(store, never()).finish(USER, PLAN, "COMPLETED");
+        verify(tracer).finishChild(eq(planSpan), eq("FAILED"), isNull(), isNull(), isNull(), isNull(),
+                argThat((Map<String, Object> attributes) -> Integer.valueOf(0).equals(attributes.get("verifiedSteps"))
+                        && Integer.valueOf(3).equals(attributes.get("stepCount"))));
+    }
+
+    @Test
+    void aRunThatVerifiedEveryStepCompletesThePlan() {
+        var store = mock(AgentPlanStore.class);
+        var tracer = mock(AgentRunTracer.class);
+        UUID planSpan = UUID.randomUUID();
+        when(tracer.startChild(eq("PLAN"), anyString(), any())).thenReturn(planSpan);
+        var planning = proposedPlan(store, tracer);
+        var verified = openSteps().stream()
+                .map(step -> new AgentPlanStore.Step(step.id(), step.index(), step.intent(), step.doneWhen(),
+                        step.tools(), step.effect(), AgentPlanStore.VERIFIED, step.logicalActionId(), step.evidence()))
+                .toList();
+        when(store.find(USER, PLAN)).thenReturn(Optional.of(plan(verified)));
+
+        planning.finish("COMPLETED");
+
+        verify(store).finish(USER, PLAN, "COMPLETED");
+        verify(tracer).finishChild(eq(planSpan), eq("COMPLETED"), isNull(), isNull(), isNull(), isNull(),
+                argThat((Map<String, Object> attributes) -> Integer.valueOf(3).equals(attributes.get("verifiedSteps"))));
+    }
+
+    @Test
+    void noPlanMeansNoRefusalsAndNoStepRecords() {
+        var store = mock(AgentPlanStore.class);
+        var tracer = mock(AgentRunTracer.class);
+        when(tracer.startChild(anyString(), anyString(), any())).thenReturn(UUID.randomUUID());
+        var planning = new PlanningAgentTools(USER, RUN, CONVERSATION,
+                new AgentPlanner(JsonMapper.builder().build()), store, tracer);
+        var tools = new ProbeTools();
+
+        assertThat(executors(tools, planning, null, tracer, autoApproving())
+                .get("update_memory").execute(request("update_memory", "{\"content\":\"普通请求\"}"), null))
+                .contains("must never run");
+        assertThat(tools.offPlan).hasValue(1);
+        verify(store, never()).verifyStep(eq(USER), any(), anyString());
+        verify(tracer, never()).startChild(eq("PLAN_STEP"), anyString(), any());
+    }
+}
