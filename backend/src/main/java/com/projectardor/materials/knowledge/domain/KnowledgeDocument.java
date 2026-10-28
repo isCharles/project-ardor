@@ -57,6 +57,12 @@ public class KnowledgeDocument {
         return new KnowledgeDocument(userId, title, KnowledgeSourceType.WEB, sourceUrl, null, "text/html", rawContent);
     }
 
+    /** An interview recap indexed in place of a document; the pointer resolves back to the recap row. */
+    public static KnowledgeDocument fromRecap(UUID userId, String title, String sourcePointer, String rawContent) {
+        return new KnowledgeDocument(userId, title, KnowledgeSourceType.RECAP, sourcePointer, null,
+                "application/x-ardor-recap", rawContent);
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();

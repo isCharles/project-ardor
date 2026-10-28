@@ -29,6 +29,7 @@ public class KnowledgeService {
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
     private static final int CHUNK_SIZE = 1_200;
     private static final int CHUNK_OVERLAP = 160;
+    static final String RECAP_POINTER_PREFIX = "ardor://interview-recaps/";
 
     /** Reciprocal-rank-fusion damping. 60 is the value from the original RRF paper. */
     private static final int RRF_K = 60;
@@ -234,6 +235,35 @@ public class KnowledgeService {
 
     public record KnowledgeIndexStatus(
             boolean embeddingConfigured, String embeddingModel, long embeddedChunks, long pendingChunks) {
+    }
+
+    /**
+     * Makes one interview recap retrievable through the same pipeline as uploaded material.
+     *
+     * <p>Re-editing replaces the document instead of stacking a second index, so stale chunks
+     * never survive an edit. The recap body is untrusted source material like any other document.
+     */
+    @Transactional
+    public void indexRecap(UUID userId, UUID recapId, String title, String content) {
+        if (content == null || content.isBlank()) {
+            return;
+        }
+        removeRecap(userId, recapId);
+        // saveAndFlush, like the upload and web ingest paths: storeChunks() queues the index task
+        // with JdbcTemplate, which does not flush the persistence context, so the document row must
+        // already be in the database or knowledge_index_tasks' foreign key to it fails.
+        KnowledgeDocument document = documentRepository.saveAndFlush(
+                KnowledgeDocument.fromRecap(userId, title, RECAP_POINTER_PREFIX + recapId, content));
+        storeChunks(document);
+    }
+
+    @Transactional
+    public void removeRecap(UUID userId, UUID recapId) {
+        documentRepository.findByUserIdAndSourceUrl(userId, RECAP_POINTER_PREFIX + recapId)
+                .ifPresent(document -> {
+                    documentRepository.delete(document);
+                    documentRepository.flush();
+                });
     }
 
     @Transactional

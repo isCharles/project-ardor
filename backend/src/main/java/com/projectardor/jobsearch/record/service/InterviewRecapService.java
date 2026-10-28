@@ -35,11 +35,14 @@ public class InterviewRecapService {
     private final LlmGateway llmGateway;
     private final LlmJsonParser jsonParser;
     private final TransactionTemplate transactions;
+    private final com.projectardor.materials.knowledge.service.KnowledgeService knowledgeService;
 
     public InterviewRecapService(InterviewRecapRepository recapRepository,InterviewRecapQuestionRepository questionRepository,
-            LlmGateway llmGateway,LlmJsonParser jsonParser,org.springframework.transaction.PlatformTransactionManager transactionManager) {
+            LlmGateway llmGateway,LlmJsonParser jsonParser,org.springframework.transaction.PlatformTransactionManager transactionManager,
+            com.projectardor.materials.knowledge.service.KnowledgeService knowledgeService) {
         this.recapRepository=recapRepository;this.questionRepository=questionRepository;
         this.llmGateway=llmGateway;this.jsonParser=jsonParser;this.transactions=new TransactionTemplate(transactionManager);
+        this.knowledgeService=knowledgeService;
     }
 
     public InterviewRecordView organize(UUID userId, String rawContent, InterviewRecapSource sourceType) {
@@ -134,6 +137,8 @@ public class InterviewRecapService {
                         draft.performance(), draft.weaknessReason(), draft.betterAnswer(), draft.tags()));
             }
             questionRepository.saveAll(questions);
+            knowledgeService.indexRecap(userId, recap.getId(), reportTitle,
+                    recapIndexText(reportTitle, content, overview, reportDrafts));
             return InterviewRecordView.from(recap, questions);
         });
     }
@@ -166,6 +171,26 @@ public class InterviewRecapService {
         InterviewRecap recap = recapRepository.findByIdAndUserId(recapId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("面经不存在"));
         recapRepository.delete(recap);
+        knowledgeService.removeRecap(userId, recapId);
+    }
+
+    /** Retrieval text for one recap: the body the user wrote plus every question and answer. */
+    private static String recapIndexText(String title, String content, String overview, List<QuestionDraft> drafts) {
+        StringBuilder text = new StringBuilder();
+        text.append("面试记录：").append(title == null ? "" : title).append('\n');
+        if (content != null && !content.isBlank()) {
+            text.append("原始材料：").append(content).append('\n');
+        }
+        if (overview != null && !overview.isBlank()) {
+            text.append("整理概述：").append(overview).append('\n');
+        }
+        for (QuestionDraft draft : drafts) {
+            text.append("问题：").append(draft.questionText()).append('\n');
+            if (draft.candidateAnswer() != null && !draft.candidateAnswer().isBlank()) {
+                text.append("回答：").append(draft.candidateAnswer()).append('\n');
+            }
+        }
+        return text.toString();
     }
 
     private List<QuestionDraft> parseQuestions(JsonNode node) {
