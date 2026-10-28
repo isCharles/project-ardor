@@ -27,7 +27,7 @@ class QueueDepthMetricsPostgresTests {
         var connection = DriverManager.getConnection(url, "ardor", "acceptance-only");
         dataSource = new SingleConnectionDataSource(connection, true);
         jdbc = new JdbcTemplate(dataSource);
-        jdbc.execute("CREATE TEMP TABLE agent_message_queue(id uuid, status text, created_at timestamptz)");
+        jdbc.execute("CREATE TEMP TABLE agent_message_queue(id uuid, status text, priority smallint NOT NULL DEFAULT 0, created_at timestamptz)");
         jdbc.execute("CREATE TEMP TABLE ai_jobs(id uuid, status text, priority integer, created_at timestamptz)");
     }
 
@@ -36,9 +36,12 @@ class QueueDepthMetricsPostgresTests {
     }
 
     @Test void samplesDepthAndOldestAgeFromPostgres() {
-        jdbc.update("INSERT INTO agent_message_queue VALUES (?, 'QUEUED', CURRENT_TIMESTAMP - INTERVAL '10 seconds')",
+        jdbc.update("INSERT INTO agent_message_queue(id,status,priority,created_at) VALUES (?, 'QUEUED', 0, CURRENT_TIMESTAMP - INTERVAL '10 seconds')",
                 UUID.randomUUID());
-        jdbc.update("INSERT INTO agent_message_queue VALUES (?, 'RUNNING', CURRENT_TIMESTAMP)", UUID.randomUUID());
+        jdbc.update("INSERT INTO agent_message_queue(id,status,priority,created_at) VALUES (?, 'QUEUED', 1, CURRENT_TIMESTAMP - INTERVAL '90 seconds')",
+                UUID.randomUUID());
+        jdbc.update("INSERT INTO agent_message_queue(id,status,priority,created_at) VALUES (?, 'RUNNING', 0, CURRENT_TIMESTAMP)",
+                UUID.randomUUID());
         jdbc.update("INSERT INTO ai_jobs VALUES (?, 'QUEUED', 0, CURRENT_TIMESTAMP - INTERVAL '3 seconds')",
                 UUID.randomUUID());
         jdbc.update("INSERT INTO ai_jobs VALUES (?, 'QUEUED', 1, CURRENT_TIMESTAMP - INTERVAL '90 seconds')",
@@ -47,10 +50,20 @@ class QueueDepthMetricsPostgresTests {
         var registry = new SimpleMeterRegistry();
         new QueueDepthMetrics(jdbc, registry).sample();
 
-        assertThat(registry.get("ardor.agent.queue.depth").tag("status", "QUEUED").gauge().value()).isEqualTo(1.0);
+        assertThat(registry.get("ardor.agent.queue.depth").tag("status", "QUEUED").gauge().value()).isEqualTo(2.0);
         assertThat(registry.get("ardor.agent.queue.depth").tag("status", "RUNNING").gauge().value()).isEqualTo(1.0);
         assertThat(registry.get("ardor.agent.queue.oldest.queued.seconds").gauge().value())
-                .isBetween(9.0, 120.0);
+                .isBetween(89.0, 180.0);
+        assertThat(registry.get("ardor.agent.queue.priority.depth")
+                .tags("status", "QUEUED", "priority", "0").gauge().value()).isEqualTo(1.0);
+        assertThat(registry.get("ardor.agent.queue.priority.depth")
+                .tags("status", "QUEUED", "priority", "1").gauge().value()).isEqualTo(1.0);
+        assertThat(registry.get("ardor.agent.queue.priority.depth")
+                .tags("status", "RUNNING", "priority", "0").gauge().value()).isEqualTo(1.0);
+        assertThat(registry.get("ardor.agent.queue.priority.oldest.queued.seconds")
+                .tag("priority", "0").gauge().value()).isBetween(9.0, 60.0);
+        assertThat(registry.get("ardor.agent.queue.priority.oldest.queued.seconds")
+                .tag("priority", "1").gauge().value()).isBetween(89.0, 180.0);
         assertThat(registry.get("ardor.ai.jobs.depth").tag("status", "QUEUED").gauge().value()).isEqualTo(2.0);
         assertThat(registry.get("ardor.ai.jobs.oldest.queued.seconds").tag("priority", "0").gauge().value())
                 .isBetween(2.0, 60.0);
