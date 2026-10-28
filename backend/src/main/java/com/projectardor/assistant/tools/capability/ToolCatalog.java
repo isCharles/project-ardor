@@ -76,7 +76,7 @@ public final class ToolCatalog {
                 "update_job_opportunity", "update_job_opportunity_round");
         register(risks, ToolModule.OPPORTUNITIES, Capability.DELETE,
                 "delete_job_opportunity", "delete_job_opportunity_round");
-        register(risks, ToolModule.SYSTEM, Capability.READ, "list_automations", "get_automation");
+        register(risks, ToolModule.SYSTEM, Capability.READ, "list_automations", "get_automation", "propose_plan");
         register(risks, ToolModule.SYSTEM, Capability.CREATE, "create_automation");
         register(risks, ToolModule.SYSTEM, Capability.UPDATE, "update_automation");
         register(risks, ToolModule.SYSTEM, Capability.DELETE, "delete_automation");

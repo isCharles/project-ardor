@@ -12,7 +12,7 @@ public final class ToolIntentPolicy {
             "list_recurring_tasks", "list_resumes", "get_resume_analysis_status", "get_resume_analysis", "list_interviews",
             "get_next_question", "get_ai_job", "get_interview_evaluation", "list_interview_recap_jobs", "list_interview_recaps",
             "get_interview_recap", "list_due_memory_cards", "list_memory_cards", "list_job_opportunities",
-            "get_job_opportunity", "list_automations", "get_automation", "get_calendar_advice");
+            "get_job_opportunity", "list_automations", "get_automation", "get_calendar_advice", "propose_plan");
     public static boolean isRead(String tool) { return READS.contains(tool); }
     /** A narrowed/revoked instruction cannot inherit an unrestricted old capability.
      * Target-specific exemptions require a fresh positive request, not model interpretation. */
