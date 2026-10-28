@@ -80,7 +80,7 @@ class TimedStreamingSdkTests {
                 assertThat(text.toString()).isEqualTo("hello");
                 assertThat(tracer.llmCalls()).isEqualTo(1);
                 ArgumentCaptor<Map> attributes = ArgumentCaptor.forClass(Map.class);
-                verify(store).finishSpan(any(), any(), eq("COMPLETED"), isNull(), any(), any(), eq(10), eq(2), attributes.capture());
+                verify(store).finishSpan(any(), any(), eq("COMPLETED"), isNull(), any(), any(), eq(10), eq(2), isNull(), isNull(), attributes.capture());
                 assertThat(attributes.getValue()).containsKeys("firstContentMs", "streamAfterFirstContentMs", "outputTokensPerRequestSecond")
                         .containsEntry("timingSource", "client-monotonic-stream-v1");
             } finally { server.stop(0); }

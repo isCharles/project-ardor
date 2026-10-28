@@ -32,8 +32,12 @@ public final class AgentRunTracer {
     private final AtomicInteger executedToolCalls = new AtomicInteger();
     private final AtomicInteger loopRounds = new AtomicInteger();
     private final AtomicInteger usageMissingCalls = new AtomicInteger();
+    private final AtomicInteger cacheUsageMissingCalls = new AtomicInteger();
     private final AtomicLong inputTokens = new AtomicLong();
     private final AtomicLong outputTokens = new AtomicLong();
+    private final AtomicLong cacheReadInputTokens = new AtomicLong();
+    private final AtomicLong cacheCreationInputTokens = new AtomicLong();
+    private final AtomicBoolean cacheUsageReported = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final java.util.concurrent.ConcurrentHashMap<String, UUID> toolCallParents =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -94,9 +98,16 @@ public final class AgentRunTracer {
 
     public void finishChild(UUID spanId, String status, String errorCode, String modelName,
             Integer inTokens, Integer outTokens, Map<String, Object> attributes) {
+        finishChild(spanId, status, errorCode, modelName,
+                new LlmUsage(inTokens, outTokens, null, null), attributes);
+    }
+
+    public void finishChild(UUID spanId, String status, String errorCode, String modelName,
+            LlmUsage usage, Map<String, Object> attributes) {
         if (!active() || spanId == null) return;
         store.finishSpan(userId, spanId, status, errorCode, modelName, promptVersion,
-                inTokens, outTokens, attributes);
+                usage.inputTokens(), usage.outputTokens(),
+                usage.cacheCreationInputTokens(), usage.cacheReadInputTokens(), attributes);
         contextSpan.compareAndSet(spanId, null);
     }
 
@@ -106,6 +117,10 @@ public final class AgentRunTracer {
 
     /** Counts one LLM invocation by purpose, including calls whose provider omitted usage. */
     public void recordLlm(String purpose, Integer inTokens, Integer outTokens, boolean toolRound, int requestedTools) {
+        recordLlm(purpose, new LlmUsage(inTokens, outTokens, null, null), toolRound, requestedTools);
+    }
+
+    public void recordLlm(String purpose, LlmUsage usage, boolean toolRound, int requestedTools) {
         // Metering is a run fact, not a side effect of optional span persistence.
         if (closed.get()) return;
         llmCalls.incrementAndGet();
@@ -113,9 +128,18 @@ public final class AgentRunTracer {
         else assistantCalls.incrementAndGet();
         if (toolRound) loopRounds.incrementAndGet();
         if (requestedTools > 0) requestedToolCalls.addAndGet(requestedTools);
+        Integer inTokens = usage.inputTokens();
+        Integer outTokens = usage.outputTokens();
         if (inTokens == null || outTokens == null) usageMissingCalls.incrementAndGet();
         if (inTokens != null) inputTokens.addAndGet(Math.max(0, inTokens));
         if (outTokens != null) outputTokens.addAndGet(Math.max(0, outTokens));
+        if (usage.hasCacheFields()) {
+            cacheUsageReported.set(true);
+            if (usage.cacheReadInputTokens() != null) cacheReadInputTokens.addAndGet(Math.max(0, usage.cacheReadInputTokens()));
+            if (usage.cacheCreationInputTokens() != null) cacheCreationInputTokens.addAndGet(Math.max(0, usage.cacheCreationInputTokens()));
+        } else {
+            cacheUsageMissingCalls.incrementAndGet();
+        }
     }
 
     public void recordTool() {
@@ -148,12 +172,22 @@ public final class AgentRunTracer {
         summary.put("executedToolCalls", executedToolCalls.get());
         summary.put("loopRounds", loopRounds.get());
         summary.put("usageMissingCalls", usageMissingCalls.get());
+        summary.put("cacheUsageMissingCalls", cacheUsageMissingCalls.get());
+        long cacheRead = cacheReadInputTokens.get();
+        long cacheCreation = cacheCreationInputTokens.get();
+        boolean cacheReported = cacheUsageReported.get();
+        if (cacheReported) {
+            summary.put("cacheReadInputTokens", cacheRead);
+            summary.put("cacheCreationInputTokens", cacheCreation);
+        }
         store.finishSpan(userId, rootSpanId, status, errorCode, model, promptVersion,
                 (int) Math.min(Integer.MAX_VALUE, inputTokens.get()),
                 (int) Math.min(Integer.MAX_VALUE, outputTokens.get()),
+                cacheReported ? (int) Math.min(Integer.MAX_VALUE, cacheCreation) : null,
+                cacheReported ? (int) Math.min(Integer.MAX_VALUE, cacheRead) : null,
                 summary);
         store.updateRunAggregates(userId, runId, llmCalls.get(), toolCalls.get(), loopRounds.get(),
-                inputTokens.get(), outputTokens.get(), model, promptVersion);
+                inputTokens.get(), outputTokens.get(), cacheCreation, cacheRead, cacheReported, model, promptVersion);
     }
 
     public boolean active() {
@@ -175,5 +209,9 @@ public final class AgentRunTracer {
     public int usageMissingCalls() { return usageMissingCalls.get(); }
     public long inputTokens() { return inputTokens.get(); }
     public long outputTokens() { return outputTokens.get(); }
+    public long cacheReadInputTokens() { return cacheReadInputTokens.get(); }
+    public long cacheCreationInputTokens() { return cacheCreationInputTokens.get(); }
+    public int cacheUsageMissingCalls() { return cacheUsageMissingCalls.get(); }
+    public boolean cacheUsageReported() { return cacheUsageReported.get(); }
     public boolean closed() { return closed.get(); }
 }

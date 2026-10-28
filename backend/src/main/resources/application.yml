@@ -72,6 +72,10 @@ app:
       capacity: ${ARDOR_AGENT_QUEUE_CAPACITY:2}
   ai-jobs:
     worker-capacity: ${ARDOR_AI_JOB_WORKER_CAPACITY:2}
+  model:
+    prompt-cache:
+      enabled: ${ARDOR_PROMPT_CACHE_ENABLED:false}
+      tools: ${ARDOR_PROMPT_CACHE_TOOLS:true}
   admin:
     emails: ${ARDOR_ADMIN_EMAILS:}
   http:

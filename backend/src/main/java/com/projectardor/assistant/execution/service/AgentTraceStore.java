@@ -35,7 +35,9 @@ public class AgentTraceStore {
             id, run_id, parent_span_id, kind, name, status, started_at, finished_at,
             COALESCE(duration_ms, CASE WHEN finished_at IS NULL THEN NULL
                 ELSE GREATEST(1, (EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)::bigint) END) AS duration_ms,
-            model, prompt_version, input_tokens, output_tokens, error_code, attributes::text AS attributes
+            model, prompt_version, input_tokens, output_tokens,
+            cache_creation_input_tokens, cache_read_input_tokens,
+            error_code, attributes::text AS attributes
             """;
     private final org.springframework.jdbc.core.RowMapper<Span> spanMapper = (rs, row) -> new Span(
             rs.getObject("id", UUID.class), rs.getObject("run_id", UUID.class),
@@ -44,6 +46,7 @@ public class AgentTraceStore {
             rs.getTimestamp("finished_at") == null ? null : rs.getTimestamp("finished_at").toInstant(),
             (Long) rs.getObject("duration_ms"), rs.getString("model"), rs.getString("prompt_version"),
             (Integer) rs.getObject("input_tokens"), (Integer) rs.getObject("output_tokens"),
+            (Integer) rs.getObject("cache_creation_input_tokens"), (Integer) rs.getObject("cache_read_input_tokens"),
             rs.getString("error_code"), jsonMap(rs.getString("attributes")));
 
     private final JdbcTemplate jdbc;
@@ -89,20 +92,24 @@ public class AgentTraceStore {
     }
 
     public void finishSpan(UUID userId, UUID id, String status, String errorCode, String model,
-            String promptVersion, Integer inputTokens, Integer outputTokens, Map<String, Object> extraAttributes) {
+            String promptVersion, Integer inputTokens, Integer outputTokens,
+            Integer cacheCreationInputTokens, Integer cacheReadInputTokens,
+            Map<String, Object> extraAttributes) {
         if (!enabled || userId == null || id == null) return;
         try {
             jdbc.update("""
                     UPDATE agent_trace_spans
                     SET status = ?, error_code = ?, model = ?, prompt_version = ?,
                         input_tokens = ?, output_tokens = ?,
+                        cache_creation_input_tokens = ?, cache_read_input_tokens = ?,
                         finished_at = CURRENT_TIMESTAMP,
                         duration_ms = GREATEST(1, (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at)) * 1000)::bigint),
                         attributes = COALESCE(attributes, '{}'::jsonb) || CAST(? AS jsonb),
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ? AND user_id = ?
                     """, trim(status, 16), trim(errorCode, 80), trim(model, 160), trim(promptVersion, 64),
-                    inputTokens, outputTokens, attributes(extraAttributes), id, userId);
+                    inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens,
+                    attributes(extraAttributes), id, userId);
         } catch (RuntimeException failure) {
             recordFailure("finish", id, failure);
         }
@@ -146,16 +153,21 @@ public class AgentTraceStore {
     }
 
     public void updateRunAggregates(UUID userId, UUID runId, int llmCalls, int toolCalls, int loopRounds,
-            long inputTokens, long outputTokens, String model, String promptVersion) {
+            long inputTokens, long outputTokens, long cacheCreationInputTokens, long cacheReadInputTokens,
+            boolean cacheReported, String model, String promptVersion) {
         if (!enabled || userId == null || runId == null) return;
         try {
             jdbc.update("""
                     UPDATE agent_runs
                     SET llm_calls = ?, tool_calls = ?, loop_rounds = ?,
-                        input_tokens = ?, output_tokens = ?, trace_model = ?, prompt_version = ?,
+                        input_tokens = ?, output_tokens = ?,
+                        cache_creation_input_tokens = ?, cache_read_input_tokens = ?,
+                        trace_model = ?, prompt_version = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ? AND user_id = ?
                     """, llmCalls, toolCalls, loopRounds, inputTokens, outputTokens,
+                    cacheReported ? cacheCreationInputTokens : null,
+                    cacheReported ? cacheReadInputTokens : null,
                     trim(model, 160), trim(promptVersion, 64), runId, userId);
         } catch (RuntimeException failure) {
             recordFailure("aggregate", runId, failure);
@@ -209,6 +221,14 @@ public class AgentTraceStore {
 
     public record Span(UUID id, UUID runId, UUID parentSpanId, String kind, String name, String status,
             Instant startedAt, Instant finishedAt, Long durationMs, String model, String promptVersion,
-            Integer inputTokens, Integer outputTokens, String errorCode, Map<String, Object> attributes) {
+            Integer inputTokens, Integer outputTokens,
+            Integer cacheCreationInputTokens, Integer cacheReadInputTokens,
+            String errorCode, Map<String, Object> attributes) {
+        public Span(UUID id, UUID runId, UUID parentSpanId, String kind, String name, String status,
+                Instant startedAt, Instant finishedAt, Long durationMs, String model, String promptVersion,
+                Integer inputTokens, Integer outputTokens, String errorCode, Map<String, Object> attributes) {
+            this(id, runId, parentSpanId, kind, name, status, startedAt, finishedAt, durationMs, model,
+                    promptVersion, inputTokens, outputTokens, null, null, errorCode, attributes);
+        }
     }
 }

@@ -29,7 +29,7 @@ class AgentRunTracerTests {
         assertThat(tracer.llmCalls()).isEqualTo(3);
         assertThat(tracer.toolCalls()).isEqualTo(1);
         assertThat(tracer.closed()).isTrue();
-        org.mockito.Mockito.verify(store, org.mockito.Mockito.never()).finishSpan(any(), any(), any(), any(), any(), any(), any(), any(), any());
+        org.mockito.Mockito.verify(store, org.mockito.Mockito.never()).finishSpan(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -90,7 +90,7 @@ class AgentRunTracerTests {
         assertThat(tracer.outputTokens()).isEqualTo(9);
         assertThat(tracer.closed()).isTrue();
         assertThat(tracer.active()).isFalse();
-        org.mockito.Mockito.verify(store, org.mockito.Mockito.never()).finishSpan(any(), any(), any(), any(), any(), any(), any(), any(), any());
+        org.mockito.Mockito.verify(store, org.mockito.Mockito.never()).finishSpan(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
 
@@ -126,8 +126,8 @@ class AgentRunTracerTests {
         assertThat(tracer.loopRounds()).isEqualTo(1);
         assertThat(tracer.closed()).isTrue();
         verify(store).finishSpan(eq(user), eq(root), eq("COMPLETED"), isNull(), eq("fixture-model"),
-                eq(AgentRunTracer.PROMPT_VERSION), eq(120), eq(40), any());
-        verify(store).updateRunAggregates(user, run, 1, 1, 1, 120, 40,
+                eq(AgentRunTracer.PROMPT_VERSION), eq(120), eq(40), isNull(), isNull(), any());
+        verify(store).updateRunAggregates(user, run, 1, 1, 1, 120, 40, 0L, 0L, false,
                 "fixture-model", AgentRunTracer.PROMPT_VERSION);
     }
 
@@ -145,8 +145,8 @@ class AgentRunTracerTests {
         tracer.fail("LLM_BAD_REQUEST");
 
         verify(store).finishSpan(eq(user), eq(root), eq("FAILED"), eq("LLM_BAD_REQUEST"), any(), any(),
-                any(), any(), any());
-        verify(store).updateRunAggregates(user, run, 0, 0, 0, 0, 0, "fixture-model",
+                any(), any(), any(), any(), any());
+        verify(store).updateRunAggregates(user, run, 0, 0, 0, 0, 0, 0L, 0L, false, "fixture-model",
                 AgentRunTracer.PROMPT_VERSION);
     }
 }

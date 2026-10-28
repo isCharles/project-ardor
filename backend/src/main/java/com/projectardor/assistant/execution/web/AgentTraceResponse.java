@@ -26,7 +26,9 @@ public record AgentTraceResponse(
 
     public record Totals(int llmCalls, int assistantCalls, int summaryCalls, int toolCalls,
             int requestedToolCalls, int executedToolCalls, int loopRounds,
-            long inputTokens, long outputTokens, int usageMissingCalls,
+            long inputTokens, long outputTokens,
+            Long cacheCreationInputTokens, Long cacheReadInputTokens,
+            int cacheUsageMissingCalls, int usageMissingCalls,
             String source, boolean complete) {
     }
 
@@ -63,6 +65,9 @@ public record AgentTraceResponse(
                 intAttr(attributes, "loopRounds", page.loopRounds),
                 root.inputTokens() == null ? 0 : root.inputTokens(),
                 root.outputTokens() == null ? 0 : root.outputTokens(),
+                root.cacheCreationInputTokens() == null ? null : root.cacheCreationInputTokens().longValue(),
+                root.cacheReadInputTokens() == null ? null : root.cacheReadInputTokens().longValue(),
+                optionalIntAttr(attributes, "cacheUsageMissingCalls", truncated, page.cacheUsageMissingCalls),
                 optionalIntAttr(attributes, "usageMissingCalls", truncated, page.usageMissingCalls),
                 "RUN_SUMMARY", true);
     }
@@ -70,7 +75,8 @@ public record AgentTraceResponse(
     private static Totals fromSpans(Derived page, boolean truncated) {
         return new Totals(page.llmCalls, page.assistantCalls, page.summaryCalls, page.toolCalls,
                 page.requestedToolCalls, page.executedToolCalls, page.loopRounds,
-                page.inputTokens, page.outputTokens, page.usageMissingCalls,
+                page.inputTokens, page.outputTokens, page.cacheCreationInputTokens, page.cacheReadInputTokens,
+                page.cacheUsageMissingCalls, page.usageMissingCalls,
                 truncated ? "SPANS_PARTIAL" : "SPANS", !truncated);
     }
 
@@ -83,8 +89,12 @@ public record AgentTraceResponse(
         int executedToolCalls = 0;
         int loopRounds = 0;
         int usageMissingCalls = 0;
+        int cacheUsageMissingCalls = 0;
         long inputTokens = 0;
         long outputTokens = 0;
+        long cacheCreationInputTokens = 0;
+        long cacheReadInputTokens = 0;
+        boolean cacheReported = false;
         for (var span : spans) {
             Map<String, Object> attributes = span.attributes() == null ? Map.of() : span.attributes();
             if ("LLM".equals(span.kind())) {
@@ -98,13 +108,23 @@ public record AgentTraceResponse(
                 if (span.inputTokens() == null || span.outputTokens() == null) usageMissingCalls++;
                 if (span.inputTokens() != null) inputTokens += span.inputTokens();
                 if (span.outputTokens() != null) outputTokens += span.outputTokens();
+                if (span.cacheCreationInputTokens() == null && span.cacheReadInputTokens() == null) {
+                    cacheUsageMissingCalls++;
+                } else {
+                    cacheReported = true;
+                    if (span.cacheCreationInputTokens() != null) cacheCreationInputTokens += span.cacheCreationInputTokens();
+                    if (span.cacheReadInputTokens() != null) cacheReadInputTokens += span.cacheReadInputTokens();
+                }
             } else if ("TOOL".equals(span.kind())) {
                 toolCalls++;
                 if (Boolean.TRUE.equals(attributes.get("executed"))) executedToolCalls++;
             }
         }
         return new Derived(llmCalls, assistantCalls, summaryCalls, toolCalls, requestedToolCalls,
-                executedToolCalls, loopRounds, inputTokens, outputTokens, usageMissingCalls);
+                executedToolCalls, loopRounds, inputTokens, outputTokens,
+                cacheReported ? cacheCreationInputTokens : null,
+                cacheReported ? cacheReadInputTokens : null,
+                cacheUsageMissingCalls, usageMissingCalls);
     }
 
     private static int intAttr(Map<String, Object> attributes, String key, int fallback) {
@@ -119,6 +139,8 @@ public record AgentTraceResponse(
 
     private record Derived(int llmCalls, int assistantCalls, int summaryCalls, int toolCalls,
             int requestedToolCalls, int executedToolCalls, int loopRounds,
-            long inputTokens, long outputTokens, int usageMissingCalls) {
+            long inputTokens, long outputTokens,
+            Long cacheCreationInputTokens, Long cacheReadInputTokens,
+            int cacheUsageMissingCalls, int usageMissingCalls) {
     }
 }

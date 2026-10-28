@@ -113,6 +113,20 @@ test("unknown usage stays unknown instead of becoming zero", () => {
   assert.equal(known.observed.inputTokens, 100);
 });
 
+test("cached tokens are read from totals and stay unknown when absent", () => {
+  const cached = scoreCase({ id: "c" }, {
+    status: "COMPLETED", spans: [],
+    totals: { llmCalls: 1, inputTokens: 20, outputTokens: 5, cacheReadInputTokens: 9000, cacheCreationInputTokens: 1200 },
+  }, "");
+  assert.equal(cached.observed.cacheReadInputTokens, 9000);
+  assert.equal(cached.observed.cacheCreationInputTokens, 1200);
+  assert.equal(cached.observed.cacheUsageMissing, false);
+
+  const plain = scoreCase({ id: "c" }, trace("COMPLETED", []), "");
+  assert.equal(plain.observed.cacheReadInputTokens, null);
+  assert.equal(plain.observed.cacheUsageMissing, true);
+});
+
 test("answer assertion does not expose expected private text", () => {
   const result = scoreCase({ id: "private", mustContain: "private text" }, trace("COMPLETED", []), "other");
   assert.deepEqual(result.failures, ["answer assertion failed"]);

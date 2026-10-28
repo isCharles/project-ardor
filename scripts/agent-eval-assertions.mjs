@@ -93,8 +93,12 @@ export function scoreCase(item, trace, answer, options = {}) {
     llmCalls: trace?.totals?.llmCalls ?? null,
     inputTokens: trace?.totals?.inputTokens ?? null,
     outputTokens: trace?.totals?.outputTokens ?? null,
+    cacheReadInputTokens: trace?.totals?.cacheReadInputTokens ?? null,
+    cacheCreationInputTokens: trace?.totals?.cacheCreationInputTokens ?? null,
     // Unknown usage must stay unknown, never coerced to zero.
     usageMissing: trace != null && (trace?.totals?.inputTokens == null || trace?.totals?.outputTokens == null),
+    cacheUsageMissing: trace != null && trace?.totals?.cacheReadInputTokens == null
+        && trace?.totals?.cacheCreationInputTokens == null,
   };
 
   if (environmentError) {

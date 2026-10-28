@@ -97,6 +97,6 @@ class AgentModelTraceListenerTests {
         assertThat(tracer.llmCalls()).isEqualTo(1);
         assertThat(tracer.loopRounds()).isEqualTo(1);
         verify(store).finishSpan(eq(user), eq(llmSpan), eq("COMPLETED"), isNull(), eq("actual-model"),
-                eq("v1"), eq(100), eq(25), any());
+                eq("v1"), eq(100), eq(25), isNull(), isNull(), any());
     }
 }
