@@ -1,6 +1,7 @@
 package com.projectardor.assistant.memory.service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 import com.projectardor.assistant.ReasoningDepth;
 import com.projectardor.assistant.conversation.domain.ConversationMessage;
 import com.projectardor.assistant.conversation.service.AgentConversationStore;
+import com.projectardor.assistant.execution.service.AgentContextUsage;
 import com.projectardor.assistant.execution.service.LangChainModelFactory;
 import com.projectardor.assistant.execution.service.AgentContextBudgetPolicy;
 import com.projectardor.assistant.execution.service.ModelContextCapacity;
@@ -149,22 +151,27 @@ public class AgentContextCompactor {
                 systemPrompt + "\n" + pendingContext, List.of(), List.of(), imageCapable)))
             throw new AgentContextLimitException();
         String currentSummary = previous.map(ConversationSummaryStore.Summary::content).orElse("");
-        boolean overBudget = budget.shouldCompact(toolTokens + pendingImageTokens + estimateTokens(estimator,
-                systemPrompt + "\n" + currentSummary + "\n" + pendingContext, older, recent, imageCapable));
+        long projectedTokens = toolTokens + pendingImageTokens + estimateTokens(estimator,
+                systemPrompt + "\n" + currentSummary + "\n" + pendingContext, older, recent, imageCapable);
+        boolean overBudget = budget.shouldCompact(projectedTokens);
         // Every message must be represented by a saved summary or kept verbatim.
         List<ConversationMessage> effectiveRecent = visible.subList(covered, visible.size());
         int compactedCount = 0;
+        int versionBefore = previous.map(ConversationSummaryStore.Summary::version).orElse(0);
+        CompactionOutcome outcome = null;
         if (!older.isEmpty() && overBudget) {
             status.accept("COMPACTING");
-            CompactionResult compacted = compact(userId, conversationId, config, depth, previous, older, estimator, listeners, active);
-            if (compacted != null) {
-                currentSummary = compacted.content();
-                previous = java.util.Optional.of(compacted.summary());
-                int newCovered = coveredIndex(visible, compacted.summary().coveredMessageId());
+            attachCompactionTrigger(listeners, triggerAttributes(budget, projectedTokens, older.size(),
+                    covered + 1, versionBefore));
+            outcome = compact(userId, conversationId, config, depth, previous, older, estimator, listeners, active);
+            if (outcome.compacted()) {
+                currentSummary = outcome.result().content();
+                previous = java.util.Optional.of(outcome.result().summary());
+                int newCovered = coveredIndex(visible, outcome.result().summary().coveredMessageId());
                 compactedCount = newCovered - covered;
                 effectiveRecent = visible.subList(newCovered, visible.size());
             } else status.accept("COMPACTION_FAILED");
-            if (metrics != null) metrics.recordCompaction(compacted == null);
+            if (metrics != null) metrics.recordCompaction(!outcome.compacted());
         }
         // Generated text is data, never interpolated into the system instruction.
         String summaryContext = currentSummary.isBlank() ? "" :
@@ -175,15 +182,30 @@ public class AgentContextCompactor {
                 systemPrompt + "\n" + summaryContext + "\n" + pendingContext, List.of(), effectiveRecent, imageCapable));
         if (budget.exceedsHardLimit(toolTokens + estimated))
             throw new AgentContextLimitException();
+        AgentContextUsage.Compaction compaction = null;
+        if (outcome != null) {
+            int versionAfter = previous.map(ConversationSummaryStore.Summary::version).orElse(0);
+            boolean succeeded = outcome.compacted();
+            compaction = new AgentContextUsage.Compaction(succeeded ? "COMPACTED" : "FAILED",
+                    compactionSpanId(listeners), budget.windowTokens(), budget.softInputTokens(), projectedTokens,
+                    estimated, compactedCount, covered + 1, versionBefore, versionAfter, outcome.errorCode());
+            Map<String, Object> spanOutcome = new java.util.LinkedHashMap<>();
+            spanOutcome.put("outcome", compaction.outcome());
+            spanOutcome.put("summarizedMessages", compactedCount);
+            spanOutcome.put("summaryVersionAfter", versionAfter);
+            spanOutcome.put("estimatedInputTokensAfter", estimated);
+            spanOutcome.put("failureCode", succeeded ? "" : outcome.errorCode());
+            recordCompactionOutcome(listeners, spanOutcome);
+        }
         return new Prepared(systemPrompt, effectiveRecent, previous.map(ConversationSummaryStore.Summary::version).orElse(0),
-                compactedCount, estimated, estimator, summaryContext, budget);
+                compactedCount, estimated, estimator, summaryContext, budget, compaction);
     }
 
     public int budgetTokens() { return maxHistoryTokens; }
 
     private static final int MAX_COMPACTION_ATTEMPTS = 2;
 
-    private CompactionResult compact(UUID userId, UUID conversationId, LlmConfigService.LlmRuntimeConfig config,
+    private CompactionOutcome compact(UUID userId, UUID conversationId, LlmConfigService.LlmRuntimeConfig config,
             ReasoningDepth depth, java.util.Optional<ConversationSummaryStore.Summary> previous,
             List<ConversationMessage> older, TokenCountEstimator estimator,
             List<dev.langchain4j.model.chat.listener.ChatModelListener> listeners,
@@ -215,11 +237,11 @@ public class AgentContextCompactor {
                 requireActive(active);
                 log.warn("Context summarization unavailable: conversationId={}, type={}", conversationId,
                         unavailable.getClass().getSimpleName());
-                return null;
+                return CompactionOutcome.failed("COMPACTION_MODEL_UNAVAILABLE");
             }
 
             String rawSummary = response == null || response.aiMessage() == null ? null : response.aiMessage().text();
-            if (rawSummary == null || rawSummary.isBlank()) return null;
+            if (rawSummary == null || rawSummary.isBlank()) return CompactionOutcome.failed("COMPACTION_EMPTY_SUMMARY");
             requireActive(active);
 
             boolean truncated = isOutputTruncated(response);
@@ -237,7 +259,7 @@ public class AgentContextCompactor {
                     messageCount = Math.max(2, messageCount / 2);
                     continue;
                 }
-                return null;
+                return CompactionOutcome.failed("COMPACTION_SUMMARY_TOO_LONG");
             }
 
             if (truncated) {
@@ -246,7 +268,7 @@ public class AgentContextCompactor {
                     messageCount = Math.max(2, messageCount / 2);
                     continue;
                 }
-                return null;
+                return CompactionOutcome.failed("COMPACTION_OUTPUT_TRUNCATED");
             }
 
             int version = previous.map(ConversationSummaryStore.Summary::version).orElse(0) + 1;
@@ -255,7 +277,53 @@ public class AgentContextCompactor {
             int coveredCount = previous.map(ConversationSummaryStore.Summary::coveredCount).orElse(0) + messageCount;
             var saved = summaries.save(userId, conversationId, version, coveredMessageId, coveredCount, summaryContent,
                     tokenCount, config.model());
-            return new CompactionResult(saved, summaryContent);
+            return new CompactionOutcome(new CompactionResult(saved, summaryContent), null);
+        }
+        return CompactionOutcome.failed("COMPACTION_RETRY_EXHAUSTED");
+    }
+
+    /** The numbers a reader needs to recheck why this run summarized history. */
+    private static Map<String, Object> triggerAttributes(AgentContextBudgetPolicy.Budget budget,
+            long projectedInputTokens, int messagesToSummarize, int firstMessageOrdinal, int summaryVersionBefore) {
+        Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+        attributes.put("windowTokens", budget.windowTokens());
+        attributes.put("softThresholdTokens", budget.softInputTokens());
+        attributes.put("hardThresholdTokens", budget.hardInputTokens());
+        attributes.put("outputReserveTokens", budget.outputReserveTokens());
+        attributes.put("safetyReserveTokens", budget.safetyReserveTokens());
+        attributes.put("projectedInputTokens", projectedInputTokens);
+        attributes.put("messagesToSummarize", messagesToSummarize);
+        attributes.put("firstMessageOrdinal", firstMessageOrdinal);
+        attributes.put("summaryVersionBefore", summaryVersionBefore);
+        return attributes;
+    }
+
+    /**
+     * The trace listener is the only object that can write to the span, and the compactor is the only
+     * place that knows the budget numbers, so the evidence crosses over through the listener instance.
+     */
+    private static void attachCompactionTrigger(
+            List<dev.langchain4j.model.chat.listener.ChatModelListener> listeners, Map<String, Object> trigger) {
+        for (var listener : listeners) {
+            if (listener instanceof com.projectardor.assistant.execution.service.AgentModelTraceListener trace) {
+                trace.attachCompactionEvidence(trigger);
+            }
+        }
+    }
+
+    private static void recordCompactionOutcome(
+            List<dev.langchain4j.model.chat.listener.ChatModelListener> listeners, Map<String, Object> outcome) {
+        for (var listener : listeners) {
+            if (listener instanceof com.projectardor.assistant.execution.service.AgentModelTraceListener trace) {
+                trace.recordCompactionOutcome(outcome);
+            }
+        }
+    }
+
+    private static String compactionSpanId(List<dev.langchain4j.model.chat.listener.ChatModelListener> listeners) {
+        for (var listener : listeners) {
+            if (listener instanceof com.projectardor.assistant.execution.service.AgentModelTraceListener trace
+                    && trace.lastSpanId() != null) return trace.lastSpanId().toString();
         }
         return null;
     }
@@ -336,9 +404,21 @@ public class AgentContextCompactor {
 
     private record CompactionResult(ConversationSummaryStore.Summary summary, String content) {}
 
+    /** One compaction attempt: either a saved summary or the reason the run continues without one. */
+    private record CompactionOutcome(CompactionResult result, String errorCode) {
+        static CompactionOutcome failed(String errorCode) { return new CompactionOutcome(null, errorCode); }
+        boolean compacted() { return result != null; }
+    }
+
     public record Prepared(String systemPrompt, List<ConversationMessage> recentMessages, int summaryVersion,
             int compactedMessages, int estimatedTokens, TokenCountEstimator estimator, String summaryContext,
-            AgentContextBudgetPolicy.Budget budget) {
+            AgentContextBudgetPolicy.Budget budget, AgentContextUsage.Compaction compaction) {
+        public Prepared(String systemPrompt, List<ConversationMessage> recentMessages, int summaryVersion,
+                int compactedMessages, int estimatedTokens, TokenCountEstimator estimator, String summaryContext,
+                AgentContextBudgetPolicy.Budget budget) {
+            this(systemPrompt, recentMessages, summaryVersion, compactedMessages, estimatedTokens, estimator,
+                    summaryContext, budget, null);
+        }
         public Prepared(String systemPrompt, List<ConversationMessage> recentMessages, int summaryVersion,
                 int compactedMessages, int estimatedTokens, TokenCountEstimator estimator, String summaryContext) {
             this(systemPrompt, recentMessages, summaryVersion, compactedMessages, estimatedTokens, estimator, summaryContext, null);

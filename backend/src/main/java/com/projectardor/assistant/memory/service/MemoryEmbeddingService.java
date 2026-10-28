@@ -268,7 +268,7 @@ public class MemoryEmbeddingService {
             out.append("（另有 ").append(omitted - coreOmitted)
                     .append(" 条长期记忆未展开；需要更早的目标、偏好或背景时调用 search_memories。）\n");
         }
-        String outcome = omitted > 0 ? "budget_truncated" : "resident";
+        String outcome = omitted > 0 ? "resident_memory_budget_truncated" : "resident";
         return new Context(out.toString().strip(), outcome, items.size(), core.size(), coreAdopted, coreOmitted,
                 adopted, omitted, out.length(), RESIDENT_CHARACTER_BUDGET, "unknown", 0);
     }

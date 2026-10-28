@@ -26,7 +26,7 @@ try {
     else if (path === "/api/profile/sidebar") body = { userId: "context-owner", hrefs: ["/app"], configured: true, revision: 0 };
     else if (path === "/api/profile") body = { displayName: "Synthetic owner", timezone: "Asia/Shanghai", targetRoles: [] };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
-    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [{ id: "context-answer", role: "ASSISTANT", content: "Synthetic answer", createdAt: conversation.createdAt, runTrace: JSON.stringify({ elapsedMs: 10, status: "COMPLETED", steps: [], contextUsage: running ? null : usage }) }] };
+    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [{ id: "context-answer", role: "ASSISTANT", content: "Synthetic answer", runId: "context-run", createdAt: conversation.createdAt, runTrace: JSON.stringify({ elapsedMs: 10, status: "COMPLETED", steps: [], contextUsage: running ? null : usage }) }] };
     else if (path === "/api/agent/runs/latest") {
       if (!running) return route.fulfill({ status: 204 });
       body = { id: "context-run", conversationId: conversation.id, message: "Synthetic request", status: "RUNNING", label: "Working", createdAt: conversation.createdAt };
@@ -80,11 +80,11 @@ try {
   assert.equal(await partialReply.locator("del").count(), 1);
   assert.equal(await partialReply.locator("del").innerText(), "旧安排");
   await indicator.hover();
-  await tooltip.getByText("Compacting context", { exact: true }).waitFor();
+  await tooltip.getByText("Summarizing earlier messages", { exact: true }).waitFor();
   usage = { ...usage, state: "COMPACTION_FAILED", estimatedTokens: 1800 };
   await page.locator('[data-context-state="COMPACTION_FAILED"]').waitFor();
   await indicator.focus();
-  await tooltip.getByText("Compaction deferred", { exact: true }).waitFor();
+  await tooltip.getByText("History summary failed; every message was kept", { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await indicator.click();
   await tooltip.waitFor();
@@ -97,7 +97,28 @@ try {
   });
   await page.screenshot({ path: ".next/context-usage-narrow.png" });
   assert.ok((await indicator.boundingBox()).width > 0);
-  console.log("Context usage UI: legacy unknown, persisted estimate, honest unknown window, live compaction/failure and narrow viewport passed.");
+  // The compaction itself has to be readable in the transcript, not only in the tooltip.
+  assert.equal(await page.locator("[data-compaction-notice]").count(), 0, "No notice when nothing was compacted");
+  running = false;
+  usage = { state: "READY", model: "synthetic-model", estimatedTokens: 34442, compressionBudgetTokens: 12000,
+    modelWindowTokens: 65536, summaryVersion: 1, compactedMessages: 2,
+    compaction: { outcome: "COMPACTED", spanId: "compact-span", windowTokens: 65536, softThresholdTokens: 43622,
+      projectedInputTokens: 57431, estimatedInputTokensAfter: 34442, summarizedMessages: 2, firstMessageOrdinal: 1,
+      summaryVersionBefore: 0, summaryVersionAfter: 1, errorCode: null } };
+  await page.reload();
+  const notice = page.locator("[data-compaction-notice]").first();
+  await notice.waitFor();
+  assert.equal(await page.locator("[data-compaction-notice]").count(), 1, "One notice per compacted turn");
+  assert.match(await notice.innerText(), /Summarized messages 1-2[\s\S]*57\.4K → 34\.4K tokens \(threshold 43\.6K\)/);
+  assert.equal(await notice.locator("a").first().getAttribute("href"), "/app/agent-runs/context-run?span=compact-span",
+    "The notice points at the span that recorded the decision");
+  usage = { ...usage, state: "COMPACTION_FAILED",
+    compaction: { ...usage.compaction, outcome: "FAILED", estimatedInputTokensAfter: null,
+      errorCode: "COMPACTION_MODEL_UNAVAILABLE" } };
+  await page.reload();
+  assert.match(await notice.innerText(), /could not be summarized \(COMPACTION_MODEL_UNAVAILABLE\)[\s\S]*kept every message verbatim/,
+    "A degraded compaction is visible instead of silent");
+  console.log("Context usage UI: legacy unknown, persisted estimate, honest unknown window, live compaction/failure, in-transcript notice and narrow viewport passed.");
 } finally {
   await browser?.close(); server.kill();
   if (server.exitCode === null) await new Promise(resolve => server.once("close", resolve));

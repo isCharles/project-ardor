@@ -21,7 +21,9 @@ class AgentStreamProgressTests {
                 .when(store).save(org.mockito.ArgumentMatchers.eq(owner), org.mockito.ArgumentMatchers.eq(run), org.mockito.ArgumentMatchers.any());
         var live = new AgentStreamProgress(Clock.systemUTC(), store);
         live.begin(owner, run);
-        var usage = new AgentContextUsage("READY", "synthetic", 1800L, 12000, null, 2, 8);
+        var usage = new AgentContextUsage("READY", "synthetic", 1800L, 12000, null, 2, 8,
+                new AgentContextUsage.Compaction("COMPACTED", "2f2a1b6c-0000-0000-0000-000000000001", 200000L,
+                        139428L, 152100L, 14200L, 8, 1, 2, 3, null));
         live.context(run, usage);
         live.finish(run, false);
         live.context(run, AgentContextUsage.preparing("late-stale-event"));

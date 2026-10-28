@@ -54,8 +54,8 @@ class AgentContextBuilderTests {
                 .doesNotContain("SUMMARY-DATA", "OWNED REFERENCE", "Original task before steering");
         assertThat(result.memory().messages().toString()).contains("SUMMARY-DATA", "Earlier user", "Original task before steering", "OWNED REFERENCE");
         verify(f.embedding).context(f.owner, null);
-        assertThat(result.attributes()).containsEntry("memoryEmbeddingCalls", 0)
-                .containsEntry("memoryOutcome", "resident");
+        assertThat(result.attributes()).containsEntry("residentMemoryEmbeddingCalls", 0)
+                .containsEntry("residentMemoryOutcome", "resident");
         assertThat(result.attributes()).containsEntry("interruptedMessages", 1).containsEntry("summaryVersion", 2);
         assertThatThrownBy(() -> result.attributes().put("scope", "write")).isInstanceOf(UnsupportedOperationException.class);
     }

@@ -44,6 +44,7 @@ final class AgentRequestContextListener implements ChatModelListener {
 
     private void publish(long tokens) {
         observer.accept(new AgentContextUsage(base.state(), base.model(), tokens,
-                base.compressionBudgetTokens(), base.modelWindowTokens(), base.summaryVersion(), base.compactedMessages()));
+                base.compressionBudgetTokens(), base.modelWindowTokens(), base.summaryVersion(),
+                base.compactedMessages(), base.compaction()));
     }
 }

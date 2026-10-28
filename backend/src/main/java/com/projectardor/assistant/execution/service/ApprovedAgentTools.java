@@ -208,7 +208,9 @@ final class ApprovedAgentTools {
                 toolAttributes.put("tool", tool);
                 toolAttributes.put("approvalSource", approvalSource);
                 toolAttributes.put("proposal", proposal);
-                toolAttributes.put("argumentsPreview", TracePreview.of(request.arguments()));
+                String argumentsPreview = TracePreview.of(request.arguments());
+                toolAttributes.put("argumentsPreview", argumentsPreview);
+                toolAttributes.put("argumentsPreviewTruncated", TracePreview.isTruncated(argumentsPreview));
                 UUID traceSpan = startToolSpan(tracer, request, tool, toolAttributes);
                 if (tracer != null) tracer.recordTool();
                 AtomicBoolean executed = new AtomicBoolean();
@@ -249,7 +251,9 @@ final class ApprovedAgentTools {
                         resultAttributes.put("executed", executed.get());
                         resultAttributes.put("proposal", proposal);
                         resultAttributes.put("approvalSource", approvalSource);
-                        resultAttributes.put("resultPreview", TracePreview.of(auditResult != null ? auditResult : returned));
+                        String resultPreview = TracePreview.of(auditResult != null ? auditResult : returned);
+                        resultAttributes.put("resultPreview", resultPreview);
+                        resultAttributes.put("resultPreviewTruncated", TracePreview.isTruncated(resultPreview));
                         tracer.finishChild(traceSpan, spanStatus, errorCode, null, null, null, resultAttributes);
                     }
                 }
