@@ -336,6 +336,7 @@ try {
   const depth = page.getByRole("dialog", { name: "Model and thinking depth options" });
   assert.equal(await page.locator('[data-reasoning-depth]').getAttribute("data-reasoning-depth"), "AUTO", "Provider default remains the default");
   await depth.getByText("DeepSeek V4 Flash", { exact: true }).waitFor();
+  await page.screenshot({ path: ".next/model-picker.png" });
   await depth.getByText("Fast, high-value everyday model", { exact: true }).waitFor();
   await depth.getByText("Flagship reasoning and coding", { exact: true }).waitFor();
   await depth.getByText("Long-context research model", { exact: true }).waitFor();
@@ -368,11 +369,24 @@ try {
   const manage = page.getByRole("dialog", { name: "Manage models" });
   assert.equal(await manage.locator("[data-model-setting]").count(), 3,
     "Catalog entries resolving to one configuration must collapse into one settings row");
-  await manage.getByText(/Shared by 2 entries/).waitFor();
+  await manage.getByTitle(/Shared by 2 entries/).waitFor();
+  await page.screenshot({ path: ".next/model-settings-dialog.png" });
+  assert.equal(await manage.locator('[style*="color-deepseek.svg"]').count(), 1, "Settings rows must reuse the model brand icon");
+  assert.equal(await manage.locator('[style*="color-claude.svg"]').count(), 1, "Settings rows must reuse the model brand icon");
+  assert.equal(await manage.getByRole("tab", { name: "Default", exact: true }).getAttribute("aria-selected"), "true");
+  assert.equal(await manage.getByRole("button", { name: "Save", exact: true }).isDisabled(), true,
+    "Save stays disabled until a setting changes");
+  await manage.getByRole("tab", { name: "Custom", exact: true }).click();
+  await manage.getByText("No custom settings.", { exact: true }).waitFor();
+  await manage.getByRole("tab", { name: "Default", exact: true }).click();
   await manage.getByLabel("Thinking level: deepseek-v4-flash").selectOption("DEEP");
-  await manage.getByLabel("Context window: deepseek-v4-flash").selectOption("custom");
+  assert.equal(await manage.getByRole("switch", { name: "Thinking: deepseek-v4-flash" }).getAttribute("aria-checked"), "true");
+  const windowSlider = manage.getByLabel("Context window: deepseek-v4-flash");
+  await windowSlider.focus();
+  await windowSlider.press("End");
   await manage.getByLabel("Window tokens: deepseek-v4-flash").fill("64000");
-  await manage.getByRole("button", { name: "Visible in picker: claude-opus-5-5" }).click();
+  assert.equal(await windowSlider.getAttribute("aria-valuetext"), "64K");
+  await manage.getByRole("switch", { name: "Visible in picker: claude-opus-5-5" }).click();
   await manage.getByRole("button", { name: "Save", exact: true }).click();
   await manage.waitFor({ state: "hidden" });
   assert.equal(modelSettingsWrites, 1);
@@ -389,9 +403,10 @@ try {
   await filteredDepth.getByRole("button", { name: "Manage models", exact: true }).click();
   const manageAgain = page.getByRole("dialog", { name: "Manage models" });
   assert.equal(await manageAgain.getByLabel("Thinking level: deepseek-v4-flash").inputValue(), "DEEP");
-  assert.equal(await manageAgain.getByLabel("Context window: deepseek-v4-flash").inputValue(), "custom");
+  assert.equal(await manageAgain.getByLabel("Context window: deepseek-v4-flash").inputValue(), "4");
+  assert.equal(await manageAgain.getByLabel("Context window: deepseek-v4-flash").getAttribute("aria-valuetext"), "64K");
   assert.equal(await manageAgain.getByLabel("Window tokens: deepseek-v4-flash").inputValue(), "64000");
-  assert.equal(await manageAgain.getByRole("button", { name: "Visible in picker: claude-opus-5-5" }).getAttribute("aria-pressed"), "false");
+  assert.equal(await manageAgain.getByRole("switch", { name: "Visible in picker: claude-opus-5-5" }).getAttribute("aria-checked"), "false");
   await manageAgain.getByLabel("Thinking level: deepseek-v4-flash").selectOption("STANDARD");
   await manageAgain.getByRole("button", { name: "Save", exact: true }).click();
   await manageAgain.waitFor({ state: "hidden" });
