@@ -69,6 +69,14 @@ V33 新增 PostgreSQL `ai_jobs` 表，原提交及状态持久化。Worker 使�
 
 该并发上限只覆盖单个进程。可另行开启跨实例的分钟窗口准入：`app.model.qpm`（每模型每分钟请求数）、`app.model.tpm`（每模型每分钟估算 token 数）、`app.model.user-qpm`（每用户每分钟请求数），环境变量 `ARDOR_MODEL_QPM`、`ARDOR_MODEL_TPM`、`ARDOR_MODEL_USER_QPM`，默认 0 表示关闭。计数器在 Redis 固定 UTC 分钟窗口内原子检查，共享缓存的实例看到同一预算；模型维度按 provider + Base URL + model 指纹，token 维度采用发送前估算的输入加预留输出（后台 JSON 调用只有输入估算），不采用供应商回传的实际用量。任一维度触顶时与并发满一样返回可重试的 `LLM_BUSY`，在线由浏览器重试、后台按既有退避重排。Redis 不可用时放行并增加 `ardor_model_rate_degraded`，避免限速设施故障中断对话。窗口在分钟边界允许短时双倍突发；该层不是计费或供应商配额的精确复刻，也不覆盖语音等其他供应商调用。TPM 必须高于允许的最大单次请求估算，否则该请求会在任何窗口下都被拒绝。
 
+Anthropic 兼容接口可启用提示缓存：`app.model.prompt-cache.enabled`（环境变量 `ARDOR_PROMPT_CACHE_ENABLED`，默认关闭）与 `app.model.prompt-cache.tools`（`ARDOR_PROMPT_CACHE_TOOLS`，默认开启）。开启后只在最后一个工具定义上放 `cache_control: {type: "ephemeral"}` 断点；系统提示当前含每秒变化的基准时间与用户长期记忆，属于动态内容，因此不缓存，也不为提升命中率而移动或删减这些内容。工具定义是所有用户共享的同一段 JSON Schema，缓存命中不会跨账户返回他人的私有正文，私有上下文仍在消息部分，不在缓存前缀内。
+
+供应商拒绝 `cache_control` 时（错误信息含 cache），调用会退回到不带缓存的同一次请求，并把该 provider + Base URL + model 指纹记为本进程“不支持”，后续不再重复尝试；不带缓存的这次请求仍失败则原样抛出，不会静默改写结果。OpenAI 兼容接口不发送 Anthropic 专有字段，其缓存用量记为未知。
+
+用量按四个维度分别记录：普通输入、缓存写入、缓存读取、输出。Anthropic 的 `input_tokens` 不含缓存读写，两者相加才是本次实际计费的输入量；供应商没有返回缓存字段时保持 `null`（`cacheUsageMissingCalls` 计数），不当作 0。Trace 的 LLM span 与 RUN 摘要写入 `cache_creation_input_tokens`、`cache_read_input_tokens`（V78），评测报告的每个案例同样输出这两个字段与 `cacheUsageMissing`，`cacheUsage` 汇总只在全批至少有一个已知值时给出。美元成本仍按可核对价目计算：中转站未提供账单价时不产出美元数字。
+
+已实测：LangChain4j 1.19 的请求线路格式（仅最后一个工具带 `cache_control`、系统提示不带、响应缓存字段可解析）、缓存被拒时的降级与指纹记忆、未知用量不被清零。真实中转站 `cf.api.fan` + `claude-opus-5-5` 的两次相同前缀请求显示 `cache_creation_input_tokens=601 → 0`、`cache_read_input_tokens=0 → 601`，证明该站透传并生效。尚未实测：Ardor 端到端业务任务在开启缓存后的真实节省（需部署带 `ARDOR_PROMPT_CACHE_ENABLED=true` 的实例后与接入前基线对照）；其他兼容供应商的缓存语义按“协议兼容、未实测”处理。
+
 ## 验证
 
 使用隔离数据库与假模型验证 202 立即返回、失败不计分、重试只计一次、跨账号拒绝访问、历史答案保留和模拟面试评价。浏览器验证提交后跳到日历、返回获取反馈，及回放失败后保留草稿再重试。不得对真实用户数据库运行验收造数。

@@ -44,7 +44,7 @@ class CareerAgentRuntimeIntegrationTests {
                     public void complete() {}
                 });
         verify(f.traces).finishSpan(eq(f.user), eq(contextSpan), eq("FAILED"), eq("AGENT_CONTEXT_LIMIT"),
-                eq("fixture-model"), anyString(), isNull(), isNull(), any());
+                eq("fixture-model"), anyString(), isNull(), isNull(), isNull(), isNull(), any());
         assertThat(f.events).anyMatch(event -> "error".equals(event.type())
                 && "INVALID_STATE".equals(event.errorCode()) && !Boolean.TRUE.equals(event.retryable()));
         verify(f.factory, never()).createStreaming(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(), any(), anyList());

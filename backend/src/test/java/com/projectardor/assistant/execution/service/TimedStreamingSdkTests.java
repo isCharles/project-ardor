@@ -80,7 +80,18 @@ class TimedStreamingSdkTests {
                 assertThat(text.toString()).isEqualTo("hello");
                 assertThat(tracer.llmCalls()).isEqualTo(1);
                 ArgumentCaptor<Map> attributes = ArgumentCaptor.forClass(Map.class);
-                verify(store).finishSpan(any(), any(), eq("COMPLETED"), isNull(), any(), any(), eq(10), eq(2), attributes.capture());
+                ArgumentCaptor<Integer> cacheCreation = ArgumentCaptor.forClass(Integer.class);
+                ArgumentCaptor<Integer> cacheRead = ArgumentCaptor.forClass(Integer.class);
+                verify(store).finishSpan(any(), any(), eq("COMPLETED"), isNull(), any(), any(), eq(10), eq(2),
+                        cacheCreation.capture(), cacheRead.capture(), attributes.capture());
+                if (provider == LlmProvider.ANTHROPIC_COMPATIBLE) {
+                    // The fixture reports no cached tokens; a reported zero is a fact, not an unknown.
+                    assertThat(cacheCreation.getValue()).isZero();
+                    assertThat(cacheRead.getValue()).isZero();
+                } else {
+                    assertThat(cacheCreation.getValue()).isNull();
+                    assertThat(cacheRead.getValue()).isNull();
+                }
                 assertThat(attributes.getValue()).containsKeys("firstContentMs", "streamAfterFirstContentMs", "outputTokensPerRequestSecond")
                         .containsEntry("timingSource", "client-monotonic-stream-v1");
             } finally { server.stop(0); }

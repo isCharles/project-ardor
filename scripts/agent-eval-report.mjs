@@ -57,6 +57,9 @@ function caseRecord(result) {
     usageMissing: observed.usageMissing === true,
     inputTokens: observed.inputTokens ?? null,
     outputTokens: observed.outputTokens ?? null,
+    cacheReadInputTokens: observed.cacheReadInputTokens ?? null,
+    cacheCreationInputTokens: observed.cacheCreationInputTokens ?? null,
+    cacheUsageMissing: observed.cacheUsageMissing === true,
     llmCalls: observed.llmCalls ?? null,
     // Diagnostic rubric score; null when the case had no scorable run.
     rubric: result.rubric ?? null,
@@ -108,6 +111,13 @@ export function buildReport(input) {
     rubricMean,
     heldOut: records.filter((r) => r.heldOut).map((r) => ({ id: r.id, status: r.status })),
     usageMissingCount: records.filter((r) => r.usageMissing).length,
+    cacheUsageMissingCount: records.filter((r) => r.cacheUsageMissing).length,
+    cacheUsage: {
+      readInputTokens: records.some((r) => r.cacheReadInputTokens != null)
+          ? records.reduce((sum, r) => sum + (r.cacheReadInputTokens ?? 0), 0) : null,
+      creationInputTokens: records.some((r) => r.cacheCreationInputTokens != null)
+          ? records.reduce((sum, r) => sum + (r.cacheCreationInputTokens ?? 0), 0) : null,
+    },
     cases: records,
   };
 }

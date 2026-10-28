@@ -21,12 +21,16 @@ public record AgentTraceSpanResponse(
         String promptVersion,
         Integer inputTokens,
         Integer outputTokens,
+        Integer cacheCreationInputTokens,
+        Integer cacheReadInputTokens,
         String errorCode,
         Map<String, Object> attributes) {
 
     public static AgentTraceSpanResponse from(AgentTraceStore.Span span) {
         return new AgentTraceSpanResponse(span.id(), span.runId(), span.parentSpanId(), span.kind(), span.name(),
                 span.status(), span.startedAt(), span.finishedAt(), span.durationMs(), span.model(),
-                span.promptVersion(), span.inputTokens(), span.outputTokens(), span.errorCode(), span.attributes());
+                span.promptVersion(), span.inputTokens(), span.outputTokens(),
+                span.cacheCreationInputTokens(), span.cacheReadInputTokens(),
+                span.errorCode(), span.attributes());
     }
 }

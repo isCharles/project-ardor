@@ -88,7 +88,7 @@ class TimedStreamingModelTests {
         void start() { model.doChat(ChatRequest.builder().messages(UserMessage.from("synthetic")).build(), downstream); }
         @SuppressWarnings({"unchecked", "rawtypes"}) List<Map<String, Object>> finished() {
             ArgumentCaptor<Map> captured = ArgumentCaptor.forClass(Map.class);
-            verify(store, atLeastOnce()).finishSpan(any(), any(), any(), any(), any(), any(), any(), any(), captured.capture());
+            verify(store, atLeastOnce()).finishSpan(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), captured.capture());
             return (List) captured.getAllValues();
         }
     }

@@ -11,7 +11,6 @@ import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.listener.ChatModelRequestContext;
 import dev.langchain4j.model.chat.listener.ChatModelResponseContext;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.model.output.TokenUsage;
 
 /**
  * Attaches each actual LLM invocation to the run tracer. The context is explicit and immutable
@@ -76,19 +75,21 @@ public final class AgentModelTraceListener implements ChatModelListener {
         UUID span = takeSpan(context.attributes());
         long durationNanos = elapsedNanos(context.attributes());
         ChatResponse response = context.chatResponse();
-        TokenUsage usage = response == null ? null : response.tokenUsage();
-        Integer input = usage == null ? null : usage.inputTokenCount();
-        Integer output = usage == null ? null : usage.outputTokenCount();
+        LlmUsage usage = LlmUsage.of(response == null ? null : response.tokenUsage());
+        Integer input = usage.inputTokens();
+        Integer output = usage.outputTokens();
         AiMessage message = response == null ? null : response.aiMessage();
         boolean toolRound = message != null && message.hasToolExecutionRequests();
         int requestedTools = toolRound ? message.toolExecutionRequests().size() : 0;
-        tracer.recordLlm(purpose, input, output, toolRound, requestedTools);
+        tracer.recordLlm(purpose, usage, toolRound, requestedTools);
         if (metrics != null) metrics.recordLlmCall(durationNanos, input, output, model, false);
         if (span == null) return;
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("finishReason", response == null || response.metadata() == null
                 || response.metadata().finishReason() == null ? "" : response.metadata().finishReason().name());
         attributes.put("toolRound", toolRound);
+        if (usage.cacheReadInputTokens() != null) attributes.put("cacheReadInputTokens", usage.cacheReadInputTokens());
+        if (usage.cacheCreationInputTokens() != null) attributes.put("cacheCreationInputTokens", usage.cacheCreationInputTokens());
         copyTiming(context.attributes(), attributes);
         if (message != null) {
             attributes.put("outputPreview", TracePreview.of(message.text()));
@@ -101,7 +102,7 @@ public final class AgentModelTraceListener implements ChatModelListener {
             }
         }
         String actualModel = response == null || response.metadata() == null ? model : response.metadata().modelName();
-        tracer.finishChild(span, "COMPLETED", null, actualModel, input, output, attributes);
+        tracer.finishChild(span, "COMPLETED", null, actualModel, usage, attributes);
     }
 
     @Override
