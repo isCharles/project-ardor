@@ -59,7 +59,7 @@ try {
   const modelSettings = {};
   let modelSettingsWrites = 0;
   const catalogModelSeeds = () => [
-    { id: "PRIMARY", label: "deepseek-v4-flash", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true, settingsKey: "settings-primary" },
+    { id: "PRIMARY", label: "deepseek-v4-flash", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true, reasoningLevels: [{ value: "QUICK", label: "Low" }, { value: "STANDARD", label: "Medium" }, { value: "DEEP", label: "High" }], settingsKey: "settings-primary" },
     { id: "FALLBACK:claude-opus-5-5", label: "claude-opus-5-5", provider: "ANTHROPIC_COMPATIBLE", available: true, nativeControl: true, settingsKey: "settings-claude" },
     { id: "FALLBACK:long-context-research", label: "long-context-research", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true, settingsKey: "settings-long" },
     { id: "FALLBACK:deepseek-relay-alias", label: "deepseek-relay-alias", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true, settingsKey: "settings-primary" },
@@ -380,6 +380,8 @@ try {
   await manage.getByText("No custom settings.", { exact: true }).waitFor();
   await manage.getByRole("tab", { name: "Default", exact: true }).click();
   await manage.getByLabel("Thinking level: deepseek-v4-flash").selectOption("DEEP");
+  assert.equal(await manage.getByLabel("Thinking level: deepseek-v4-flash").locator("option:checked").textContent(), "High",
+    "Model-specific effort labels must be preserved");
   assert.equal(await manage.getByRole("switch", { name: "Thinking: deepseek-v4-flash" }).getAttribute("aria-checked"), "true");
   const windowSlider = manage.getByLabel("Context window: deepseek-v4-flash");
   await windowSlider.focus();

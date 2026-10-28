@@ -100,7 +100,9 @@ export function ModelSettingsRow({ draft, t, onUpdate, onThinking, onEffort }: {
   const percent = index / (stops.length - 1) * 100;
   const effortOptions = new Map<string, string>([["AUTO", t("Auto", "自动")]]);
   for (const level of draft.levels) effortOptions.set(level.value, t(level.label, effortChinese[level.label] ?? level.label));
-  effortOptions.set(draft.thinkingEffort, t(effortLabels[draft.thinkingEffort], effortChinese[effortLabels[draft.thinkingEffort]] ?? effortLabels[draft.thinkingEffort]));
+  if (!effortOptions.has(draft.thinkingEffort)) {
+    effortOptions.set(draft.thinkingEffort, t(effortLabels[draft.thinkingEffort], effortChinese[effortLabels[draft.thinkingEffort]] ?? effortLabels[draft.thinkingEffort]));
+  }
   const name = modelDisplayName(draft.label);
   const nameTitle = draft.shared > 0
     ? `${name} · ${t(`Shared by ${draft.shared + 1} entries`, `与另外 ${draft.shared} 个入口共享`)}`
