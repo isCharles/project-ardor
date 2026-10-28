@@ -73,12 +73,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ resu
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resumeId)) {
     return Response.json({ message: "简历 ID 格式不正确" }, { status: 400 });
   }
+  const analysisId = new URL(request.url).searchParams.get("analysisId");
+  if (analysisId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(analysisId)) {
+    return Response.json({ message: "分析 ID 格式不正确" }, { status: 400 });
+  }
   const cookie = request.headers.get("cookie") ?? "";
   const headers = { Accept: "application/json", Cookie: cookie };
   const base = backendUrl();
 
   const [analysisResponse, listResponse] = await Promise.all([
-    fetch(`${base}/api/resumes/${resumeId}/analysis`, { headers, cache: "no-store" }),
+    fetch(`${base}/api/resumes/${resumeId}/analysis${analysisId ? `?analysisId=${encodeURIComponent(analysisId)}` : ""}`, { headers, cache: "no-store" }),
     fetch(`${base}/api/resumes`, { headers, cache: "no-store" }),
   ]);
   if (!analysisResponse.ok) {

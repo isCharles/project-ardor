@@ -26,6 +26,21 @@ public interface ResumeAnalysisJobRepository extends JpaRepository<ResumeAnalysi
             UUID resumeId,
             Collection<ResumeAnalysisJobStatus> statuses);
 
+    Optional<ResumeAnalysisJob> findFirstByUserIdAndResumeIdAndEvaluationKeyAndStatusInOrderByCreatedAtDesc(
+            UUID userId,
+            UUID resumeId,
+            String evaluationKey,
+            Collection<ResumeAnalysisJobStatus> statuses);
+
+    Optional<ResumeAnalysisJob> findFirstByUserIdAndResumeIdAndEvaluationKeyOrderByCreatedAtDesc(
+            UUID userId, UUID resumeId, String evaluationKey);
+
+    /** At most one of these can exist per resume: the index that predates V85 allowed a single active job. */
+    Optional<ResumeAnalysisJob> findFirstByUserIdAndResumeIdAndEvaluationKeyIsNullAndStatusInOrderByCreatedAtDesc(
+            UUID userId,
+            UUID resumeId,
+            Collection<ResumeAnalysisJobStatus> statuses);
+
     Optional<ResumeAnalysisJob> findFirstByUserIdAndResumeIdOrderByCreatedAtDesc(UUID userId, UUID resumeId);
 
     @Query(value = """

@@ -35,6 +35,7 @@ public class ResumeAnalysisJob {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "scoring_context", nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> scoringContext = Map.of();
+    @Column(name = "evaluation_key", length = 64) private String evaluationKey;
 
     protected ResumeAnalysisJob() {}
 
@@ -54,9 +55,20 @@ public class ResumeAnalysisJob {
     }
 
     public static ResumeAnalysisJob create(UUID userId, UUID resumeId, Map<String, Object> scoringContext) {
+        return create(userId, resumeId, scoringContext, null);
+    }
+
+    /** The evaluation key lets two job descriptions occupy the same resume without colliding. */
+    public static ResumeAnalysisJob create(UUID userId, UUID resumeId, Map<String, Object> scoringContext, String evaluationKey) {
         ResumeAnalysisJob job = new ResumeAnalysisJob(userId, resumeId);
         job.scoringContext = Map.copyOf(scoringContext);
+        job.evaluationKey = evaluationKey;
         return job;
+    }
+
+    /** A request that reuses a job written before evaluation keys existed settles its identity. */
+    public void adoptEvaluationKey(String key) {
+        this.evaluationKey = key;
     }
 
     public void complete(UUID analysisId) {
@@ -108,4 +120,5 @@ public class ResumeAnalysisJob {
     public String getErrorMessage() { return errorMessage; }
     public Instant getCreatedAt() { return createdAt; }
     public Map<String, Object> getScoringContext() { return Map.copyOf(scoringContext); }
+    public String getEvaluationKey() { return evaluationKey; }
 }

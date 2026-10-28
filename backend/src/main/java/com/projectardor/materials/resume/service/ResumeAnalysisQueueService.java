@@ -65,34 +65,47 @@ public class ResumeAnalysisQueueService {
         String key = ResumeScoringContext.key(resume.getParsedText(), context, mapper);
         Optional<ResumeAnalysis> analysis = analysisRepository.findByResumeIdAndUserIdAndEvaluationKey(resumeId, userId, key);
         Optional<ResumeAnalysisJob> active = jobRepository
-                .findFirstByUserIdAndResumeIdAndStatusInOrderByCreatedAtDesc(
-                        userId, resumeId, ACTIVE_STATUSES);
-        if (active.isPresent()) {
-            if (!active.get().getScoringContext().equals(context)) throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.CONFLICT, "已有另一组条件的分析正在执行，请等待完成");
-            return TaskResult.from(active.get());
+                .findFirstByUserIdAndResumeIdAndEvaluationKeyAndStatusInOrderByCreatedAtDesc(
+                        userId, resumeId, key, ACTIVE_STATUSES);
+        if (active.isPresent()) return TaskResult.from(active.get());
+        Optional<ResumeAnalysisJob> legacy = jobRepository
+                .findFirstByUserIdAndResumeIdAndEvaluationKeyIsNullAndStatusInOrderByCreatedAtDesc(userId, resumeId, ACTIVE_STATUSES);
+        // A job already in flight when V85 ran has no key, and the new index excludes keyless rows,
+        // so this same evaluation would otherwise be queued — and billed — a second time.
+        if (legacy.isPresent() && legacy.get().getScoringContext().equals(context)) {
+            legacy.get().adoptEvaluationKey(key);
+            return TaskResult.from(jobRepository.saveAndFlush(legacy.get()));
         }
         if (analysis.isPresent()) {
-            var previous = jobRepository.findFirstByUserIdAndResumeIdOrderByCreatedAtDesc(userId, resumeId);
+            var previous = jobRepository.findFirstByUserIdAndResumeIdAndEvaluationKeyOrderByCreatedAtDesc(userId, resumeId, key);
             if (previous.isPresent() && previous.get().getStatus() == ResumeAnalysisJobStatus.COMPLETED
                     && analysis.get().getId().equals(previous.get().getAnalysisId())) return TaskResult.from(previous.get());
-            var completed = ResumeAnalysisJob.create(userId, resumeId, context);
+            var completed = ResumeAnalysisJob.create(userId, resumeId, context, key);
             completed.complete(analysis.get().getId());
             return TaskResult.from(jobRepository.saveAndFlush(completed));
         }
-        return TaskResult.from(jobRepository.saveAndFlush(ResumeAnalysisJob.create(userId, resumeId, context)));
+        return TaskResult.from(jobRepository.saveAndFlush(ResumeAnalysisJob.create(userId, resumeId, context, key)));
     }
 
     @Transactional(readOnly = true)
     public TaskResult status(UUID userId, UUID resumeId) {
+        return status(userId, resumeId, null);
+    }
+
+    /**
+     * A resume can now hold one in-flight job per job description, so progress is read per job when
+     * the caller knows which request it made; without a job id it falls back to the newest request.
+     */
+    @Transactional(readOnly = true)
+    public TaskResult status(UUID userId, UUID resumeId, UUID jobId) {
         ownedResume(userId, resumeId);
+        if (jobId != null) return TaskResult.from(jobRepository.findByIdAndUserId(jobId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("该简历尚未提交分析任务")));
         var latest = jobRepository.findFirstByUserIdAndResumeIdOrderByCreatedAtDesc(userId, resumeId);
         if (latest.isPresent()) return TaskResult.from(latest.get());
         Optional<ResumeAnalysis> analysis = analysisRepository.findByResumeIdAndUserId(resumeId, userId);
         if (analysis.isPresent()) return TaskResult.completed(resumeId, analysis.get().getId());
-        ResumeAnalysisJob job = jobRepository.findFirstByUserIdAndResumeIdOrderByCreatedAtDesc(userId, resumeId)
-                .orElseThrow(() -> new ResourceNotFoundException("该简历尚未提交分析任务"));
-        return TaskResult.from(job);
+        throw new ResourceNotFoundException("该简历尚未提交分析任务");
     }
 
     @Transactional(readOnly = true)
