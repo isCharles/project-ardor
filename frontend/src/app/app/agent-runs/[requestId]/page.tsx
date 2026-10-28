@@ -13,7 +13,7 @@ type TraceSpan = {
   id: string;
   runId: string;
   parentSpanId: string | null;
-  kind: "RUN" | "LLM" | "TOOL" | "CONTEXT" | "COMPACTION" | "THOUGHT" | "RETRY" | "ASYNC";
+  kind: "RUN" | "LLM" | "TOOL" | "CONTEXT" | "COMPACTION" | "PLAN" | "PLAN_STEP" | "THOUGHT" | "RETRY" | "ASYNC";
   name: string;
   status: "RUNNING" | "COMPLETED" | "FAILED" | "NOT_EXECUTED" | "UNKNOWN";
   startedAt: string;
@@ -38,6 +38,9 @@ function spanLabel(span: TraceSpan, t: (english: string, chinese: string) => str
   if (span.kind === "COMPACTION") return t("Context compaction", "上下文压缩");
   if (span.kind === "LLM" && span.attributes.purpose === "CONTEXT_COMPACTION")
     return t("Context compaction", "上下文压缩");
+  if (span.kind === "PLAN") return (numberAttribute(span.attributes.revision) ?? 0) > 0
+    ? t("Replan", "重新规划") : t("Plan", "执行计划");
+  if (span.kind === "PLAN_STEP") return t("Plan step", "计划步骤");
   if (span.kind === "CONTEXT" && span.name === "context.load") return t("Context assembly", "上下文加载");
   return span.kind === "RUN" ? t("Agent run", "Agent 运行") : span.name;
 }
@@ -77,6 +80,8 @@ const kindMeta: Record<TraceSpan["kind"], { label: string; color: string; icon: 
   TOOL: { label: "TOOL", color: "bg-sky-100 text-sky-700", icon: Wrench },
   CONTEXT: { label: "CONTEXT", color: "bg-stone-200 text-stone-700", icon: Clock3 },
   COMPACTION: { label: "COMPACTION", color: "bg-amber-100 text-amber-800", icon: Archive },
+  PLAN: { label: "PLAN", color: "bg-indigo-100 text-indigo-700", icon: List },
+  PLAN_STEP: { label: "PLAN_STEP", color: "bg-indigo-50 text-indigo-600", icon: CheckCircle2 },
   THOUGHT: { label: "THOUGHT", color: "bg-violet-50 text-violet-700", icon: Activity },
   RETRY: { label: "RETRY", color: "bg-amber-100 text-amber-800", icon: CircleAlert },
   ASYNC: { label: "ASYNC", color: "bg-emerald-100 text-emerald-700", icon: Activity },
@@ -85,6 +90,7 @@ const kindMeta: Record<TraceSpan["kind"], { label: string; color: string; icon: 
 const DOT_TONE: Record<string, string> = {
   LLM: "bg-violet-400", TOOL: "bg-sky-400", CONTEXT: "bg-stone-400",
   COMPACTION: "bg-amber-400", ASYNC: "bg-emerald-400",
+  PLAN: "bg-indigo-400", PLAN_STEP: "bg-indigo-300",
 };
 
 function dotTone(kind: TraceSpan["kind"]) { return DOT_TONE[kind] ?? "bg-stone-300"; }
@@ -128,6 +134,37 @@ function CompactionFacts({ span }: { span: TraceSpan }) {
       {known.map(([label, value]) => <InspectorField key={label} label={label} value={value as string} />)}
     </div>
     <p className="mt-2 text-[10px] leading-5 text-stone-400">{t("Recorded decision inputs; the summary text is stored separately.", "以上为触发时记录的判定数据，摘要正文另存。")}</p>
+  </div>;
+}
+
+/** What the run worked to, and how each step was settled — read from the same record the graph draws. */
+function PlanFacts({ span }: { span: TraceSpan }) {
+  const { t } = useLocale();
+  const text = (key: string) => typeof span.attributes[key] === "string" ? span.attributes[key] as string : null;
+  const step = numberAttribute(span.attributes.stepIndex);
+  const verified = numberAttribute(span.attributes.verifiedSteps);
+  const total = numberAttribute(span.attributes.stepCount);
+  const revision = numberAttribute(span.attributes.revision) ?? 0;
+  const facts: Array<[string, string | null, boolean]> = span.kind === "PLAN_STEP"
+    ? [[t("Step", "步骤"), step == null ? null : `#${step + 1}`, false],
+       [t("Intent", "本步目标"), text("intentPreview"), true],
+       [t("Verified", "核验结果"), span.attributes.verified === true ? t("Verified", "已核验")
+         : span.attributes.verified === false ? t("Not verified", "未核验") : null, false],
+       [t("Evidence", "核验依据"), text("evidencePreview"), true]]
+    : [[t("Plan revision", "计划修订"), revision > 0 ? t(`Replan #${revision}`, `第 ${revision} 次重规划`)
+        : t("First plan", "首次计划"), false],
+       [t("Steps verified", "已核验步骤"), verified == null || total == null ? null : `${verified} / ${total}`, false],
+       [t("Goal", "总目标"), text("goalPreview"), true]];
+  const tools = Array.isArray(span.attributes.tools)
+    ? span.attributes.tools.filter((item): item is string => typeof item === "string") : [];
+  const known = facts.filter(([, value]) => value);
+  if (known.length === 0 && tools.length === 0) return null;
+  return <div className="sm:col-span-2">
+    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Plan record", "计划记录")}</p>
+    <div className="mt-2 grid gap-x-8 gap-y-2 sm:grid-cols-2">
+      {known.map(([label, value, wide]) => <InspectorField key={label} label={label} value={value as string} wide={wide} />)}
+    </div>
+    {tools.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{tools.map((tool) => <span key={tool} className="rounded-full bg-indigo-50 px-2 py-0.5 font-mono text-[10px] text-indigo-700">{tool}</span>)}</div>}
   </div>;
 }
 
@@ -285,7 +322,7 @@ function AgentRunTraceContent() {
           ? <section className="mt-3">
               <FlowGraph nodes={flow} selectedId={selectedId} onSelect={setSelectedId} />
               <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-stone-400">
-                {(["LLM", "TOOL", "CONTEXT", "COMPACTION", "ASYNC"] as const).map((kind) => <span key={kind} className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-full ${dotTone(kind)}`} />{kindMeta[kind].label}</span>)}
+                {(["LLM", "TOOL", "CONTEXT", "COMPACTION", "PLAN", "PLAN_STEP", "ASYNC"] as const).map((kind) => <span key={kind} className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-full ${dotTone(kind)}`} />{kindMeta[kind].label}</span>)}
               </div>
               <p className="mt-3 text-xs text-stone-400">{t("Switch to Trajectory to inspect parameters, results, schema and timing.", "切换到轨迹检查器查看参数、结果、Schema 和计时。")}</p>
             </section>
@@ -403,6 +440,8 @@ function InspectorPanel({ span, schema, sourceLabel, thinking }: { span: TraceSp
         <InspectorField label={t("Error code", "错误码")} value={span.errorCode ?? "—"} />
         <InspectorField label={t("Span ID", "步骤 ID")} value={span.id} mono wide />
         {span.kind === "COMPACTION" && <CompactionFacts span={span} />}
+        {(span.kind === "PLAN" || span.kind === "PLAN_STEP") && <PlanFacts span={span} />}
+        {span.errorCode === "PLAN_SCOPE_REFUSED" && <p className="sm:col-span-2 rounded-xl bg-rose-50 p-3 text-[11px] leading-5 text-rose-700">{t("This tool sits outside the accepted plan, so it was refused and nothing was executed.", "这个工具不在已接受计划的范围内，本次调用被拒绝，没有执行任何操作。")}</p>}
         {requestedTools.length > 0 && <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Requested tools", "请求的工具")}</p><div className="mt-1.5 flex flex-wrap gap-1.5">{requestedTools.map((tool) => <span key={tool} className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-[10px] text-violet-700">{tool}</span>)}</div></div>}
       </div>)}
       {tab === "preview" && <div className="space-y-4">{thinking && <div><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Model reasoning output", "模型思考输出")}</p><div className="mt-2 max-h-[45vh] overflow-auto rounded-xl bg-stone-50 p-4"><MarkdownContent className="text-sm leading-7 text-stone-700">{thinking}</MarkdownContent></div></div>}<div><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Assistant output", "助手输出")}</p>{result ? <MarkdownContent className="mt-2 text-sm leading-7 text-stone-700">{result}</MarkdownContent> : <p className="mt-2 rounded-xl bg-stone-50 p-4 text-xs text-stone-500">{t("No assistant output recorded.", "没有记录助手输出。")}</p>}</div></div>}
