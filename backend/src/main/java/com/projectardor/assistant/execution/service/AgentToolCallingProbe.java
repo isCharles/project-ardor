@@ -1,12 +1,14 @@
 package com.projectardor.assistant.execution.service;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.stereotype.Service;
 
+import com.projectardor.assistant.ReasoningDepth;
 import com.projectardor.assistant.tools.CareerAgentTools;
 import com.projectardor.assistant.tools.modules.AgentToolBundle;
 import com.projectardor.platform.model.llm.service.LlmCallException;
@@ -47,7 +49,7 @@ public class AgentToolCallingProbe implements ToolCallingProbe {
                         return "tool-calling-ok";
                     }));
             ProbeAssistant assistant = AiServices.builder(ProbeAssistant.class)
-                    .chatModel(modelFactory.create(config))
+                    .chatModel(modelFactory.create(userId, config, ReasoningDepth.AUTO, List.of()))
                     .systemMessage("你正在进行兼容性测试。必须且只能调用 tool_calling_probe 工具，然后简短确认成功。")
                     .tools(schemaProbeTools)
                     .maxToolCallingRoundTrips(2)

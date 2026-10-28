@@ -50,7 +50,7 @@ public class CompatibleLlmGateway implements LlmGateway {
         return completeJson(null, config, systemPrompt, userPrompt);
     }
 
-    private LlmResult completeJson(UUID userId, LlmConfigService.LlmRuntimeConfig config,
+    public LlmResult completeJson(UUID userId, LlmConfigService.LlmRuntimeConfig config,
             String systemPrompt, String userPrompt) {
         var estimator = AgentRequestTokens.estimator(config);
         long tokens = estimator.estimateTokenCountInText(systemPrompt)
