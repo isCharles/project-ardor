@@ -33,7 +33,7 @@ class AgentMessageQueueWorkerTests {
         UUID owner = UUID.randomUUID();
         UUID id = UUID.randomUUID();
         var input = new AgentMessageRequest(UUID.randomUUID(), "Synthetic input", null, null, List.of(), id, ReasoningDepth.DEEP);
-        var item = new AgentMessageQueue.Item(id, owner, "DISPATCHING", input, null, null, Instant.now());
+        var item = new AgentMessageQueue.Item(id, owner, "DISPATCHING", input, null, null, Instant.now(), null);
         when(queue.claimNext()).thenReturn(Optional.of(item));
         when(runs.get(owner, id)).thenThrow(new ResourceNotFoundException("请求记录不存在"));
         doAnswer(call -> {
@@ -99,6 +99,6 @@ class AgentMessageQueueWorkerTests {
         UUID id = UUID.randomUUID();
         var input = new AgentMessageRequest(UUID.randomUUID(), "Synthetic input", null, null, List.of(), id,
                 ReasoningDepth.DEEP);
-        return new AgentMessageQueue.Item(id, owner, "DISPATCHING", input, null, null, Instant.now());
+        return new AgentMessageQueue.Item(id, owner, "DISPATCHING", input, null, null, Instant.now(), null);
     }
 }

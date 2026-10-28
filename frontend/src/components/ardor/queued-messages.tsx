@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
-type QueueItem = { id: string; status: string; blockedBy: string | null; errorMessage: string | null; request: { message: string; imageIds?: string[]; reasoningDepth?: string } };
+type QueueItem = { id: string; status: string; blockedBy: string | null; errorMessage: string | null; queuePosition?: number | null; request: { message: string; imageIds?: string[]; reasoningDepth?: string } };
 export function QueuedMessages({ conversationId, activeRunId, onPendingChange, onCompleted, onStarted }: {
   conversationId: string | null; activeRunId: string | null;
   onPendingChange: (pending: boolean) => void; onCompleted: (id: string) => Promise<void>;
@@ -48,7 +48,9 @@ export function QueuedMessages({ conversationId, activeRunId, onPendingChange, o
         {!!item.request.imageIds?.length && <div className="mb-2 grid max-w-md grid-cols-2 gap-2">{item.request.imageIds.slice(0, 4).map((id) => <img key={id} src={`/api/agent/images/${encodeURIComponent(id)}`} alt={t("Attached chat image", "聊天图片")} className="max-h-64 w-full rounded-xl object-contain" />)}</div>}
         {item.request.message && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{item.request.message}</p>}
       </div>
-      <p className="mt-1.5 text-xs text-stone-500">{t("Sent · updating direction", "已发送 · 正在调整方向")}</p>
+      <p className="mt-1.5 text-xs text-stone-500">{item.status === "QUEUED" && item.queuePosition != null
+        ? t(`Queue position ${item.queuePosition}`, `队列第 ${item.queuePosition} 位`)
+        : t("Sent · updating direction", "已发送 · 正在调整方向")}</p>
     </article>)}
   </section>;
 }
