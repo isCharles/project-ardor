@@ -51,6 +51,57 @@ class KnowledgeServiceTests {
     }
 
     @Test
+    void reIndexingARecapReplacesThePreviousDocumentInsteadOfStackingChunks() {
+        var userId = java.util.UUID.randomUUID();
+        var recapId = java.util.UUID.randomUUID();
+        var pointer = "ardor://interview-recaps/" + recapId;
+        var previous = com.projectardor.materials.knowledge.domain.KnowledgeDocument.fromRecap(
+                userId, "旧标题", pointer, "旧内容");
+        var recapText = "问题：怎么防止超卖？\n回答：用数据库乐观锁版本号，配合 Redis + Lua 做原子扣减。";
+        org.mockito.Mockito.when(documentRepository.findByUserIdAndSourceUrl(userId, pointer))
+                .thenReturn(java.util.Optional.of(previous));
+        org.mockito.Mockito.when(documentRepository.save(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(call -> call.getArgument(0));
+
+        service.indexRecap(userId, recapId, "快手面试", recapText);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(
+                com.projectardor.materials.knowledge.domain.KnowledgeDocument.class);
+        org.mockito.Mockito.verify(documentRepository).delete(previous);
+        org.mockito.Mockito.verify(documentRepository).save(captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getSourceUrl()).isEqualTo(pointer);
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getSourceType())
+                .isEqualTo(com.projectardor.materials.knowledge.domain.KnowledgeSourceType.RECAP);
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getRawContent()).isEqualTo(recapText);
+        org.mockito.Mockito.verify(chunkRepository).saveAll(org.mockito.ArgumentMatchers.anyList());
+        org.mockito.Mockito.verify(dispatcher).dispatch(org.mockito.ArgumentMatchers.eq(userId),
+                org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.anyList());
+    }
+
+    @Test
+    void blankRecapContentNeverBecomesADocument() {
+        service.indexRecap(java.util.UUID.randomUUID(), java.util.UUID.randomUUID(), "空面经", "   ");
+        org.mockito.Mockito.verifyNoInteractions(documentRepository);
+        org.mockito.Mockito.verifyNoInteractions(chunkRepository);
+    }
+
+    @Test
+    void deletingARecapOnlyRemovesTheCallersOwnDocument() {
+        var userId = java.util.UUID.randomUUID();
+        var recapId = java.util.UUID.randomUUID();
+        var document = com.projectardor.materials.knowledge.domain.KnowledgeDocument.fromRecap(
+                userId, "A 厂一面", "ardor://interview-recaps/" + recapId, "内容");
+        org.mockito.Mockito.when(documentRepository.findByUserIdAndSourceUrl(
+                userId, "ardor://interview-recaps/" + recapId)).thenReturn(java.util.Optional.of(document));
+
+        service.removeRecap(userId, recapId);
+
+        org.mockito.Mockito.verify(documentRepository).delete(document);
+        org.mockito.Mockito.verify(documentRepository).findByUserIdAndSourceUrl(
+                userId, "ardor://interview-recaps/" + recapId);
+    }
+
+    @Test
     void documentReadsAndDeletesRemainOwnerScoped() {
         UUID owner = UUID.randomUUID();
         UUID other = UUID.randomUUID();
