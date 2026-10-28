@@ -160,10 +160,24 @@ for (; extraTurns < 16; ) {
     assert.deepEqual((await owner.request(`/api/agent/runs/${requestId}/progress`)).contextUsage, measured);
     const trace = await owner.request(`/api/agent/runs/${requestId}/trace`);
     const contextSpan = trace.spans.find(span => span.name === "context.load");
-    const compactSpan = trace.spans.find(span => span.attributes.purpose === "CONTEXT_COMPACTION");
-    assert.ok(compactSpan?.name.startsWith("context.compact."), "Summary is explicitly identified rather than an indistinguishable assistant call");
+    const compactSpan = trace.spans.find(span => span.kind === "COMPACTION");
+    assert.ok(compactSpan?.name.startsWith("context.compact."), "Summary is its own span kind, not an indistinguishable assistant call");
     assert.equal(compactSpan.parentSpanId, contextSpan.id, "Summary is nested under context preparation");
-    const callNumbers = trace.spans.filter(span => span.kind === "LLM").map(span => span.attributes.call);
+    for (const key of ["windowTokens", "softThresholdTokens", "projectedInputTokens", "messagesToSummarize", "summaryVersionBefore"])
+      assert.equal(typeof compactSpan.attributes[key], "number", `Compaction span must record ${key}`);
+    assert.ok(compactSpan.attributes.projectedInputTokens >= compactSpan.attributes.softThresholdTokens,
+      "The recorded projection must actually cross the threshold it cites");
+    // The size after summarizing is only known once the summary is saved, so it is merged into the finished span.
+    assert.equal(typeof compactSpan.attributes.estimatedInputTokensAfter, "number",
+      "Compaction span records the prompt size after summarizing");
+    assert.equal(compactSpan.attributes.outcome, "COMPACTED");
+    const notice = measured.compaction;
+    assert.equal(notice.outcome, "COMPACTED");
+    assert.equal(notice.spanId, compactSpan.id, "The conversation notice points at the compaction span");
+    assert.equal(notice.projectedInputTokens, compactSpan.attributes.projectedInputTokens);
+    assert.ok(notice.summarizedMessages > 0 && notice.summaryVersionAfter > notice.summaryVersionBefore,
+      "The notice reports which history was folded into the new summary version");
+    const callNumbers = trace.spans.filter(span => span.kind === "LLM" || span.kind === "COMPACTION").map(span => span.attributes.call);
     assert.equal(new Set(callNumbers).size, callNumbers.length, "Call numbers are unique across summary and assistant listeners");
     compacted = true; break;
   }

@@ -72,7 +72,7 @@ class MemoryEmbeddingServiceTests {
 
         assertThat(context.promptSection()).startsWith("- 核心：");
         assertThat(context.coreAdopted()).isEqualTo(1);
-        assertThat(context.outcome()).isEqualTo("budget_truncated");
+        assertThat(context.outcome()).isEqualTo("resident_memory_budget_truncated");
         assertThat(context.omitted()).isGreaterThan(0);
         // Nothing is dropped silently: the block itself says how many memories are still searchable.
         assertThat(context.promptSection()).contains("条长期记忆未展开").contains("search_memories");

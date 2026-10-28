@@ -115,6 +115,21 @@ public class AgentTraceStore {
         }
     }
 
+    /** Merges facts that only exist after a span finished, such as the size of the summary it produced. */
+    public void annotateSpan(UUID userId, UUID id, Map<String, Object> extraAttributes) {
+        if (!enabled || userId == null || id == null || extraAttributes == null || extraAttributes.isEmpty()) return;
+        try {
+            jdbc.update("""
+                    UPDATE agent_trace_spans
+                    SET attributes = COALESCE(attributes, '{}'::jsonb) || CAST(? AS jsonb),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND user_id = ?
+                    """, attributes(extraAttributes), id, userId);
+        } catch (RuntimeException failure) {
+            recordFailure("annotate", id, failure);
+        }
+    }
+
     public List<Span> find(UUID userId, UUID runId) {
         return findPage(userId, runId, 0, DEFAULT_SPAN_LIMIT).spans();
     }

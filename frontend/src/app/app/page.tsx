@@ -20,7 +20,7 @@ import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
 import { ConversationTitle } from "@/components/ardor/conversation-title";
 import { ReasoningControl, type ModelOption } from "@/components/ardor/reasoning-control";
 import { ModelSettingsDialog, type ModelSettingsUpdate } from "@/components/ardor/model-settings-dialog";
-import { ContextUsageIndicator, type ContextUsage } from "@/components/ardor/context-usage";
+import { ContextUsageIndicator, CompactionNotice, type ContextUsage } from "@/components/ardor/context-usage";
 import { ServicePicker } from "@/components/ardor/service-picker";
 import { type ToolMeasurement } from "@/components/ardor/tool-duration";
 import { ExecutionTrace } from "@/components/ardor/execution-trace";
@@ -1629,14 +1629,20 @@ export default function AgentHomePage() {
                       <div className="flex max-w-[86%] flex-col items-end"><div className="rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7"><MessageImages imageIds={message.imageIds} alt={t("Attached chat image", "聊天图片")} />{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" />{context.type === "SERVICE" ? <Link href={featureHref(features.find((feature) => feature.id === context.id)?.key)} className="truncate text-violet-700 underline underline-offset-2">{locale === "en" ? features.find((feature) => feature.id === context.id)?.englishLabel ?? context.label : context.label}</Link> : <span className="truncate">{context.label}</span>}</span>)}</div>}<div className="whitespace-pre-wrap">{message.content}</div></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 px-1 text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time></div>
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
-                        {message === liveAssistant && liveTrace}
-                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTrace>; })()}
+                        {message === liveAssistant && <>
+                          <CompactionNotice usage={streamProgress?.contextUsage ?? liveContext?.usage} traceHref={activeLiveRunId ? `/app/agent-runs/${activeLiveRunId}` : undefined} />
+                          {liveTrace}
+                        </>}
+                        {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <>
+                          <CompactionNotice usage={trace.contextUsage} traceHref={message.runId ? `/app/agent-runs/${message.runId}` : undefined} />
+                          <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTrace>
+                        </>; })()}
                         <div className="ardor-markdown"><ReactMarkdown remarkPlugins={markdownPlugins}>{message.content}</ReactMarkdown></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 block text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time>
                       </div>
                     )}
                   </article>
                 ))}
-                {!liveAssistant && liveTrace}
+                {!liveAssistant && <><CompactionNotice usage={streamProgress?.contextUsage ?? liveContext?.usage} traceHref={activeLiveRunId ? `/app/agent-runs/${activeLiveRunId}` : undefined} />{liveTrace}</>}
                 {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={markdownPlugins}>{streamProgress.answerPartial}</ReactMarkdown></div>}
                 {!terminalInHistory && !runningRun && !busy && streamProgress?.answerPartial && streamProgress.phase !== "COMPLETED" && <details className="max-w-xl rounded-2xl border border-stone-200/70 bg-white/50 p-4"><summary className="cursor-pointer text-xs text-stone-500">{t("Incomplete reply · saved before execution stopped", "未完成回复 · 停止前保留的片段")}</summary><div className="ardor-markdown mt-3 text-sm leading-7"><ReactMarkdown remarkPlugins={markdownPlugins}>{streamProgress.answerPartial}</ReactMarkdown></div></details>}
                 <QueuedMessages key={state?.conversationId} conversationId={state?.conversationId ?? null} activeRunId={runningRun?.id ?? approvalRunId} onPendingChange={setHasQueuedMessages} onCompleted={load} onStarted={setQueuedWakeId} />
