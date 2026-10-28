@@ -61,7 +61,7 @@ export function FinalMinutesWorkspace({ id }: { id: string | null }) {
       <details><summary className="cursor-pointer text-sm font-medium">{t("Saved final minutes", "已保存的最终纪要")}</summary>
         <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-stone-600">{selected.minutes}</p>
       </details>
-      {(selected.status === "QUEUED" || selected.status === "RUNNING") && <p role="status" className="text-sm text-violet-700">{t("Minutes saved. Ardor is organizing them in the background; usually around 1–2 minutes, depending on the model. You can leave this page.", "纪要已保存，Ardor 正在后台整理，通常约 1–2 分钟，具体取决于模型。你可以先离开页面。")}</p>}
+      {(selected.status === "QUEUED" || selected.status === "RUNNING") && <p role="status" className="text-sm text-violet-700">{t("Minutes saved. Ardor is organizing them in the background. You can leave this page.", "纪要已保存，Ardor 正在后台整理。你可以先离开页面。")}</p>}
       {selected.status === "FAILED" && <div><p className="text-sm text-rose-700">{t("Organization failed. Your minutes are saved; you do not need to paste them again.", "整理未完成，纪要已保存，无需重新粘贴。")}</p>
         <button disabled={retrying} onClick={() => void retry()} className="mt-2 text-sm text-violet-700 underline">{retrying ? t("Retrying…", "正在重试…") : t("Retry", "重试")}</button>
         {selected.errorMessage && <details className="mt-2 text-xs text-stone-500"><summary>{t("View details", "查看详情")}</summary><p className="max-h-32 overflow-auto whitespace-pre-wrap break-all">{selected.errorMessage}</p></details>}

@@ -100,7 +100,7 @@ export function ChatTaskDock() {
                 <p className="truncate text-xs font-medium text-stone-700">{task.title || taskLabel(task, locale, t)}</p>
                 <p className={`mt-0.5 text-[10px] ${task.status === "FAILED" ? "text-rose-600" : "text-stone-400"}`}>
                   {pending ? (task.status === "QUEUED" ? t("Queued", "排队中") : t("Running", "进行中")) : task.status === "COMPLETED" ? t("Ready to view", "已完成，可以查看") : t("Needs attention", "未完成，需要处理")}
-                  {pending && ` · ${t(`usually ${task.estimateMinSeconds}–${task.estimateMaxSeconds}s`, `通常 ${task.estimateMinSeconds}–${task.estimateMaxSeconds} 秒`)}`}
+                  {pending && task.estimateMinSeconds != null && task.estimateMaxSeconds != null && ` · ${t(`usually ${task.estimateMinSeconds}–${task.estimateMaxSeconds}s`, `通常 ${task.estimateMinSeconds}–${task.estimateMaxSeconds} 秒`)}`}
                 </p>
               </div>
               {task.status === "COMPLETED" && task.resultPath ? <Link href={task.resultPath} onClick={() => setOpen(false)} className="shrink-0 text-[10px] font-medium text-violet-700 hover:underline">{t("Open", "查看")}</Link>

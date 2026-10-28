@@ -7,7 +7,7 @@ export type BackgroundTask = {
   id: string; kind: string; module: string; title: string; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
   attempts: number; createdAt: string; startedAt: string | null; finishedAt: string | null;
   errorCode: string | null; resultPath: string | null; resourceId: string | null;
-  completionToken: string; unread: boolean; estimateMinSeconds: number; estimateMaxSeconds: number;
+  completionToken: string; unread: boolean; estimateMinSeconds: number | null; estimateMaxSeconds: number | null;
 };
 export type TaskSummary = { unreadByModule: Record<string, number>; activeCount: number };
 export async function readBackgroundTask(task: BackgroundTask) {

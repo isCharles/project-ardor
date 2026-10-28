@@ -28,7 +28,7 @@ public class BackgroundTaskStore {
             rs.getString("kind"), rs.getString("module"), rs.getString("title"), rs.getString("status"),
             rs.getInt("attempts"), time(rs,"created_at"), time(rs,"started_at"), time(rs,"finished_at"),
             rs.getString("error_code"), "KNOWLEDGE_INDEX".equals(rs.getString("kind")) ? "/app/knowledge?document="+rs.getObject("resource_id",UUID.class) : rs.getString("result_path"), rs.getObject("resource_id", UUID.class),
-            rs.getString("completion_token"), rs.getBoolean("unread"), 30, 120);
+            rs.getString("completion_token"), rs.getBoolean("unread"), null, null);
 
     public List<Task> list(UUID userId, int offset, int limit,String kind,UUID resourceId) {
         return jdbc.query(SELECT + " AND (CAST(? AS varchar) IS NULL OR c.kind=?) AND (CAST(? AS uuid) IS NULL OR c.resource_id=?) ORDER BY c.created_at DESC, c.id DESC, c.kind LIMIT ? OFFSET ?", MAPPER,
@@ -82,5 +82,5 @@ public class BackgroundTaskStore {
     public record Summary(Map<String, Long> unreadByModule, long activeCount) {}
     public record Task(UUID id, String kind, String module, String title, String status, int attempts,
             Instant createdAt, Instant startedAt, Instant finishedAt, String errorCode, String resultPath,
-            UUID resourceId, String completionToken, boolean unread, int estimateMinSeconds, int estimateMaxSeconds) {}
+            UUID resourceId, String completionToken, boolean unread, Integer estimateMinSeconds, Integer estimateMaxSeconds) {}
 }
