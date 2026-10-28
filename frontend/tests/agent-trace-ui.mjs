@@ -42,6 +42,10 @@ try {
       span("llm-1", "root", "LLM", "llm.call.2", "2026-10-23T08:00:02Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 32, attributes: { toolRound: true } }),
       span("tool-1", "root", "TOOL", "list_resumes", "2026-10-23T08:00:03Z", { durationMs: 80 }),
       span("llm-2", "root", "LLM", "llm.call.3", "2026-10-23T08:00:04Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 148, attributes: { timingSource: "client-monotonic-stream-v1", firstContentMs: 250, streamAfterFirstContentMs: 750, outputTokensPerRequestSecond: 148 } }),
+      // The kinds the record actually carries today, as opposed to the legacy shape above.
+      span("compaction-kind", "context", "COMPACTION", "context.compact.2", "2026-10-23T08:00:01.200Z", { durationMs: 140, model: "fixture-model", inputTokens: 900, outputTokens: 40, attributes: { purpose: "CONTEXT_COMPACTION", windowTokens: null, softThresholdTokens: 43_622, projectedInputTokens: 57_431 } }),
+      span("plan", "root", "PLAN", "agent.plan", "2026-10-23T08:00:00.500Z", { durationMs: 300, attributes: { revision: 0, stepCount: 2, verifiedSteps: 1, goalPreview: "把薄弱点排进本周计划" } }),
+      span("plan-step", "plan", "PLAN_STEP", "plan.step.2", "2026-10-23T08:00:03.500Z", { durationMs: 60, status: "FAILED", errorCode: "STEP_UNVERIFIED", attributes: { stepIndex: 1, verified: false } }),
     ],
   };
   let traceRequests = 0;
@@ -108,7 +112,7 @@ try {
   await page.goto(`${origin}/app/agent-runs/fixture-run`);
   await page.locator("[data-trace-node]").first().waitFor();
   assert.ok(traceRequests >= 2, "An initial not-found race must retry without requiring a page reload");
-  assert.equal(await page.locator("[data-trace-node]").count(), 7, "Flow graph renders every span including THOUGHT and independent compaction");
+  assert.equal(await page.locator("[data-trace-node]").count(), 10, "Flow graph renders every span including THOUGHT and independent compaction");
   await page.getByText("Context compaction", { exact: true }).first().waitFor();
   await page.getByRole("button", { name: "Flow graph", exact: true }).waitFor();
   await page.getByRole("button", { name: "Timeline", exact: true }).waitFor();
@@ -124,9 +128,23 @@ try {
   await page.getByRole("button", { name: "Inspector", exact: true }).click();
   await page.locator("[data-trace-inspector]").waitFor();
   await page.getByRole("tab", { name: "Overview", exact: true }).waitFor();
-  assert.equal(await page.locator("[data-trace-inspector-item]").count(), 7, "Inspector lists every span");
-  await page.locator("[data-trace-inspector-item]").filter({ hasText: "Context compaction" }).click();
+  assert.equal(await page.locator("[data-trace-inspector-item]").count(), 10, "Inspector lists every span");
+  const compactions = page.locator("[data-trace-inspector-item]").filter({ hasText: "Context compaction" });
+  assert.equal(await compactions.count(), 2, "The legacy LLM-shaped call and the dedicated kind both read as compaction");
+  await compactions.nth(0).click();
   await page.locator("[data-trace-inspector-panel] h2").filter({ hasText: "Context compaction" }).waitFor();
+  assert.equal(await page.locator("[data-trace-inspector-panel]").getByText("Trigger evidence", { exact: true }).count(), 0,
+    "A pre-kind call invents no evidence it never recorded");
+  await compactions.nth(1).click();
+  await page.locator("[data-trace-inspector-panel]").getByText("Trigger evidence", { exact: true }).waitFor();
+  // A window that was unknown when the decision was made stays visible as unknown, not hidden.
+  assert.match(await page.locator("[data-trace-inspector-panel]").innerText(), /Model window[\s\S]*?unknown/i);
+  assert.match(await page.locator("[data-trace-inspector-panel]").innerText(), /43\.6K tokens[\s\S]*?57\.4K tokens/i);
+  const planRow = page.locator("[data-trace-inspector-item]").filter({ has: page.getByText("Plan", { exact: true }) });
+  assert.equal(await planRow.count(), 1, "the accepted plan is listed as its own step");
+  await planRow.click();
+  await page.locator("[data-trace-inspector-panel]").getByText("Plan record", { exact: true }).waitFor();
+  assert.match(await page.locator("[data-trace-inspector-panel]").innerText(), /Steps verified[\s\S]*?1 \/ 2/i);
   const inspector = page.locator("[data-trace-inspector-panel]");
   await page.locator("[data-trace-inspector-item]").filter({ hasText: "llm.call.3" }).click();
   await inspector.getByText("First content", { exact: true }).waitFor();
@@ -155,7 +173,14 @@ try {
   assert.equal(await page.locator("[data-trace-overview]").getAttribute("data-active-duration-ms"), "10000",
     "Cumulative run time sums root durations and excludes the four-hour idle gap; nested spans are not double counted");
   assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-turns"), "2");
-  assert.equal(await page.locator("[data-trace-lane]").count(), 12, "Timing lanes show all turns, including older pages");
+  assert.equal(await page.locator("[data-trace-lane]").count(), 18, "Timing lanes show all turns, including older pages");
+  // Compaction and plan spans belong to the same record, so they have to appear on the timing overview.
+  for (const [kind, tone] of [["COMPACTION", "bg-amber-400"], ["PLAN", "bg-indigo-400"], ["PLAN_STEP", "bg-rose-400"]]) {
+    const bar = page.locator(`[data-trace-lane][data-lane-kind="${kind}"]`).first();
+    await bar.waitFor();
+    assert.match((await bar.getAttribute("class")) ?? "", new RegExp(tone),
+      kind === "PLAN_STEP" ? "an unverified step reads as a failure on the overview" : `${kind} keeps its legend colour on the overview`);
+  }
   const positions = await page.locator("[data-trace-lane]").evaluateAll(items => items.map(item => item.getAttribute("style")));
   await page.locator("[data-conversation-run]").first().click();
   assert.deepEqual(await page.locator("[data-trace-lane]").evaluateAll(items => items.map(item => item.getAttribute("style"))), positions, "Selecting a turn never rescales the conversation overview");
@@ -212,7 +237,7 @@ try {
   assert.equal(largePages, 4, "All 105 recorded turns load through four bounded pages");
   assert.equal(await page.locator("[data-conversation-run]").count(), 105);
   assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-duration-ms"), "525000");
-  assert.equal(await page.locator("[data-trace-lane]").count(), 630);
+  assert.equal(await page.locator("[data-trace-lane]").count(), 945);
   const globalPositions = await page.locator("[data-trace-lane]").evaluateAll(items => items.map(item => item.getAttribute("style")));
   await page.locator("[data-conversation-run]").first().click();
   assert.deepEqual(await page.locator("[data-trace-lane]").evaluateAll(items => items.map(item => item.getAttribute("style"))), globalPositions);

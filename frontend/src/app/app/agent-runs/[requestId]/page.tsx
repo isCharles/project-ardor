@@ -91,6 +91,7 @@ const DOT_TONE: Record<string, string> = {
   LLM: "bg-violet-400", TOOL: "bg-sky-400", CONTEXT: "bg-stone-400",
   COMPACTION: "bg-amber-400", ASYNC: "bg-emerald-400",
   PLAN: "bg-indigo-400", PLAN_STEP: "bg-indigo-300",
+  THOUGHT: "bg-violet-300", RETRY: "bg-amber-300",
 };
 
 function dotTone(kind: TraceSpan["kind"]) { return DOT_TONE[kind] ?? "bg-stone-300"; }
@@ -103,9 +104,12 @@ function truncatedSuffix(flag: unknown, t: (english: string, chinese: string) =>
 function CompactionFacts({ span }: { span: TraceSpan }) {
   const { t } = useLocale();
   const number = (key: string) => numberAttribute(span.attributes[key]);
+  // A recorded null is a fact — the window was unknown at that moment — and must not read as "absent".
+  const recordedUnknown = (key: string) => key in span.attributes && span.attributes[key] === null;
   const tokens = (key: string) => {
     const value = number(key);
-    return value == null ? null : `${new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value)} tokens`;
+    if (value == null) return recordedUnknown(key) ? t("unknown", "未知") : null;
+    return `${new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value)} tokens`;
   };
   const count = (key: string) => {
     const value = number(key);
@@ -602,6 +606,7 @@ function TraceTimeOverview({ runs, selectedRunId, selectedSpanId, onSelect }: {
     [t("Input / context", "输入 / 上下文"), ["CONTEXT", "THOUGHT", "ASYNC", "RETRY"]],
     [t("Model", "模型"), ["LLM"]],
     [t("Tools", "工具"), ["TOOL"]],
+    [t("Compaction / plan", "压缩 / 计划"), ["COMPACTION", "PLAN", "PLAN_STEP"]],
   ];
   return <div data-trace-timeline data-timeline-turns={runs.length} data-timeline-duration-ms={offset} className="mt-3 rounded-2xl border border-white/80 bg-white/70 p-4">
     <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Conversation timing", "对话时间总览")}</p><span className="text-[10px] tabular-nums text-stone-400">{formatDuration(domain)}</span></div>
@@ -611,7 +616,7 @@ function TraceTimeOverview({ runs, selectedRunId, selectedSpanId, onSelect }: {
         const width = Math.min(100 - left, Math.max(0, ((item.end - item.start) / domain) * 100));
         const selected = item.runId === selectedRunId && item.span.id === selectedSpanId;
         const failed = item.span.status === "FAILED";
-        return <button key={`${item.runId}-${item.span.id}`} type="button" data-trace-lane data-lane-run={item.runId} onClick={() => onSelect(item.runId, item.span.id)} title={`${item.span.name} · ${t("Turn", "轮次")} ${runs.findIndex(run => run.runId === item.runId) + 1} · ${formatDuration(item.end - item.start)}`} style={{ left: `${left}%`, width: `${width}%` }} className={`absolute top-1 bottom-1 min-w-[3px] rounded-full transition ${selected ? "z-10 ring-2 ring-violet-500" : "hover:brightness-90"} ${failed ? "bg-rose-400" : item.span.kind === "LLM" ? "bg-violet-400" : item.span.kind === "TOOL" ? "bg-sky-400" : "bg-stone-400"}`} aria-label={`${item.span.name} ${formatDuration(item.end - item.start)}`} />;
+        return <button key={`${item.runId}-${item.span.id}`} type="button" data-trace-lane data-lane-kind={item.span.kind} data-lane-run={item.runId} onClick={() => onSelect(item.runId, item.span.id)} title={`${item.span.name} · ${t("Turn", "轮次")} ${runs.findIndex(run => run.runId === item.runId) + 1} · ${formatDuration(item.end - item.start)}`} style={{ left: `${left}%`, width: `${width}%` }} className={`absolute top-1 bottom-1 min-w-[3px] rounded-full transition ${selected ? "z-10 ring-2 ring-violet-500" : "hover:brightness-90"} ${failed ? "bg-rose-400" : dotTone(item.span.kind)}`} aria-label={`${item.span.name} ${formatDuration(item.end - item.start)}`} />;
       })}</div></div>)}
     </div></div>
     <p className="mt-2 text-[10px] text-stone-400">{t("All recorded turns; idle gaps are omitted. Click a bar to inspect.", "全部已记录轮次，省略轮间空闲；点击时间条查看步骤。")}</p>
