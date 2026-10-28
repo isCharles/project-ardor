@@ -300,6 +300,8 @@ try {
   await depth.getByText("Fast, high-value everyday model", { exact: true }).waitFor();
   await depth.getByText("Flagship reasoning and coding", { exact: true }).waitFor();
   await depth.getByText("Long-context research model", { exact: true }).waitFor();
+  assert.equal(await depth.getByText("Fast, high-value everyday model", { exact: true }).getAttribute("title"), "Fast, high-value everyday model",
+    "The truncated summary must expose its full text on hover");
   assert.equal(await depth.getByText("Primary", { exact: true }).count(), 0);
   assert.equal(await depth.getByText("Relay", { exact: true }).count(), 0);
   await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });
@@ -333,15 +335,21 @@ try {
   descriptionQuotaExhausted = true;
   const descriptionQuotaStart = descriptionRequests.length;
   await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });
-  await chineseDepth.getByText("正在调研").first().waitFor();
+  for (let attempt = 0; attempt < 60 && descriptionRequests.length === descriptionQuotaStart; attempt += 1) {
+    await page.waitForTimeout(50);
+  }
   await page.waitForTimeout(500);
   const descriptionQuotaCalls = descriptionRequests.length - descriptionQuotaStart;
   assert.ok(descriptionQuotaCalls >= 1 && descriptionQuotaCalls <= 2,
     `A quota denial must stop the remaining automatic model research, got ${descriptionQuotaCalls}`);
+  assert.equal(await chineseDepth.getByText("正在调研").count(), 0, "Pending summaries must not render placeholder text");
+  assert.equal(await chineseDepth.getByText("暂无简述").count(), 0, "Failed summaries must not render placeholder text");
   await page.evaluate(() => { localStorage.setItem("ardor:locale", "en"); window.dispatchEvent(new Event("ardor:locale-change")); });
   await page.waitForTimeout(500);
   assert.equal(descriptionRequests.length - descriptionQuotaStart, descriptionQuotaCalls,
     "A stopped description budget must not resume automatically in the same page session");
+  assert.equal(await depth.getByText("Researching model", { exact: true }).count(), 0);
+  assert.equal(await depth.getByText("No model summary", { exact: true }).count(), 0);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Chat actions", exact: true }).click();
   await page.getByRole("button", { name: "Rename", exact: true }).click();
