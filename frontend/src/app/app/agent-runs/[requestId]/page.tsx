@@ -23,6 +23,8 @@ type TraceSpan = {
   promptVersion: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
+  cacheReadInputTokens: number | null;
+  cacheCreationInputTokens: number | null;
   errorCode: string | null;
   attributes: Record<string, unknown>;
 };
@@ -39,7 +41,10 @@ type Trace = {
   conversationId?: string | null;
   status: string;
   durationMs: number;
-  totals: { llmCalls: number; toolCalls: number; loopRounds: number; inputTokens: number; outputTokens: number };
+  totals: {
+    llmCalls: number; toolCalls: number; loopRounds: number; inputTokens: number; outputTokens: number;
+    cacheReadInputTokens: number | null; cacheCreationInputTokens: number | null; cacheUsageMissingCalls: number;
+  };
   spans: TraceSpan[];
 };
 
@@ -199,6 +204,9 @@ function AgentRunTraceContent() {
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-500">
           <span className="rounded-full bg-white/70 px-3 py-1">{t("Input tokens", "输入 Token")}: <b className="font-medium text-stone-700">{trace.totals.inputTokens || "—"}</b></span>
           <span className="rounded-full bg-white/70 px-3 py-1">{t("Output tokens", "输出 Token")}: <b className="font-medium text-stone-700">{trace.totals.outputTokens || "—"}</b></span>
+          {trace.totals.cacheReadInputTokens != null && <span className="rounded-full bg-white/70 px-3 py-1">{t("Cache read", "缓存读")}: <b className="font-medium text-stone-700">{trace.totals.cacheReadInputTokens}</b></span>}
+          {trace.totals.cacheCreationInputTokens != null && <span className="rounded-full bg-white/70 px-3 py-1">{t("Cache write", "缓存写")}: <b className="font-medium text-stone-700">{trace.totals.cacheCreationInputTokens}</b></span>}
+          {trace.totals.cacheUsageMissingCalls > 0 && <span className="rounded-full bg-white/70 px-3 py-1">{t("Cache unknown", "缓存未知")}: <b className="font-medium text-stone-700">{trace.totals.cacheUsageMissingCalls}</b></span>}
           <span className={`rounded-full px-3 py-1 font-medium ${trace.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : trace.status === "FAILED" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>{trace.status}</span>
         </div>
 
@@ -609,6 +617,8 @@ function SpanDetails({ span, schema }: { span: TraceSpan; schema?: ToolSchema })
       <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-[11px] text-stone-500">
         <span>{t("Input tokens", "输入 Token")} <b className="font-medium text-stone-800">{span.inputTokens ?? "—"}</b></span>
         <span>{t("Output tokens", "输出 Token")} <b className="font-medium text-stone-800">{span.outputTokens ?? "—"}</b></span>
+        {span.cacheReadInputTokens != null && <span>{t("Cache read", "缓存读")} <b className="font-medium text-stone-800">{span.cacheReadInputTokens}</b></span>}
+        {span.cacheCreationInputTokens != null && <span>{t("Cache write", "缓存写")} <b className="font-medium text-stone-800">{span.cacheCreationInputTokens}</b></span>}
         <span className="col-span-2 truncate font-mono text-[10px] text-stone-400">{span.id}</span>
       </div>
     </div>
