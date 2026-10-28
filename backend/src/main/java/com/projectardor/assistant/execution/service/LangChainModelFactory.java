@@ -133,8 +133,10 @@ public class LangChainModelFactory {
         }
         var budget = contextBudget.resolve(userId, config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
+        var scope = new CapacityLimitedModels.CallScope("agent", userId,
+                ModelConfigFingerprint.of(config), profile.maxTokens(), estimator);
         return RepeatedToolResultCompactor.chat(
-                ContextBudgetedModels.chat(CapacityLimitedModels.chat(model, capacity), budget, estimator),
+                ContextBudgetedModels.chat(CapacityLimitedModels.chat(model, capacity, scope), budget, estimator),
                 budget, estimator);
     }
 
@@ -171,9 +173,11 @@ public class LangChainModelFactory {
         }
         var budget = contextBudget.resolve(userId, config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
+        var scope = new CapacityLimitedModels.CallScope("agent", userId,
+                ModelConfigFingerprint.of(config), profile.maxTokens(), estimator);
         return RepeatedToolResultCompactor.streaming(
                 ContextBudgetedModels.streaming(
-                        TimedStreamingModel.wrap(CapacityLimitedModels.streaming(model, capacity)),
+                        TimedStreamingModel.wrap(CapacityLimitedModels.streaming(model, capacity, scope)),
                         budget, estimator),
                 budget, estimator);
     }

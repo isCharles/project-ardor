@@ -76,9 +76,9 @@
 | 失联恢复 | 心跳；超过 5 分钟无心跳按 `max_attempts` 回到 `QUEUED` 或死信；未知派发标记 `INTERRUPTED` 不盲重放 |
 | 用户任务顺序 | 按 `sequence` 串行，同一用户同一时刻只有一个运行；审批等待释放槽位但不破坏顺序；失败暂停后续消息，显式 resume 才继续 |
 | 队列观测 | `ardor_agent_queue_depth`、`ardor_agent_queue_oldest_queued_seconds`、`ardor_agent_queue_claims`、`ardor_agent_queue_failures`、`ardor_ai_jobs_depth`、`ardor_ai_jobs_oldest_queued_seconds{priority}`、job wait 与完成/重试/死信计数（PR #251） |
-| 必要模型准入 | 进程内共享 `ARDOR_MODEL_MAX_CONCURRENT_CALLS`（默认 8）；满时 `LLM_BUSY` 可重试，后台任务按既有退避重排；供应商 429 同样分类 |
+| 必要模型准入 | 进程内共享 `ARDOR_MODEL_MAX_CONCURRENT_CALLS`（默认 8）；可选 Redis 分钟窗口 `ARDOR_MODEL_QPM` / `ARDOR_MODEL_TPM` / `ARDOR_MODEL_USER_QPM`（默认 0 关闭）跨实例限制每模型请求、估算 token 与每用户请求；触顶返回 `LLM_BUSY`，后台按既有退避重排；供应商 429 同样分类 |
 
-**可写边界**：这是进程内模型并发护栏和轻量队列，不是完整 QPM/TPM 平台；不跨实例共享信号量，不按用户/模型分别限速。聊天队列没有独立优先级列，低优先级饥饿用 AI job 的 priority 观察，聊天只观察整体积压。不要写“分布式限流”“跨实例公平调度”或“绝不丢任务”。
+**可写边界**：这是进程内并发护栏加可选的 Redis 分钟窗口，不是供应商配额的精确复刻；QPM/TPM 默认关闭，token 使用发送前估算而非供应商实际用量，分钟边界允许短时双倍突发。聊天队列已按会员优先级与 60 秒老化排序（V76），但多副本压力下的公平与吞吐仍待实测。不要写“精确分布式配额”“与供应商限额一致”或“绝不丢任务”。
 
 ## 汇总
 

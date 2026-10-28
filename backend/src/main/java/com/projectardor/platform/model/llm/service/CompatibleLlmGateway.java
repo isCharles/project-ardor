@@ -9,6 +9,9 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.ResourceAccessException;
 
+import com.projectardor.assistant.execution.service.AgentRequestTokens;
+import com.projectardor.assistant.execution.service.ModelConfigFingerprint;
+
 import tools.jackson.databind.ObjectMapper;
 
 @Component
@@ -37,14 +40,24 @@ public class CompatibleLlmGateway implements LlmGateway {
 
     @Override
     public LlmResult completeJson(UUID userId, String systemPrompt, String userPrompt) {
-        return completeJson(configService.getRuntimeConfig(userId), systemPrompt, userPrompt);
+        return completeJson(userId, configService.getRuntimeConfig(userId), systemPrompt, userPrompt);
     }
 
     public LlmResult completeJson(
             LlmConfigService.LlmRuntimeConfig config,
             String systemPrompt,
             String userPrompt) {
-        if (!capacity.tryAcquire("job")) throw capacity.busy();
+        return completeJson(null, config, systemPrompt, userPrompt);
+    }
+
+    public LlmResult completeJson(UUID userId, LlmConfigService.LlmRuntimeConfig config,
+            String systemPrompt, String userPrompt) {
+        var estimator = AgentRequestTokens.estimator(config);
+        long tokens = estimator.estimateTokenCountInText(systemPrompt)
+                + estimator.estimateTokenCountInText(userPrompt);
+        if (!capacity.tryAcquire("job", userId, ModelConfigFingerprint.of(config), tokens)) {
+            throw capacity.busy();
+        }
         try {
             return protocols.require(config.provider()).complete(config,systemPrompt,userPrompt);
         } catch (RestClientResponseException exception) {

@@ -39,6 +39,7 @@ public class LlmConnectionTestService {
     public LlmConnectionTestResponse test(UUID userId, LlmConfigService.LlmRuntimeConfig config) {
         long startedAt = System.nanoTime();
         LlmGateway.LlmResult result = gateway.completeJson(
+                userId,
                 config,
                 "你是 API 连通性测试助手。请用一句简短中文回答。",
                 "回复：连接成功");
