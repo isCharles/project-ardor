@@ -243,6 +243,27 @@ http.createServer((request, response) => {
       response.end(JSON.stringify({ error: { message: "Synthetic normalization failure" } }));
       return;
     }
+    if (payload.model === "planning-probe" && isAgentRequest) {
+      const stepsJson = JSON.stringify([
+        { intent: "读出最近面试的薄弱点", doneWhen: "已取回面经列表", tools: ["list_interview_recaps"], effect: "READ" },
+        { intent: "对照现有学习安排", doneWhen: "已取回课程列表", tools: ["list_learning_plans"], effect: "READ" },
+        { intent: "检查本周日历占用", doneWhen: "已取回待办列表", tools: ["list_calendar_tasks"], effect: "READ" }]);
+      // The last call belongs to no open step, so the fence has to refuse it and record the refusal.
+      const sequence = [["propose_plan", { goal: "结合面试薄弱点调整学习计划并检查日历冲突", stepsJson }],
+        ["list_interview_recaps", {}], ["list_learning_plans", {}], ["list_calendar_tasks", {}],
+        ["update_memory", { content: "Synthetic off-plan write" }]];
+      const answered = (payload.messages ?? []).filter(message => message.role === "tool").length;
+      const next = sequence[answered];
+      const delta = next
+        ? { role: "assistant", tool_calls: [{ index: 0, id: `planning-${answered}`, type: "function",
+          function: { name: next[0], arguments: JSON.stringify(next[1]) } }] }
+        : { role: "assistant", content: "Synthetic plan walkthrough finished." };
+      response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
+      for (const [chunk, finish] of [[delta, null], [{}, next ? "tool_calls" : "stop"]]) response.write(`data: ${JSON.stringify(
+        { id: "planning-probe", object: "chat.completion.chunk", model: payload.model,
+          choices: [{ index: 0, delta: chunk, finish_reason: finish }] })}\n\n`);
+      response.end("data: [DONE]\n\n"); return;
+    }
     if (request.url.endsWith("/embeddings")) {
       const inputs = Array.isArray(payload.input) ? payload.input : [payload.input];
       setTimeout(() => {
