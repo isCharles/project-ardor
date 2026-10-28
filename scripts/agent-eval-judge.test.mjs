@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { judgeCase, RUBRIC_VERSION } from "./agent-eval-judge.mjs";
 import { buildReport } from "./agent-eval-report.mjs";
+import { diffReports } from "./agent-eval-diff.mjs";
 
 const declaration = {
   id: "create-calendar-approved",
@@ -104,4 +105,19 @@ test("report keeps the rubric diagnostic and its own denominator", () => {
   assert.equal(report.rubricVersion, RUBRIC_VERSION);
   assert.equal(report.rubricMean, 100);
   assert.equal(report.cases.find((item) => item.id === "unknown").rubric, null);
+});
+
+test("a rubric version change is diff context, not a regression", () => {
+  const scored = { id: "passes", category: "read", tier: "representative",
+    dimensions: { taskSuccess: true, paramValid: null, toolExecuted: null, safeRejection: null },
+    environmentError: false, errorKind: null, failures: [], observed: {} };
+  const withRubric = { ...scored, rubric: judgeCase({ answer: "ok", observedTools: [], after: [], businessFailures: [] }) };
+  const report = (results) => buildReport({
+    generatedAt: "t", codeSha: "s", dataset: { cases: [scored] }, toolSchema: null, results,
+  });
+
+  const diff = diffReports(report([scored]), report([withRubric]));
+
+  assert.equal(diff.contextChanged.rubricVersion.changed, true);
+  assert.equal(diff.hasRegression, false);
 });
