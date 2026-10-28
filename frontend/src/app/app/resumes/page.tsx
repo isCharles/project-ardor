@@ -19,7 +19,8 @@ type ResumeItem = {
   overallScore?: number | null;
 };
 type Analysis = { id: string; resumeId: string; analysis: Record<string, unknown>; modelName: string; createdAt?: string };
-type AnalysisTask = { status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"; analysisId: string | null };
+type AnalysisTask = { jobId: string | null; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"; analysisId: string | null };
+type Evaluation = { id: string; label: string };
 type InterviewOption = { id: string; company: string; targetRole?: string | null; jdContent?: string | null };
 const DIMENSION_ORDER = ["technicalDepth", "outcomes", "ownership", "clarity", "roleFit", "background"] as const;
 
@@ -29,6 +30,17 @@ function bandFor(score: number, t: (en: string, zh: string) => string): string {
   if (score >= 55) return t("Below average", "中下");
   if (score >= 40) return t("Draft", "初稿");
   return t("High risk", "高风险");
+}
+
+const evaluationDate = (value: string) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(value));
+
+/** Each job description keeps its own report, so the chip has to say which one it answered. */
+function evaluationOf(item: Analysis, t: (en: string, zh: string) => string, date: (value: string) => string): Evaluation {
+  const context = (item.analysis?.scoringContext ?? {}) as Record<string, unknown>;
+  const role = typeof context.targetRole === "string" ? context.targetRole.trim() : "";
+  const family = typeof context.roleFamily === "string" ? context.roleFamily : "";
+  const subject = role || (family ? familyLabel(family, t) : "") || t("General", "通用");
+  return { id: item.id, label: item.createdAt ? `${subject} · ${date(item.createdAt)}` : subject };
 }
 
 const SCORING_FAMILIES = [
@@ -105,6 +117,9 @@ export default function ResumesPage() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [pendingJobId, setPendingJobId] = useState("");
+  const [evaluationRevision, setEvaluationRevision] = useState(0);
   const selected = resumes.find((resume) => resume.id === selectedId) ?? null;
   useReadVisibleResult("RESUME_ANALYSIS",analysis?.resumeId,!!analysis,analysis?.id);
 
@@ -141,6 +156,34 @@ export default function ResumesPage() {
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("Could not load report", "无法载入报告")); });
     return () => { active = false; };
   }, [selected?.id, selected?.analysisId, t]);
+  const openResumeId = selected?.id;
+  useEffect(() => {
+    if (!openResumeId) return;
+    let active = true;
+    api<Analysis[]>(`/api/resumes/${openResumeId}/analysis/history`)
+      .then((items) => { if (active) setEvaluations(items.map((item) => evaluationOf(item, t, evaluationDate))); })
+      .catch(() => { if (active) setEvaluations([]); });
+    return () => { active = false; };
+  }, [openResumeId, evaluationRevision, t]);
+  // One job per job description: poll the job this page actually started, not the newest one.
+  useEffect(() => {
+    if (!pendingJobId || !openResumeId) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      void api<AnalysisTask>(`/api/resumes/${openResumeId}/analysis/status?jobId=${pendingJobId}`)
+        .then((task) => {
+          if (!active || task.status === "QUEUED" || task.status === "RUNNING") return;
+          setPendingJobId("");
+          if (task.status === "COMPLETED" && task.analysisId) {
+            void api<Analysis>(`/api/resumes/${openResumeId}/analysis?analysisId=${task.analysisId}`)
+              .then((result) => { if (active) setAnalysis(result); }).catch(() => { /* the list keeps its own error path */ });
+          }
+          setEvaluationRevision((value) => value + 1);
+        })
+        .catch(() => { if (active) setPendingJobId(""); });
+    }, 2500);
+    return () => { window.clearInterval(timer); active = false; };
+  }, [pendingJobId, openResumeId]);
 
   useEffect(() => {
     const current = [...resumes].sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""))[0];
@@ -173,8 +216,9 @@ export default function ResumesPage() {
     try {
       const task = await api<AnalysisTask>(`/api/resumes/${resume.id}/analysis`, { method: "POST", body: JSON.stringify({ targetRole: role, jobDescription: jd, roleFamily: family }) });
       if (task.status === "COMPLETED" && task.analysisId) setAnalysis(await api<Analysis>(`/api/resumes/${resume.id}/analysis?analysisId=${task.analysisId}`));
-      else { markBackgroundPending("resumes"); setNotice(t("Ardor is analyzing this resume in the background. You can leave this page; the report will appear when ready.", "Ardor 正在后台分析这份简历。你可以离开页面，完成后报告会自动出现。")); }
+      else { markBackgroundPending("resumes"); setPendingJobId(task.jobId ?? ""); setNotice(t("Ardor is analyzing this resume in the background. You can leave this page; the report will appear when ready.", "Ardor 正在后台分析这份简历。你可以离开页面，完成后报告会自动出现。")); }
       await load();
+      setEvaluationRevision((value) => value + 1);
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("Analysis failed", "分析失败")); }
     finally { setBusy(""); }
   }
@@ -205,8 +249,15 @@ export default function ResumesPage() {
     const legacy = !!data && !isV3;
     const pending = selected.analysisStatus === "QUEUED" || selected.analysisStatus === "RUNNING";
     const dialog = reanalyzeOpen && <ReanalyzeDialog defaultFamily={typeof data?.roleFamily === "string" ? data.roleFamily : "general"} busy={busy === "analyze"} onClose={() => setReanalyzeOpen(false)} onSubmit={(role, jd, family) => { setReanalyzeOpen(false); void analyze(selected, role, jd, family); }} />;
+    // Several job descriptions, several reports: the bar switches between the ones this resume holds.
+    const evaluationBar = evaluations.length > 1 && <div className="mb-6 flex flex-wrap items-center gap-2" data-resume-evaluations>
+      {evaluations.map((item) => <button key={item.id} type="button" data-evaluation={item.label} data-evaluation-active={analysis?.id === item.id}
+        onClick={() => void api<Analysis>(`/api/resumes/${selected.id}/analysis?analysisId=${item.id}`).then(setAnalysis).catch(() => setError(t("Could not load report", "无法载入报告")))}
+        className={`rounded-full px-3 py-1 text-[11px] tabular-nums transition ${analysis?.id === item.id ? "bg-[#1d1d1f] text-white" : "bg-white text-stone-600 hover:bg-stone-100"}`}>{item.label}</button>)}
+    </div>;
     if (report) return <main className="ardor-workbench min-h-screen text-[#1d1d1f]">
       <div style={{ paddingRight: previewOpen ? previewWidth : 0 }}>
+        {evaluationBar}
         <ResumeReportV3 report={report} resumeId={selected.id} onBack={() => { setSelectedId(null); setAnalysis(null); }} onViewResume={viewOriginalResume} />
       </div>
       {previewOpen && <ResumePreviewPanel resumeId={selected.id} filename={selected.originalFilename} width={previewWidth} onWidthChange={setPreviewWidth} onClose={() => setPreviewOpen(false)} />}
@@ -219,6 +270,7 @@ export default function ResumesPage() {
       </header>
       {(error || notice) && <div className={`mb-6 rounded-2xl px-5 py-4 text-sm ${error ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{error || notice}</div>}
       {selected.analysisError && <p role="status" className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">{selected.analysisError}</p>}
+      {evaluationBar}
       {legacy ? <section className="rounded-[2rem] bg-white p-7 shadow-[0_18px_60px_rgba(49,39,70,0.07)] md:p-10">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">LEGACY REPORT</p>
         <h2 className="mt-3 text-2xl font-semibold">{t("The old scoring is offline", "旧版评分已下线")}</h2>

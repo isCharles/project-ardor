@@ -77,8 +77,9 @@ public class ResumeController {
     @GetMapping("/{resumeId}/analysis/status")
     public ResumeAnalysisTaskResponse analysisStatus(
             @AuthenticationPrincipal ArdorPrincipal principal,
-            @PathVariable UUID resumeId) {
-        return ResumeAnalysisTaskResponse.from(queueService.status(principal.userId(), resumeId));
+            @PathVariable UUID resumeId,
+            @RequestParam(required = false) UUID jobId) {
+        return ResumeAnalysisTaskResponse.from(queueService.status(principal.userId(), resumeId, jobId));
     }
 
     @GetMapping("/{resumeId}/analysis")
