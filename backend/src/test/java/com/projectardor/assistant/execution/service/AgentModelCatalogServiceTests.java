@@ -59,6 +59,66 @@ class AgentModelCatalogServiceTests {
     }
 
     @Test
+    void keepsTheLastKnownRelayCatalogWhenDiscoveryTemporarilyFails() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM)).thenReturn(
+                Optional.of(new AuxiliaryApiConfigService.AuxiliaryRuntimeConfig(
+                        "OPENAI_COMPATIBLE", "https://relay.example", "relay-default", "relay-secret")));
+        when(discovery.list(org.mockito.ArgumentMatchers.eq(LlmProvider.OPENAI_COMPATIBLE),
+                org.mockito.ArgumentMatchers.eq("https://relay.example"), anyString()))
+                .thenReturn(List.of("relay-default", "relay-model-b"))
+                .thenThrow(new IllegalStateException("service request too frequent"));
+        var catalog = new AgentModelCatalogService(llm, auxiliary, discovery);
+        assertThat(catalog.options(user)).extracting(AgentModelCatalogService.Option::id)
+                .contains("FALLBACK:relay-model-b");
+
+        // Forces one catalog refresh; discovery fails and the snapshot must keep the picker stable.
+        assertThatThrownBy(() -> catalog.descriptionFingerprint(user, "unknown"))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(catalog.options(user)).extracting(AgentModelCatalogService.Option::id)
+                .contains("FALLBACK:relay-model-b");
+        verify(discovery, times(2)).list(any(), anyString(), anyString());
+    }
+
+    @Test
+    void doesNotReuseARelaySnapshotForADifferentEndpoint() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM)).thenReturn(
+                Optional.of(new AuxiliaryApiConfigService.AuxiliaryRuntimeConfig(
+                        "OPENAI_COMPATIBLE", "https://relay-a.example", "relay-a-default", "relay-secret")),
+                Optional.of(new AuxiliaryApiConfigService.AuxiliaryRuntimeConfig(
+                        "OPENAI_COMPATIBLE", "https://relay-b.example", "relay-b-default", "relay-secret")));
+        when(discovery.list(org.mockito.ArgumentMatchers.eq(LlmProvider.OPENAI_COMPATIBLE),
+                org.mockito.ArgumentMatchers.eq("https://relay-a.example"), anyString()))
+                .thenReturn(List.of("relay-a-default", "relay-a-extra"));
+        when(discovery.list(org.mockito.ArgumentMatchers.eq(LlmProvider.OPENAI_COMPATIBLE),
+                org.mockito.ArgumentMatchers.eq("https://relay-b.example"), anyString()))
+                .thenThrow(new IllegalStateException("relay b unavailable"));
+        var catalog = new AgentModelCatalogService(llm, auxiliary, discovery);
+        assertThat(catalog.options(user)).extracting(AgentModelCatalogService.Option::id)
+                .contains("FALLBACK:relay-a-extra");
+
+        assertThatThrownBy(() -> catalog.descriptionFingerprint(user, "unknown"))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        var refreshed = catalog.options(user);
+        assertThat(refreshed).extracting(AgentModelCatalogService.Option::id)
+                .contains("FALLBACK:relay-b-default")
+                .doesNotContain("FALLBACK:relay-a-extra");
+    }
+
+    @Test
     void descriptionFingerprintIdentifiesTheResolvedApiConfigurationWithoutLeakingSecrets() {
         UUID user = UUID.randomUUID();
         var llm = mock(LlmConfigService.class);
