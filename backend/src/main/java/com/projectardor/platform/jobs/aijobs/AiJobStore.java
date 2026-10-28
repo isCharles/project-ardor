@@ -75,8 +75,10 @@ public class AiJobStore {
                              ROW_NUMBER() OVER (PARTITION BY job_type ORDER BY finished_at DESC) AS recent
                       FROM ai_jobs WHERE status='COMPLETED' AND started_at IS NOT NULL AND finished_at IS NOT NULL) runs
                 WHERE recent <= 20 GROUP BY job_type HAVING COUNT(*) >= 5
-                """, rs -> samples.put(AiJobType.valueOf(rs.getString("job_type")),
-                        new DurationSample(rs.getInt("samples"), rs.getInt("p50_seconds"), rs.getInt("p90_seconds"))));
+                """, rs -> {
+                    samples.put(AiJobType.valueOf(rs.getString("job_type")),
+                            new DurationSample(rs.getInt("samples"), rs.getInt("p50_seconds"), rs.getInt("p90_seconds")));
+                });
         return samples;
     }
 
