@@ -93,6 +93,92 @@ public class CalendarTaskService {
                 .toList();
     }
 
+    /** Free windows inside [from, to) long enough for slotMinutes, plus the entries that block them. */
+    @Transactional(readOnly = true)
+    public CalendarAvailabilityTypes.Window findFreeSlots(java.util.UUID userId, java.time.Instant from,
+            java.time.Instant to, int slotMinutes, int assumedEventMinutes, java.util.UUID excludeTaskId) {
+        if (from == null || to == null || !from.isBefore(to)) {
+            throw new IllegalArgumentException("必须提供开始与结束时间，且开始早于结束");
+        }
+        if (slotMinutes <= 0 || assumedEventMinutes <= 0) {
+            throw new IllegalArgumentException("时段长度与占用估算都必须为正数");
+        }
+        if (java.time.Duration.between(from, to).toDays() > 31) {
+            throw new IllegalArgumentException("查询窗口最多 31 天");
+        }
+        var occupied = occupied(busyItems(userId, from.minus(java.time.Duration.ofMinutes(assumedEventMinutes)), to,
+                excludeTaskId), assumedEventMinutes, from, to);
+        var gaps = new java.util.ArrayList<CalendarAvailabilityTypes.Slot>();
+        java.time.Instant cursor = from;
+        for (var block : occupied.blocks()) {
+            if (java.time.Duration.between(cursor, block.start()).toMinutes() >= slotMinutes) {
+                gaps.add(new CalendarAvailabilityTypes.Slot(cursor, block.start()));
+            }
+            if (block.end().isAfter(cursor)) cursor = block.end();
+        }
+        if (cursor.isBefore(to) && java.time.Duration.between(cursor, to).toMinutes() >= slotMinutes) {
+            gaps.add(new CalendarAvailabilityTypes.Slot(cursor, to));
+        }
+        return new CalendarAvailabilityTypes.Window(from, to, slotMinutes, assumedEventMinutes, gaps,
+                occupied.busy());
+    }
+
+    /** Entries overlapping a candidate block; an empty list is the only evidence that it is free. */
+    @Transactional(readOnly = true)
+    public java.util.List<CalendarAvailabilityTypes.BusyItem> conflictsFor(java.util.UUID userId,
+            java.time.Instant dueAt, int durationMinutes, int assumedEventMinutes, java.util.UUID excludeTaskId) {
+        if (dueAt == null) throw new IllegalArgumentException("必须提供候选时间");
+        if (durationMinutes <= 0 || assumedEventMinutes <= 0) throw new IllegalArgumentException("时长必须为正数");
+        java.time.Instant candidateStart = dueAt;
+        java.time.Instant candidateEnd = dueAt.plus(java.time.Duration.ofMinutes(durationMinutes));
+        var busy = busyItems(userId, candidateStart.minus(java.time.Duration.ofMinutes(assumedEventMinutes)),
+                candidateEnd, excludeTaskId);
+        return busy.stream().filter(item -> {
+            java.time.Instant end = item.dueAt().plus(java.time.Duration.ofMinutes(assumedEventMinutes));
+            return item.dueAt().isBefore(candidateEnd) && end.isAfter(candidateStart);
+        }).toList();
+    }
+
+    private java.util.List<CalendarAvailabilityTypes.BusyItem> busyItems(java.util.UUID userId,
+            java.time.Instant from, java.time.Instant to, java.util.UUID excludeTaskId) {
+        return list(userId, from, to).stream()
+                .filter(task -> task.getDueAt() != null)
+                .filter(task -> task.getStatus() != com.projectardor.scheduling.domain.CalendarTaskStatus.COMPLETED
+                        && task.getStatus() != com.projectardor.scheduling.domain.CalendarTaskStatus.CANCELLED)
+                .filter(task -> excludeTaskId == null || !excludeTaskId.equals(task.getId()))
+                .map(task -> new CalendarAvailabilityTypes.BusyItem(task.getId(), task.getTitle(), task.getDueAt(),
+                        task.getSeriesId(), task.getSeriesId() != null))
+                .sorted(java.util.Comparator.comparing(CalendarAvailabilityTypes.BusyItem::dueAt))
+                .toList();
+    }
+
+    private record Block(java.time.Instant start, java.time.Instant end) {
+    }
+
+    private record Occupied(java.util.List<CalendarAvailabilityTypes.BusyItem> busy, java.util.List<Block> blocks) {
+    }
+
+    /** Entries that really overlap the window, with their assumed durations merged into blocking blocks. */
+    private Occupied occupied(java.util.List<CalendarAvailabilityTypes.BusyItem> candidates, int assumedEventMinutes,
+            java.time.Instant from, java.time.Instant to) {
+        var busy = new java.util.ArrayList<CalendarAvailabilityTypes.BusyItem>();
+        var blocks = new java.util.ArrayList<Block>();
+        for (var item : candidates) {
+            java.time.Instant start = item.dueAt().isBefore(from) ? from : item.dueAt();
+            java.time.Instant end = item.dueAt().plus(java.time.Duration.ofMinutes(assumedEventMinutes));
+            if (end.isAfter(to)) end = to;
+            if (!end.isAfter(start)) continue;
+            busy.add(item);
+            if (!blocks.isEmpty() && blocks.get(blocks.size() - 1).end().isAfter(start)) {
+                var last = blocks.remove(blocks.size() - 1);
+                blocks.add(new Block(last.start(), last.end().isAfter(end) ? last.end() : end));
+            } else {
+                blocks.add(new Block(start, end));
+            }
+        }
+        return new Occupied(java.util.List.copyOf(busy), java.util.List.copyOf(blocks));
+    }
+
     @Transactional
     public CalendarTask create(
             UUID userId,

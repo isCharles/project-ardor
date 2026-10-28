@@ -42,7 +42,35 @@ public final class SchedulingAgentToolProvider implements AgentToolProvider {
             return calendarTaskService.listViews(context.userId(), nullableInstant(from), nullableInstant(to));
         }
 
-        @Tool(name = "create_calendar_task", value = "为当前用户创建任意明确的日程或待办，不限于求职事项。用户说出自然语言安排，或粘贴含日期时间的通知时使用；日期确有歧义时必须先追问，不得猜测。若这条日程属于某场真实面试（面试时间或准备任务），传入该面试流程 UUID")
+        @Tool(name = "find_available_slots", value = """
+                在给定时间窗口内查找能放下指定时长的空闲区间，由服务端按当前用户的真实日程计算，不要自己心算时段。
+                日程只保存一个时间点，因此既有事项按 assumed_event_minutes 估算占用；返回的 freeSlots 是连续可用窗口，busy 是挡住这些窗口的事项。
+                提议任何具体新时段（复习、模拟面试、面试准备）之前必须先调用本工具；seriesId 不为空的固定承诺（组会、学校课程）不可移动，只能避开。
+                """)
+        public com.projectardor.scheduling.service.CalendarAvailabilityTypes.Window findAvailableSlots(
+                @P("窗口开始时间，带时区的 ISO-8601") String from,
+                @P("窗口结束时间，带时区的 ISO-8601，窗口最多 31 天") String to,
+                @P("需要放下的时长，单位分钟，例如 60") int slotMinutes,
+                @P(value = "既有事项按多少分钟估算占用；不确定就传 60", required = false) Integer assumedEventMinutes) {
+            return calendarTaskService.findFreeSlots(context.userId(), nullableInstant(from), nullableInstant(to),
+                    slotMinutes, assumedEventMinutes == null || assumedEventMinutes <= 0 ? 60 : assumedEventMinutes, null);
+        }
+
+        @Tool(name = "check_calendar_conflict", value = """
+                检查候选时间点（含时长）是否与当前用户既有日程冲突，返回撞上的事项；空数组才表示这段时间没有冲突。
+                给出替代时段或改期建议之前必须调用，不得凭对话记忆推算，也不得把用户说过的“不可调整”当成已核对过冲突的证据。
+                """)
+        public List<com.projectardor.scheduling.service.CalendarAvailabilityTypes.BusyItem> checkCalendarConflict(
+                @P("候选开始时间，带时区的 ISO-8601") String dueAt,
+                @P("候选时长，单位分钟") int durationMinutes,
+                @P(value = "既有事项按多少分钟估算占用；不确定就传 60", required = false) Integer assumedEventMinutes,
+                @P(value = "修改既有日程时传它的 UUID，避免自己和自己冲突；不是修改传空字符串", required = false) String excludeTaskId) {
+            return calendarTaskService.conflictsFor(context.userId(), nullableInstant(dueAt), durationMinutes,
+                    assumedEventMinutes == null || assumedEventMinutes <= 0 ? 60 : assumedEventMinutes,
+                    nullableUuid(excludeTaskId, "日程 ID"));
+        }
+
+        @Tool(name = "create_calendar_task", value = "为当前用户创建任意明确的日程或待办，不限于求职事项。用户说出自然语言安排，或粘贴含日期时间的通知时使用；日期确有歧义时必须先追问，不得猜测。写入带时间的日程前，先调用 check_calendar_conflict 确认该时段不与既有事项冲突。若这条日程属于某场真实面试（面试时间或准备任务），传入该面试流程 UUID")
         public CalendarTaskView createCalendarTask(
                 @P("日历格中的极短标题，优先使用公司或对象加事项，通常 2 到 8 个中文字符，例如‘字节面试’‘完善简历’；不得照抄冗长岗位名称") String title,
                 @P(value = "完整说明。岗位全称、业务线、会议方式、准备材料和来源摘要都放在这里，不要塞进短标题；没有时传空字符串", required = false) String description,
