@@ -53,6 +53,7 @@ public class AgentModelCatalogService {
     private final LlmModelDiscoveryService modelDiscoveryService;
     private final UserModelSettingsStore settingsStore;
     private final ConcurrentHashMap<UUID, CatalogEntry> catalogCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, RelaySnapshot> relaySnapshots = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Long> descriptionRefreshAt = new ConcurrentHashMap<>();
     private final Object[] catalogLocks = createLockStripes(CATALOG_LOCK_STRIPES);
 
@@ -150,7 +151,7 @@ public class AgentModelCatalogService {
                             LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "unknown", "redacted"))));
         }
         auxiliaryConfigService.runtimeConfig(userId, AuxiliaryServiceType.FALLBACK_LLM)
-                .ifPresentOrElse(fallback -> options.addAll(relayOptions(fallback, settings)),
+                .ifPresentOrElse(fallback -> options.addAll(relayOptions(userId, fallback, settings)),
                         () -> options.add(new Option(FALLBACK, "Fallback model", "OPENAI_COMPATIBLE", false, false,
                                 ModelReasoningPolicy.levels(new LlmConfigService.LlmRuntimeConfig(
                                         LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "unknown", "redacted")))));
@@ -214,9 +215,9 @@ public class AgentModelCatalogService {
         return ModelReasoningPolicy.resolve(resolve(userId, choice).config(), ReasoningDepth.AUTO).nativeControl();
     }
 
-    private List<Option> relayOptions(AuxiliaryApiConfigService.AuxiliaryRuntimeConfig raw,
+    private List<Option> relayOptions(UUID userId, AuxiliaryApiConfigService.AuxiliaryRuntimeConfig raw,
             Map<String, UserModelSettingsStore.Setting> settings) {
-        List<String> models = relayModels(raw);
+        List<String> models = relayModels(userId, raw);
         LinkedHashSet<String> unique = new LinkedHashSet<>();
         if (raw.model() != null && !raw.model().isBlank()) unique.add(raw.model());
         for (String model : models) {
@@ -229,8 +230,9 @@ public class AgentModelCatalogService {
         }).toList();
     }
 
-    private List<String> relayModels(AuxiliaryApiConfigService.AuxiliaryRuntimeConfig raw) {
+    private List<String> relayModels(UUID userId, AuxiliaryApiConfigService.AuxiliaryRuntimeConfig raw) {
         LlmProvider configured = provider(raw.provider());
+        String baseUrl = normalizedBaseUrl(raw.baseUrl());
         LinkedHashSet<String> found = new LinkedHashSet<>();
         // A relay can split its catalog: Claude on the Anthropic endpoint, GPT/Seed/etc.
         // on the OpenAI-compatible /v1 endpoint, and occasionally a broader root list.
@@ -256,8 +258,31 @@ public class AgentModelCatalogService {
             log.info("Relay model discovery unavailable: provider={}, host={}, failure={}",
                     configured, host(raw.baseUrl()), configuredDiscoveryFailure.getClass().getSimpleName());
         }
+        if (found.isEmpty()) {
+            RelaySnapshot snapshot = relaySnapshots.get(userId);
+            if (snapshot != null && snapshot.matches(configured.name(), baseUrl)) {
+                // Relay discovery is a best-effort probe; a transient failure must not hide models
+                // the user could still call successfully.
+                log.info("Using last-known relay models: provider={}, host={}, count={}",
+                        configured, host(baseUrl), snapshot.models().size());
+                found.addAll(snapshot.models());
+            }
+        } else {
+            if (relaySnapshots.size() >= MAX_CATALOG_CACHE_ENTRIES) relaySnapshots.clear();
+            relaySnapshots.put(userId, new RelaySnapshot(configured.name(), baseUrl, List.copyOf(found)));
+        }
         if (found.isEmpty() && raw.model() != null && !raw.model().isBlank()) found.add(raw.model());
         return new ArrayList<>(found);
+    }
+
+    private static String normalizedBaseUrl(String baseUrl) {
+        return Optional.ofNullable(baseUrl).orElse("").replaceAll("/+$", "");
+    }
+
+    private record RelaySnapshot(String provider, String baseUrl, List<String> models) {
+        boolean matches(String provider, String baseUrl) {
+            return this.provider.equals(provider) && this.baseUrl.equals(baseUrl);
+        }
     }
 
     private LlmConfigService.LlmRuntimeConfig relayConfig(
