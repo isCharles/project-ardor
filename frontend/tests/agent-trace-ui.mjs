@@ -33,13 +33,14 @@ try {
     conversationId: "fixture-conv",
     status: "COMPLETED",
     durationMs: 2400,
-    totals: { llmCalls: 3, toolCalls: 1, loopRounds: 1, inputTokens: 12500, outputTokens: 230 },
+    totals: { llmCalls: 3, toolCalls: 1, loopRounds: 1, inputTokens: 12500, outputTokens: 230,
+      cacheReadInputTokens: 9200, cacheCreationInputTokens: 640, cacheUsageMissingCalls: 1 },
     spans: [
       span("root", null, "RUN", "agent.run", "2026-10-23T08:00:00Z", { durationMs: 5000, attributes: { model: "fixture-model" } }),
       span("thought", "root", "THOUGHT", "phase.plan", "2026-10-23T08:00:00Z", { durationMs: 40 }),
       span("context", "root", "CONTEXT", "context.load", "2026-10-23T08:00:01Z", { durationMs: 120 }),
       span("compaction", "context", "LLM", "context.compact.1", "2026-10-23T08:00:01.010Z", { durationMs: 100, model: "fixture-model", inputTokens: 500, outputTokens: 50, attributes: { purpose: "CONTEXT_COMPACTION", call: 1 } }),
-      span("llm-1", "root", "LLM", "llm.call.2", "2026-10-23T08:00:02Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 32, attributes: { toolRound: true } }),
+      span("llm-1", "root", "LLM", "llm.call.2", "2026-10-23T08:00:02Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 32, cacheReadInputTokens: 6000, cacheCreationInputTokens: 320, attributes: { toolRound: true } }),
       span("tool-1", "root", "TOOL", "list_resumes", "2026-10-23T08:00:03Z", { durationMs: 80 }),
       span("llm-2", "root", "LLM", "llm.call.3", "2026-10-23T08:00:04Z", { model: "fixture-model", inputTokens: 6000, outputTokens: 148, attributes: { timingSource: "client-monotonic-stream-v1", firstContentMs: 250, streamAfterFirstContentMs: 750, outputTokensPerRequestSecond: 148 } }),
       // The kinds the record actually carries today, as opposed to the legacy shape above.
@@ -153,6 +154,11 @@ try {
   await inspector.getByText("148.0 tok/s", { exact: true }).waitFor();
   await page.locator("[data-trace-inspector-item]").filter({ hasText: "llm.call.2" }).click();
   assert.equal(await inspector.getByText("148.0 tok/s", { exact: true }).count(), 0, "Historical spans never inherit another call's timing");
+  // Prompt-cache counters belong to the call that reported them.
+  assert.match(await inspector.innerText(), /Cache read[\s\S]*?6000/i);
+  assert.match(await inspector.innerText(), /Cache write[\s\S]*?320/i);
+  await page.locator("[data-trace-inspector-item]").filter({ hasText: "Context assembly" }).click();
+  assert.equal(await inspector.getByText(/cache read/i).count(), 0, "A span that never reported cache usage is not given one");
   await page.locator("[data-trace-inspector-item]").filter({ hasText: "Agent run" }).click();
   await page.getByRole("tab", { name: "Timing", exact: true }).click();
   await page.getByText("Started at", { exact: true }).waitFor();
@@ -162,6 +168,10 @@ try {
 
   await page.getByRole("button", { name: "Timeline", exact: true }).click();
   await page.getByText("Loop rounds", { exact: true }).waitFor();
+  const header = (await page.locator("main").innerText()).replace(/\s+/g, " ");
+  assert.match(header, /Cache read:\s*9200/i, header.slice(0, 400));
+  assert.match(header, /Cache write:\s*640/i);
+  assert.match(header, /Cache unknown:\s*1/i);
   assert.equal(await page.locator("[data-trace-node]").count(), 0, "Timeline does not keep the graph mounted");
 
   await page.getByRole("link", { name: "Conversation trace", exact: true }).click();

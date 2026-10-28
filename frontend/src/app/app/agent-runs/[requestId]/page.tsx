@@ -416,6 +416,8 @@ function InspectorPanel({ span, schema, sourceLabel, thinking }: { span: TraceSp
         <InspectorField label={t("Status", "状态")} value={span.status} />
         <InspectorField label={t("Model", "模型")} value={span.model ?? "—"} />
         <InspectorField label={t("Tokens", "Token")} value={`${span.inputTokens ?? 0} / ${span.outputTokens ?? 0}`} />
+        {span.cacheReadInputTokens != null && <InspectorField label={t("Cache read", "缓存读")} value={span.cacheReadInputTokens} />}
+        {span.cacheCreationInputTokens != null && <InspectorField label={t("Cache write", "缓存写")} value={span.cacheCreationInputTokens} />}
         <InspectorField label={t("Duration", "总时长")} value={formatDuration(span.durationMs)} />
         <InspectorField label={t("Prompt version", "Prompt 版本")} value={span.promptVersion ?? "—"} />
         <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Preview", "预览")}</p>{thinking && <details className="mt-2 rounded-xl bg-stone-50 p-4"><summary className="cursor-pointer text-[11px] font-medium text-stone-600">{t("Model reasoning output", "模型思考输出")}</summary><div className="mt-2 max-h-56 overflow-auto"><MarkdownContent className="text-sm leading-7 text-stone-700">{thinking}</MarkdownContent></div></details>}<div className="mt-2 max-h-56 overflow-auto rounded-xl bg-stone-50 p-4">{result ? <MarkdownContent className="text-sm leading-7 text-stone-700">{result}</MarkdownContent> : <p className="text-xs text-stone-500">{requestedTools.length > 0 ? t("Tool call only; no assistant text.", "仅工具调用，没有助手文本。") : t("No assistant output recorded.", "没有记录助手输出。")}</p>}</div></div>
@@ -440,6 +442,8 @@ function InspectorPanel({ span, schema, sourceLabel, thinking }: { span: TraceSp
         <InspectorField label={t("Prompt version", "Prompt 版本")} value={span.promptVersion ?? "—"} />
         <InspectorField label={t("Input tokens", "输入 Token")} value={span.inputTokens ?? "—"} />
         <InspectorField label={t("Output tokens", "输出 Token")} value={span.outputTokens ?? "—"} />
+        {span.cacheReadInputTokens != null && <InspectorField label={t("Cache read", "缓存读")} value={span.cacheReadInputTokens} />}
+        {span.cacheCreationInputTokens != null && <InspectorField label={t("Cache write", "缓存写")} value={span.cacheCreationInputTokens} />}
         <InspectorField label={t("Parent span", "父步骤")} value={span.parentSpanId ?? "—"} mono />
         <InspectorField label={t("Error code", "错误码")} value={span.errorCode ?? "—"} />
         <InspectorField label={t("Span ID", "步骤 ID")} value={span.id} mono wide />
@@ -700,67 +704,8 @@ function TraceNode({ node, index, selected, onSelect }: { node: FlowNode; index:
   </button>;
 }
 
-function SpanDetails({ span, schema }: { span: TraceSpan; schema?: ToolSchema }) {
-  const { t } = useLocale();
-  const attributes = span.attributes;
-  const inputPreview = preview(attributes.inputPreview);
-  const outputPreview = preview(attributes.outputPreview);
-  const argumentsPreview = preview(attributes.argumentsPreview);
-  const resultPreview = preview(attributes.resultPreview);
-  const requestedTools = Array.isArray(attributes.requestedTools)
-    ? attributes.requestedTools.filter((item): item is string => typeof item === "string")
-    : [];
-  return <div data-span-details className="mt-3 rounded-2xl border border-stone-200/80 bg-white/80 p-5">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{span.kind}</p>
-        <h2 className="mt-1 truncate text-lg font-semibold">{spanLabel(span, t)}</h2>
-        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-stone-500">
-          <span className={`rounded-full px-2 py-0.5 ${span.status === "COMPLETED" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>{span.status}</span>
-          <span>{formatDuration(span.durationMs)}</span>
-          {span.model && <span>{span.model}</span>}
-          {span.promptVersion && <span>{span.promptVersion}</span>}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-[11px] text-stone-500">
-        <span>{t("Input tokens", "输入 Token")} <b className="font-medium text-stone-800">{span.inputTokens ?? "—"}</b></span>
-        <span>{t("Output tokens", "输出 Token")} <b className="font-medium text-stone-800">{span.outputTokens ?? "—"}</b></span>
-        {span.cacheReadInputTokens != null && <span>{t("Cache read", "缓存读")} <b className="font-medium text-stone-800">{span.cacheReadInputTokens}</b></span>}
-        {span.cacheCreationInputTokens != null && <span>{t("Cache write", "缓存写")} <b className="font-medium text-stone-800">{span.cacheCreationInputTokens}</b></span>}
-        <span className="col-span-2 truncate font-mono text-[10px] text-stone-400">{span.id}</span>
-      </div>
-    </div>
-
-    <div className="mt-4 grid gap-3 md:grid-cols-2">
-      {inputPreview && <PreviewBlock label={t("Input preview", "输入预览")} text={inputPreview} />}
-      {outputPreview && <PreviewBlock label={span.kind === "THOUGHT" ? t("Phase conclusion", "阶段结论") : t("Output preview", "输出预览")} text={outputPreview} />}
-      {argumentsPreview && <PreviewBlock label={t("Arguments preview", "参数预览")} text={argumentsPreview} />}
-      {resultPreview && <PreviewBlock label={t("Result preview", "结果预览")} text={resultPreview} />}
-    </div>
-
-    {requestedTools.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-stone-500"><span>{t("Requested tools", "请求的工具")}</span>{requestedTools.map((tool) => <span key={tool} className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-[10px] text-violet-700">{tool}</span>)}</div>}
-    <p className="mt-3 text-[10px] leading-5 text-stone-400">{t("Preview content is truncated and redacted; it is not the full prompt, tool payload or private chain-of-thought.", "预览内容已截断并脱敏，不是完整 prompt、工具 payload 或私有思维链。")}</p>
-
-    {schema && <details className="mt-3 text-[11px] text-stone-500">
-      <summary className="cursor-pointer text-stone-500">{t("Schema", "Schema")}</summary>
-      <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-stone-50 p-3 text-[10px] leading-5 text-stone-600">{JSON.stringify(schema, null, 2)}</pre>
-    </details>}
-    <details className="mt-3 text-[11px] text-stone-500">
-      <summary className="cursor-pointer text-stone-500">{t("Metadata", "元数据")}</summary>
-      <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-stone-50 p-3 text-[10px] leading-5 text-stone-600">{JSON.stringify(attributes, null, 2)}</pre>
-    </details>
-  </div>;
-}
-
 function preview(value: unknown): string {
   return typeof value === "string" && value.trim().length > 0 ? value : "";
-}
-
-function PreviewBlock({ label, text }: { label: string; text: string }) {
-  return <div className="min-w-0 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
-    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{label}</p>
-    <pre className="mt-1.5 max-h-44 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-stone-600">{text}</pre>
-  </div>;
 }
 
 function TraceRow({ span, root = false }: { span: TraceSpan; root?: boolean }) {
