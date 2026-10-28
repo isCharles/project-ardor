@@ -17,6 +17,7 @@ import com.projectardor.common.web.ResourceNotFoundException;
 public class AgentMemoryService {
 
     public static final int MAX_LENGTH = 4000;
+    public static final int MAX_PINNED = 8;
 
     private final AgentMemoryRepository repository;
     private final AgentMemoryItemRepository itemRepository;
@@ -142,6 +143,25 @@ public class AgentMemoryService {
         if (!item.isValid()) return;
         item.invalidate(Instant.now(), supersededBy);
         itemRepository.saveAndFlush(item);
+    }
+
+    /** Pinned facts stay resident in every context, so only a few are allowed at once. */
+    @Transactional
+    public AgentMemoryItemView setPinned(UUID userId, UUID memoryId, boolean pinned) {
+        itemRepository.lockOwner(userId);
+        AgentMemoryItem item = itemRepository.findByIdAndUserId(memoryId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("记忆不存在"));
+        if (pinned && !item.isValid()) throw new IllegalArgumentException("记忆已失效，不能设为核心记忆");
+        if (pinned && !item.isPinned() && countPinned(userId) >= MAX_PINNED) {
+            throw new IllegalArgumentException("核心记忆最多 " + MAX_PINNED + " 条，请先取消其他不需要的核心记忆");
+        }
+        item.pin(pinned);
+        return AgentMemoryItemView.from(itemRepository.saveAndFlush(item));
+    }
+
+    @Transactional(readOnly = true)
+    public int countPinned(UUID userId) {
+        return (int) validItems(userId).stream().filter(AgentMemoryItem::isPinned).count();
     }
 
     @Transactional

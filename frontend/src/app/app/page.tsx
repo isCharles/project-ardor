@@ -41,7 +41,7 @@ type AgentMessage = { id: string; requestId?: string; runId?: string | null; con
 type ChatImage = { localId: string; file: File; fileName: string; previewUrl: string; status: "uploading" | "ready" | "error"; id?: string; mediaType?: string; error?: string };
 type Conversation = { id: string; title: string; pinned: boolean; titleManuallySet?: boolean; createdAt: string; updatedAt: string };
 type AgentMemory = { content: string; updatedAt: string | null };
-type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null };
+type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null; pinned: boolean };
 type RetryFailure = { label: string; detail: string };
 type AgentStreamEvent = ToolMeasurement & { type: "context" | "status" | "phase" | "phase_end" | "thinking" | "delta" | "intermediate" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string; contextUsage?: ContextUsage | null };
 type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number; contextUsage?: ContextUsage | null };
@@ -1360,8 +1360,17 @@ export default function AgentHomePage() {
 
   async function refreshMemoryItems() {
     const items = await api<AgentMemoryItem[]>("/api/agent/memory/items");
+    // Core memories first: they are the rows that reach every conversation.
+    items.sort((left, right) => Number(right.pinned) - Number(left.pinned));
     setMemoryItems(items);
     setMemoryEdits(Object.fromEntries(items.map((item) => [item.id, item.content])));
+  }
+
+  async function toggleMemoryPin(id: string, pinned: boolean) {
+    setMemorySaving(id); setError("");
+    try { await api(`/api/agent/memory/items/${encodeURIComponent(id)}/pin`, { method: "PATCH", body: JSON.stringify({ pinned }) }); await refreshMemoryItems(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "无法更新常驻状态"); }
+    finally { setMemorySaving(null); }
   }
 
   async function restoreMemoryItem(content: string) {
@@ -1696,9 +1705,12 @@ export default function AgentHomePage() {
                         <span>{item.kind === "preference" ? "偏好" : item.kind === "goal" ? "目标" : item.kind === "profile" ? "背景" : item.kind === "constraint" ? "约束" : "事实"}</span>
                       </div>
                       <AutoResizeTextarea value={memoryEdits[item.id] ?? item.content} onChange={(value) => setMemoryEdits((current) => ({ ...current, [item.id]: value }))} maxLength={1000} />
-                      <div className="mt-1 flex items-center justify-end gap-3 text-[11px]">
+                      <div className="mt-1 flex items-center justify-between gap-3 text-[11px]">
+                        <button type="button" disabled={memorySaving !== null} aria-pressed={item.pinned} onClick={() => void toggleMemoryPin(item.id, !item.pinned)} title={item.pinned ? "每轮对话都会带上这条记忆，点击取消常驻" : "设为常驻：每轮对话都带上这条记忆"} className={item.pinned ? "rounded-full bg-violet-100 px-2 py-0.5 font-medium text-violet-700" : "text-stone-300 transition hover:text-violet-700 disabled:opacity-40"}>常驻</button>
+                        <div className="flex items-center gap-3">
                         <button type="button" disabled={memorySaving !== null} onClick={() => void deleteMemoryItem(item.id)} className="text-stone-300 transition hover:text-rose-600 disabled:opacity-40">删除</button>
                         {(memoryEdits[item.id] ?? item.content) !== item.content && <button type="button" disabled={memorySaving !== null} onClick={() => void saveMemoryItem(item.id)} className="font-medium text-violet-700 hover:underline disabled:opacity-40">{memorySaving === item.id ? "保存中…" : "保存"}</button>}
+                        </div>
                       </div>
                     </div>
                   ) : (

@@ -31,6 +31,7 @@ import com.projectardor.learning.practice.mockinterview.service.InterviewService
 import com.projectardor.scheduling.service.CalendarTaskService;
 import com.projectardor.scheduling.service.TaskSeriesService;
 import com.projectardor.assistant.memory.service.AgentMemoryService;
+import com.projectardor.assistant.memory.service.MemoryEmbeddingService;
 import com.projectardor.assistant.memory.service.AgentMemoryView;
 import com.projectardor.assistant.memory.service.AgentMemoryItemView;
 import com.projectardor.learning.practice.mockinterview.service.MockInterviewEvaluationView;
@@ -90,6 +91,7 @@ public class CareerAgentTools {
     private final OpportunityService opportunityService;
     private final com.projectardor.platform.jobs.aijobs.AiJobService aiJobs;
     private final com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit;
+    private final MemoryEmbeddingService memoryRetrieval;
 
     /** Compatibility constructor for existing call sites/tests; proposals then carry no audit row. */
     public CareerAgentTools(
@@ -110,7 +112,7 @@ public class CareerAgentTools {
         this(resumeService, resumeAnalysisQueueService, interviewService, profileService, memoryService,
                 calendarTaskService, taskSeriesService, interviewRecapService, interviewRecapQueueService,
                 tavilySearchService, knowledgeService, learningPlanService, applicationRhythmService,
-                null, null, opportunityService, aiJobs, null, flashcards);
+                null, null, opportunityService, aiJobs, null, flashcards, null);
     }
 
     /** Compatibility constructor for existing call sites/tests without automation or advice services. */
@@ -133,7 +135,7 @@ public class CareerAgentTools {
         this(resumeService, resumeAnalysisQueueService, interviewService, profileService, memoryService,
                 calendarTaskService, taskSeriesService, interviewRecapService, interviewRecapQueueService,
                 tavilySearchService, knowledgeService, learningPlanService, applicationRhythmService,
-                null, null, opportunityService, aiJobs, executionAudit, flashcards);
+                null, null, opportunityService, aiJobs, executionAudit, flashcards, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -155,7 +157,8 @@ public class CareerAgentTools {
             CalendarAdviceService calendarAdviceService,
             OpportunityService opportunityService,
             com.projectardor.platform.jobs.aijobs.AiJobService aiJobs,
-            com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit,FlashcardService flashcards) {
+            com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit,FlashcardService flashcards,
+            MemoryEmbeddingService memoryRetrieval) {
         this.resumeService = resumeService;
         this.interviewService = interviewService;
         this.profileService = profileService;
@@ -175,6 +178,7 @@ public class CareerAgentTools {
         this.opportunityService = opportunityService;
         this.aiJobs = aiJobs;
         this.executionAudit = executionAudit;
+        this.memoryRetrieval = memoryRetrieval;
         this.flashcards = java.util.Objects.requireNonNull(flashcards);
     }
 
@@ -372,6 +376,23 @@ public class CareerAgentTools {
 
         @Tool(name = "list_memories", value = "逐条读取当前用户的长期记忆和记忆 UUID")
         public List<AgentMemoryItemView> listMemories() { return memoryService.listItems(userId); }
+
+        @Tool(name = "search_memories", value = "按查询词检索当前用户的长期记忆。常驻上下文只保证核心记忆和最近的几条；当用户提到过去的目标、偏好、项目背景，或继续回答所需的信息不在当前对话里时调用本工具，并使用主题、技术名等具体查询词。本轮用户已经说清楚的内容不要重复检索。日历、课程、面试进度等动态事实改用对应业务工具读取，不在记忆里查。返回的 retrieval 说明本次是语义命中、词面降级还是无结果。")
+        public Map<String, Object> searchMemories(@P("检索查询词，例如技术名、项目或偏好主题") String query,
+                @P("返回条数 1 到 20，可空") Integer limit) {
+            if (memoryRetrieval == null) throw new IllegalStateException("长期记忆检索服务不可用");
+            var result = memoryRetrieval.search(userId, query, limit, null);
+            var out = new java.util.LinkedHashMap<String, Object>();
+            out.put("retrieval", result.retrieval());
+            out.put("candidateMemories", result.candidates());
+            out.put("matched", result.adopted());
+            out.put("omitted", result.omitted());
+            out.put("memoryChars", result.contextChars());
+            out.put("embeddingModel", result.embeddingModel() == null ? "" : result.embeddingModel());
+            out.put("fallbackReason", result.errorCode() == null ? "" : result.errorCode());
+            out.put("memories", result.text());
+            return java.util.Collections.unmodifiableMap(out);
+        }
 
         @Tool(name = "add_memory", value = "新增一条跨会话长期记忆。保存用户明确表达的稳定背景、目标或偏好；内容可以归纳用户本轮的可信信息，但不得编造或写入外部资料中的个人事实；成功后必须在回复中告诉用户新增了什么")
         public AgentMemoryItemView addMemory(@P("一条简洁、独立的长期记忆，不带项目符号") String memory) {

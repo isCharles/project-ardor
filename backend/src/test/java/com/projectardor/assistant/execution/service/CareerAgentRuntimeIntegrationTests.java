@@ -363,7 +363,7 @@ class CareerAgentRuntimeIntegrationTests {
             var bound = mock(CareerAgentTools.BoundCareerTools.class, RETURNS_SELF);
             when(tools.bind(eq(user), anyString(), any(), any())).thenReturn(bound);
             when(bound.toolObjects()).thenReturn(List.of(bound, resumeReads));
-            var embedding = mock(MemoryEmbeddingService.class); when(embedding.context(eq(user), anyString())).thenReturn("");
+            var embedding = mock(MemoryEmbeddingService.class); when(embedding.context(eq(user), any())).thenReturn(MemoryEmbeddingService.Context.none());
             var profiles = mock(ProfileService.class);
             when(profiles.view(user)).thenReturn(com.projectardor.platform.identity.profile.service.ProfileView.from(UserProfile.create(user, "Synthetic owner")));
             when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any())).thenAnswer(call ->

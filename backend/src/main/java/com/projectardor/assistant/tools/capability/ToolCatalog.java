@@ -31,7 +31,7 @@ public final class ToolCatalog {
         register(risks, ToolModule.LEARNING, Capability.UPDATE, "update_learning_plan", "begin_learning_plan");
         register(risks, ToolModule.LEARNING, Capability.DELETE, "delete_learning_plan");
 
-        register(risks, ToolModule.MEMORY, Capability.READ, "list_memories");
+        register(risks, ToolModule.MEMORY, Capability.READ, "list_memories", "search_memories");
         register(risks, ToolModule.MEMORY, Capability.CREATE, "add_memory");
         register(risks, ToolModule.MEMORY, Capability.UPDATE, "update_memory");
         register(risks, ToolModule.MEMORY, Capability.DELETE, "delete_memory", "clear_all_memories");

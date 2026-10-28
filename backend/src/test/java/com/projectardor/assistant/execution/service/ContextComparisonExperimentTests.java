@@ -170,7 +170,7 @@ class ContextComparisonExperimentTests {
         var compactor = new AgentContextCompactor(store, summaries, factory, 8, SOFT_LIMIT, policy,
                 null, new ConversationStructureExtractor(), null);
         var embedding = mock(MemoryEmbeddingService.class);
-        when(embedding.context(any(), any())).thenReturn("");
+        when(embedding.context(any(), any())).thenReturn(MemoryEmbeddingService.Context.none());
         var profiles = mock(ProfileService.class);
         when(profiles.view(any())).thenReturn(new ProfileView("fixture", "", List.of(), "Asia/Shanghai"));
         var builder = new AgentContextBuilder(embedding, compactor, profiles, mock(CareerAgentTools.class), capacity);

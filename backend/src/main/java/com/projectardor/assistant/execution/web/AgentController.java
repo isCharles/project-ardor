@@ -36,6 +36,7 @@ import com.projectardor.assistant.conversation.web.AgentConversationRenameReques
 import com.projectardor.assistant.conversation.web.AgentConversationPinRequest;
 import com.projectardor.assistant.memory.web.AgentMemoryResponse;
 import com.projectardor.assistant.memory.web.AgentMemoryItemUpdateRequest;
+import com.projectardor.assistant.memory.web.AgentMemoryPinRequest;
 import com.projectardor.assistant.memory.web.AgentMemoryItemResponse;
 import com.projectardor.assistant.memory.web.AgentMemoryUpdateRequest;
 import com.projectardor.assistant.proposal.web.DeletionSnapshotRequest;
@@ -329,6 +330,13 @@ public class AgentController {
     public AgentMemoryItemResponse editMemoryItem(@AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable java.util.UUID memoryId, @Valid @RequestBody AgentMemoryItemUpdateRequest request) {
         return AgentMemoryItemResponse.from(memoryService.edit(principal.userId(), memoryId, request.content()));
+    }
+
+    @PatchMapping("/memory/items/{memoryId}/pin")
+    public AgentMemoryItemResponse pinMemoryItem(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable java.util.UUID memoryId, @Valid @RequestBody AgentMemoryPinRequest request) {
+        return AgentMemoryItemResponse.from(
+                memoryService.setPinned(principal.userId(), memoryId, Boolean.TRUE.equals(request.pinned())));
     }
 
     @GetMapping("/memory/items")
