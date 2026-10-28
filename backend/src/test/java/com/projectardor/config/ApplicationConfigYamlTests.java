@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 class ApplicationConfigYamlTests {
@@ -19,7 +20,7 @@ class ApplicationConfigYamlTests {
         LoaderOptions options = new LoaderOptions();
         options.setAllowDuplicateKeys(false);
         try (InputStream in = Files.newInputStream(file)) {
-            assertThatCode(() -> new SafeConstructor(options).load(in)).doesNotThrowAnyException();
+            assertThatCode(() -> new Yaml(new SafeConstructor(options)).load(in)).doesNotThrowAnyException();
         }
     }
 }
