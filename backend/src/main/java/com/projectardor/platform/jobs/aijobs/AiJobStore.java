@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -58,6 +59,27 @@ public class AiJobStore {
 
     public Optional<Job> find(UUID userId, UUID id) {
         return jdbc.query("SELECT * FROM ai_jobs WHERE id = ? AND user_id = ?", MAPPER, id, userId).stream().findFirst();
+    }
+
+    /**
+     * Typical duration band per job type, from the 20 most recent completed runs of that type.
+     * Types with too few samples are absent, so callers must not render a guess.
+     */
+    public Map<AiJobType, DurationSample> durationSamples() {
+        Map<AiJobType, DurationSample> samples = new java.util.EnumMap<>(AiJobType.class);
+        jdbc.query("""
+                SELECT job_type, COUNT(*) AS samples,
+                       CEIL(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))))::int AS p50_seconds,
+                       CEIL(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))))::int AS p90_seconds
+                FROM (SELECT job_type, started_at, finished_at,
+                             ROW_NUMBER() OVER (PARTITION BY job_type ORDER BY finished_at DESC) AS recent
+                      FROM ai_jobs WHERE status='COMPLETED' AND started_at IS NOT NULL AND finished_at IS NOT NULL) runs
+                WHERE recent <= 20 GROUP BY job_type HAVING COUNT(*) >= 5
+                """, rs -> {
+                    samples.put(AiJobType.valueOf(rs.getString("job_type")),
+                            new DurationSample(rs.getInt("samples"), rs.getInt("p50_seconds"), rs.getInt("p90_seconds")));
+                });
+        return samples;
     }
 
     public List<Job> list(UUID userId, AiJobType type, UUID resourceId) {
@@ -181,6 +203,8 @@ public class AiJobStore {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
         catch (java.security.NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
     }
+
+    public record DurationSample(int samples, int p50Seconds, int p90Seconds) {}
 
     public record Job(UUID id, UUID userId, AiJobType type, UUID resourceId, String requestHash, String payload,
             String status, int attempts, int maxAttempts, int priority, String resultPath, String errorCode,

@@ -35,7 +35,7 @@ public class AiJobService {
     public AiJobResponse status(UUID userId, UUID id) {
         AiJobStore.Job job = store.get(userId, id);
         int pos = "QUEUED".equals(job.status()) ? store.queuePosition(job) : -1;
-        return AiJobResponse.from(job, pos);
+        return AiJobResponse.from(job, pos, store.durationSamples().get(job.type()));
     }
 
     public AiJobResponse evaluateLearning(UUID userId, UUID planId, LearningEvaluationCommand input) {
@@ -55,7 +55,8 @@ public class AiJobService {
         boolean existing=request != null && store.find(owner,request).isPresent();
         handler(type).validateEnqueue(owner,resource,payload,existing);
         int priority = priority(owner);
-        return AiJobResponse.from(store.enqueue(owner,request,type,resource,payload,priority), -1);
+        var queued = store.enqueue(owner,request,type,resource,payload,priority);
+        return AiJobResponse.from(queued, -1, store.durationSamples().get(type));
     }
     public String perform(AiJobStore.Job job) {
         return handler(job.type()).perform(new AiJobWork(job.id(),job.userId(),job.type(),job.resourceId(),job.payload()));
