@@ -291,13 +291,15 @@ public class AgentModelCatalogService {
 
     private Option option(String id, LlmConfigService.LlmRuntimeConfig config,
             Map<String, UserModelSettingsStore.Setting> settings) {
-        UserModelSettingsStore.Setting setting = settings.get(ModelConfigFingerprint.of(config));
+        String settingsKey = ModelConfigFingerprint.of(config);
+        UserModelSettingsStore.Setting setting = settings.get(settingsKey);
         return new Option(id, config.model(), config.provider().name(),
                 true, ModelReasoningPolicy.resolve(config, ReasoningDepth.AUTO).nativeControl(),
                 ModelReasoningPolicy.levels(config), AgentImageModelPolicy.supports(config),
                 setting == null || setting.visible(),
                 setting == null ? "AUTO" : setting.thinkingEffort(),
-                setting == null ? null : setting.contextWindowTokens());
+                setting == null ? null : setting.contextWindowTokens(),
+                settingsKey);
     }
 
     private LlmConfigService.LlmRuntimeConfig fallback(AuxiliaryApiConfigService.AuxiliaryRuntimeConfig config) {
@@ -312,15 +314,15 @@ public class AgentModelCatalogService {
 
     public record Option(String id, String label, String provider, boolean available, boolean nativeControl,
             List<ModelReasoningPolicy.Level> reasoningLevels, boolean imageInput, boolean visible,
-            String thinkingEffort, Long contextWindowTokens) {
+            String thinkingEffort, Long contextWindowTokens, String settingsKey) {
         public Option(String id, String label, String provider, boolean available, boolean nativeControl,
                 List<ModelReasoningPolicy.Level> reasoningLevels) {
-            this(id, label, provider, available, nativeControl, reasoningLevels, false, true, "AUTO", null);
+            this(id, label, provider, available, nativeControl, reasoningLevels, false, true, "AUTO", null, null);
         }
 
         public Option(String id, String label, String provider, boolean available, boolean nativeControl,
                 List<ModelReasoningPolicy.Level> reasoningLevels, boolean imageInput) {
-            this(id, label, provider, available, nativeControl, reasoningLevels, imageInput, true, "AUTO", null);
+            this(id, label, provider, available, nativeControl, reasoningLevels, imageInput, true, "AUTO", null, null);
         }
     }
 

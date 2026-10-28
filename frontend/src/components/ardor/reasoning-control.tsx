@@ -9,7 +9,7 @@ import { modelDisplayName } from "@/lib/model-display-name";
 
 type Depth = "AUTO" | "QUICK" | "STANDARD" | "DEEP";
 export type ReasoningLevel = { value: Depth; label: string };
-export type ModelOption = { id: string; label: string; provider: string; available: boolean; nativeControl: boolean; imageInput?: boolean; reasoningLevels?: ReasoningLevel[]; description?: string; visible?: boolean; thinkingEffort?: Depth; contextWindowTokens?: number | null };
+export type ModelOption = { id: string; label: string; provider: string; available: boolean; nativeControl: boolean; imageInput?: boolean; reasoningLevels?: ReasoningLevel[]; description?: string; visible?: boolean; thinkingEffort?: Depth; contextWindowTokens?: number | null; settingsKey?: string };
 const levelLabels: Record<Depth, string> = { AUTO: "Auto", QUICK: "Low", STANDARD: "High", DEEP: "Max" };
 const iconRules: Array<[RegExp, string, string]> = [
   [/(?:^|[/:\s-])(?:gpt|chatgpt|o[134])(?:[/:\s-]|$)|openai/i, "lobe-openai.svg", "#e7f6ec"],

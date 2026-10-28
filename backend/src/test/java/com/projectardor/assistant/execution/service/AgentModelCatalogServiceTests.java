@@ -176,13 +176,43 @@ class AgentModelCatalogServiceTests {
         assertThat(relay.visible()).isFalse();
         assertThat(relay.thinkingEffort()).isEqualTo("DEEP");
         assertThat(relay.contextWindowTokens()).isEqualTo(400_000L);
+        assertThat(relay.settingsKey()).isEqualTo(fingerprint);
         var primary = options.stream().filter(option -> option.id().equals(AgentModelCatalogService.PRIMARY))
                 .findFirst().orElseThrow();
         assertThat(primary.visible()).isTrue();
         assertThat(primary.thinkingEffort()).isEqualTo("AUTO");
         assertThat(primary.contextWindowTokens()).isNull();
+        assertThat(primary.settingsKey()).matches("[0-9a-f]{64}");
         verify(settings).findAll(user);
         verify(settings, org.mockito.Mockito.never()).findAll(other);
+    }
+
+    @Test
+    void catalogEntriesThatResolveToTheSameConfigurationShareOneSettingsKey() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        var settings = mock(UserModelSettingsStore.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM)).thenReturn(
+                Optional.of(new AuxiliaryApiConfigService.AuxiliaryRuntimeConfig(
+                        "OPENAI_COMPATIBLE", "https://api.deepseek.com", "deepseek-v4-flash", "fallback-secret")));
+        var config = new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "either-secret");
+        String fingerprint = ModelConfigFingerprint.of(config);
+        when(settings.findAll(user)).thenReturn(Map.of(fingerprint,
+                new UserModelSettingsStore.Setting(fingerprint, false, "DEEP", 200_000L)));
+
+        var options = new AgentModelCatalogService(llm, auxiliary, discovery, settings).options(user);
+
+        assertThat(options).extracting(AgentModelCatalogService.Option::id)
+                .containsExactly(AgentModelCatalogService.PRIMARY, "FALLBACK:deepseek-v4-flash");
+        assertThat(options).extracting(AgentModelCatalogService.Option::settingsKey)
+                .containsOnly(fingerprint);
+        assertThat(options).allMatch(option -> !option.visible()
+                && "DEEP".equals(option.thinkingEffort()) && Long.valueOf(200_000L).equals(option.contextWindowTokens()));
     }
 
     @Test

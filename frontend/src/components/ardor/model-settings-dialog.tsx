@@ -25,10 +25,10 @@ const MAX_CONTEXT_WINDOW = 10_000_000;
 type Draft = {
   id: string; label: string; provider: string; available: boolean;
   visible: boolean; thinkingEffort: Depth;
-  windowChoice: string; customWindow: string;
+  windowChoice: string; customWindow: string; shared: number;
 };
 
-function toDraft(model: ModelOption): Draft {
+function toDraft(model: ModelOption, shared: number): Draft {
   const tokens = typeof model.contextWindowTokens === "number" ? model.contextWindowTokens : null;
   const preset = presets.find((item) => item.tokens === tokens);
   const effort = model.thinkingEffort && model.thinkingEffort in effortLabels ? model.thinkingEffort : "AUTO";
@@ -36,7 +36,7 @@ function toDraft(model: ModelOption): Draft {
     id: model.id, label: model.label, provider: model.provider, available: model.available,
     visible: model.visible !== false, thinkingEffort: effort,
     windowChoice: preset ? preset.value : "custom",
-    customWindow: tokens == null ? "" : String(tokens),
+    customWindow: tokens == null ? "" : String(tokens), shared,
   };
 }
 
@@ -63,7 +63,17 @@ export function ModelSettingsDialog({ models, onClose, onSave }: {
   onSave: (updates: ModelSettingsUpdate[]) => Promise<void>;
 }) {
   const { t } = useLocale();
-  const [drafts, setDrafts] = useState<Draft[]>(() => models.map(toDraft));
+  const groups = useMemo(() => {
+    const byKey = new Map<string, ModelOption[]>();
+    for (const model of models) {
+      const key = model.settingsKey ?? model.id;
+      const group = byKey.get(key);
+      if (group) group.push(model);
+      else byKey.set(key, [model]);
+    }
+    return [...byKey.values()].map((group) => ({ model: group[0], shared: group.length - 1 }));
+  }, [models]);
+  const [drafts, setDrafts] = useState<Draft[]>(() => groups.map(({ model, shared }) => toDraft(model, shared)));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -115,7 +125,7 @@ export function ModelSettingsDialog({ models, onClose, onSave }: {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-stone-800" title={draft.label}>{modelDisplayName(draft.label)}</p>
-                <p className="truncate text-[10px] uppercase tracking-wide text-stone-400">{draft.provider}{draft.available ? "" : ` · ${t("Not configured", "未配置")}`}</p>
+                <p className="truncate text-[10px] uppercase tracking-wide text-stone-400">{draft.provider}{draft.available ? "" : ` · ${t("Not configured", "未配置")}`}{draft.shared > 0 ? <span className="normal-case tracking-normal"> · {t(`Shared by ${draft.shared + 1} entries`, `与另外 ${draft.shared} 个入口共享`)}</span> : null}</p>
               </div>
               <button type="button" aria-label={`${t("Visible in picker", "在选择器中显示")}: ${draft.label}`} aria-pressed={draft.visible} disabled={!draft.available}
                 onClick={() => update(draft.id, { visible: !draft.visible })}
