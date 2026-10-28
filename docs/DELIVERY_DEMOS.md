@@ -89,7 +89,7 @@ ARDOR_ACCEPTANCE_DISPOSABLE_DB=true \
 
 ## 可选增强：Judge 与 Prompt×Model 的未运行配置
 
-Judge 未接入。确定性断言与安全硬断言已经覆盖评分器的职责，接入 Judge 前需要固定 rubric、人工样本和校准集，且不能放宽安全断言；当前没有这些数据，不产生结论。
+Judge v1 已作为确定性 rubric 接入 e2e 报告（`scripts/agent-eval-judge.mjs`）：固定权重检查答案约束、工具记录、禁止副作用、fixture 终态与不过度声称；结果只进入 `rubric`/`metrics.rubric`，不改变安全判定或退出码，也不调用模型。仍缺：用人工样本校准、语义正确性评判；Prompt×Model 四组仍未运行。
 
 Prompt×Model 四组对照未运行，也未获得付费授权。可运行的前置条件如下，满足后再用现有真实模型 harness 采集，不得用 Fake 结果代替：
 

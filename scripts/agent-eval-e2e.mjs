@@ -19,6 +19,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { scoreCase } from "./agent-eval-assertions.mjs";
+import { judgeCase } from "./agent-eval-judge.mjs";
 import { buildReport } from "./agent-eval-report.mjs";
 import { SseParser } from "./agent-eval-sse.mjs";
 import { fetchCompleteTrace } from "./agent-eval-trace.mjs";
@@ -280,6 +281,15 @@ function combinedResult(declaration, plan, outcome, before, after, foreignAfter)
       scored.errorKind = "BUSINESS_STATE";
     }
     scored.observed.business = { before: before.length, after: after.length, foreignAfter: foreignAfter?.length ?? null };
+    // Diagnostic only: the rubric never changes dimensions, failures or status.
+    scored.rubric = judgeCase({
+      declaration,
+      answer: outcome.answer,
+      observedTools: scored.observed.tools,
+      after,
+      foreignAfter,
+      businessFailures,
+    });
   }
   return scored;
 }

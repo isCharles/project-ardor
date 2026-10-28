@@ -51,7 +51,7 @@
 
 ## 4. 业务 Golden Dataset、确定性断言、分层结果及历史回归，条件具备后再加校准 Judge 和 Prompt×Model 四组对照
 
-**状态：前半句现已能写；Judge、Prompt×Model 四组不建议写。**
+**状态：Golden Dataset、确定性断言、分层结果、历史回归与确定性 rubric Judge v1 现已能写；模型评判式 Judge 与 Prompt×Model 四组不建议写。**
 
 | 能力 | 证据 |
 | --- | --- |
@@ -60,9 +60,10 @@
 | 分层结果 | 报告按业务成功与环境错误分层，Unknown Usage 不置零；`scripts/agent-eval-report.mjs` 保存代码 SHA、dataset/prompt/tool-schema 哈希和逐 case 结果 |
 | 历史回归 | `scripts/agent-eval-diff.mjs` 对比历史报告，业务回归与环境错误分开 |
 | 端到端业务读回 | `scripts/agent-eval-e2e.mjs` 的 9 个日历案例：真实运行时 + REST 播种/读回 + 完整 Trace |
+| 确定性 rubric Judge | `scripts/agent-eval-judge.mjs`（rubric.v1）：固定权重检查答案约束、工具记录、禁止副作用、fixture 终态与写入声称；只写诊断字段，不改变安全判定；不调用模型，未经人工校准 |
 | CI | Golden Path 用 Fake 模型跑 harness 与 e2e，不产生费用 |
 
-**不建议写**：Judge 已接入并校准（未实现）；Prompt×Model 四组已完成（未运行，且未获付费授权）；真实模型基准分数。可写“已交付可运行的 harness、Fake 验证和真实模型运行配置，等待授权后采集真实数据”。Judge 与四组对照只能写成计划。
+**不建议写**：Judge 已用人工样本校准（未做）；模型评判式 Judge 已接入（未做）；Prompt×Model 四组已完成（未运行，且未获付费授权）；真实模型基准分数。可写“已接入确定性 rubric Judge v1，尚未校准；已交付可运行的 harness、Fake 验证和真实模型运行配置，等待授权后采集真实数据”。
 
 ## 5. PostgreSQL 队列、SKIP LOCKED、可配置并发、有限重试、失联恢复、用户任务顺序和必要的模型准入
 
@@ -87,7 +88,7 @@
 | 1. 多步工具调用、权限、审批、持久 Run、逻辑幂等、取消边界 | 现已能写（幂等以日历创建为实测样本） |
 | 2. Trace、Usage、次数、分段耗时、错误、延迟/成本复算 | 现已能写（货币成本需外部价目表） |
 | 3. Token Budget、版本摘要、长期记忆、协议保持压缩 | 机制与离线对照现已能写；真实质量/成本仍需实测 |
-| 4. Golden Dataset、确定性断言、分层结果、历史回归 | 现已能写；Judge 与 Prompt×Model 四组不建议写 |
+| 4. Golden Dataset、确定性断言、分层结果、历史回归、确定性 rubric Judge v1 | 现已能写；模型评判式 Judge 与 Prompt×Model 四组不建议写 |
 | 5. PostgreSQL 队列、SKIP LOCKED、并发、重试、恢复、顺序、模型准入 | 现已能写（进程内护栏，非 QPM/TPM 平台） |
 
 ### 不建议写进简历的表述

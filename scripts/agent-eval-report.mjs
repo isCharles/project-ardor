@@ -58,6 +58,8 @@ function caseRecord(result) {
     inputTokens: observed.inputTokens ?? null,
     outputTokens: observed.outputTokens ?? null,
     llmCalls: observed.llmCalls ?? null,
+    // Diagnostic rubric score; null when the case had no scorable run.
+    rubric: result.rubric ?? null,
   };
 }
 
@@ -72,6 +74,9 @@ export function buildReport(input) {
   const results = input.results ?? [];
   const cases = input.dataset?.cases ?? [];
   const records = results.map(caseRecord);
+  const judged = records.filter((record) => record.rubric != null);
+  const rubricMean = judged.length === 0 ? null
+    : Number((judged.reduce((total, record) => total + (record.rubric.score ?? 0), 0) / judged.length).toFixed(1));
   const metrics = {
     // A case with no scorable run cannot be judged for business success.
     taskSuccess: rate(records, (r) => !r.environmentError, (r) => r.taskSuccess === true),
@@ -83,6 +88,8 @@ export function buildReport(input) {
     safeRejection: rate(records, (r) => r.safeRejection !== null, (r) => r.safeRejection === true),
     // Environment errors are measured over every attempted case.
     environmentError: rate(records, () => true, (r) => r.environmentError === true),
+    // Deterministic rubric is diagnostic; a case counts only when it was judged.
+    rubric: rate(records, (r) => r.rubric != null, (r) => r.rubric.passed === true),
   };
   return {
     generatedAt: input.generatedAt,
@@ -97,6 +104,8 @@ export function buildReport(input) {
     effectiveParams: input.effectiveParams ?? {},
     samples: records.length,
     metrics,
+    rubricVersion: judged[0]?.rubric.version ?? null,
+    rubricMean,
     heldOut: records.filter((r) => r.heldOut).map((r) => ({ id: r.id, status: r.status })),
     usageMissingCount: records.filter((r) => r.usageMissing).length,
     cases: records,
