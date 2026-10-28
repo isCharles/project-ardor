@@ -42,3 +42,6 @@ data/
 
 # Temporary LaTeX compile directories created by the report export route.
 frontend/.latex-report-*
+
+# 本地工作副本（Notion 同步件与取回脚本），不进入版本库
+.local/
