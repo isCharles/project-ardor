@@ -117,7 +117,8 @@ public final class AgentRunTracer {
         store.annotateSpan(userId, spanId, attributes);
     }
 
-    public void recordLlm(Integer inTokens, Integer outTokens, boolean toolRound) {        recordLlm("ASSISTANT", inTokens, outTokens, toolRound, 0);
+    public void recordLlm(Integer inTokens, Integer outTokens, boolean toolRound) {
+        recordLlm("ASSISTANT", inTokens, outTokens, toolRound, 0);
     }
 
     /** Counts one LLM invocation by purpose, including calls whose provider omitted usage. */

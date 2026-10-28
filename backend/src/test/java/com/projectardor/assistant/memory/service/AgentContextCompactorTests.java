@@ -87,8 +87,30 @@ class AgentContextCompactorTests {
         verify(f.summaries(), org.mockito.Mockito.never()).save(any(), any(), anyInt(), any(), anyInt(), anyString(), anyInt(), any());
     }
 
-    @Test
-    void observerReportsActualCompactionAndFailureWithoutDiscardingHistory() {
+    @Test void compactionUnderAnUnresolvedModelWindowStillSummarizesAndRecordsEvidence() {
+        var fixture = fixture(24, 100);
+        var capacity = mock(com.projectardor.assistant.execution.service.ModelContextCapacity.class);
+        when(capacity.resolve(any(), any())).thenReturn(null);
+        var policy = new com.projectardor.assistant.execution.service.AgentContextBudgetPolicy(capacity, 1000, .75, .05);
+        var traceStore = mock(com.projectardor.assistant.execution.service.AgentTraceStore.class);
+        when(traceStore.enabled()).thenReturn(true);
+        when(traceStore.startSpan(any(), any(), any(), any(), any(), any())).thenAnswer(call -> UUID.randomUUID());
+        var tracer = com.projectardor.assistant.execution.service.AgentRunTracer.begin(traceStore, fixture.user(),
+                UUID.randomUUID(), fixture.conversation(), "fixture-model", "v1");
+        var listener = new com.projectardor.assistant.execution.service.AgentModelTraceListener(tracer,
+                "fixture-model", "CONTEXT_COMPACTION", tracer.rootSpanId());
+        var compactor = new AgentContextCompactor(fixture.store(), fixture.summaries(), fixture.factory(), 4, 1000,
+                policy, null, null);
+        var prepared = compactor.prepare(fixture.user(), fixture.conversation(), "system", config(),
+                ReasoningDepth.AUTO, List.of(listener), () -> true, "");
+        assertThat(prepared.compactedMessages()).isPositive();
+        assertThat(prepared.compaction()).isNotNull();
+        assertThat(prepared.compaction().outcome()).isEqualTo("COMPACTED");
+        assertThat(prepared.compaction().windowTokens()).isNull();
+        assertThat(prepared.compaction().softThresholdTokens()).isEqualTo(1000);
+    }
+
+    @Test void observerReportsActualCompactionAndFailureWithoutDiscardingHistory() {
         var fixture = fixture(50, 80);
         when(fixture.model().chat(any(ChatRequest.class))).thenThrow(new IllegalStateException("synthetic failure"));
         var states = new ArrayList<String>();

@@ -34,12 +34,17 @@ public final class AgentModelTraceListener implements ChatModelListener {
      * from a model call that compaction must have happened.
      */
     public void attachCompactionEvidence(Map<String, Object> evidence) {
-        this.compactionEvidence = evidence == null ? Map.of() : Map.copyOf(evidence);
+        this.compactionEvidence = snapshot(evidence);
     }
 
     /** Merges the facts that only exist once the summary is written: versions, size after, failure code. */
     public void recordCompactionOutcome(Map<String, Object> outcome) {
-        tracer.annotateChild(lastSpanId, outcome == null ? Map.of() : Map.copyOf(outcome));
+        tracer.annotateChild(lastSpanId, snapshot(outcome));
+    }
+
+    /** An unknown window or hard limit is a null value, so the snapshot has to survive the facts it records. */
+    private static Map<String, Object> snapshot(Map<String, Object> values) {
+        return values == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(values));
     }
 
     /** The span of the most recent compaction call, so the conversation notice can link to it. */

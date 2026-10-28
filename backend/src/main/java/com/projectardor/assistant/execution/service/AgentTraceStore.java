@@ -130,7 +130,8 @@ public class AgentTraceStore {
         }
     }
 
-    public List<Span> find(UUID userId, UUID runId) {        return findPage(userId, runId, 0, DEFAULT_SPAN_LIMIT).spans();
+    public List<Span> find(UUID userId, UUID runId) {
+        return findPage(userId, runId, 0, DEFAULT_SPAN_LIMIT).spans();
     }
 
     /**

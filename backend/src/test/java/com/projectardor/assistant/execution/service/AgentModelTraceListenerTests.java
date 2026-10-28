@@ -76,6 +76,31 @@ class AgentModelTraceListenerTests {
     }
 
     @Test
+    void anUnresolvedModelWindowIsKeptAsAnExplicitUnknownOnTheCompactionSpan() {
+        var store = mock(AgentTraceStore.class);
+        when(store.enabled()).thenReturn(true);
+        UUID compactSpan = UUID.randomUUID();
+        when(store.startSpan(any(), any(), any(), any(), any(), any())).thenReturn(compactSpan);
+        var tracer = AgentRunTracer.begin(store, UUID.randomUUID(), UUID.randomUUID(), null, "fixture", "v1");
+        var compact = new AgentModelTraceListener(tracer, "fixture", "CONTEXT_COMPACTION", tracer.rootSpanId());
+        Map<String, Object> evidence = new HashMap<>();
+        evidence.put("windowTokens", null);
+        evidence.put("hardInputTokens", null);
+        evidence.put("softThresholdTokens", 200_000L);
+        evidence.put("projectedInputTokens", 205_400L);
+        compact.attachCompactionEvidence(evidence);
+        var request = mock(ChatModelRequestContext.class);
+        when(request.attributes()).thenAnswer(call -> new HashMap<>());
+        when(request.chatRequest()).thenReturn(null);
+        compact.onRequest(request);
+        assertThat(compact.lastSpanId()).isEqualTo(compactSpan);
+        verify(store).startSpan(any(), any(), eq(tracer.rootSpanId()), eq("COMPACTION"), eq("context.compact.1"),
+                org.mockito.ArgumentMatchers.argThat(attributes -> attributes.containsKey("windowTokens")
+                        && attributes.get("windowTokens") == null && attributes.get("hardInputTokens") == null
+                        && Long.valueOf(200_000L).equals(attributes.get("softThresholdTokens"))));
+    }
+
+    @Test
     void previewCutoffIsLabelledAsPreviewTruncation() {
         var store = mock(AgentTraceStore.class);
         when(store.enabled()).thenReturn(true);
