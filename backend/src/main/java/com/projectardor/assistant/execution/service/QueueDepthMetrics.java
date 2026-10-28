@@ -77,16 +77,17 @@ public class QueueDepthMetrics {
     @Scheduled(fixedDelayString = "${app.observability.queue-sample-interval:15s}")
     public void sample() {
         try {
-            agentDepth.register(rows(AGENT_DEPTH_SQL, "status", "n"));
-            agentOldestQueued.register(List.of(MultiGauge.Row.of(Tags.empty(), scalar(AGENT_OLDEST_SQL))));
+            // MultiGauge keeps the first value per tag set unless overwrite is enabled.
+            agentDepth.register(rows(AGENT_DEPTH_SQL, "status", "n"), true);
+            agentOldestQueued.register(List.of(MultiGauge.Row.of(Tags.empty(), scalar(AGENT_OLDEST_SQL))), true);
             agentPriorityDepth.register(jdbc.queryForList(AGENT_PRIORITY_DEPTH_SQL).stream()
                     .map(row -> MultiGauge.Row.of(Tags.of(
                             "status", String.valueOf(row.get("status")),
                             "priority", String.valueOf(row.get("priority"))), number(row.get("n"))))
-                    .toList());
-            agentPriorityOldestQueued.register(rows(AGENT_PRIORITY_OLDEST_SQL, "priority", "age"));
-            jobDepth.register(rows(JOB_DEPTH_SQL, "status", "n"));
-            jobOldestQueued.register(rows(JOB_OLDEST_SQL, "priority", "age"));
+                    .toList(), true);
+            agentPriorityOldestQueued.register(rows(AGENT_PRIORITY_OLDEST_SQL, "priority", "age"), true);
+            jobDepth.register(rows(JOB_DEPTH_SQL, "status", "n"), true);
+            jobOldestQueued.register(rows(JOB_OLDEST_SQL, "priority", "age"), true);
         } catch (RuntimeException ignored) { }
     }
 

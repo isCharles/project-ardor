@@ -58,6 +58,32 @@ class QueueDepthMetricsTests {
     }
 
     @Test
+    void laterSamplesOverwriteExistingQueueSeries() {
+        when(jdbc.queryForList(QueueDepthMetrics.AGENT_DEPTH_SQL)).thenReturn(
+                List.of(Map.of("status", "QUEUED", "n", 2L)),
+                List.of(Map.of("status", "QUEUED", "n", 5L)));
+        when(jdbc.queryForList(QueueDepthMetrics.AGENT_PRIORITY_DEPTH_SQL)).thenReturn(
+                List.of(Map.of("status", "QUEUED", "priority", 0, "n", 2L)),
+                List.of(Map.of("status", "QUEUED", "priority", 0, "n", 5L)));
+        when(jdbc.queryForList(QueueDepthMetrics.AGENT_OLDEST_SQL)).thenReturn(
+                List.of(Map.of("age", 10.0)), List.of(Map.of("age", 70.0)));
+        when(jdbc.queryForList(QueueDepthMetrics.AGENT_PRIORITY_OLDEST_SQL)).thenReturn(
+                List.of(Map.of("priority", 0, "age", 10.0)),
+                List.of(Map.of("priority", 0, "age", 70.0)));
+
+        var metrics = new QueueDepthMetrics(jdbc, registry);
+        metrics.sample();
+        metrics.sample();
+
+        assertThat(registry.get("ardor.agent.queue.depth").tag("status", "QUEUED").gauge().value()).isEqualTo(5.0);
+        assertThat(registry.get("ardor.agent.queue.priority.depth")
+                .tags("status", "QUEUED", "priority", "0").gauge().value()).isEqualTo(5.0);
+        assertThat(registry.get("ardor.agent.queue.oldest.queued.seconds").gauge().value()).isEqualTo(70.0);
+        assertThat(registry.get("ardor.agent.queue.priority.oldest.queued.seconds")
+                .tag("priority", "0").gauge().value()).isEqualTo(70.0);
+    }
+
+    @Test
     void emptyQueuesReportZeroAge() {
         when(jdbc.queryForList(QueueDepthMetrics.AGENT_DEPTH_SQL)).thenReturn(List.of());
         when(jdbc.queryForList(QueueDepthMetrics.AGENT_OLDEST_SQL)).thenReturn(List.of(Map.of("age", 0L)));
