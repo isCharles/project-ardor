@@ -1,9 +1,10 @@
 "use client";
 
-import { Check, ChevronDown, Cpu, Settings2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Settings2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDismiss } from "./overlay";
+import { ModelIcon } from "./model-icon";
 import { useLocale } from "@/lib/locale";
 import { modelDisplayName } from "@/lib/model-display-name";
 
@@ -11,30 +12,6 @@ type Depth = "AUTO" | "QUICK" | "STANDARD" | "DEEP";
 export type ReasoningLevel = { value: Depth; label: string };
 export type ModelOption = { id: string; label: string; provider: string; available: boolean; nativeControl: boolean; imageInput?: boolean; reasoningLevels?: ReasoningLevel[]; description?: string; visible?: boolean; thinkingEffort?: Depth; contextWindowTokens?: number | null; settingsKey?: string };
 const levelLabels: Record<Depth, string> = { AUTO: "Auto", QUICK: "Low", STANDARD: "High", DEEP: "Max" };
-const iconRules: Array<[RegExp, string, string]> = [
-  [/(?:^|[/:\s-])(?:gpt|chatgpt|o[134])(?:[/:\s-]|$)|openai/i, "lobe-openai.svg", "#e7f6ec"],
-  [/claude|anthropic|opus|sonnet|haiku/i, "color-claude.svg", "#fdf0e8"],
-  [/deepseek/i, "color-deepseek.svg", "#e8f1ff"],
-  [/gemini|google|palm/i, "color-gemini.svg", "#eef0ff"],
-  [/qwen|qwq|tongyi|alibaba/i, "color-qwen.svg", "#f4eaff"],
-  [/seed|doubao|ark/i, "color-doubao.svg", "#e8f7ff"],
-  [/bytedance|volcengine/i, "color-bytedance.svg", "#e8f7ff"],
-  [/kimi|moonshot/i, "color-kimi.svg", "#eef0f5"],
-  [/glm|zhipu|chatglm/i, "color-zhipu.svg", "#eaf2ff"],
-  [/grok|xai|x-ai/i, "lobe-grok.svg", "#f1f1f1"],
-  [/llama|meta/i, "color-meta.svg", "#eef3ff"],
-  [/mistral|mixtral|codestral/i, "color-mistral.svg", "#fff3e6"],
-];
-
-function iconFor(label: string) {
-  return iconRules.find(([pattern]) => pattern.test(label));
-}
-function ModelIcon({ label }: { label: string }) {
-  const match = iconFor(label);
-  if (!match) return <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-stone-100 text-stone-400 ring-1 ring-stone-200/70"><Cpu className="size-3.5" /></span>;
-  const [, icon, tint] = match;
-  return <span className="grid size-7 shrink-0 place-items-center rounded-lg ring-1 ring-black/5" style={{ backgroundColor: tint }}><span aria-hidden className="size-4 bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(/model-icons/${icon})` }} /></span>;
-}
 
 /**
  * Model picker in the composer. Thinking effort and context window live in the
@@ -86,9 +63,9 @@ export function ReasoningControl({ value, disabled, nativeControl, models = [], 
         {visibleModels.length === 0 && <p className="px-3 py-4 text-xs text-stone-400">{t("No models available.", "暂无可用模型。")}</p>}
       </div>
       <div className="my-2 h-px bg-stone-200/70" />
-      <button type="button" aria-label={t("Manage models", "管理模型")} onClick={() => { setOpen(false); onManageModels?.(); }} className="flex w-full items-center justify-between gap-2 rounded-2xl px-2.5 py-2 text-xs text-stone-600 transition hover:bg-violet-50">
-        <span className="flex items-center gap-2"><Settings2 className="size-3.5 text-stone-400" />{t("Manage models", "管理模型")}</span>
-        <span className="text-[10px] text-stone-400">{t("Visibility, thinking, context window", "可见性、思考力度、上下文窗口")}</span>
+      <button type="button" aria-label={t("Manage models", "管理模型")} onClick={() => { setOpen(false); onManageModels?.(); }} className="flex w-full items-center gap-2 rounded-2xl px-2.5 py-2 text-xs text-stone-600 transition hover:bg-violet-50">
+        <Settings2 className="size-3.5 text-stone-400" />{t("Manage models", "管理模型")}
+        <ChevronRight className="ml-auto size-3.5 text-stone-300" />
       </button>
     </div>, document.body)}
   </div>;
