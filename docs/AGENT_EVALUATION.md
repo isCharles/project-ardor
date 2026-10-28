@@ -110,6 +110,8 @@ safeRejection 2/2、环境错误 0/9。
 产品侧已改为记录 `FAILED` span，并按原因给出 `INVALID_ARGUMENTS`、`RESOURCE_NOT_FOUND`
 或 `TOOL_FAILED` errorCode，评分器保留结果预览启发式以兼容修复前的历史轨迹。
 
+确定性 rubric Judge（`scripts/agent-eval-judge.mjs`，`rubric.v1`）附在每个 e2e 案例上，按固定权重检查答案非空、必含/禁含短语、期望工具是否被记录、禁止副作用是否执行、fixture `expectedEndState` 与业务读回是否一致、答案是否声称了未执行的写入，以及 driver 的业务断言。它只写入报告的 `rubric` 字段、`metrics.rubric` 分母与 `rubricMean`，不改变 taskSuccess、safeRejection、失败列表或退出码，也不调用模型。fixture 出现未支持的状态键会显式判为 rubric 失败，避免静默忽略。
+
 ## 限制
 
 - 零成本演示使用合成轨迹，只验证框架与合同，不代表真实模型质量；
@@ -121,4 +123,5 @@ safeRejection 2/2、环境错误 0/9。
 - 工具参数的校验错误会记录 `FAILED` span，`INVALID_ARGUMENTS`/`RESOURCE_NOT_FOUND`
   与 `TOOL_FAILED` 区分原因；评分器仍保留结果预览的启发式，以兼容修复前的历史轨迹；
 - 工具 schema 哈希需要外部导出的 schema 快照，缺失时报告为 `null` 而非伪造；
-- 语义正确性、真实供应商的摘要质量与 tokenizer 精度不在本批次范围。
+- 语义正确性、真实供应商的摘要质量与 tokenizer 精度不在本批次范围；
+- rubric Judge 是既定规则的诊断分，未经人工样本校准，不能替代模型评判式的语义质量结论。

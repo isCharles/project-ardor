@@ -44,7 +44,7 @@ export function diffReports(baseline, current) {
   }
 
   const contextChanged = {};
-  for (const field of ["codeSha", "datasetVersion", "model"]) {
+  for (const field of ["codeSha", "datasetVersion", "model", "rubricVersion"]) {
     const before = baseline?.[field] ?? null;
     const after = current?.[field] ?? null;
     contextChanged[field] = { baseline: before, current: after, changed: before !== after };
