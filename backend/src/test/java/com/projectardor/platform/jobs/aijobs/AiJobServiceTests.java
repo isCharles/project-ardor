@@ -28,8 +28,10 @@ class AiJobServiceTests {
                 "RUNNING", 1, 5, 0, null, null, null, Instant.now(), Instant.now(), null, null);
         assertThat(service.perform(job)).isEqualTo("/app/learning?id=" + planId);
         verify(learning).submit(user, planId, List.of("saved answer"), 2, request);
-        assertThat(AiJobResponse.from(job, -1).estimateMinSeconds()).isNull();
-        assertThat(AiJobResponse.from(job, -1).estimateMaxSeconds()).isNull();
+        assertThat(AiJobResponse.from(job, -1, new AiJobStore.DurationSample(12, 40, 95)).estimateMinSeconds()).isEqualTo(40);
+        assertThat(AiJobResponse.from(job, -1, new AiJobStore.DurationSample(12, 40, 95)).estimateMaxSeconds()).isEqualTo(95);
+        assertThat(AiJobResponse.from(job, -1, null).estimateMinSeconds()).isNull();
+        assertThat(AiJobResponse.from(job, -1, null).estimateMaxSeconds()).isNull();
     }
 
     @Test void duplicateAndMissingHandlersFailAtRegistrationRatherThanAtRuntime() {
