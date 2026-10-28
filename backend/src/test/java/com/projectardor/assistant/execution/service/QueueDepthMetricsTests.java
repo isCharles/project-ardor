@@ -25,6 +25,12 @@ class QueueDepthMetricsTests {
                 Map.of("status", "QUEUED", "n", 2L),
                 Map.of("status", "RUNNING", "n", 1L)));
         when(jdbc.queryForList(QueueDepthMetrics.AGENT_OLDEST_SQL)).thenReturn(List.of(Map.of("age", 42.5)));
+        when(jdbc.queryForList(QueueDepthMetrics.AGENT_PRIORITY_DEPTH_SQL)).thenReturn(List.of(
+                Map.of("status", "QUEUED", "priority", 0, "n", 2L),
+                Map.of("status", "QUEUED", "priority", 1, "n", 1L)));
+        when(jdbc.queryForList(QueueDepthMetrics.AGENT_PRIORITY_OLDEST_SQL)).thenReturn(List.of(
+                Map.of("priority", 0, "age", 75.0),
+                Map.of("priority", 1, "age", 5.0)));
         when(jdbc.queryForList(QueueDepthMetrics.JOB_DEPTH_SQL)).thenReturn(List.of(
                 Map.of("status", "QUEUED", "n", 5L)));
         when(jdbc.queryForList(QueueDepthMetrics.JOB_OLDEST_SQL)).thenReturn(List.of(
@@ -36,6 +42,14 @@ class QueueDepthMetricsTests {
         assertThat(registry.get("ardor.agent.queue.depth").tag("status", "QUEUED").gauge().value()).isEqualTo(2.0);
         assertThat(registry.get("ardor.agent.queue.depth").tag("status", "RUNNING").gauge().value()).isEqualTo(1.0);
         assertThat(registry.get("ardor.agent.queue.oldest.queued.seconds").gauge().value()).isEqualTo(42.5);
+        assertThat(registry.get("ardor.agent.queue.priority.depth")
+                .tags("status", "QUEUED", "priority", "0").gauge().value()).isEqualTo(2.0);
+        assertThat(registry.get("ardor.agent.queue.priority.depth")
+                .tags("status", "QUEUED", "priority", "1").gauge().value()).isEqualTo(1.0);
+        assertThat(registry.get("ardor.agent.queue.priority.oldest.queued.seconds")
+                .tag("priority", "0").gauge().value()).isEqualTo(75.0);
+        assertThat(registry.get("ardor.agent.queue.priority.oldest.queued.seconds")
+                .tag("priority", "1").gauge().value()).isEqualTo(5.0);
         assertThat(registry.get("ardor.ai.jobs.depth").tag("status", "QUEUED").gauge().value()).isEqualTo(5.0);
         assertThat(registry.get("ardor.ai.jobs.oldest.queued.seconds").tag("priority", "1").gauge().value())
                 .isEqualTo(120.0);

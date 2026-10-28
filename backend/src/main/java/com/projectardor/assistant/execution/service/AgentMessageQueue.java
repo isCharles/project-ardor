@@ -4,8 +4,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -14,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import com.projectardor.assistant.conversation.web.AgentMessageRequest;
 import com.projectardor.common.web.ResourceNotFoundException;
+import com.projectardor.platform.usage.MembershipService;
+import com.projectardor.platform.usage.MembershipTier;
 import tools.jackson.databind.ObjectMapper;
 import com.projectardor.assistant.conversation.service.AgentConversationStore;
 
@@ -24,10 +28,29 @@ public class AgentMessageQueue {
     private final ObjectMapper mapper;
     private final AgentConversationStore conversations;
     private final TransactionTemplate transactions;
+    private final Function<UUID, MembershipTier> tiers;
+    private final long priorityAgingSeconds;
+
+    /** Compatibility for callers without membership context; queued rows start as free tier. */
     public AgentMessageQueue(JdbcTemplate jdbc, ObjectMapper mapper, AgentConversationStore conversations,
             PlatformTransactionManager transactionManager) {
+        this(jdbc, mapper, conversations, transactionManager, ignored -> MembershipTier.FREE, 60);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentMessageQueue(JdbcTemplate jdbc, ObjectMapper mapper, AgentConversationStore conversations,
+            PlatformTransactionManager transactionManager, MembershipService memberships,
+            @Value("${app.agent.queue.priority-aging-seconds:60}") long priorityAgingSeconds) {
+        this(jdbc, mapper, conversations, transactionManager, memberships::tier, priorityAgingSeconds);
+    }
+
+    AgentMessageQueue(JdbcTemplate jdbc, ObjectMapper mapper, AgentConversationStore conversations,
+            PlatformTransactionManager transactionManager, Function<UUID, MembershipTier> tiers,
+            long priorityAgingSeconds) {
         this.jdbc = jdbc; this.mapper = mapper; this.conversations = conversations;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.tiers = tiers;
+        this.priorityAgingSeconds = Math.max(1, priorityAgingSeconds);
     }
     private final RowMapper<Item> rows = this::mapRow;
     private Item mapRow(java.sql.ResultSet rs, int index) throws java.sql.SQLException {
@@ -81,10 +104,13 @@ public class AgentMessageQueue {
                     AND NOT EXISTS (SELECT 1 FROM agent_message_queue p WHERE p.user_id=q.user_id
                       AND (p.status IN ('DISPATCHING','RUNNING') OR (p.status='QUEUED' AND p.sequence<q.sequence)))
                     AND NOT EXISTS (SELECT 1 FROM agent_runs r WHERE r.user_id=q.user_id AND r.status='RUNNING')
-                  ORDER BY q.sequence FOR UPDATE SKIP LOCKED LIMIT 1
+                  -- Paid rows start one level ahead. Each wait window adds a level, so a continuous
+                  -- paid stream cannot starve a free row; sequence then preserves steering order.
+                  ORDER BY (q.priority + FLOOR(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - q.created_at)) / ?)) DESC,
+                    q.sequence FOR UPDATE SKIP LOCKED LIMIT 1
                 ) UPDATE agent_message_queue q SET status='DISPATCHING',updated_at=CURRENT_TIMESTAMP
                   FROM next WHERE q.id=next.id RETURNING q.*
-                """, rows).stream().findFirst();
+                """, rows, priorityAgingSeconds).stream().findFirst();
     }
     public void reconcile() {
         jdbc.update("""
@@ -217,10 +243,11 @@ public class AgentMessageQueue {
                 """, UUID.class, userId).stream().findFirst().orElse(null);
         UUID predecessor = previous == null || previous.status().equals("COMPLETED") ? activeRun
                 : List.of("FAILED", "INTERRUPTED").contains(previous.status()) && activeRun != null ? activeRun : previous.id();
+        int priority = tiers.apply(userId).paid() ? 1 : 0;
         int inserted = jdbc.update("""
-                INSERT INTO agent_message_queue(id,user_id,conversation_id,payload,blocked_by)
-                VALUES(?,?,?,CAST(? AS jsonb),?) ON CONFLICT(id) DO NOTHING
-                """, request.requestId(), userId, request.conversationId(), payload, predecessor);
+                INSERT INTO agent_message_queue(id,user_id,conversation_id,payload,blocked_by,priority)
+                VALUES(?,?,?,CAST(? AS jsonb),?,?) ON CONFLICT(id) DO NOTHING
+                """, request.requestId(), userId, request.conversationId(), payload, predecessor, priority);
         if (inserted != 1) throw new IllegalArgumentException("请求标识不可用");
         return new Accepted(get(userId, request.requestId()), true);
     }

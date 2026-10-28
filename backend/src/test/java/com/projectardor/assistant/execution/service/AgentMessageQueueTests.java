@@ -19,6 +19,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import com.projectardor.assistant.ReasoningDepth;
 import com.projectardor.assistant.conversation.web.AgentMessageRequest;
 import com.projectardor.assistant.conversation.service.AgentConversationStore;
+import com.projectardor.platform.usage.MembershipTier;
 
 /**
  * Real PostgreSQL queue/steering races, isolated to connection-local tables. The steering stop is
@@ -30,6 +31,8 @@ class AgentMessageQueueTests {
     private SingleConnectionDataSource dataSource;
     private JdbcTemplate jdbc;
     private AgentMessageQueue queue;
+    private final tools.jackson.databind.ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+    private final AgentConversationStore conversations = mock(AgentConversationStore.class);
     private final UUID owner = UUID.randomUUID();
     private final UUID conversation = UUID.randomUUID();
     private final UUID replacedRun = UUID.randomUUID();
@@ -42,8 +45,8 @@ class AgentMessageQueueTests {
         var connection = DriverManager.getConnection(url, "ardor", "acceptance-only");
         dataSource = new SingleConnectionDataSource(connection, true);
         jdbc = new JdbcTemplate(dataSource);
-        queue = new AgentMessageQueue(jdbc, tools.jackson.databind.json.JsonMapper.builder().build(),
-                mock(AgentConversationStore.class), new DataSourceTransactionManager(dataSource));
+        queue = new AgentMessageQueue(jdbc, mapper, conversations,
+                new DataSourceTransactionManager(dataSource));
         jdbc.execute("CREATE TEMP TABLE users(id uuid PRIMARY KEY)");
         jdbc.execute("""
                 CREATE TEMP TABLE agent_runs (
@@ -64,6 +67,7 @@ class AgentMessageQueueTests {
                   status varchar(24) NOT NULL DEFAULT 'QUEUED',
                   blocked_by uuid,
                   error_message varchar(400),
+                  priority smallint NOT NULL DEFAULT 0,
                   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
@@ -154,5 +158,50 @@ class AgentMessageQueueTests {
         var claimed = queue.claimNext();
         assertThat(claimed).isPresent();
         assertThat(claimed.get().id()).isEqualTo(requestId);
+    }
+
+    private AgentMessageQueue queueWith(java.util.function.Function<UUID, MembershipTier> tiers) {
+        return new AgentMessageQueue(jdbc, mapper, conversations,
+                new DataSourceTransactionManager(dataSource), tiers, 60);
+    }
+
+    private UUID user() {
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO users(id) VALUES(?)", id);
+        return id;
+    }
+
+    @Test
+    void paidMessageStartsAheadOfAnOlderFreeMessage() {
+        UUID freeUser = user();
+        UUID paidUser = user();
+        var priorityQueue = queueWith(id -> id.equals(paidUser) ? MembershipTier.PLUS : MembershipTier.FREE);
+
+        var free = priorityQueue.enqueue(freeUser, request(UUID.randomUUID()));
+        var paid = priorityQueue.enqueue(paidUser, request(UUID.randomUUID()));
+
+        assertThat(jdbc.queryForObject("SELECT priority FROM agent_message_queue WHERE id=?",
+                Integer.class, free.id())).isZero();
+        assertThat(jdbc.queryForObject("SELECT priority FROM agent_message_queue WHERE id=?",
+                Integer.class, paid.id())).isEqualTo(1);
+        assertThat(priorityQueue.claimNext()).get()
+                .extracting(AgentMessageQueue.Item::id).isEqualTo(paid.id());
+        assertThat(priorityQueue.claimNext()).get()
+                .extracting(AgentMessageQueue.Item::id).isEqualTo(free.id());
+    }
+
+    @Test
+    void oneAgingWindowLetsTheFreeMessageOvertakeFreshPaidArrivals() {
+        UUID freeUser = user();
+        UUID paidUser = user();
+        var priorityQueue = queueWith(id -> id.equals(paidUser) ? MembershipTier.PLUS : MembershipTier.FREE);
+
+        var free = priorityQueue.enqueue(freeUser, request(UUID.randomUUID()));
+        jdbc.update("UPDATE agent_message_queue SET created_at=CURRENT_TIMESTAMP-INTERVAL '61 seconds' WHERE id=?",
+                free.id());
+        priorityQueue.enqueue(paidUser, request(UUID.randomUUID()));
+
+        assertThat(priorityQueue.claimNext()).get()
+                .extracting(AgentMessageQueue.Item::id).isEqualTo(free.id());
     }
 }
