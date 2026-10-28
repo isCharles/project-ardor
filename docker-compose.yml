@@ -56,6 +56,10 @@ services:
       ARDOR_RESUME_STORAGE: /app/data/resumes
       ARDOR_HTTP_PROXY_HOST: ${ARDOR_HTTP_PROXY_HOST:-}
       ARDOR_HTTP_PROXY_PORT: ${ARDOR_HTTP_PROXY_PORT:-0}
+      # Anthropic-compatible prompt caching. Off by default: the cached prefix is the shared
+      # tool schema only, and relays differ in whether they accept cache_control.
+      ARDOR_PROMPT_CACHE_ENABLED: ${ARDOR_PROMPT_CACHE_ENABLED:-false}
+      ARDOR_PROMPT_CACHE_TOOLS: ${ARDOR_PROMPT_CACHE_TOOLS:-true}
     # Docker's embedded resolver forwards to whatever the host has configured, which on
     # some Windows/VPN setups answers nothing. Every outbound LLM call then fails at DNS
     # with "Base URL 的主机暂时无法解析" before a single byte is sent. Pinning public
