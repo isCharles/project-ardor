@@ -67,7 +67,7 @@ V33 新增 PostgreSQL `ai_jobs` 表，原提交及状态持久化。Worker 使�
 
 在线聊天流式调用、摘要/标题等辅助对话和后台 JSON 评估共用同一进程内的模型并发上限：`app.model.max-concurrent-calls`（环境变量 `ARDOR_MODEL_MAX_CONCURRENT_CALLS`，默认 8）。容量满时立即以可重试的 `LLM_BUSY` 拒绝，不排队等待：在线请求表现为可重试的 `AGENT_TEMPORARILY_UNAVAILABLE`，由浏览器显式重试；后台任务按 30 秒起步、指数增长的退避重新排队，达到 `max_attempts` 后进入死信。供应商返回的 429 也归类为同一可重试错误，走相同退避。
 
-该并发上限只覆盖单个进程。可另行开启跨实例的分钟窗口准入：`app.model.qpm`（每模型每分钟请求数）、`app.model.tpm`（每模型每分钟估算 token 数）、`app.model.user-qpm`（每用户每分钟请求数），环境变量 `ARDOR_MODEL_QPM`、`ARDOR_MODEL_TPM`、`ARDOR_MODEL_USER_QPM`，默认 0 表示关闭。计数器在 Redis 固定 UTC 分钟窗口内原子检查，共享缓存的实例看到同一预算；模型维度按 provider + Base URL + model 指纹，token 维度采用发送前估算的输入加预留输出（后台 JSON 调用只有输入估算），不采用供应商回传的实际用量。任一维度触顶时与并发满一样返回可重试的 `LLM_BUSY`，在线由浏览器重试、后台按既有退避重排。Redis 不可用时放行并增加 `ardor_model_rate_degraded`，避免限速设施故障中断对话。窗口在分钟边界允许短时双倍突发；该层不是计费或供应商配额的精确复刻，也不覆盖语音等其他供应商调用。
+该并发上限只覆盖单个进程。可另行开启跨实例的分钟窗口准入：`app.model.qpm`（每模型每分钟请求数）、`app.model.tpm`（每模型每分钟估算 token 数）、`app.model.user-qpm`（每用户每分钟请求数），环境变量 `ARDOR_MODEL_QPM`、`ARDOR_MODEL_TPM`、`ARDOR_MODEL_USER_QPM`，默认 0 表示关闭。计数器在 Redis 固定 UTC 分钟窗口内原子检查，共享缓存的实例看到同一预算；模型维度按 provider + Base URL + model 指纹，token 维度采用发送前估算的输入加预留输出（后台 JSON 调用只有输入估算），不采用供应商回传的实际用量。任一维度触顶时与并发满一样返回可重试的 `LLM_BUSY`，在线由浏览器重试、后台按既有退避重排。Redis 不可用时放行并增加 `ardor_model_rate_degraded`，避免限速设施故障中断对话。窗口在分钟边界允许短时双倍突发；该层不是计费或供应商配额的精确复刻，也不覆盖语音等其他供应商调用。TPM 必须高于允许的最大单次请求估算，否则该请求会在任何窗口下都被拒绝。
 
 ## 验证
 
