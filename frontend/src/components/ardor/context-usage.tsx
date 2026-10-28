@@ -55,13 +55,6 @@ export function ContextUsageIndicator({ usage: snapshot, selectedModel }: { usag
   const button = useRef<HTMLButtonElement>(null);
   const tooltipId = useId();
   const ref = useDismiss<HTMLDivElement>(!!position, () => setPosition(null));
-  useEffect(() => {
-    if (!position) return;
-    const close = () => setPosition(null);
-    window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
-    return () => { window.removeEventListener("resize", close); window.removeEventListener("scroll", close, true); };
-  }, [position]);
   const show = () => {
     const rect = button.current?.getBoundingClientRect();
     if (!rect) return;
@@ -69,6 +62,15 @@ export function ContextUsageIndicator({ usage: snapshot, selectedModel }: { usag
     setPosition({ left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)),
       bottom: Math.max(12, window.innerHeight - rect.top + 8), maxHeight: Math.max(100, rect.top - 20), width });
   };
+  useEffect(() => {
+    if (!position) return;
+    // A streaming transcript scrolls under a pointer that never moved, and the estimate is only
+    // useful if the note follows the ring. Anything else — a tap, keyboard focus — still closes it.
+    const reactToViewport = () => { if (button.current?.matches(":hover")) show(); else setPosition(null); };
+    window.addEventListener("resize", reactToViewport);
+    window.addEventListener("scroll", reactToViewport, true);
+    return () => { window.removeEventListener("resize", reactToViewport); window.removeEventListener("scroll", reactToViewport, true); };
+  }, [position]);
   const working = usage?.state === "PREPARING" || usage?.state === "COMPACTING";
   const count = usage?.estimatedTokens;
   const known = typeof count === "number" && Number.isFinite(count) && count >= 0;

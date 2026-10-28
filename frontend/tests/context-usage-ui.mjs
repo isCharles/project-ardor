@@ -51,7 +51,10 @@ try {
   await indicator.hover();
   const tooltip = page.getByRole("tooltip");
   await tooltip.getByText("Capacity unknown", { exact: true }).waitFor();
-  assert.match(await tooltip.innerText(), /≈1.8K \/ — tokens/);
+  // A streaming transcript scrolls under a pointer that never moved; the estimate has to stay readable.
+  await page.evaluate(() => window.dispatchEvent(new Event("scroll")));
+  await tooltip.getByText("Capacity unknown", { exact: true }).waitFor();
+  assert.match(await tooltip.innerText(), /≈1\.8K \/ — tokens/);
   assert.equal(await tooltip.locator("p").count(), 3);
   assert.doesNotMatch(await tooltip.innerText(), /12,000|summary|schemas|synthetic-model/i);
   assert.doesNotMatch(await indicator.innerText(), /%/);
