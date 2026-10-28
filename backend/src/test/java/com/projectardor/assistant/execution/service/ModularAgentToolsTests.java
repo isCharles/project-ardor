@@ -457,7 +457,8 @@ class ModularAgentToolsTests {
         var host = tools(); host.configureToolProviders(List.of(provider));
         var executors = wrapped(host.bind(owner, "只查看日程和固定安排", run), null, null);
         var names = List.of("list_calendar_tasks", "create_calendar_task", "update_calendar_task", "delete_calendar_task",
-                "list_recurring_tasks", "create_recurring_task", "update_recurring_task", "delete_recurring_task");
+                "list_recurring_tasks", "create_recurring_task", "update_recurring_task", "delete_recurring_task",
+                "find_available_slots", "check_calendar_conflict");
         assertThat(ToolSpecifications.toolSpecificationsFrom(provider.toolTypes().getFirst()).stream()
                 .map(ToolSpecification::name)).containsExactlyInAnyOrderElementsOf(names);
         assertThat(new com.projectardor.assistant.tools.AgentToolSchemaCatalog(List.of(provider)).schemas().keySet())
