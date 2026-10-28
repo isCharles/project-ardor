@@ -272,9 +272,11 @@ final class ApprovedAgentTools {
                     timings.record(request.id(), requested, approved, executed.get());
                     if (planning != null) {
                         // The plan is settled from what actually happened to this call, so a run that
-                        // talks its way to a claim cannot mark a step verified.
-                        planning.applyOutcome(tool, executed.get() && !"FAILED".equals(outcome),
-                                executed.get() && !"FAILED".equals(outcome) ? (auditResult != null ? auditResult : returned) : null);
+                        // talks its way to a claim cannot mark a step verified. A confirmation card is
+                        // not the business mutation, so it does not close a step either.
+                        boolean accomplished = executed.get() && "COMPLETED".equals(outcome);
+                        planning.applyOutcome(tool, accomplished,
+                                accomplished ? (auditResult != null ? auditResult : returned) : null);
                     }
                     if (tracer != null && traceSpan != null) {
                         String spanStatus = "FAILED".equals(outcome) ? "FAILED"

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -80,7 +81,7 @@ class AgentPlannerTests {
         AgentPlanStore.Plan running = plan("RUNNING", 0,
                 step(0, "VERIFIED", List.of("list_interview_recaps")),
                 step(1, "PENDING", List.of("update_learning_plan")));
-        AgentPlanner.StepOutcome outcome = planner.attribute(running, "list_interview_recaps", true, "[{\"title\":\"A 厂\"}]");
+        AgentPlanner.StepOutcome outcome = planner.attribute(running, "list_interview_recaps", true, "[{\"title\":\"A 厂\"}]", Set.of());
         assertThat(outcome).isSameAs(AgentPlanner.StepOutcome.IGNORED);
     }
 
@@ -88,16 +89,34 @@ class AgentPlannerTests {
         AgentPlanStore.Plan running = plan("RUNNING", 0,
                 step(0, "PENDING", List.of("list_interview_recaps")),
                 step(1, "PENDING", List.of("list_interview_recaps", "update_learning_plan")));
-        AgentPlanner.StepOutcome first = planner.attribute(running, "list_interview_recaps", true, "结果");
+        AgentPlanner.StepOutcome first = planner.attribute(running, "list_interview_recaps", true, "结果", Set.of());
         assertThat(first.verified()).isTrue();
         assertThat(first.stepIndex()).isZero();
         assertThat(planner.mayRevise(first)).isFalse();
     }
 
+    /** A step that reads before it writes is not finished by the read, and the write stays inside scope. */
+    @Test void aMultiToolStepStaysOpenUntilEveryToolItDeclaredHasRun() {
+        AgentPlanStore.Plan running = plan("RUNNING", 0,
+                step(0, "PENDING", List.of("list_learning_plans", "update_learning_plan")));
+        AgentPlanner.StepOutcome read = planner.attribute(running, "list_learning_plans", true, "[{\"id\":\"p1\"}]", Set.of());
+        assertThat(read.verified()).isFalse();
+        assertThat(read.failed()).isFalse();
+        assertThat(read.toolsDone()).containsExactly("list_learning_plans");
+        assertThat(read.guidance()).contains("还差").contains("update_learning_plan");
+        assertThat(planner.mayRevise(read)).isFalse();
+        assertThat(running.openToolScope()).contains("update_learning_plan");
+
+        AgentPlanner.StepOutcome write = planner.attribute(running, "update_learning_plan", true, "{\"status\":\"OK\"}",
+                read.toolsDone());
+        assertThat(write.verified()).isTrue();
+        assertThat(write.toolsDone()).contains("list_learning_plans", "update_learning_plan");
+    }
+
     @Test void aRefusedWriteFailsItsStepAndForbidsOverclaiming() {
         AgentPlanStore.Plan running = plan("RUNNING", 0, step(0, "PENDING", List.of("update_learning_plan")));
         AgentPlanner.StepOutcome outcome = planner.attribute(running, "update_learning_plan", true,
-                "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"用户未确认\"}");
+                "{\"status\":\"PERMISSION_NOT_GRANTED\",\"message\":\"用户未确认\"}", Set.of());
         assertThat(outcome.failed()).isTrue();
         assertThat(outcome.verified()).isFalse();
         assertThat(outcome.guidance()).contains("未能完成").contains("不要改口声称成功");
@@ -106,8 +125,8 @@ class AgentPlannerTests {
 
     @Test void aCallThatNeverExecutedFailsEvenWhenTheTextLooksLikeSuccess() {
         AgentPlanStore.Plan running = plan("RUNNING", 0, step(0, "PENDING", List.of("create_calendar_task")));
-        assertThat(planner.attribute(running, "create_calendar_task", false, "已成功创建").failed()).isTrue();
-        assertThat(planner.attribute(running, "create_calendar_task", true, null).failed()).isTrue();
+        assertThat(planner.attribute(running, "create_calendar_task", false, "已成功创建", Set.of()).failed()).isTrue();
+        assertThat(planner.attribute(running, "create_calendar_task", true, null, Set.of()).failed()).isTrue();
     }
 
     private AgentPlanner.Admission admit(String stepsJson, Optional<AgentPlanStore.Plan> existing) {

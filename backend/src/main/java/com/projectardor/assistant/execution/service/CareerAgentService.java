@@ -405,6 +405,7 @@ public class CareerAgentService {
         AtomicReference<UUID> persistedRun = new AtomicReference<>();
         AtomicReference<AgentRunTracer> traceRef = new AtomicReference<>();
         AtomicReference<AgentStreamLease> leaseRef = new AtomicReference<>();
+        AtomicReference<PlanningAgentTools> planningRef = new AtomicReference<>();
         UUID progressId = requestId == null ? UUID.randomUUID() : requestId;
         Semaphore lock = userLocks.computeIfAbsent(userId, ignored -> new Semaphore(1));
         boolean acquired = false;
@@ -435,6 +436,10 @@ public class CareerAgentService {
             java.util.function.Predicate<String> terminate = reason -> {
                 if (!finished.compareAndSet(false, true)) return false;
                 lease.fence();
+                // The plan belongs to this run: closing it here is what keeps an interrupted plan from
+                // staying RUNNING forever with steps that will never be reached.
+                PlanningAgentTools interruptedPlan = planningRef.get();
+                if (interruptedPlan != null) interruptedPlan.finish("CANCELLED");
                 AgentRunTracer interruptedTrace = traceRef.get();
                 String errorCode = "USER".equals(reason) ? "AGENT_RUN_CANCELLED"
                         : "TOTAL".equals(reason) ? "AGENT_RUN_DEADLINE" : "AGENT_UPSTREAM_SILENT";
@@ -544,6 +549,7 @@ public class CareerAgentService {
             // trace is where the verification of each step is recorded.
             PlanningAgentTools planning = requestId == null ? null
                     : new PlanningAgentTools(userId, requestId, conversation.getId(), planner, planStore, tracer);
+            planningRef.set(planning);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, runtimeConfig, depth, lease, listeners))
                     .systemMessage(systemMessage).chatMemory(memory)

@@ -5,7 +5,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.projectardor.assistant.tools.modules.AgentToolBundle;
 
@@ -28,6 +30,8 @@ public final class PlanningAgentTools implements AgentToolBundle {
 
     private volatile AgentPlanStore.Plan plan;
     private volatile UUID planSpanId;
+    /** Which tools this run already completed for each step; a step with several tools is not done after one. */
+    private final Map<String, Set<String>> stepProgress = new ConcurrentHashMap<>();
 
     public PlanningAgentTools(UUID userId, UUID requestId, UUID conversationId,
             AgentPlanner planner, AgentPlanStore store, AgentRunTracer tracer) {
@@ -66,16 +70,24 @@ public final class PlanningAgentTools implements AgentToolBundle {
     void applyOutcome(String tool, boolean executed, String result) {
         AgentPlanStore.Plan current = plan;
         if (current == null) return;
-        AgentPlanner.StepOutcome outcome = planner.attribute(current, tool, executed, result);
-        if (outcome.stepId() == null) return;
         AgentPlanStore.Step step = current.steps().stream()
-                .filter(candidate -> candidate.id().equals(outcome.stepId())).findFirst().orElse(null);
+                .filter(candidate -> candidate.open() && candidate.tools().contains(tool))
+                .findFirst().orElse(null);
+        AgentPlanner.StepOutcome outcome = planner.attribute(current, tool, executed, result,
+                step == null ? Set.of() : stepProgress.getOrDefault(step.id().toString(), Set.of()));
+        if (outcome.stepId() == null) return;
         if (outcome.verified()) {
             store.verifyStep(userId, outcome.stepId(), step == null ? outcome.guidance() : step.doneWhen());
-        } else {
+        } else if (outcome.failed()) {
             store.failStep(userId, outcome.stepId(), outcome.guidance());
+        } else {
+            // The step asked for more than this one call. It stays open; only this run knows how far it got.
+            store.startStep(userId, outcome.stepId());
+            stepProgress.put(outcome.stepId().toString(), Set.copyOf(outcome.toolsDone()));
         }
-        recordStepSpan(outcome.stepIndex(), step == null ? tool : step.intent(), outcome.verified(), outcome.guidance());
+        if (outcome.verified() || outcome.failed()) {
+            recordStepSpan(outcome.stepIndex(), step == null ? tool : step.intent(), outcome.verified(), outcome.guidance());
+        }
         // The next call is judged against the tools that are still open, not the step just settled.
         plan = store.find(userId, current.id()).orElse(current);
     }

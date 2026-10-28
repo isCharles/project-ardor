@@ -55,8 +55,9 @@ public class AgentPlanner {
     }
 
     /** What the wrapper should do after one recorded tool outcome for the active plan. */
-    public record StepOutcome(UUID stepId, int stepIndex, boolean verified, boolean failed, String guidance) {
-        static final StepOutcome IGNORED = new StepOutcome(null, -1, false, false, null);
+    public record StepOutcome(UUID stepId, int stepIndex, boolean verified, boolean failed,
+            Set<String> toolsDone, String guidance) {
+        static final StepOutcome IGNORED = new StepOutcome(null, -1, false, false, Set.of(), null);
     }
 
     public Admission admit(UUID userId, UUID requestId, UUID conversationId, String goal, String stepsJson,
@@ -127,10 +128,14 @@ public class AgentPlanner {
     }
 
     /**
-     * Attributes one recorded tool outcome to the earliest open step that asked for that tool and
-     * settles it: an executed call without a refusal marker verifies the step, a refused call fails it.
+     * Attributes one recorded tool outcome to the earliest open step that asked for that tool.
+     * A step is verified only once every tool it declared has run successfully, so a read cannot
+     * stand in for the write it was paired with; a refused or unexecuted call fails the step.
+     *
+     * @param toolsDoneThisRun the tools this run already completed for that step, without this call
      */
-    public StepOutcome attribute(AgentPlanStore.Plan plan, String tool, boolean executed, String result) {
+    public StepOutcome attribute(AgentPlanStore.Plan plan, String tool, boolean executed, String result,
+            Set<String> toolsDoneThisRun) {
         if (plan == null) return StepOutcome.IGNORED;
         Optional<AgentPlanStore.Step> match = plan.steps().stream()
                 .filter(step -> step.open() && step.tools().contains(tool))
@@ -139,12 +144,20 @@ public class AgentPlanner {
         AgentPlanStore.Step step = match.get();
         boolean refused = executed && result != null && REFUSALS.stream().anyMatch(result::contains);
         if (!executed || refused || result == null) {
-            return new StepOutcome(step.id(), step.index(), false, true,
+            return new StepOutcome(step.id(), step.index(), false, true, toolsDoneThisRun,
                     "步骤 " + (step.index() + 1) + "「" + step.intent() + "」未能完成："
                             + (refused ? "本次写入被拒绝" : "工具调用未执行或未返回结果")
                             + "。请如实说明未完成，不要改口声称成功。");
         }
-        return new StepOutcome(step.id(), step.index(), true, false,
+        Set<String> done = new java.util.LinkedHashSet<>(toolsDoneThisRun);
+        done.add(tool);
+        List<String> missing = step.tools().stream().filter(name -> !done.contains(name)).toList();
+        if (!missing.isEmpty()) {
+            return new StepOutcome(step.id(), step.index(), false, false, done,
+                    "步骤 " + (step.index() + 1) + "「" + step.intent() + "」已记录 " + tool
+                            + "，还差：" + String.join("、", missing) + "。继续完成这些动作后该步骤才算核验通过。");
+        }
+        return new StepOutcome(step.id(), step.index(), true, false, done,
                 "步骤 " + (step.index() + 1) + "「" + step.intent() + "」已按工具执行结果核验通过，请继续下一步。");
     }
 
