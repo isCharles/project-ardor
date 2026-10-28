@@ -42,6 +42,12 @@ const executed = (name, approvalSource = "CONFIRMED") => tool(name, "COMPLETED",
 const proposal = (name) => tool(name, "COMPLETED", { proposal: true, approvalSource: "PROPOSAL", executed: false });
 const notExecuted = (name, errorCode) => tool(name, "NOT_EXECUTED", { executed: false }, errorCode);
 const failed = (name, errorCode) => tool(name, "FAILED", { executed: false }, errorCode);
+const planSpan = (revision, stepCount, verifiedSteps) => ({ kind: "PLAN", name: "agent.plan",
+  status: verifiedSteps === stepCount ? "COMPLETED" : "FAILED",
+  attributes: { revision, stepCount, verifiedSteps }, errorCode: null });
+const planStepSpan = (index, verified) => ({ kind: "PLAN_STEP", name: `plan.step.${index + 1}`,
+  status: verified ? "COMPLETED" : "FAILED", attributes: { stepIndex: index, verified },
+  errorCode: verified ? null : "STEP_UNVERIFIED" });
 
 function firstTool(item) {
   return item.expectedTools?.[0] ?? item.requiredExecuted?.[0] ?? item.expectProposed?.[0]
@@ -62,6 +68,16 @@ function expectedTrace(item) {
     spans.push(executed("list_calendar_tasks"));
   }
 
+  if (item.expectPlan === true) {
+    // An interrupted run keeps the steps it never reached unverified; that is the point of the record.
+    const verified = item.driver?.cancel ? 1 : (item.expectVerifiedStepsAtLeast ?? 2);
+    const stepCount = item.driver?.cancel ? 2 : Math.max(verified, item.expectVerifiedStepsAtLeast ?? 2);
+    for (let revision = 0; revision <= (item.expectReplansAtMost ?? 0); revision++) {
+      spans.push(planSpan(revision, stepCount, verified));
+    }
+    for (let index = 0; index < stepCount; index++) spans.push(planStepSpan(index, index < verified));
+  }
+
   for (const name of item.expectedTools ?? []) {
     if (!spans.some((span) => span.name === name)) spans.push(executed(name));
   }
@@ -75,7 +91,8 @@ function expectedTrace(item) {
 
   return {
     status: item.expectedRunStatus ?? "COMPLETED",
-    totals: { llmCalls: spans.length ? 2 : 1, toolCalls: spans.length, loopRounds: 1, inputTokens: 1200, outputTokens: 180 },
+    totals: { llmCalls: spans.length ? 2 : 1, toolCalls: spans.filter((span) => span.kind === "TOOL").length,
+      loopRounds: 1, inputTokens: 1200, outputTokens: 180 },
     spans,
   };
 }
