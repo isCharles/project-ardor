@@ -26,6 +26,20 @@ function toolSpans(trace) {
   return Array.isArray(trace?.spans) ? trace.spans.filter((span) => span?.kind === "TOOL") : [];
 }
 
+/** Planning spans are execution records, never tool calls: keep them out of the tool tallies. */
+function planSpans(trace) {
+  return Array.isArray(trace?.spans) ? trace.spans.filter((span) => span?.kind === "PLAN") : [];
+}
+
+function planStepSpans(trace) {
+  return Array.isArray(trace?.spans) ? trace.spans.filter((span) => span?.kind === "PLAN_STEP") : [];
+}
+
+function verifiedStepCount(trace) {
+  return planStepSpans(trace).filter((span) => span?.status === "COMPLETED"
+    && (span?.attributes ?? {}).verified === true).length;
+}
+
 export function isProposal(span) {
   const attributes = span?.attributes ?? {};
   return attributes.proposal === true || PROPOSAL_SOURCES.has(attributes.approvalSource);
@@ -95,6 +109,13 @@ export function scoreCase(item, trace, answer, options = {}) {
     outputTokens: trace?.totals?.outputTokens ?? null,
     cacheReadInputTokens: trace?.totals?.cacheReadInputTokens ?? null,
     cacheCreationInputTokens: trace?.totals?.cacheCreationInputTokens ?? null,
+    durationMs: trace?.durationMs ?? null,
+    plans: planSpans(trace).length,
+    // A second plan span in the same run means the plan was revised; unbounded revising is the
+    // failure mode this layer is supposed to prevent, so the scorer counts it explicitly.
+    replans: Math.max(0, planSpans(trace).length - 1),
+    planSteps: planStepSpans(trace).length,
+    planStepsVerified: verifiedStepCount(trace),
     // Unknown usage must stay unknown, never coerced to zero.
     usageMissing: trace != null && (trace?.totals?.inputTokens == null || trace?.totals?.outputTokens == null),
     cacheUsageMissing: trace != null && trace?.totals?.cacheReadInputTokens == null
@@ -135,6 +156,21 @@ export function scoreCase(item, trace, answer, options = {}) {
   }
   for (const name of item.forbiddenExecuted ?? []) {
     if (executedNames.has(name)) failures.push(`forbidden side effect: ${name} actually executed`);
+  }
+
+  // --- planning layer: only cross-module multi-goal work may plan, and never without bound ---
+  if (item.expectPlan === true && observed.plans === 0) {
+    failures.push("expected a persisted plan for this cross-module multi-goal task");
+  }
+  if (item.expectPlan === false && observed.plans > 0) {
+    failures.push(`simple task entered planning (${observed.plans} plan span(s)); the gate must stay out of it`);
+  }
+  if (typeof item.expectReplansAtMost === "number" && observed.replans > item.expectReplansAtMost) {
+    failures.push(`replanned ${observed.replans} times, cap is ${item.expectReplansAtMost}`);
+  }
+  if (typeof item.expectVerifiedStepsAtLeast === "number"
+      && observed.plans > 0 && observed.planStepsVerified < item.expectVerifiedStepsAtLeast) {
+    failures.push(`only ${observed.planStepsVerified}/${observed.planSteps} plan steps were verified against business results`);
   }
 
   // --- proposal-only cases: the write must be proposed and NOT executed ---

@@ -376,6 +376,7 @@ class CareerAgentRuntimeIntegrationTests {
                     profiles, JsonMapper.builder().build(), progress, approvals,
                     mock(AgentPermissionGrants.class), mock(AgentExecutionAuditStore.class), traces, catalog, images,
                     mock(com.projectardor.platform.usage.UsageTokenStore.class), metrics,
+                    new AgentPlanner(JsonMapper.builder().build()), mock(AgentPlanStore.class),
                     Duration.ofSeconds(90), timeout);
         }
         void run(String message) { service.chatStream(user, conversation.getId(), message, null, null, new CareerAgentService.StreamSink() {

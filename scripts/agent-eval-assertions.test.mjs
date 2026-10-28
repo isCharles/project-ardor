@@ -7,6 +7,55 @@ const executed = (name) => tool(name, "COMPLETED", { executed: true, approvalSou
 const proposal = (name) => tool(name, "COMPLETED", { proposal: true, approvalSource: "PROPOSAL", executed: false });
 const trace = (status, spans, totals = { llmCalls: 1, inputTokens: 100, outputTokens: 20 }) => ({ status, spans, totals });
 
+const plan = (attributes = {}) => ({ kind: "PLAN", name: "agent.plan", status: "COMPLETED", attributes, errorCode: null });
+const step = (index, verified) => ({ kind: "PLAN_STEP", name: `plan.step.${index}`, status: verified ? "COMPLETED" : "FAILED",
+  attributes: { stepIndex: index, verified }, errorCode: verified ? null : "STEP_UNVERIFIED" });
+
+test("a simple task that entered planning is scored as a gate failure", () => {
+  const item = { id: "simple-question-no-plan", expectPlan: false };
+  const result = scoreCase(item, trace("COMPLETED", [plan(), executed("get_profile")]), "建议补充项目细节");
+  assert.equal(result.dimensions.taskSuccess, false);
+  assert.match(result.failures.join(" "), /simple task entered planning/);
+});
+
+test("a cross-module multi-goal task without a persisted plan is a failure", () => {
+  const item = { id: "cross-module-weakness-to-plan", expectPlan: true };
+  const result = scoreCase(item, trace("COMPLETED", [executed("update_learning_plan")]), "已调整");
+  assert.equal(result.dimensions.taskSuccess, false);
+  assert.match(result.failures.join(" "), /expected a persisted plan/);
+});
+
+test("replanning past the declared cap fails instead of looping", () => {
+  const item = { id: "cross-module-conflict-replan-capped", expectPlan: true, expectReplansAtMost: 1 };
+  const twoReplans = trace("COMPLETED", [plan(), plan(), plan(), step(0, true)]);
+  assert.match(scoreCase(item, twoReplans, "ok").failures.join(" "), /replanned 2 times, cap is 1/);
+  const oneReplan = trace("COMPLETED", [plan(), plan(), step(0, true)]);
+  assert.equal(scoreCase(item, oneReplan, "ok").dimensions.taskSuccess, true);
+});
+
+test("steps count only when a business result verified them", () => {
+  const item = { id: "cross-module-weakness-to-plan", expectPlan: true, expectVerifiedStepsAtLeast: 2 };
+  const unverified = trace("COMPLETED", [plan(), step(0, true), step(1, false)]);
+  assert.match(scoreCase(item, unverified, "ok").failures.join(" "), /1\/2 plan steps were verified/);
+  assert.equal(scoreCase(item, trace("COMPLETED", [plan(), step(0, true), step(1, true)]), "ok").dimensions.taskSuccess, true);
+});
+
+test("plan spans are execution records, not tool calls", () => {
+  const item = { id: "cross-module-weakness-to-plan", expectPlan: true };
+  const result = scoreCase(item, trace("COMPLETED", [plan(), step(0, true)]), "ok");
+  assert.deepEqual(result.observed.tools, []);
+  assert.equal(result.observed.plans, 1);
+  assert.equal(result.observed.planStepsVerified, 1);
+});
+
+test("run duration is captured so latency can be compared", () => {
+  const item = { id: "simple-question-no-plan", expectPlan: false };
+  const result = scoreCase(item, { status: "COMPLETED", spans: [], totals: { llmCalls: 1, inputTokens: 5, outputTokens: 5 }, durationMs: 1840 }, "ok");
+  assert.equal(result.observed.durationMs, 1840);
+  const unknown = scoreCase(item, trace("COMPLETED", []), "ok");
+  assert.equal(unknown.observed.durationMs, null);
+});
+
 test("a required write that only produced a proposal is not task success", () => {
   const item = { id: "create", requiredExecuted: ["create_calendar_task"] };
   const result = scoreCase(item, trace("COMPLETED", [proposal("create_calendar_task")]), "已创建");
