@@ -249,7 +249,10 @@ public class KnowledgeService {
             return;
         }
         removeRecap(userId, recapId);
-        KnowledgeDocument document = documentRepository.save(
+        // saveAndFlush, like the upload and web ingest paths: storeChunks() queues the index task
+        // with JdbcTemplate, which does not flush the persistence context, so the document row must
+        // already be in the database or knowledge_index_tasks' foreign key to it fails.
+        KnowledgeDocument document = documentRepository.saveAndFlush(
                 KnowledgeDocument.fromRecap(userId, title, RECAP_POINTER_PREFIX + recapId, content));
         storeChunks(document);
     }

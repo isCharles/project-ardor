@@ -60,15 +60,13 @@ class KnowledgeServiceTests {
         var recapText = "问题：怎么防止超卖？\n回答：用数据库乐观锁版本号，配合 Redis + Lua 做原子扣减。";
         org.mockito.Mockito.when(documentRepository.findByUserIdAndSourceUrl(userId, pointer))
                 .thenReturn(java.util.Optional.of(previous));
-        org.mockito.Mockito.when(documentRepository.save(org.mockito.ArgumentMatchers.any()))
-                .thenAnswer(call -> call.getArgument(0));
 
         service.indexRecap(userId, recapId, "快手面试", recapText);
 
         var captor = org.mockito.ArgumentCaptor.forClass(
                 com.projectardor.materials.knowledge.domain.KnowledgeDocument.class);
         org.mockito.Mockito.verify(documentRepository).delete(previous);
-        org.mockito.Mockito.verify(documentRepository).save(captor.capture());
+        org.mockito.Mockito.verify(documentRepository).saveAndFlush(captor.capture());
         org.assertj.core.api.Assertions.assertThat(captor.getValue().getSourceUrl()).isEqualTo(pointer);
         org.assertj.core.api.Assertions.assertThat(captor.getValue().getSourceType())
                 .isEqualTo(com.projectardor.materials.knowledge.domain.KnowledgeSourceType.RECAP);
