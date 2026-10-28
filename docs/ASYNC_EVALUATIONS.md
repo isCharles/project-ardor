@@ -65,7 +65,7 @@ V33 新增 PostgreSQL `ai_jobs` 表，原提交及状态持久化。Worker 使�
 
 聊天消息在入队时快照会员优先级（免费 0、付费 1）。领取顺序按 `priority + 等待秒数 / 60` 降序，再按 `sequence`：付费消息先走一级，但每条免费消息每等待 60 秒增加一级，持续到达的付费消息不能无限期饿死免费消息。优先级只在入队时计算，排队期间升级套餐不会改变已排队消息；这是聊天队列的公平护栏，不是完整的 QPM/TPM 配额。后台 AI 任务同样按会员优先级区分，低优先级年龄持续增长才说明饥饿。`GET /api/agent/queue` 为 QUEUED 消息返回 `queuePosition`：按同一排序计算的用户内名次，1 为下一条，包含该用户其他会话；它是顺序名次，不是预计等待时间，前端在没有吞吐样本时不猜 ETA。
 
-在线聊天流式调用、摘要/标题等辅助对话和后台 JSON 评估共用同一进程内的模型并发上限：`app.model.max-concurrent-calls`（环境变量 `ARDOR_MODEL_MAX_CONCURRENT_CALLS`，默认 8）。容量满时立即以可重试的 `LLM_BUSY` 拒绝，不排队等待：在线请求表现为可重试的 `AGENT_TEMPORARILY_UNAVAILABLE`，由浏览器显式重试；后台任务按 30 秒起步、指数增长的退避重新排队，达到 `max_attempts` 后进入死信。供应商返回的 429 也归类为同一可重试错误，走相同退避。
+在线聊天流式调用、摘要/标题等辅助对话和后台 JSON 评估共用同一进程内的模型并发上限：`app.model.max-concurrent-calls`（环境变量 `ARDOR_MODEL_MAX_CONCURRENT_CALLS`，默认 8）。容量满时立即以可重试的 `LLM_BUSY` 拒绝，不排队等待：在线请求表现为可重试的 `AGENT_TEMPORARILY_UNAVAILABLE`，由浏览器显式重试；后台任务按 30 秒起步、指数增长的退避重新排队，达到 `max_attempts` 后进入死信。供应商返回的 429 也归类为同一可重试错误，走相同退避。AI 任务与后台任务的预计时长不再填固定的 30–120 秒：没有足够历史样本时接口返回未知（`null`），前端只显示已用时，不把猜测当预计时间。
 
 该并发上限只覆盖单个进程。可另行开启跨实例的分钟窗口准入：`app.model.qpm`（每模型每分钟请求数）、`app.model.tpm`（每模型每分钟估算 token 数）、`app.model.user-qpm`（每用户每分钟请求数），环境变量 `ARDOR_MODEL_QPM`、`ARDOR_MODEL_TPM`、`ARDOR_MODEL_USER_QPM`，默认 0 表示关闭。计数器在 Redis 固定 UTC 分钟窗口内原子检查，共享缓存的实例看到同一预算；模型维度按 provider + Base URL + model 指纹，token 维度采用发送前估算的输入加预留输出（后台 JSON 调用只有输入估算），不采用供应商回传的实际用量。任一维度触顶时与并发满一样返回可重试的 `LLM_BUSY`，在线由浏览器重试、后台按既有退避重排。Redis 不可用时放行并增加 `ardor_model_rate_degraded`，避免限速设施故障中断对话。窗口在分钟边界允许短时双倍突发；该层不是计费或供应商配额的精确复刻，也不覆盖语音等其他供应商调用。TPM 必须高于允许的最大单次请求估算，否则该请求会在任何窗口下都被拒绝。
 

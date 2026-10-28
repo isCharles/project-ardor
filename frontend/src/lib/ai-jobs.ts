@@ -11,7 +11,7 @@ export type AiJob = {
   resultPath: string | null; errorCode: string | null; errorMessage: string | null;
   createdAt: string; startedAt: string | null; finishedAt: string | null; retryAfter: string | null;
   queuePosition: number;
-  estimateMinSeconds: number; estimateMaxSeconds: number;
+  estimateMinSeconds: number | null; estimateMaxSeconds: number | null;
 };
 export function jobPending(job: AiJob | null) { return job?.status === "QUEUED" || job?.status === "RUNNING"; }
 
