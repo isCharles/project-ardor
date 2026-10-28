@@ -21,6 +21,7 @@ public class AgentMemoryItem {
     @Column(name = "source_run_id") private UUID sourceRunId;
     @Column(name = "valid_from", nullable = false) private Instant validFrom;
     @Column(name = "valid_until") private Instant validUntil;
+    @Column(nullable = false) private boolean pinned;
     @Column(name = "superseded_by") private UUID supersededBy;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
@@ -79,7 +80,12 @@ public class AgentMemoryItem {
     public void invalidate(Instant when, UUID replacementId) {
         this.validUntil = when == null ? Instant.now() : when;
         this.supersededBy = replacementId;
+        // An invalidated fact must not keep occupying the resident core-memory budget.
+        this.pinned = false;
     }
+
+    /** Pinned facts are injected every turn; only the user pins or unpins one. */
+    public void pin(boolean pinned) { this.pinned = pinned && isValid(); }
 
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
@@ -91,6 +97,7 @@ public class AgentMemoryItem {
     public UUID getSourceRunId() { return sourceRunId; }
     public Instant getValidFrom() { return validFrom; }
     public Instant getValidUntil() { return validUntil; }
+    public boolean isPinned() { return pinned; }
     public UUID getSupersededBy() { return supersededBy; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

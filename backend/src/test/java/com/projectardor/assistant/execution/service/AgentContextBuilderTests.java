@@ -53,7 +53,9 @@ class AgentContextBuilderTests {
         assertThat(result.systemPrompt()).contains("STABLE MEMORY", "Asia/Shanghai", ReasoningDepth.DEEP.guidance())
                 .doesNotContain("SUMMARY-DATA", "OWNED REFERENCE", "Original task before steering");
         assertThat(result.memory().messages().toString()).contains("SUMMARY-DATA", "Earlier user", "Original task before steering", "OWNED REFERENCE");
-        verify(f.embedding).context(f.owner, "Current task");
+        verify(f.embedding).context(f.owner, null);
+        assertThat(result.attributes()).containsEntry("memoryEmbeddingCalls", 0)
+                .containsEntry("memoryOutcome", "resident");
         assertThat(result.attributes()).containsEntry("interruptedMessages", 1).containsEntry("summaryVersion", 2);
         assertThatThrownBy(() -> result.attributes().put("scope", "write")).isInstanceOf(UnsupportedOperationException.class);
     }
@@ -152,7 +154,8 @@ class AgentContextBuilderTests {
                 LlmProvider.ANTHROPIC_COMPATIBLE, "https://example.invalid", "synthetic-model", "synthetic-only");
         final AgentContextBuilder builder = new AgentContextBuilder(embedding, compactor, profiles, tools);
         Fixture() {
-            when(embedding.context(eq(owner), anyString())).thenReturn("STABLE MEMORY");
+            when(embedding.context(eq(owner), any())).thenReturn(new MemoryEmbeddingService.Context(
+                    "STABLE MEMORY", "resident", 1, 0, 0, 0, 1, 0, 14, 2400, "unknown", 0));
             when(profiles.view(owner)).thenReturn(new ProfileView("Synthetic owner", "", List.of(), "Asia/Shanghai"));
             when(compactor.budgetTokens()).thenReturn(12000);
             when(compactor.prepare(eq(owner), eq(conversation), anyString(), eq(config), any(), anyList(), any(), anyString())).thenAnswer(call ->

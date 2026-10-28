@@ -35,13 +35,14 @@ class AgentMemoryViewTests {
         ReflectionTestUtils.setField(item, "updatedAt", Instant.EPOCH.plusSeconds(1));
         var view = AgentMemoryItemView.from(item);
         var legacy = new AgentMemoryItemResponse(item.getId(), "Synthetic preference", "preference", 0.7f,
-                item.getImportance(), "INFERRED", item.getValidFrom(), null, true, Instant.EPOCH, Instant.EPOCH.plusSeconds(1));
+                item.getImportance(), "INFERRED", item.getValidFrom(), null, true, Instant.EPOCH,
+                Instant.EPOCH.plusSeconds(1), false);
         String expected = mapper.writeValueAsString(legacy);
         assertThat(mapper.writeValueAsString(view)).isEqualTo(expected);
         assertThat(mapper.writeValueAsString(AgentMemoryItemResponse.from(view))).isEqualTo(expected);
         assertThat(mapper.writeValueAsString(AgentMemoryItemResponse.from(item))).isEqualTo(expected);
         assertThat(mapper.readTree(expected).propertyNames()).containsExactly("id", "content", "kind", "confidence", "importance",
-                "sourceKind", "validFrom", "validUntil", "valid", "createdAt", "updatedAt");
+                "sourceKind", "validFrom", "validUntil", "valid", "createdAt", "updatedAt", "pinned");
         item.invalidate(Instant.EPOCH.plusSeconds(2), UUID.randomUUID());
         assertThat(view.valid()).isTrue();
         assertThat(AgentMemoryItemView.from(item).valid()).isFalse();
