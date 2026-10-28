@@ -72,10 +72,6 @@ app:
       capacity: ${ARDOR_AGENT_QUEUE_CAPACITY:2}
   ai-jobs:
     worker-capacity: ${ARDOR_AI_JOB_WORKER_CAPACITY:2}
-  model:
-    prompt-cache:
-      enabled: ${ARDOR_PROMPT_CACHE_ENABLED:false}
-      tools: ${ARDOR_PROMPT_CACHE_TOOLS:true}
   admin:
     emails: ${ARDOR_ADMIN_EMAILS:}
   http:
@@ -84,6 +80,9 @@ app:
     connect-timeout: ${ARDOR_HTTP_CONNECT_TIMEOUT:10s}
     read-timeout: ${ARDOR_HTTP_READ_TIMEOUT:120s}
   model:
+    prompt-cache:
+      enabled: ${ARDOR_PROMPT_CACHE_ENABLED:false}
+      tools: ${ARDOR_PROMPT_CACHE_TOOLS:true}
     max-concurrent-calls: ${ARDOR_MODEL_MAX_CONCURRENT_CALLS:8}
     qpm: ${ARDOR_MODEL_QPM:0}
     tpm: ${ARDOR_MODEL_TPM:0}
