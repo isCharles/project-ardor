@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -38,6 +39,14 @@ public class AgentModelCatalogController {
                 descriptions.describe(principal.userId(), request.model(), request.locale(), fingerprint));
     }
 
+    @PutMapping("/settings")
+    public List<AgentModelCatalogService.Option> updateSettings(@AuthenticationPrincipal ArdorPrincipal principal,
+            @RequestBody SettingsBatchRequest request) {
+        return catalog.updateSettings(principal.userId(),
+                request.settings() == null ? List.of() : request.settings());
+    }
+
     public record DescriptionRequest(String model, String locale) {}
     public record DescriptionResponse(String description) {}
+    public record SettingsBatchRequest(List<AgentModelCatalogService.SettingsUpdate> settings) {}
 }

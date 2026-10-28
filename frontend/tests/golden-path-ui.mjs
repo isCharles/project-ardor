@@ -342,11 +342,16 @@ try {
   await depthPage.locator('input[name="password"]').fill(`Ardor-Acceptance-${suffix}!`);
   await depthPage.locator('button[type="submit"]').click();
   await depthPage.waitForURL(`${origin}/app`, { timeout: 15_000 });
-  await depthPage.getByRole("button", { name: /Thinking depth|思考深度/, exact: true }).click();
-  await depthPage.getByRole("button", { name: "Max", exact: true }).click();
+  await depthPage.getByRole("button", { name: /Model and thinking depth|模型与思考深度/, exact: true }).click();
+  const depthPicker = depthPage.getByRole("dialog", { name: /Model and thinking depth options|模型与思考深度选项/ });
+  await depthPicker.getByRole("button", { name: /Manage models|管理模型/, exact: true }).click();
+  const depthSettings = depthPage.getByRole("dialog", { name: /Manage models|管理模型/, exact: true });
+  await depthSettings.getByLabel(/Thinking level|思考力度/).first().selectOption("DEEP");
+  await depthSettings.getByRole("button", { name: /^(Save|保存)$/, exact: true }).click();
+  await depthSettings.waitFor({ state: "hidden" });
   await depthPage.reload();
-  await depthPage.getByRole("button", { name: /Thinking depth|思考深度/, exact: true }).waitFor();
-  // Account settings load independently of the transcript.
+  await depthPage.getByRole("button", { name: /Model and thinking depth|模型与思考深度/, exact: true }).waitFor();
+  // Per-model effort is stored per account, so it survives a reload.
   await depthPage.waitForFunction(() => document.querySelector('[data-reasoning-depth]')?.getAttribute("data-reasoning-depth") === "DEEP");
   await depthPage.getByRole("button", { name: /^(New chat|新对话)$/ }).last().click();
   await depthPage.getByRole("textbox", { name: /Message Ardor|给 Ardor 发消息/ }).fill("帮我继续规划 Redis 面试学习");

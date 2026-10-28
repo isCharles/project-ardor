@@ -126,10 +126,13 @@ try {
       const popupBox = await popup.boundingBox();
       assert.ok(popupBox.x >= 0 && popupBox.x + popupBox.width <= width && popupBox.y >= 0,
         `Model menu must stay in viewport at ${width}`);
-      await popup.getByRole("button", { name: "Max", exact: true }).click();
-      assert.equal(await controls[3].getAttribute("data-reasoning-depth"), "DEEP", "Portal controls remain interactive");
+      await popup.getByRole("button", { name: "Manage models", exact: true }).click();
+      const settingsPopup = page.getByRole("dialog", { name: "Manage models", exact: true });
+      await settingsPopup.waitFor();
+      assert.ok(await settingsPopup.getByLabel(/^Thinking level: claude-opus-5-5/).count() === 1,
+        "Per-model settings must remain interactive through the portal");
       await page.keyboard.press("Escape");
-      await popup.waitFor({ state: "hidden" });
+      await settingsPopup.waitFor({ state: "hidden" });
       if (width === 320) {
         for (const length of [40000, 50000, 50001]) {
           await input.fill("x".repeat(length));

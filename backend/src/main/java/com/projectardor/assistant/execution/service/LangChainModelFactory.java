@@ -86,15 +86,15 @@ public class LangChainModelFactory {
     }
 
     public ChatModel create(UUID userId) {
-        return create(configService.getRuntimeConfig(userId));
+        return create(userId, configService.getRuntimeConfig(userId), ReasoningDepth.AUTO, List.of());
     }
 
     public ChatModel create(UUID userId, ReasoningDepth depth) {
-        return create(configService.getRuntimeConfig(userId), depth);
+        return create(userId, configService.getRuntimeConfig(userId), depth, List.of());
     }
 
     public ChatModel create(UUID userId, ReasoningDepth depth, List<ChatModelListener> listeners) {
-        return create(configService.getRuntimeConfig(userId), depth, listeners);
+        return create(userId, configService.getRuntimeConfig(userId), depth, listeners);
     }
 
     public ChatModel create(LlmConfigService.LlmRuntimeConfig config) {
@@ -116,6 +116,11 @@ public class LangChainModelFactory {
 
     public ChatModel create(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
             List<ChatModelListener> listeners) {
+        return create(null, config, depth, listeners);
+    }
+
+    public ChatModel create(UUID userId, LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
+            List<ChatModelListener> listeners) {
         var protocol=protocols.require(config.provider());
         var profile = protocol.reasoning(config, depth);
         ChatModel model;
@@ -126,7 +131,7 @@ public class LangChainModelFactory {
             model = protocol.chat(config,profile,httpClientBuilder(),readTimeout,
                     MODEL_INTERNAL_RETRIES, listeners);
         }
-        var budget = contextBudget.resolve(config, profile.maxTokens());
+        var budget = contextBudget.resolve(userId, config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
         return RepeatedToolResultCompactor.chat(
                 ContextBudgetedModels.chat(CapacityLimitedModels.chat(model, capacity), budget, estimator),
@@ -145,10 +150,15 @@ public class LangChainModelFactory {
     }
     StreamingChatModel createStreaming(UUID userId, ReasoningDepth depth, AgentStreamLease lease,
             List<ChatModelListener> listeners) {
-        return createStreaming(configService.getRuntimeConfig(userId), depth, lease, listeners);
+        return createStreaming(userId, configService.getRuntimeConfig(userId), depth, lease, listeners);
     }
 
     StreamingChatModel createStreaming(LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
+            AgentStreamLease lease, List<ChatModelListener> listeners) {
+        return createStreaming(null, config, depth, lease, listeners);
+    }
+
+    StreamingChatModel createStreaming(UUID userId, LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
             AgentStreamLease lease, List<ChatModelListener> listeners) {
         var protocol=protocols.require(config.provider());
         var profile = protocol.reasoning(config, depth);
@@ -159,7 +169,7 @@ public class LangChainModelFactory {
         } else {
             model = protocol.streaming(config,profile,transport,readTimeout, listeners);
         }
-        var budget = contextBudget.resolve(config, profile.maxTokens());
+        var budget = contextBudget.resolve(userId, config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
         return RepeatedToolResultCompactor.streaming(
                 ContextBudgetedModels.streaming(

@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -144,5 +145,112 @@ class AgentModelCatalogServiceTests {
         assertThatThrownBy(() -> catalog.resolve(user, "OTHER"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("未知");
+    }
+
+    @Test
+    void mergesOwnerSettingsIntoTheCatalogAndScopesTheLookupToThatOwner() {
+        UUID user = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        var settings = mock(UserModelSettingsStore.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM)).thenReturn(
+                Optional.of(new AuxiliaryApiConfigService.AuxiliaryRuntimeConfig(
+                        "ANTHROPIC_COMPATIBLE", "https://cf.api.fan", "claude-opus-5-5", "fallback-secret")));
+        when(discovery.list(org.mockito.ArgumentMatchers.eq(LlmProvider.OPENAI_COMPATIBLE),
+                org.mockito.ArgumentMatchers.eq("https://cf.api.fan/v1"), anyString()))
+                .thenReturn(List.of("GPT-6.1-Sol"));
+        var relayConfig = new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://cf.api.fan/v1", "GPT-6.1-Sol", "fallback-secret");
+        String fingerprint = ModelConfigFingerprint.of(relayConfig);
+        when(settings.findAll(user)).thenReturn(Map.of(fingerprint,
+                new UserModelSettingsStore.Setting(fingerprint, false, "DEEP", 400_000L)));
+
+        var options = new AgentModelCatalogService(llm, auxiliary, discovery, settings).options(user);
+
+        var relay = options.stream().filter(option -> option.id().equals("FALLBACK:GPT-6.1-Sol"))
+                .findFirst().orElseThrow();
+        assertThat(relay.visible()).isFalse();
+        assertThat(relay.thinkingEffort()).isEqualTo("DEEP");
+        assertThat(relay.contextWindowTokens()).isEqualTo(400_000L);
+        var primary = options.stream().filter(option -> option.id().equals(AgentModelCatalogService.PRIMARY))
+                .findFirst().orElseThrow();
+        assertThat(primary.visible()).isTrue();
+        assertThat(primary.thinkingEffort()).isEqualTo("AUTO");
+        assertThat(primary.contextWindowTokens()).isNull();
+        verify(settings).findAll(user);
+        verify(settings, org.mockito.Mockito.never()).findAll(other);
+    }
+
+    @Test
+    void updateSettingsValidatesThenPersistsTheResolvedConfigurationAndReloadsTheCatalog() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        var settings = mock(UserModelSettingsStore.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM)).thenReturn(
+                Optional.of(new AuxiliaryApiConfigService.AuxiliaryRuntimeConfig(
+                        "ANTHROPIC_COMPATIBLE", "https://cf.api.fan", "claude-opus-5-5", "fallback-secret")));
+        when(discovery.list(org.mockito.ArgumentMatchers.eq(LlmProvider.OPENAI_COMPATIBLE),
+                org.mockito.ArgumentMatchers.eq("https://cf.api.fan/v1"), anyString()))
+                .thenReturn(List.of("GPT-6.1-Sol"));
+        when(settings.findAll(user)).thenReturn(Map.of());
+        var catalog = new AgentModelCatalogService(llm, auxiliary, discovery, settings);
+
+        assertThatThrownBy(() -> catalog.updateSettings(user, List.of()))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("没有需要保存");
+        assertThatThrownBy(() -> catalog.updateSettings(user, List.of(
+                new AgentModelCatalogService.SettingsUpdate("FALLBACK:GPT-6.1-Sol", true, "EXTREME", null))))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("思考力度");
+        assertThatThrownBy(() -> catalog.updateSettings(user, List.of(
+                new AgentModelCatalogService.SettingsUpdate("FALLBACK:GPT-6.1-Sol", true, "AUTO", 1024L))))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("上下文窗口");
+        verify(settings, org.mockito.Mockito.never())
+                .save(any(), anyString(), anyString(), anyString(), anyString(),
+                        org.mockito.ArgumentMatchers.anyBoolean(), anyString(), any());
+
+        var relayConfig = new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://cf.api.fan/v1", "GPT-6.1-Sol", "fallback-secret");
+        String fingerprint = ModelConfigFingerprint.of(relayConfig);
+        when(settings.findAll(user)).thenReturn(Map.of(fingerprint,
+                new UserModelSettingsStore.Setting(fingerprint, false, "QUICK", 200_000L)));
+        var options = catalog.updateSettings(user, List.of(
+                new AgentModelCatalogService.SettingsUpdate("FALLBACK:GPT-6.1-Sol", false, "quick", 200_000L)));
+
+        verify(settings).save(user, fingerprint, "OPENAI_COMPATIBLE", "https://cf.api.fan/v1",
+                "GPT-6.1-Sol", false, "QUICK", 200_000L);
+        var relay = options.stream().filter(option -> option.id().equals("FALLBACK:GPT-6.1-Sol"))
+                .findFirst().orElseThrow();
+        assertThat(relay.visible()).isFalse();
+        assertThat(relay.thinkingEffort()).isEqualTo("QUICK");
+        assertThat(relay.contextWindowTokens()).isEqualTo(200_000L);
+    }
+
+    @Test
+    void settingsStoreFailureFallsBackToDefaultsAndDirectConstructionCannotWrite() {
+        UUID user = UUID.randomUUID();
+        var llm = mock(LlmConfigService.class);
+        var auxiliary = mock(AuxiliaryApiConfigService.class);
+        var discovery = mock(LlmModelDiscoveryService.class);
+        var settings = mock(UserModelSettingsStore.class);
+        when(llm.getRuntimeConfig(user)).thenReturn(new LlmConfigService.LlmRuntimeConfig(
+                LlmProvider.OPENAI_COMPATIBLE, "https://api.deepseek.com", "deepseek-v4-flash", "primary-secret"));
+        when(auxiliary.runtimeConfig(user, AuxiliaryServiceType.FALLBACK_LLM)).thenReturn(Optional.empty());
+        when(settings.findAll(user)).thenThrow(new IllegalStateException("synthetic database outage"));
+
+        var options = new AgentModelCatalogService(llm, auxiliary, discovery, settings).options(user);
+
+        assertThat(options).allMatch(AgentModelCatalogService.Option::visible);
+        assertThat(options).allMatch(option -> "AUTO".equals(option.thinkingEffort()));
+        assertThatThrownBy(() -> new AgentModelCatalogService(llm, auxiliary, discovery)
+                .updateSettings(user, List.of(new AgentModelCatalogService.SettingsUpdate(
+                        AgentModelCatalogService.PRIMARY, true, "AUTO", null))))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("暂不可用");
     }
 }

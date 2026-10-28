@@ -164,7 +164,7 @@ class ContextComparisonExperimentTests {
         var summarizer = new FakeSummarizer(dropTags, failFirst ? 1 : 0, clock, estimator);
         ChatModel model = mock(ChatModel.class);
         when(model.chat(any(ChatRequest.class))).thenAnswer(call -> summarizer.respond(call.getArgument(0)));
-        when(factory.create(any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList()))
+        when(factory.create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList()))
                 .thenReturn(model);
         when(factory.maxOutputTokens(any(), any())).thenReturn(OUTPUT_RESERVE);
         var compactor = new AgentContextCompactor(store, summaries, factory, 8, SOFT_LIMIT, policy,

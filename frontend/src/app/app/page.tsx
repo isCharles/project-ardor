@@ -19,6 +19,7 @@ import { ChatVoiceButton } from "@/components/ardor/chat-voice-button";
 import { WorkspaceBrand } from "@/components/ardor/workspace-brand";
 import { ConversationTitle } from "@/components/ardor/conversation-title";
 import { ReasoningControl, type ModelOption } from "@/components/ardor/reasoning-control";
+import { ModelSettingsDialog, type ModelSettingsUpdate } from "@/components/ardor/model-settings-dialog";
 import { ContextUsageIndicator, type ContextUsage } from "@/components/ardor/context-usage";
 import { ServicePicker } from "@/components/ardor/service-picker";
 import { type ToolMeasurement } from "@/components/ardor/tool-duration";
@@ -236,6 +237,7 @@ export default function AgentHomePage() {
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelChoice, setModelChoice] = useState("PRIMARY");
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const [modelCatalogLocale, setModelCatalogLocale] = useState<string | null>(null);
   const modelDescriptionToken = useRef(0);
   const modelDescriptionAbort = useRef<AbortController | null>(null);
@@ -252,6 +254,19 @@ export default function AgentHomePage() {
     if (!open) cancelModelDescriptions(true);
   }, [cancelModelDescriptions]);
   const imageInputSupported = modelOptions.find((item) => item.id === modelChoice)?.imageInput === true;
+  useEffect(() => {
+    const selected = modelOptions.find((item) => item.id === modelChoice);
+    if (selected) setReasoningDepth(selected.thinkingEffort ?? "AUTO");
+  }, [modelChoice, modelOptions]);
+  useEffect(() => {
+    if (modelOptions.length === 0) return;
+    const current = modelOptions.find((item) => item.id === modelChoice);
+    if (current && current.available && current.visible !== false) return;
+    const fallback = modelOptions.find((item) => item.available && item.visible !== false);
+    if (!fallback) return;
+    setModelChoice(fallback.id);
+    setNativeReasoning(fallback.nativeControl);
+  }, [modelChoice, modelOptions]);
   const [titleWatch, setTitleWatch] = useState<{ id: string; title: string } | null>(null);
   const [runningRun, setRunningRun] = useState<AgentRun | null>(null);
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
@@ -361,18 +376,16 @@ export default function AgentHomePage() {
       if (!active) return;
       setIsAdmin(account.admin === true);
       reasoningAccount.current = account.id;
-      try {
-        const saved = window.sessionStorage.getItem(`ardor:reasoning-depth:${account.id}`);
-        if (saved && ["AUTO", "QUICK", "STANDARD", "DEEP"].includes(saved)) setReasoningDepth(saved as ReasoningDepth);
-      } finally { setReasoningReady(true); }
+      setReasoningReady(true);
       void api<ModelOption[]>("/api/agent/models").then((items) => {
         if (!active || !Array.isArray(items)) return;
         setModelOptions(items);
         setModelCatalogLocale(locale);
         const saved = window.sessionStorage.getItem(`ardor:model-choice:${account.id}`);
-        const initial = items.find((item) => item.id === saved && item.available)
-          ?? items.find((item) => item.id === "PRIMARY" && item.available)
-          ?? items.find((item) => item.available);
+        const usable = (item: ModelOption) => item.available && item.visible !== false;
+        const initial = items.find((item) => item.id === saved && usable(item))
+          ?? items.find((item) => item.id === "PRIMARY" && usable(item))
+          ?? items.find(usable);
         if (initial) {
           setModelChoice(initial.id);
           setNativeReasoning(initial.nativeControl);
@@ -394,7 +407,7 @@ export default function AgentHomePage() {
     modelDescriptionAbort.current?.abort();
     modelDescriptionAbort.current = controller;
     const token = ++modelDescriptionToken.current;
-    const targets = modelOptions.filter((item) => item.available && item.description == null);
+    const targets = modelOptions.filter((item) => item.available && item.visible !== false && item.description == null);
     let nextTarget = 0;
     let stopped = false;
     const research = async () => {
@@ -459,17 +472,22 @@ export default function AgentHomePage() {
     return () => { active = false; window.clearInterval(timer); };
   }, [busy, titleWatch]);
 
+  const saveModelSettings = useCallback(async (updates: ModelSettingsUpdate[]) => {
+    const items = await api<ModelOption[]>("/api/agent/models/settings", {
+      method: "PUT", body: JSON.stringify({ settings: updates }),
+    });
+    if (!Array.isArray(items)) throw new Error(t("Could not reload the model catalog", "无法重新加载模型目录"));
+    setModelOptions(items);
+    setModelCatalogLocale(locale);
+  }, [locale, t]);
+
   function reasoningPicker() {
     return <ReasoningControl value={reasoningDepth} disabled={!reasoningReady} nativeControl={nativeReasoning}
       models={modelOptions} model={modelChoice} onOpenChange={handleModelPickerOpenChange}
-      onChange={(value) => {
-        setReasoningDepth(value);
-        try { if (reasoningAccount.current) window.sessionStorage.setItem(`ardor:reasoning-depth:${reasoningAccount.current}`, value); }
-        catch { /* The current selection remains usable when browser storage is unavailable. */ }
-      }}
+      onManageModels={() => setModelSettingsOpen(true)}
       onModelChange={(value) => {
         const selected = modelOptions.find((item) => item.id === value);
-        if (!selected || !selected.available) return;
+        if (!selected || !selected.available || selected.visible === false) return;
         setModelChoice(value);
         setNativeReasoning(selected.nativeControl);
         if (chatImages.length > 0 && selected.imageInput !== true) setError(IMAGE_MODEL_ERROR);
@@ -1634,6 +1652,8 @@ export default function AgentHomePage() {
           </div>}
         </section>
       </div>
+
+      {modelSettingsOpen && <ModelSettingsDialog models={modelOptions} onClose={() => setModelSettingsOpen(false)} onSave={saveModelSettings} />}
 
       {renaming && <AppDialog title={t("Rename chat", "重命名对话")} onClose={() => { if (!renamePending) setRenaming(null); }}>
         <form onSubmit={renameConversation}>

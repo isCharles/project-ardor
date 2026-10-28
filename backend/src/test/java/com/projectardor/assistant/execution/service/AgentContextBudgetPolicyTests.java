@@ -42,4 +42,20 @@ class AgentContextBudgetPolicyTests {
         assertThatThrownBy(() -> new AgentContextBudgetPolicy(capacity, 12000, 1, .05))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test void ownerScopedCapacityDrivesTheSoftAndHardBudgets() {
+        var capacity = mock(ModelContextCapacity.class);
+        var user = java.util.UUID.randomUUID();
+        var config = new com.projectardor.platform.model.llm.service.LlmConfigService.LlmRuntimeConfig(
+                com.projectardor.platform.model.llm.domain.LlmProvider.OPENAI_COMPATIBLE,
+                "https://api.deepseek.com", "deepseek-v4-flash", "synthetic");
+        when(capacity.resolve(user, config)).thenReturn(200_000L);
+
+        var budget = new AgentContextBudgetPolicy(capacity, 200000, .75, .05).resolve(user, config, 4096);
+
+        assertThat(budget.windowTokens()).isEqualTo(200_000L);
+        assertThat(budget.safetyReserveTokens()).isEqualTo(10_000L);
+        assertThat(budget.hardInputTokens()).isEqualTo(200_000L - 10_000L - 4096L);
+        assertThat(budget.softInputTokens()).isEqualTo((long) Math.floor((200_000L - 10_000L - 4096L) * .75));
+    }
 }

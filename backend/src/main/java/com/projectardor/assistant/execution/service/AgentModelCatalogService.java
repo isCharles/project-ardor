@@ -1,15 +1,13 @@
 package com.projectardor.assistant.execution.service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -46,19 +44,34 @@ public class AgentModelCatalogService {
     private static final long DESCRIPTION_REFRESH_COOLDOWN_MILLIS = 60_000;
     private static final int CATALOG_LOCK_STRIPES = 64;
 
+    private static final Set<String> THINKING_EFFORTS = Set.of("AUTO", "QUICK", "STANDARD", "DEEP");
+    private static final long MIN_CONTEXT_WINDOW = 32_768;
+    private static final long MAX_CONTEXT_WINDOW = 10_000_000;
+
     private final LlmConfigService llmConfigService;
     private final AuxiliaryApiConfigService auxiliaryConfigService;
     private final LlmModelDiscoveryService modelDiscoveryService;
+    private final UserModelSettingsStore settingsStore;
     private final ConcurrentHashMap<UUID, CatalogEntry> catalogCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Long> descriptionRefreshAt = new ConcurrentHashMap<>();
     private final Object[] catalogLocks = createLockStripes(CATALOG_LOCK_STRIPES);
 
+    /** Kept for direct unit construction; production uses the Spring constructor below. */
     public AgentModelCatalogService(LlmConfigService llmConfigService,
             AuxiliaryApiConfigService auxiliaryConfigService,
             LlmModelDiscoveryService modelDiscoveryService) {
+        this(llmConfigService, auxiliaryConfigService, modelDiscoveryService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentModelCatalogService(LlmConfigService llmConfigService,
+            AuxiliaryApiConfigService auxiliaryConfigService,
+            LlmModelDiscoveryService modelDiscoveryService,
+            UserModelSettingsStore settingsStore) {
         this.llmConfigService = llmConfigService;
         this.auxiliaryConfigService = auxiliaryConfigService;
         this.modelDiscoveryService = modelDiscoveryService;
+        this.settingsStore = settingsStore;
     }
 
     public List<Option> options(UUID userId) {
@@ -113,36 +126,71 @@ public class AgentModelCatalogService {
     }
 
     private static String descriptionFingerprint(LlmConfigService.LlmRuntimeConfig config) {
-        String material = config.provider().name() + "|" + normalizedBaseUrl(config.baseUrl())
-                + "|" + Optional.ofNullable(config.model()).orElse("");
+        return ModelConfigFingerprint.of(config);
+    }
+
+    private Map<String, UserModelSettingsStore.Setting> settingsFor(UUID userId) {
+        if (settingsStore == null) return Map.of();
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(material.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException unavailable) {
-            throw new IllegalStateException("无法计算模型配置指纹", unavailable);
+            return settingsStore.findAll(userId);
+        } catch (RuntimeException unavailable) {
+            log.warn("User model settings unavailable: {}", unavailable.getClass().getSimpleName());
+            return Map.of();
         }
     }
 
-    private static String normalizedBaseUrl(String baseUrl) {
-        return Optional.ofNullable(baseUrl).orElse("").strip().replaceAll("/+$", "").toLowerCase(Locale.ROOT);
-    }
-
     private List<Option> loadOptions(UUID userId) {
+        Map<String, UserModelSettingsStore.Setting> settings = settingsFor(userId);
         List<Option> options = new ArrayList<>();
         try {
-            options.add(option(PRIMARY, llmConfigService.getRuntimeConfig(userId)));
+            options.add(option(PRIMARY, llmConfigService.getRuntimeConfig(userId), settings));
         } catch (RuntimeException unavailable) {
             options.add(new Option(PRIMARY, "Primary model", "OPENAI_COMPATIBLE", false, false,
                     ModelReasoningPolicy.levels(new LlmConfigService.LlmRuntimeConfig(
                             LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "unknown", "redacted"))));
         }
         auxiliaryConfigService.runtimeConfig(userId, AuxiliaryServiceType.FALLBACK_LLM)
-                .ifPresentOrElse(fallback -> options.addAll(relayOptions(fallback)),
+                .ifPresentOrElse(fallback -> options.addAll(relayOptions(fallback, settings)),
                         () -> options.add(new Option(FALLBACK, "Fallback model", "OPENAI_COMPATIBLE", false, false,
                                 ModelReasoningPolicy.levels(new LlmConfigService.LlmRuntimeConfig(
                                         LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "unknown", "redacted")))));
         return List.copyOf(options);
     }
+
+    public List<Option> updateSettings(UUID userId, List<SettingsUpdate> updates) {
+        if (settingsStore == null) throw new IllegalStateException("模型设置暂不可用");
+        if (updates == null || updates.isEmpty()) throw new IllegalArgumentException("没有需要保存的模型设置");
+        if (updates.size() > MAX_RELAY_MODELS) throw new IllegalArgumentException("一次保存的模型过多");
+        List<SettingsUpdate> validated = updates.stream().map(this::validated).toList();
+        List<Prepared> prepared = validated.stream().map(update -> {
+            var config = resolve(userId, update.modelChoice()).config();
+            return new Prepared(update, config);
+        }).toList();
+        for (Prepared item : prepared) {
+            var update = item.update();
+            var config = item.config();
+            settingsStore.save(userId, ModelConfigFingerprint.of(config), config.provider().name(),
+                    Optional.ofNullable(config.baseUrl()).orElse(""), Optional.ofNullable(config.model()).orElse(""),
+                    update.visible() == null || update.visible(), update.thinkingEffort(),
+                    update.contextWindowTokens());
+        }
+        catalogCache.remove(userId);
+        return options(userId);
+    }
+
+    private SettingsUpdate validated(SettingsUpdate update) {
+        if (update == null) throw new IllegalArgumentException("没有需要保存的模型设置");
+        String effort = update.thinkingEffort() == null || update.thinkingEffort().isBlank()
+                ? "AUTO" : update.thinkingEffort().strip().toUpperCase(Locale.ROOT);
+        if (!THINKING_EFFORTS.contains(effort)) throw new IllegalArgumentException("无效的思考力度");
+        Long window = update.contextWindowTokens();
+        if (window != null && (window < MIN_CONTEXT_WINDOW || window > MAX_CONTEXT_WINDOW))
+            throw new IllegalArgumentException("上下文窗口需在 32K 到 10M 之间");
+        return new SettingsUpdate(update.modelChoice(), update.visible(), effort, window);
+    }
+
+    public record SettingsUpdate(String modelChoice, Boolean visible, String thinkingEffort,
+            Long contextWindowTokens) {}
 
     public Resolved resolve(UUID userId, String choice) {
         String normalized = choice == null ? PRIMARY : choice.strip().toUpperCase(Locale.ROOT);
@@ -166,7 +214,8 @@ public class AgentModelCatalogService {
         return ModelReasoningPolicy.resolve(resolve(userId, choice).config(), ReasoningDepth.AUTO).nativeControl();
     }
 
-    private List<Option> relayOptions(AuxiliaryApiConfigService.AuxiliaryRuntimeConfig raw) {
+    private List<Option> relayOptions(AuxiliaryApiConfigService.AuxiliaryRuntimeConfig raw,
+            Map<String, UserModelSettingsStore.Setting> settings) {
         List<String> models = relayModels(raw);
         LinkedHashSet<String> unique = new LinkedHashSet<>();
         if (raw.model() != null && !raw.model().isBlank()) unique.add(raw.model());
@@ -176,9 +225,7 @@ public class AgentModelCatalogService {
         }
         return unique.stream().map(model -> {
             var config = relayConfig(raw, model);
-            return new Option(FALLBACK_PREFIX + model, model, config.provider().name(), true,
-                    ModelReasoningPolicy.resolve(config, ReasoningDepth.AUTO).nativeControl(),
-                    ModelReasoningPolicy.levels(config), AgentImageModelPolicy.supports(config));
+            return option(FALLBACK_PREFIX + model, config, settings);
         }).toList();
     }
 
@@ -242,10 +289,15 @@ public class AgentModelCatalogService {
                 || normalized.contains("sonnet") || normalized.contains("haiku");
     }
 
-    private Option option(String id, LlmConfigService.LlmRuntimeConfig config) {
+    private Option option(String id, LlmConfigService.LlmRuntimeConfig config,
+            Map<String, UserModelSettingsStore.Setting> settings) {
+        UserModelSettingsStore.Setting setting = settings.get(ModelConfigFingerprint.of(config));
         return new Option(id, config.model(), config.provider().name(),
                 true, ModelReasoningPolicy.resolve(config, ReasoningDepth.AUTO).nativeControl(),
-                ModelReasoningPolicy.levels(config), AgentImageModelPolicy.supports(config));
+                ModelReasoningPolicy.levels(config), AgentImageModelPolicy.supports(config),
+                setting == null || setting.visible(),
+                setting == null ? "AUTO" : setting.thinkingEffort(),
+                setting == null ? null : setting.contextWindowTokens());
     }
 
     private LlmConfigService.LlmRuntimeConfig fallback(AuxiliaryApiConfigService.AuxiliaryRuntimeConfig config) {
@@ -259,10 +311,16 @@ public class AgentModelCatalogService {
     }
 
     public record Option(String id, String label, String provider, boolean available, boolean nativeControl,
-            List<ModelReasoningPolicy.Level> reasoningLevels, boolean imageInput) {
+            List<ModelReasoningPolicy.Level> reasoningLevels, boolean imageInput, boolean visible,
+            String thinkingEffort, Long contextWindowTokens) {
         public Option(String id, String label, String provider, boolean available, boolean nativeControl,
                 List<ModelReasoningPolicy.Level> reasoningLevels) {
-            this(id, label, provider, available, nativeControl, reasoningLevels, false);
+            this(id, label, provider, available, nativeControl, reasoningLevels, false, true, "AUTO", null);
+        }
+
+        public Option(String id, String label, String provider, boolean available, boolean nativeControl,
+                List<ModelReasoningPolicy.Level> reasoningLevels, boolean imageInput) {
+            this(id, label, provider, available, nativeControl, reasoningLevels, imageInput, true, "AUTO", null);
         }
     }
 
@@ -270,4 +328,5 @@ public class AgentModelCatalogService {
     }
 
     private record CatalogEntry(List<Option> options, long createdAt) {}
+    private record Prepared(SettingsUpdate update, LlmConfigService.LlmRuntimeConfig config) {}
 }

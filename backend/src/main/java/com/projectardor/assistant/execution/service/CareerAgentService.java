@@ -291,7 +291,7 @@ public class CareerAgentService {
                     traceListener == null ? java.util.List.of() : java.util.List.of(traceListener);
 
             CareerAssistant assistant = AiServices.builder(CareerAssistant.class)
-                    .chatModel(modelFactory.create(runtimeConfig, depth, listeners))
+                    .chatModel(modelFactory.create(userId, runtimeConfig, depth, listeners))
                     .systemMessage(systemMessage)
                     .chatMemory(memory)
                     // A synchronous retry keeps the logical request but is a new tool-call attempt.
@@ -536,7 +536,7 @@ public class CareerAgentService {
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId)
                     .withConversationId(conversation.getId());
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
-                    .streamingChatModel(modelFactory.createStreaming(runtimeConfig, depth, lease, listeners))
+                    .streamingChatModel(modelFactory.createStreaming(userId, runtimeConfig, depth, lease, listeners))
                     .systemMessage(systemMessage).chatMemory(memory)
                     .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings,
                             sink::waitingForApproval, message, permissionGrants, executionAudit,

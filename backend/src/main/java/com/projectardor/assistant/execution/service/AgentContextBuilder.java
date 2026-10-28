@@ -173,7 +173,7 @@ public class AgentContextBuilder {
         attributes.put("summaryVersion", prepared.summaryVersion());
         if (observer != null) observer.accept(new AgentContextUsage(failed.get() ? "COMPACTION_FAILED" : "READY",
                 runtimeConfig.model(), attributes.get("assembledEstimatedTokens") instanceof Number count ? count.longValue() : null,
-                displayedBudget, capacity.resolve(runtimeConfig), prepared.summaryVersion(), prepared.compactedMessages()));
+                displayedBudget, capacity.resolve(userId, runtimeConfig), prepared.summaryVersion(), prepared.compactedMessages()));
         return new Prepared(prepared.systemPrompt(), memory, java.util.Collections.unmodifiableMap(attributes), prepared.estimator());
     }
 
