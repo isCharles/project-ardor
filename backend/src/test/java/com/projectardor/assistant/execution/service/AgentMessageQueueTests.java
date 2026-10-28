@@ -183,6 +183,19 @@ class AgentMessageQueueTests {
     }
 
     @Test
+    void listRanksAPaidRowAheadOfAnOlderFreeRowForTheSameUser() {
+        AtomicInteger calls = new AtomicInteger();
+        var mixedQueue = queueWith(id -> calls.getAndIncrement() == 0 ? MembershipTier.FREE : MembershipTier.PLUS);
+
+        var free = mixedQueue.enqueue(owner, request(UUID.randomUUID()));
+        var paid = mixedQueue.enqueue(owner, request(UUID.randomUUID()));
+
+        assertThat(mixedQueue.list(owner, conversation))
+                .extracting(AgentMessageQueue.Item::id, AgentMessageQueue.Item::queuePosition)
+                .containsExactly(tuple(free.id(), 2), tuple(paid.id(), 1));
+    }
+
+    @Test
     void paidMessageStartsAheadOfAnOlderFreeMessage() {
         UUID freeUser = user();
         UUID paidUser = user();
