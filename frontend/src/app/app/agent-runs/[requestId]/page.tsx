@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ArrowLeft, Bot, CheckCircle2, CircleAlert, Clock3, GitBranch, List, LoaderCircle, Search, Wrench } from "lucide-react";
+import { Activity, Archive, ArrowLeft, Bot, CheckCircle2, CircleAlert, Clock3, GitBranch, List, LoaderCircle, Search, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -13,7 +13,7 @@ type TraceSpan = {
   id: string;
   runId: string;
   parentSpanId: string | null;
-  kind: "RUN" | "LLM" | "TOOL" | "CONTEXT" | "THOUGHT" | "RETRY" | "ASYNC";
+  kind: "RUN" | "LLM" | "TOOL" | "CONTEXT" | "COMPACTION" | "THOUGHT" | "RETRY" | "ASYNC";
   name: string;
   status: "RUNNING" | "COMPLETED" | "FAILED" | "NOT_EXECUTED" | "UNKNOWN";
   startedAt: string;
@@ -29,7 +29,13 @@ type TraceSpan = {
   attributes: Record<string, unknown>;
 };
 
+function numberAttribute(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function spanLabel(span: TraceSpan, t: (english: string, chinese: string) => string) {
+  // Compaction has its own kind now; the older purpose check keeps historical rows readable.
+  if (span.kind === "COMPACTION") return t("Context compaction", "上下文压缩");
   if (span.kind === "LLM" && span.attributes.purpose === "CONTEXT_COMPACTION")
     return t("Context compaction", "上下文压缩");
   if (span.kind === "CONTEXT" && span.name === "context.load") return t("Context assembly", "上下文加载");
@@ -70,10 +76,59 @@ const kindMeta: Record<TraceSpan["kind"], { label: string; color: string; icon: 
   LLM: { label: "LLM", color: "bg-violet-100 text-violet-700", icon: Bot },
   TOOL: { label: "TOOL", color: "bg-sky-100 text-sky-700", icon: Wrench },
   CONTEXT: { label: "CONTEXT", color: "bg-stone-200 text-stone-700", icon: Clock3 },
+  COMPACTION: { label: "COMPACTION", color: "bg-amber-100 text-amber-800", icon: Archive },
   THOUGHT: { label: "THOUGHT", color: "bg-violet-50 text-violet-700", icon: Activity },
   RETRY: { label: "RETRY", color: "bg-amber-100 text-amber-800", icon: CircleAlert },
   ASYNC: { label: "ASYNC", color: "bg-emerald-100 text-emerald-700", icon: Activity },
 };
+
+const DOT_TONE: Record<string, string> = {
+  LLM: "bg-violet-400", TOOL: "bg-sky-400", CONTEXT: "bg-stone-400",
+  COMPACTION: "bg-amber-400", ASYNC: "bg-emerald-400",
+};
+
+function dotTone(kind: TraceSpan["kind"]) { return DOT_TONE[kind] ?? "bg-stone-300"; }
+
+function truncatedSuffix(flag: unknown, t: (english: string, chinese: string) => string) {
+  return flag === true ? t(" · preview truncated, full text stayed in context", " · 仅预览截断，上下文内容未删减") : "";
+}
+
+/** The recorded decision inputs of one compaction, so the threshold and the size can be rechecked. */
+function CompactionFacts({ span }: { span: TraceSpan }) {
+  const { t } = useLocale();
+  const number = (key: string) => numberAttribute(span.attributes[key]);
+  const tokens = (key: string) => {
+    const value = number(key);
+    return value == null ? null : `${new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value)} tokens`;
+  };
+  const count = (key: string) => {
+    const value = number(key);
+    return value == null ? null : String(value);
+  };
+  const before = number("summaryVersionBefore");
+  const after = number("summaryVersionAfter");
+  const failure = typeof span.attributes.failureCode === "string" && span.attributes.failureCode
+    ? span.attributes.failureCode : span.errorCode;
+  const facts: Array<[string, string | null]> = [
+    [t("Model window", "模型窗口"), tokens("windowTokens")],
+    [t("Compaction threshold", "压缩阈值"), tokens("softThresholdTokens")],
+    [t("Projected input", "触发时估算输入"), tokens("projectedInputTokens")],
+    [t("Messages summarized", "归纳消息数"), count("messagesToSummarize")],
+    [t("First message", "起始消息序号"), count("firstMessageOrdinal")],
+    [t("Summary version", "摘要版本"), before == null && after == null ? null : `${before ?? 0} → ${after ?? 0}`],
+    [t("Input after", "压缩后估算"), tokens("estimatedInputTokensAfter")],
+    [t("Failure code", "失败码"), failure],
+  ];
+  const known = facts.filter(([, value]) => value);
+  if (known.length === 0) return null;
+  return <div className="sm:col-span-2">
+    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Trigger evidence", "触发依据")}</p>
+    <div className="mt-2 grid gap-x-8 gap-y-2 sm:grid-cols-2">
+      {known.map(([label, value]) => <InspectorField key={label} label={label} value={value as string} />)}
+    </div>
+    <p className="mt-2 text-[10px] leading-5 text-stone-400">{t("Recorded decision inputs; the summary text is stored separately.", "以上为触发时记录的判定数据，摘要正文另存。")}</p>
+  </div>;
+}
 
 export default function AgentRunTracePage() {
   return <Suspense fallback={null}><AgentRunTraceContent /></Suspense>;
@@ -85,11 +140,13 @@ function AgentRunTraceContent() {
   const { t } = useLocale();
   const [trace, setTrace] = useState<Trace | null>(null);
   const [conversationTrace, setConversationTrace] = useState<ConversationTrace | null>(null);
-  const conversationId = useSearchParams().get("conversation") ?? "";
+  const search = useSearchParams();
+  const conversationId = search.get("conversation") ?? "";
+  const requestedSpan = search.get("span");
   const [toolSchemas, setToolSchemas] = useState<Record<string, ToolSchema>>({});
   const [error, setError] = useState("");
-  const [view, setView] = useState<"flow" | "timeline" | "inspector">("flow");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<"flow" | "timeline" | "inspector">(requestedSpan ? "inspector" : "flow");
+  const [selectedId, setSelectedId] = useState<string | null>(requestedSpan);
   const [filter, setFilter] = useState("");
 
   useEffect(() => {
@@ -227,7 +284,7 @@ function AgentRunTraceContent() {
           ? <section className="mt-3">
               <FlowGraph nodes={flow} selectedId={selectedId} onSelect={setSelectedId} />
               <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-stone-400">
-                {(["LLM", "TOOL", "CONTEXT", "ASYNC"] as const).map((kind) => <span key={kind} className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-full ${kind === "LLM" ? "bg-violet-400" : kind === "TOOL" ? "bg-sky-400" : kind === "CONTEXT" ? "bg-stone-400" : "bg-emerald-400"}`} />{kindMeta[kind].label}</span>)}
+                {(["LLM", "TOOL", "CONTEXT", "COMPACTION", "ASYNC"] as const).map((kind) => <span key={kind} className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-full ${dotTone(kind)}`} />{kindMeta[kind].label}</span>)}
               </div>
               <p className="mt-3 text-xs text-stone-400">{t("Switch to Trajectory to inspect parameters, results, schema and timing.", "切换到轨迹检查器查看参数、结果、Schema 和计时。")}</p>
             </section>
@@ -331,6 +388,11 @@ function InspectorPanel({ span, schema, sourceLabel, thinking }: { span: TraceSp
         {requestedTools.length > 0 && <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Requested tools", "请求的工具")}</p><div className="mt-1.5 flex flex-wrap gap-1.5">{requestedTools.map((tool) => <span key={tool} className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-[10px] text-violet-700">{tool}</span>)}</div></div>}
       </div> : <div className="grid gap-x-8 gap-y-3 text-xs sm:grid-cols-2">
         <InspectorField label={t("Kind", "类型")} value={span.kind} />
+        {typeof span.attributes.residentMemoryOutcome === "string" && <div className="sm:col-span-2">
+          <InspectorField label={t("Resident memory budget", "记忆常驻预算")}
+            value={`${span.attributes.residentMemoryOutcome} · ${String(span.attributes.residentMemoryOmitted ?? 0)} ${t("not expanded", "条未展开")} · ${String(span.attributes.residentMemoryChars ?? 0)} chars`} />
+          <p className="mt-1 text-[10px] leading-5 text-stone-400">{t("Long-term memory lines that did not fit the prompt budget. This is not context compaction and no history was summarized.", "仅表示长期记忆未展开，与上下文压缩无关，历史没有被归纳。")}</p>
+        </div>}
         <InspectorField label={t("Status", "状态")} value={span.status} />
         <InspectorField label={t("Model", "模型")} value={span.model ?? "—"} />
         <InspectorField label={t("Prompt version", "Prompt 版本")} value={span.promptVersion ?? "—"} />
@@ -339,12 +401,13 @@ function InspectorPanel({ span, schema, sourceLabel, thinking }: { span: TraceSp
         <InspectorField label={t("Parent span", "父步骤")} value={span.parentSpanId ?? "—"} mono />
         <InspectorField label={t("Error code", "错误码")} value={span.errorCode ?? "—"} />
         <InspectorField label={t("Span ID", "步骤 ID")} value={span.id} mono wide />
+        {span.kind === "COMPACTION" && <CompactionFacts span={span} />}
         {requestedTools.length > 0 && <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Requested tools", "请求的工具")}</p><div className="mt-1.5 flex flex-wrap gap-1.5">{requestedTools.map((tool) => <span key={tool} className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-[10px] text-violet-700">{tool}</span>)}</div></div>}
       </div>)}
       {tab === "preview" && <div className="space-y-4">{thinking && <div><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Model reasoning output", "模型思考输出")}</p><div className="mt-2 max-h-[45vh] overflow-auto rounded-xl bg-stone-50 p-4"><MarkdownContent className="text-sm leading-7 text-stone-700">{thinking}</MarkdownContent></div></div>}<div><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">{t("Assistant output", "助手输出")}</p>{result ? <MarkdownContent className="mt-2 text-sm leading-7 text-stone-700">{result}</MarkdownContent> : <p className="mt-2 rounded-xl bg-stone-50 p-4 text-xs text-stone-500">{t("No assistant output recorded.", "没有记录助手输出。")}</p>}</div></div>}
       {tab === "raw" && <div className="space-y-4">{thinking && <InspectorPre label={t("Raw reasoning", "原始思考")} text={thinking} empty="" />}<InspectorPre label={t("Raw output", "原始输出")} text={result} empty={t("No output recorded.", "没有记录输出。")} /><InspectorPre label={t("Raw input", "原始输入")} text={input} empty={t("No input recorded.", "没有记录输入。")} /></div>}
-      {tab === "input" && <InspectorPre label={span.kind === "TOOL" ? t("Arguments", "参数") : t("Input preview", "输入预览")} text={input} empty={t("No input preview was recorded.", "没有记录输入预览。")} />}
-      {tab === "result" && <InspectorPre label={span.kind === "THOUGHT" ? t("Phase conclusion", "阶段结论") : t("Result", "结果")} text={result} empty={t("No result preview was recorded.", "没有记录结果预览。")} />}
+      {tab === "input" && <InspectorPre label={`${span.kind === "TOOL" ? t("Arguments", "参数") : t("Input preview", "输入预览")}${truncatedSuffix(span.attributes.inputPreviewTruncated ?? span.attributes.argumentsPreviewTruncated, t)}`} text={input} empty={t("No input preview was recorded.", "没有记录输入预览。")} />}
+      {tab === "result" && <InspectorPre label={`${span.kind === "THOUGHT" ? t("Phase conclusion", "阶段结论") : t("Result", "结果")}${truncatedSuffix(span.attributes.resultPreviewTruncated, t)}`} text={result} empty={t("No result preview was recorded.", "没有记录结果预览。")} />}
       {tab === "schema" && (schema ? <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-stone-50 p-4 text-[11px] leading-5 text-stone-600">{JSON.stringify(schema, null, 2)}</pre> : <p className="rounded-xl bg-stone-50 p-4 text-xs text-stone-500">{t("No schema was registered for this step.", "这个步骤没有注册 Schema。")}</p>)}
       {tab === "metadata" && <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-stone-50 p-4 text-[11px] leading-5 text-stone-600">{JSON.stringify(span.attributes, null, 2)}</pre>}
       {tab === "timing" && <div className="grid gap-3 sm:grid-cols-2">

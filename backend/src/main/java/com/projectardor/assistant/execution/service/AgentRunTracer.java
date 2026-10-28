@@ -111,8 +111,13 @@ public final class AgentRunTracer {
         contextSpan.compareAndSet(spanId, null);
     }
 
-    public void recordLlm(Integer inTokens, Integer outTokens, boolean toolRound) {
-        recordLlm("ASSISTANT", inTokens, outTokens, toolRound, 0);
+    /** Adds attributes to a span that already finished, for the outcome the caller learns afterwards. */
+    public void annotateChild(UUID spanId, Map<String, Object> attributes) {
+        if (!active() || spanId == null || attributes == null || attributes.isEmpty()) return;
+        store.annotateSpan(userId, spanId, attributes);
+    }
+
+    public void recordLlm(Integer inTokens, Integer outTokens, boolean toolRound) {        recordLlm("ASSISTANT", inTokens, outTokens, toolRound, 0);
     }
 
     /** Counts one LLM invocation by purpose, including calls whose provider omitted usage. */

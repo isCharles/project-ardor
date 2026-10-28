@@ -121,7 +121,7 @@ public class AgentContextBuilder {
                         listeners, () -> lease == null || !lease.stopped(), pending, pendingImages, state -> {
                             if ("COMPACTION_FAILED".equals(state)) failed.set(true);
                             observer.accept(new AgentContextUsage(state, runtimeConfig.model(), null,
-                                    contextCompactor.budgetTokens(), null, 0, 0));
+                                    contextCompactor.budgetTokens(), null, 0, 0, null));
                         });
         List<HistoryTurn> history = new java.util.ArrayList<>(prepared.recentMessages().stream()
                 .map(item -> new HistoryTurn(item.getRole(), item.getContent(), item.getContextReferences(),
@@ -152,12 +152,13 @@ public class AgentContextBuilder {
         long softBudget = prepared.budget() == null ? contextCompactor.budgetTokens() : prepared.budget().softInputTokens();
         int displayedBudget = (int) Math.min(Integer.MAX_VALUE, softBudget);
         attributes.put("promptChars", prepared.systemPrompt().length());
-        attributes.put("memoryOutcome", memoryContext.outcome());
-        attributes.put("memoryCandidates", memoryContext.candidates());
-        attributes.put("memoryAdopted", memoryContext.adopted());
-        attributes.put("memoryOmitted", memoryContext.omitted());
-        attributes.put("memoryContextChars", memoryContext.contextChars());
-        attributes.put("memoryEmbeddingCalls", memoryContext.embeddingCalls());
+        // Resident long-term memory budget: this omits prompt lines, it never summarizes or drops history.
+        attributes.put("residentMemoryOutcome", memoryContext.outcome());
+        attributes.put("residentMemoryCandidates", memoryContext.candidates());
+        attributes.put("residentMemoryAdopted", memoryContext.adopted());
+        attributes.put("residentMemoryOmitted", memoryContext.omitted());
+        attributes.put("residentMemoryChars", memoryContext.contextChars());
+        attributes.put("residentMemoryEmbeddingCalls", memoryContext.embeddingCalls());
         attributes.put("historyMessages", prepared.recentMessages().size());
         attributes.put("interruptedMessages", interruptedTurns.size());
         attributes.put("estimatedTokens", prepared.estimatedTokens());
@@ -178,9 +179,20 @@ public class AgentContextBuilder {
         }
         attributes.put("compactedMessages", prepared.compactedMessages());
         attributes.put("summaryVersion", prepared.summaryVersion());
+        var compaction = prepared.compaction();
+        if (compaction != null) {
+            attributes.put("compactionOutcome", compaction.outcome());
+            attributes.put("compactionSpanId", compaction.spanId());
+            attributes.put("compactionThresholdTokens", compaction.softThresholdTokens());
+            attributes.put("compactionProjectedInputTokens", compaction.projectedInputTokens());
+            attributes.put("compactionEstimatedInputTokensAfter", compaction.estimatedInputTokensAfter());
+            attributes.put("compactionSummarizedMessages", compaction.summarizedMessages());
+            attributes.put("compactionFailureCode", compaction.errorCode() == null ? "" : compaction.errorCode());
+        }
         if (observer != null) observer.accept(new AgentContextUsage(failed.get() ? "COMPACTION_FAILED" : "READY",
                 runtimeConfig.model(), attributes.get("assembledEstimatedTokens") instanceof Number count ? count.longValue() : null,
-                displayedBudget, capacity.resolve(userId, runtimeConfig), prepared.summaryVersion(), prepared.compactedMessages()));
+                displayedBudget, capacity.resolve(userId, runtimeConfig), prepared.summaryVersion(),
+                prepared.compactedMessages(), compaction));
         return new Prepared(prepared.systemPrompt(), memory, java.util.Collections.unmodifiableMap(attributes), prepared.estimator());
     }
 

@@ -39,10 +39,57 @@ class AgentModelTraceListenerTests {
         tracer.finishChild(contextSpan, "COMPLETED", null, "fixture", null, null, Map.of());
         assertThat(tracer.contextSpanId()).isNull();
         reply.onRequest(request);
-        verify(store).startSpan(eq(user), eq(run), eq(contextSpan), eq("LLM"), eq("context.compact.1"),
+        verify(store).startSpan(eq(user), eq(run), eq(contextSpan), eq("COMPACTION"), eq("context.compact.1"),
                 org.mockito.ArgumentMatchers.argThat(attributes -> "CONTEXT_COMPACTION".equals(attributes.get("purpose"))));
         verify(store).startSpan(eq(user), eq(run), eq(tracer.rootSpanId()), eq("LLM"), eq("llm.call.2"),
                 org.mockito.ArgumentMatchers.argThat(attributes -> "ASSISTANT".equals(attributes.get("purpose"))));
+    }
+
+    @Test
+    void compactionSpanCarriesTheTriggerFactsAndTheOutcomeLearnedAfterwards() {
+        var store = mock(AgentTraceStore.class);
+        when(store.enabled()).thenReturn(true);
+        UUID user = UUID.randomUUID(), run = UUID.randomUUID();
+        UUID compactSpan = UUID.randomUUID();
+        when(store.startSpan(any(), any(), any(), any(), any(), any())).thenReturn(compactSpan);
+        var tracer = AgentRunTracer.begin(store, user, run, null, "fixture", "v1");
+        var compact = new AgentModelTraceListener(tracer, "fixture", "CONTEXT_COMPACTION", tracer.rootSpanId());
+        compact.attachCompactionEvidence(Map.of("windowTokens", 200_000L, "softThresholdTokens", 139_428L,
+                "projectedInputTokens", 152_100L, "messagesToSummarize", 8, "firstMessageOrdinal", 1,
+                "summaryVersionBefore", 2));
+        var request = mock(ChatModelRequestContext.class);
+        when(request.attributes()).thenAnswer(call -> new HashMap<>());
+        when(request.chatRequest()).thenReturn(null);
+        compact.onRequest(request);
+
+        assertThat(compact.lastSpanId()).isEqualTo(compactSpan);
+        verify(store).startSpan(eq(user), eq(run), eq(tracer.rootSpanId()), eq("COMPACTION"), eq("context.compact.1"),
+                org.mockito.ArgumentMatchers.argThat(attributes -> Long.valueOf(139_428L).equals(attributes.get("softThresholdTokens"))
+                        && Long.valueOf(152_100L).equals(attributes.get("projectedInputTokens"))
+                        && Integer.valueOf(8).equals(attributes.get("messagesToSummarize"))));
+
+        compact.recordCompactionOutcome(Map.of("outcome", "COMPACTED", "summaryVersionAfter", 3,
+                "estimatedInputTokensAfter", 14_200L));
+        verify(store).annotateSpan(eq(user), eq(compactSpan),
+                org.mockito.ArgumentMatchers.argThat(attributes -> "COMPACTED".equals(attributes.get("outcome"))
+                        && Integer.valueOf(3).equals(attributes.get("summaryVersionAfter"))));
+    }
+
+    @Test
+    void previewCutoffIsLabelledAsPreviewTruncation() {
+        var store = mock(AgentTraceStore.class);
+        when(store.enabled()).thenReturn(true);
+        when(store.startSpan(any(), any(), any(), any(), any(), any())).thenAnswer(call -> UUID.randomUUID());
+        var tracer = AgentRunTracer.begin(store, UUID.randomUUID(), UUID.randomUUID(), null, "fixture", "v1");
+        var listener = new AgentModelTraceListener(tracer, "fixture");
+        var request = mock(ChatModelRequestContext.class);
+        when(request.attributes()).thenAnswer(call -> new HashMap<>());
+        when(request.chatRequest()).thenReturn(dev.langchain4j.model.chat.request.ChatRequest.builder()
+                .messages(dev.langchain4j.data.message.UserMessage.from("x".repeat(TracePreview.DEFAULT_LIMIT * 2))).build());
+        when(request.modelProvider()).thenReturn(null);
+        listener.onRequest(request);
+        verify(store).startSpan(any(), any(), any(), eq("LLM"), eq("llm.call.1"),
+                org.mockito.ArgumentMatchers.argThat(attributes -> Boolean.TRUE.equals(attributes.get("inputPreviewTruncated"))));
     }
 
     @Test

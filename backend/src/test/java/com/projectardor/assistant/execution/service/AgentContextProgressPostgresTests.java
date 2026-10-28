@@ -23,7 +23,8 @@ class AgentContextProgressPostgresTests {
             var store = new AgentProgressStore(jdbc, JsonMapper.builder().build());
             var live = new AgentStreamProgress(store);
             live.begin(owner, run);
-            var usage = new AgentContextUsage("READY", "synthetic-model", 1800L, 12000, null, 2, 8);
+            var usage = new AgentContextUsage("READY", "synthetic-model", 1800L, 12000, null, 2, 8,
+                    new AgentContextUsage.Compaction("COMPACTED", null, 200000L, 139428, 150000, 14200, 8, 1, 2, 3, null));
             live.context(run, usage); live.finish(run, false);
             var snapshot = store.find(owner, run).orElseThrow().snapshot();
             var stale = new AgentStreamProgress.Snapshot(0, Instant.now(), Instant.now(),

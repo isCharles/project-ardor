@@ -32,4 +32,9 @@ final class TracePreview {
         if (text.length() <= limit) return text;
         return text.substring(0, Math.max(0, limit - 1)) + "…";
     }
+
+    /** Marks a preview that hit the cap; the stored payload and the model's context are untouched. */
+    static boolean isTruncated(String preview) {
+        return preview != null && preview.endsWith("…");
+    }
 }

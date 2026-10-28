@@ -21,7 +21,8 @@ class AgentRequestContextListenerTests {
     @Test void includesSchemasAndToolResultsAndUsesLatestRequestRatherThanCumulativeUsage() {
         var values = new ArrayList<AgentContextUsage>();
         var active = new AtomicBoolean(true);
-        var base = new AgentContextUsage("READY", "test", null, 12000, 100000L, 2, 8);
+        var compaction = new AgentContextUsage.Compaction("COMPACTED", "span-1", 200000L, 139428L, 152100L, 14200L, 8, 1, 2, 3, null);
+        var base = new AgentContextUsage("READY", "test", null, 12000, 100000L, 2, 8, compaction);
         var listener = new AgentRequestContextListener(null, base, values::add, active::get);
         var first = request(ChatRequest.builder().messages(UserMessage.from("question")).build());
         listener.onRequest(first);
@@ -45,6 +46,8 @@ class AgentRequestContextListenerTests {
         listener.onRequest(third);
         assertThat(values.getLast().estimatedTokens()).isLessThan(501);
         assertThat(values.getLast().summaryVersion()).isEqualTo(2);
+        // The notice stays attached while later per-request usage replaces the token figure.
+        assertThat(values.getLast().compaction()).isEqualTo(compaction);
         count = values.size();
         active.set(false);
         listener.onResponse(response(third, 800));

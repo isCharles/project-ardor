@@ -95,6 +95,9 @@ class AgentContextCompactorTests {
         var result = fixture.compactor().prepare(fixture.user(), fixture.conversation(), "system", config(),
                 ReasoningDepth.AUTO, List.of(), () -> true, "current", states::add);
         assertThat(states).containsExactly("COMPACTING", "COMPACTION_FAILED");
+        assertThat(result.compaction()).isNotNull();
+        assertThat(result.compaction().outcome()).isEqualTo("FAILED");
+        assertThat(result.compaction().errorCode()).isEqualTo("COMPACTION_MODEL_UNAVAILABLE");
         assertThat(result.compactedMessages()).isZero();
         assertThat(result.recentMessages()).containsExactlyElementsOf(fixture.messages());
     }
@@ -156,6 +159,17 @@ class AgentContextCompactorTests {
         assertThat(prepared.compactedMessages()).isEqualTo(20);
         assertThat(prepared.systemPrompt()).isEqualTo("system");
         assertThat(prepared.summaryContext()).contains("用户目标：找 Java 后端实习");
+        var evidence = prepared.compaction();
+        assertThat(evidence).isNotNull();
+        assertThat(evidence.outcome()).isEqualTo("COMPACTED");
+        assertThat(evidence.summarizedMessages()).isEqualTo(20);
+        assertThat(evidence.firstMessageOrdinal()).isEqualTo(1);
+        assertThat(evidence.lastMessageOrdinal()).isEqualTo(20);
+        assertThat(evidence.summaryVersionBefore()).isZero();
+        assertThat(evidence.summaryVersionAfter()).isEqualTo(1);
+        // The reader can recheck the trigger: the projected input crossed the soft threshold of this window.
+        assertThat(evidence.softThresholdTokens()).isLessThan(evidence.projectedInputTokens());
+        assertThat(evidence.errorCode()).isNull();
         verify(model).chat(any(ChatRequest.class));
         verify(summaries).save(any(), any(), anyInt(), any(), anyInt(), anyString(), anyInt(), any());
     }

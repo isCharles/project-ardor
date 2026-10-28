@@ -1,16 +1,52 @@
 "use client";
 
 import { LoaderCircle } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocale } from "@/lib/locale";
 import { useDismiss } from "./overlay";
 
+export type ContextCompaction = {
+  outcome: "COMPACTED" | "FAILED"; spanId: string | null; windowTokens: number | null;
+  softThresholdTokens: number; projectedInputTokens: number; estimatedInputTokensAfter: number;
+  summarizedMessages: number; firstMessageOrdinal: number; summaryVersionBefore: number;
+  summaryVersionAfter: number; errorCode: string | null;
+};
+
 export type ContextUsage = {
   state: "PREPARING" | "COMPACTING" | "COMPACTION_FAILED" | "READY";
   model: string; estimatedTokens: number | null; compressionBudgetTokens: number;
   modelWindowTokens: number | null; summaryVersion: number; compactedMessages: number;
+  compaction?: ContextCompaction | null;
 };
+
+/**
+ * Context compaction changed what the model can see, so the conversation says so in its own line
+ * instead of leaving the figure in a tooltip. The numbers come from the run and link to the span.
+ */
+export function CompactionNotice({ usage, traceHref }: { usage?: ContextUsage | null; traceHref?: string }) {
+  const { t } = useLocale();
+  const compaction = usage?.compaction;
+  if (!compaction) return null;
+  const compact = (value: number) => new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  const last = compaction.firstMessageOrdinal + Math.max(0, compaction.summarizedMessages) - 1;
+  const range = compaction.summarizedMessages > 1
+    ? t(`messages ${compaction.firstMessageOrdinal}-${last}`, `第 ${compaction.firstMessageOrdinal}–${last} 条历史`)
+    : t(`message ${compaction.firstMessageOrdinal}`, `第 ${compaction.firstMessageOrdinal} 条历史`);
+  const failed = compaction.outcome !== "COMPACTED";
+  const text = failed
+    ? t(`History could not be summarized (${compaction.errorCode ?? "unknown"}); this run kept every message verbatim.`,
+      `未能归纳历史（${compaction.errorCode ?? "未知原因"}），本轮保留全部原文。`)
+    : t(`Summarized ${range} into a shorter context: ${compact(compaction.projectedInputTokens)} → ${compact(compaction.estimatedInputTokensAfter)} tokens (threshold ${compact(compaction.softThresholdTokens)}).`,
+      `已把${range}归纳为摘要：估算 ${compact(compaction.projectedInputTokens)} → ${compact(compaction.estimatedInputTokensAfter)} tokens（阈值 ${compact(compaction.softThresholdTokens)}）。`);
+  const href = traceHref && compaction.spanId ? `${traceHref}?span=${encodeURIComponent(compaction.spanId)}` : traceHref;
+  return <p data-compaction-notice className={`flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl px-3 py-2 text-xs leading-5 ${failed ? "bg-amber-50 text-amber-800" : "bg-violet-50 text-violet-800"}`}>
+    <span className="font-medium">{failed ? t("Compaction failed", "归纳失败") : t("Context compacted", "上下文已压缩")}</span>
+    <span className="min-w-0">{text}</span>
+    {href && <Link href={href} className="ml-auto shrink-0 underline opacity-80 hover:opacity-100">{t("View span", "查看轨迹")}</Link>}
+  </p>;
+}
 
 export function ContextUsageIndicator({ usage: snapshot, selectedModel }: { usage?: ContextUsage | null; selectedModel?: string }) {
   const usage = selectedModel && snapshot?.model !== selectedModel ? null : snapshot;
@@ -42,9 +78,9 @@ export function ContextUsageIndicator({ usage: snapshot, selectedModel }: { usag
   const percent = fraction == null ? null : Math.round(fraction * 100);
   const fill = fraction == null ? 0 : Math.max(0, Math.min(1, fraction));
   const compact = (value: number) => new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
-  const label = usage?.state === "COMPACTING" ? t("Compacting context", "正在压缩上下文")
+  const label = usage?.state === "COMPACTING" ? t("Summarizing earlier messages", "正在归纳较早的对话")
     : working ? t("Preparing context", "正在整理上下文")
-    : usage?.state === "COMPACTION_FAILED" ? t("Compaction deferred", "上下文压缩未成功")
+    : usage?.state === "COMPACTION_FAILED" ? t("History summary failed; every message was kept", "未能归纳历史，保留全部原文")
     : t("Context", "上下文");
   return <div ref={ref} className="relative shrink-0" onMouseLeave={() => setPosition(null)}>
     <button ref={button} type="button" aria-label={t("Context usage", "上下文用量")} aria-describedby={position ? tooltipId : undefined}

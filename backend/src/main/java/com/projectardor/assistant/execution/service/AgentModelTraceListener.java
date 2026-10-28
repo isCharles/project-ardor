@@ -25,6 +25,25 @@ public final class AgentModelTraceListener implements ChatModelListener {
     private final String purpose;
     private final UUID parent;
     private final AgentMetrics metrics;
+    private volatile Map<String, Object> compactionEvidence = Map.of();
+    private volatile UUID lastSpanId;
+
+    /**
+     * The compactor knows why it is about to summarize before the call happens. Putting those numbers on
+     * the span lets a reader check the window, the threshold and the projected input instead of inferring
+     * from a model call that compaction must have happened.
+     */
+    public void attachCompactionEvidence(Map<String, Object> evidence) {
+        this.compactionEvidence = evidence == null ? Map.of() : Map.copyOf(evidence);
+    }
+
+    /** Merges the facts that only exist once the summary is written: versions, size after, failure code. */
+    public void recordCompactionOutcome(Map<String, Object> outcome) {
+        tracer.annotateChild(lastSpanId, outcome == null ? Map.of() : Map.copyOf(outcome));
+    }
+
+    /** The span of the most recent compaction call, so the conversation notice can link to it. */
+    public UUID lastSpanId() { return lastSpanId; }
 
     public AgentModelTraceListener(AgentRunTracer tracer, String model) {
         this(tracer, model, "ASSISTANT", null, null);
@@ -63,10 +82,15 @@ public final class AgentModelTraceListener implements ChatModelListener {
             for (var message : context.chatRequest().messages()) {
                 if (message instanceof UserMessage userMessage) preview = userMessage.toString();
             }
-            attributes.put("inputPreview", TracePreview.of(preview));
+            String inputPreview = TracePreview.of(preview);
+            attributes.put("inputPreview", inputPreview);
+            attributes.put("inputPreviewTruncated", TracePreview.isTruncated(inputPreview));
         }
-        String name = "CONTEXT_COMPACTION".equals(purpose) ? "context.compact." + call : "llm.call." + call;
-        UUID span = tracer.startChild(parent, "LLM", name, attributes);
+        boolean compaction = "CONTEXT_COMPACTION".equals(purpose);
+        String name = compaction ? "context.compact." + call : "llm.call." + call;
+        if (compaction) attributes.putAll(compactionEvidence);
+        UUID span = tracer.startChild(parent, compaction ? "COMPACTION" : "LLM", name, attributes);
+        lastSpanId = span;
         if (span != null) context.attributes().put(SPAN_ATTRIBUTE, span);
     }
 
@@ -92,7 +116,9 @@ public final class AgentModelTraceListener implements ChatModelListener {
         if (usage.cacheCreationInputTokens() != null) attributes.put("cacheCreationInputTokens", usage.cacheCreationInputTokens());
         copyTiming(context.attributes(), attributes);
         if (message != null) {
-            attributes.put("outputPreview", TracePreview.of(message.text()));
+            String outputPreview = TracePreview.of(message.text());
+            attributes.put("outputPreview", outputPreview);
+            attributes.put("outputPreviewTruncated", TracePreview.isTruncated(outputPreview));
             if (message.hasToolExecutionRequests()) {
                 attributes.put("requestedTools", message.toolExecutionRequests().stream()
                         .map(request -> request.name()).toList());
