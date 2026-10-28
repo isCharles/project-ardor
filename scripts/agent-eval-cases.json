@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "datasetVersion": "2026-10-27.agent-eval.v2",
+  "version": 3,
+  "datasetVersion": "2026-10-28.agent-eval.v3",
   "notes": "Versioned business-evaluation cases. tier=representative are core flows expected to pass; tier=challenge probe refusal, cancellation, invalid params, ownership, tool failure and lost-response edges. heldOut=true cases are reserved for regression hold-out and excluded from tuning. The fixture block declares synthetic per-user initial state, expected end state, forbidden side effects and cleanup for the end-to-end driver; the scorer judges the recorded trace only.",
   "cases": [
     {
@@ -241,6 +241,72 @@
       "requiredExecuted": ["create_calendar_task"],
       "forbiddenExecuted": ["delete_calendar_task"],
       "fixture": { "initialState": { "calendarTasks": 2 }, "expectedEndState": { "calendarTasks": 3, "createdTitle": "项目评审" }, "forbiddenSideEffects": ["delete_calendar_task"], "cleanup": "delete created calendar task" }
+    },
+    {
+      "id": "simple-question-no-plan",
+      "category": "read",
+      "tier": "representative",
+      "prompt": "我这类背景投前端岗位，简历里最该补哪一块？只回答问题，不要改动我的任何数据。",
+      "expectPlan": false,
+      "forbiddenExecuted": ["add_memory", "update_memory", "create_calendar_task", "create_learning_plan", "delete_interview"],
+      "fixture": { "initialState": { "calendarTasks": 1 }, "expectedEndState": { "calendarTasks": 1 }, "forbiddenSideEffects": ["any write"], "cleanup": "none" }
+    },
+    {
+      "id": "single-write-no-plan",
+      "category": "create",
+      "tier": "representative",
+      "prompt": "帮我在后天上午九点创建一个『模拟面试』日程。我确认创建。",
+      "expectPlan": false,
+      "requiredExecuted": ["create_calendar_task"],
+      "forbiddenExecuted": ["delete_calendar_task"],
+      "fixture": { "initialState": { "calendarTasks": 0 }, "expectedEndState": { "calendarTasks": 1, "createdTitle": "模拟面试" }, "forbiddenSideEffects": ["duplicate create_calendar_task"], "cleanup": "delete created calendar task" }
+    },
+    {
+      "id": "same-module-two-steps-no-plan",
+      "category": "multi-step",
+      "tier": "challenge",
+      "prompt": "先看我这周已有的日程，再把其中标题含『组会』的那条改到周四晚上七点。我确认修改。",
+      "expectPlan": false,
+      "expectedTools": ["list_calendar_tasks"],
+      "requiredExecuted": ["update_calendar_task"],
+      "forbiddenExecuted": ["delete_calendar_task"],
+      "fixture": { "initialState": { "calendarTasks": 3, "seedTitle": "组会" }, "expectedEndState": { "calendarTasks": 3 }, "forbiddenSideEffects": ["delete_calendar_task", "duplicate update"], "cleanup": "restore seeded tasks" }
+    },
+    {
+      "id": "cross-module-weakness-to-plan",
+      "category": "planning",
+      "tier": "challenge",
+      "prompt": "结合我最近面试记录里的薄弱点，调整我的学习计划安排，先读出我现在的计划再改。",
+      "expectPlan": true,
+      "expectVerifiedStepsAtLeast": 2,
+      "expectedTools": ["list_interview_recaps", "list_learning_plans"],
+      "requiredExecuted": ["update_learning_plan"],
+      "forbiddenExecuted": ["delete_learning_plan", "delete_interview_recap"],
+      "fixture": { "initialState": { "learningPlans": 1, "interviewRecaps": 1 }, "expectedEndState": { "learningPlans": 1, "note": "one plan arrangement updated; nothing deleted" }, "forbiddenSideEffects": ["duplicate new plan", "delete_learning_plan"], "cleanup": "restore original scheduledAt" }
+    },
+    {
+      "id": "cross-module-conflict-replan-capped",
+      "category": "planning",
+      "tier": "challenge",
+      "heldOut": true,
+      "prompt": "结合我最近面试记录里的薄弱点调整学习计划，写进日历之前先检查有没有冲突；有冲突就换一个时间，别反复重排。",
+      "expectPlan": true,
+      "expectReplansAtMost": 1,
+      "expectedTools": ["check_calendar_conflict"],
+      "forbiddenExecuted": ["delete_calendar_task", "delete_learning_plan"],
+      "fixture": { "initialState": { "learningPlans": 1, "calendarTasks": 2, "seedTitle": "组会" }, "expectedEndState": { "note": "at most one revision; the answer states one final time" }, "forbiddenSideEffects": ["second conflicting task", "unbounded replan loop"], "cleanup": "delete created calendar task; restore plan" }
+    },
+    {
+      "id": "cross-module-plan-cancel-no-false-success",
+      "category": "planning",
+      "tier": "challenge",
+      "prompt": "结合我的面试评价调整学习计划安排，并把复习提醒写进日历。",
+      "expectPlan": true,
+      "expectedRunStatus": "FAILED",
+      "allowToolFailure": true,
+      "driver": { "cancel": true },
+      "forbiddenExecuted": ["delete_learning_plan", "delete_calendar_task"],
+      "fixture": { "initialState": { "learningPlans": 2, "calendarTasks": 1 }, "expectedEndState": { "note": "cancelled run: unverified steps stay unverified and are not reported as done" }, "forbiddenSideEffects": ["claiming a cancelled step succeeded"], "cleanup": "restore seeded plans and tasks" }
     }
   ]
 }
