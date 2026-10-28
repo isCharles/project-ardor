@@ -31,12 +31,47 @@ public class BackgroundTaskStore {
             rs.getString("completion_token"), rs.getBoolean("unread"), null, null);
 
     public List<Task> list(UUID userId, int offset, int limit,String kind,UUID resourceId) {
-        return jdbc.query(SELECT + " AND (CAST(? AS varchar) IS NULL OR c.kind=?) AND (CAST(? AS uuid) IS NULL OR c.resource_id=?) ORDER BY c.created_at DESC, c.id DESC, c.kind LIMIT ? OFFSET ?", MAPPER,
-                userId,kind,kind,resourceId,resourceId,limit,offset);
+        return attach(jdbc.query(SELECT + " AND (CAST(? AS varchar) IS NULL OR c.kind=?) AND (CAST(? AS uuid) IS NULL OR c.resource_id=?) ORDER BY c.created_at DESC, c.id DESC, c.kind LIMIT ? OFFSET ?", MAPPER,
+                userId,kind,kind,resourceId,resourceId,limit,offset));
     }
     public Task get(UUID userId, String kind, UUID id) {
-        return jdbc.query(SELECT + " AND c.kind=? AND c.id=?", MAPPER, userId, kind, id).stream().findFirst()
+        return attach(jdbc.query(SELECT + " AND c.kind=? AND c.id=?", MAPPER, userId, kind, id)).stream().findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("后台任务不存在"));
+    }
+
+    /**
+     * Typical duration band per task kind, from the 20 most recent completed runs of that kind.
+     * Kinds with too few samples are absent, so the dock keeps showing elapsed time only.
+     */
+    public Map<String, DurationSample> durationSamples() {
+        Map<String, DurationSample> samples = new LinkedHashMap<>();
+        jdbc.query("""
+                SELECT kind, COUNT(*) AS samples,
+                       CEIL(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))))::int AS p50_seconds,
+                       CEIL(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))))::int AS p90_seconds
+                FROM (SELECT kind, started_at, finished_at,
+                             ROW_NUMBER() OVER (PARTITION BY kind ORDER BY finished_at DESC) AS recent
+                      FROM background_task_catalog
+                      WHERE status='COMPLETED' AND started_at IS NOT NULL AND finished_at IS NOT NULL) runs
+                WHERE recent <= 20 GROUP BY kind HAVING COUNT(*) >= 5
+                """, rs -> {
+                    samples.put(rs.getString("kind"),
+                            new DurationSample(rs.getInt("samples"), rs.getInt("p50_seconds"), rs.getInt("p90_seconds")));
+                });
+        return samples;
+    }
+
+    private List<Task> attach(List<Task> rows) {
+        if (rows.stream().noneMatch(task -> List.of("QUEUED", "RUNNING").contains(task.status()))) return rows;
+        var bands = durationSamples();
+        return rows.stream().map(task -> withEstimate(task, bands.get(task.kind()))).toList();
+    }
+
+    private static Task withEstimate(Task task, DurationSample sample) {
+        if (sample == null || !List.of("QUEUED", "RUNNING").contains(task.status())) return task;
+        return new Task(task.id(), task.kind(), task.module(), task.title(), task.status(), task.attempts(),
+                task.createdAt(), task.startedAt(), task.finishedAt(), task.errorCode(), task.resultPath(),
+                task.resourceId(), task.completionToken(), task.unread(), sample.p50Seconds(), sample.p90Seconds());
     }
     public Summary summary(UUID userId) {
         Map<String, Long> unread = new LinkedHashMap<>();
@@ -80,6 +115,7 @@ public class BackgroundTaskStore {
                 """, userId, module);
     }
     public record Summary(Map<String, Long> unreadByModule, long activeCount) {}
+    public record DurationSample(int samples, int p50Seconds, int p90Seconds) {}
     public record Task(UUID id, String kind, String module, String title, String status, int attempts,
             Instant createdAt, Instant startedAt, Instant finishedAt, String errorCode, String resultPath,
             UUID resourceId, String completionToken, boolean unread, Integer estimateMinSeconds, Integer estimateMaxSeconds) {}
