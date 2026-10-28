@@ -66,6 +66,11 @@ public class ResumeAnalysisJob {
         return job;
     }
 
+    /** A request that reuses a job written before evaluation keys existed settles its identity. */
+    public void adoptEvaluationKey(String key) {
+        this.evaluationKey = key;
+    }
+
     public void complete(UUID analysisId) {
         this.analysisId = analysisId;
         this.status = ResumeAnalysisJobStatus.COMPLETED;

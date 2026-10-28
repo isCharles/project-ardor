@@ -136,11 +136,13 @@ function IssueCard({ issue, t }: { issue: ResumeIssue; t: (en: string, zh: strin
   </article>;
 }
 
-export function ResumeReportV3({ report, resumeId, onBack, onViewResume }: {
+export function ResumeReportV3({ report, resumeId, analysisId, onBack, onViewResume, onReanalyze }: {
   report: ResumeReportV3Data;
   resumeId?: string;
+  analysisId?: string | null;
   onBack?: () => void;
   onViewResume?: () => void;
+  onReanalyze?: () => void;
 }) {
   const { t } = useLocale();
   const issueGroups: IssueSeverity[] = ["A", "B", "C"];
@@ -152,7 +154,8 @@ export function ResumeReportV3({ report, resumeId, onBack, onViewResume }: {
     setExportError("");
     setExporting(true);
     try {
-      const response = await fetch(`/report-api/${encodeURIComponent(resumeId)}`, { credentials: "include", cache: "no-store" });
+      const query = analysisId ? `?analysisId=${encodeURIComponent(analysisId)}` : "";
+      const response = await fetch(`/report-api/${encodeURIComponent(resumeId)}${query}`, { credentials: "include", cache: "no-store" });
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { message?: string };
         throw new Error(body.message ?? "报告导出失败");
@@ -188,6 +191,7 @@ export function ResumeReportV3({ report, resumeId, onBack, onViewResume }: {
       </div>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <button type="button" onClick={onViewResume} className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-stone-600 hover:bg-white"><FileText className="size-4" />{t("View original", "查看原简历")}</button>
+        {onReanalyze && <button type="button" onClick={onReanalyze} className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-stone-600 hover:bg-white"><Sparkles className="size-4" />{t("Another JD", "换个 JD")}</button>}
         <button type="button" onClick={() => void exportReport()} disabled={exporting} className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 font-medium text-white hover:bg-black disabled:opacity-50"><Download className="size-4" />{exporting ? t("Exporting…", "导出中…") : t("Export report", "导出报告")}</button>
       </div>
     </header>

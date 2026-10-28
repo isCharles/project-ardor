@@ -68,6 +68,14 @@ public class ResumeAnalysisQueueService {
                 .findFirstByUserIdAndResumeIdAndEvaluationKeyAndStatusInOrderByCreatedAtDesc(
                         userId, resumeId, key, ACTIVE_STATUSES);
         if (active.isPresent()) return TaskResult.from(active.get());
+        Optional<ResumeAnalysisJob> legacy = jobRepository
+                .findFirstByUserIdAndResumeIdAndEvaluationKeyIsNullAndStatusInOrderByCreatedAtDesc(userId, resumeId, ACTIVE_STATUSES);
+        // A job already in flight when V85 ran has no key, and the new index excludes keyless rows,
+        // so this same evaluation would otherwise be queued — and billed — a second time.
+        if (legacy.isPresent() && legacy.get().getScoringContext().equals(context)) {
+            legacy.get().adoptEvaluationKey(key);
+            return TaskResult.from(jobRepository.saveAndFlush(legacy.get()));
+        }
         if (analysis.isPresent()) {
             var previous = jobRepository.findFirstByUserIdAndResumeIdAndEvaluationKeyOrderByCreatedAtDesc(userId, resumeId, key);
             if (previous.isPresent() && previous.get().getStatus() == ResumeAnalysisJobStatus.COMPLETED
