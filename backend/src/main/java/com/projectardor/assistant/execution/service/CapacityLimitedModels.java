@@ -2,11 +2,13 @@ package com.projectardor.assistant.execution.service;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.projectardor.platform.model.llm.service.ModelCallCapacity;
 
 import dev.langchain4j.model.ModelProvider;
+import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.chat.Capability;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
@@ -19,10 +21,23 @@ import dev.langchain4j.model.chat.response.*;
 final class CapacityLimitedModels {
     private CapacityLimitedModels() {}
 
+    /** Identifies who and which model a call is charged to for the optional rate window. */
+    record CallScope(String surface, UUID userId, String modelKey, long reservedTokens,
+            TokenCountEstimator estimator) {
+        long tokens(ChatRequest request) {
+            return Math.max(0, AgentRequestTokens.estimate(request, estimator))
+                    + Math.max(0, reservedTokens);
+        }
+    }
+
     static ChatModel chat(ChatModel delegate, ModelCallCapacity capacity) {
+        return chat(delegate, capacity, null);
+    }
+
+    static ChatModel chat(ChatModel delegate, ModelCallCapacity capacity, CallScope scope) {
         return new ChatModel() {
             @Override public ChatResponse doChat(ChatRequest request) {
-                if (!capacity.tryAcquire("agent")) throw capacity.busy();
+                if (!acquire(capacity, scope, request)) throw capacity.busy();
                 try {
                     return delegate.doChat(request);
                 } finally {
@@ -37,9 +52,13 @@ final class CapacityLimitedModels {
     }
 
     static StreamingChatModel streaming(StreamingChatModel delegate, ModelCallCapacity capacity) {
+        return streaming(delegate, capacity, null);
+    }
+
+    static StreamingChatModel streaming(StreamingChatModel delegate, ModelCallCapacity capacity, CallScope scope) {
         return new StreamingChatModel() {
             @Override public void doChat(ChatRequest request, StreamingChatResponseHandler downstream) {
-                if (!capacity.tryAcquire("agent")) {
+                if (!acquire(capacity, scope, request)) {
                     downstream.onError(capacity.busy());
                     return;
                 }
@@ -77,5 +96,10 @@ final class CapacityLimitedModels {
             @Override public ModelProvider provider() { return delegate.provider(); }
             @Override public Set<Capability> supportedCapabilities() { return delegate.supportedCapabilities(); }
         };
+    }
+
+    private static boolean acquire(ModelCallCapacity capacity, CallScope scope, ChatRequest request) {
+        if (scope == null) return capacity.tryAcquire("agent");
+        return capacity.tryAcquire(scope.surface(), scope.userId(), scope.modelKey(), scope.tokens(request));
     }
 }

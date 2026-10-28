@@ -3,9 +3,14 @@ package com.projectardor.assistant.execution.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.longThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +63,23 @@ class CapacityLimitedModelsTests {
                     assertThat(llm.isRetryable()).isTrue();
                 });
         capacity.release();
+    }
+
+    @Test
+    void scopedCallsChargeTheEstimatedTokensToTheUserAndModel() {
+        var capacity = mock(ModelCallCapacity.class);
+        var user = UUID.randomUUID();
+        when(capacity.tryAcquire(eq("agent"), eq(user), eq("model-k"), longThat(value -> value > 0)))
+                .thenReturn(true);
+        var delegate = mock(ChatModel.class);
+        when(delegate.defaultRequestParameters()).thenReturn(ChatRequestParameters.builder().build());
+        when(delegate.doChat(any())).thenReturn(response);
+        var model = CapacityLimitedModels.chat(delegate, capacity,
+                new CapacityLimitedModels.CallScope("agent", user, "model-k", 64, null));
+
+        assertThat(model.doChat(request)).isSameAs(response);
+        verify(capacity).tryAcquire(eq("agent"), eq(user), eq("model-k"), longThat(value -> value >= 64));
+        verify(capacity).release();
     }
 
     @Test

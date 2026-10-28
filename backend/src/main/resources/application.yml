@@ -81,6 +81,9 @@ app:
     read-timeout: ${ARDOR_HTTP_READ_TIMEOUT:120s}
   model:
     max-concurrent-calls: ${ARDOR_MODEL_MAX_CONCURRENT_CALLS:8}
+    qpm: ${ARDOR_MODEL_QPM:0}
+    tpm: ${ARDOR_MODEL_TPM:0}
+    user-qpm: ${ARDOR_MODEL_USER_QPM:0}
   observability:
     queue-sample-interval: ${ARDOR_QUEUE_SAMPLE_INTERVAL:15s}
   speech:
