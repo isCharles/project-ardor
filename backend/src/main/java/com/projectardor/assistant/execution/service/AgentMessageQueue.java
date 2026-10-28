@@ -57,7 +57,17 @@ public class AgentMessageQueue {
         return new Item(rs.getObject("id", UUID.class),
             rs.getObject("user_id", UUID.class), rs.getString("status"),
             mapper.readValue(rs.getString("payload"), AgentMessageRequest.class),
-            rs.getObject("blocked_by", UUID.class), rs.getString("error_message"), rs.getTimestamp("created_at").toInstant());
+            rs.getObject("blocked_by", UUID.class), rs.getString("error_message"), rs.getTimestamp("created_at").toInstant(),
+            queuePosition(rs));
+    }
+    private Integer queuePosition(java.sql.ResultSet rs) throws java.sql.SQLException {
+        for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++) {
+            if ("queue_position".equalsIgnoreCase(rs.getMetaData().getColumnLabel(i))) {
+                Object value = rs.getObject(i);
+                return value == null ? null : ((Number) value).intValue();
+            }
+        }
+        return null;
     }
 
     @Transactional
@@ -87,7 +97,22 @@ public class AgentMessageQueue {
 
     public List<Item> list(UUID userId, UUID conversationId) {
         conversations.requireActive(userId, conversationId);
-        return jdbc.query("SELECT * FROM agent_message_queue WHERE user_id = ? AND conversation_id = ? ORDER BY created_at DESC,sequence DESC LIMIT 50", rows, userId, conversationId)
+        // Queue order, not an execution promise: the same aging rule as claimNext applies within
+        // the user's queued rows, including rows from their other conversations.
+        return jdbc.query("""
+                SELECT q.*, CASE WHEN q.status = 'QUEUED' THEN 1 + (
+                  SELECT COUNT(*) FROM agent_message_queue p
+                  WHERE p.user_id = q.user_id AND p.status = 'QUEUED' AND p.id <> q.id
+                    AND ((p.priority + FLOOR(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - p.created_at)) / ?))
+                         > (q.priority + FLOOR(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - q.created_at)) / ?))
+                      OR ((p.priority + FLOOR(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - p.created_at)) / ?))
+                         = (q.priority + FLOOR(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - q.created_at)) / ?))
+                         AND p.sequence < q.sequence)))
+                END AS queue_position
+                FROM agent_message_queue q WHERE q.user_id = ? AND q.conversation_id = ?
+                ORDER BY q.created_at DESC, q.sequence DESC LIMIT 50
+                """, rows, priorityAgingSeconds, priorityAgingSeconds, priorityAgingSeconds, priorityAgingSeconds,
+                userId, conversationId)
                 .reversed();
     }
     public Item get(UUID userId, UUID id) {
@@ -252,5 +277,5 @@ public class AgentMessageQueue {
         return new Accepted(get(userId, request.requestId()), true);
     }
     private record Accepted(Item item, boolean created) {}
-    public record Item(UUID id, UUID userId, String status, AgentMessageRequest request, UUID blockedBy, String errorMessage, Instant createdAt) {}
+    public record Item(UUID id, UUID userId, String status, AgentMessageRequest request, UUID blockedBy, String errorMessage, Instant createdAt, Integer queuePosition) {}
 }

@@ -1,6 +1,7 @@
 package com.projectardor.assistant.execution.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.Mockito.mock;
 
 import java.sql.DriverManager;
@@ -169,6 +170,16 @@ class AgentMessageQueueTests {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO users(id) VALUES(?)", id);
         return id;
+    }
+
+    @Test
+    void listReportsQueueOrderWithinTheUsersQueuedMessages() {
+        var first = queue.enqueue(owner, request(UUID.randomUUID()));
+        var second = queue.enqueue(owner, request(UUID.randomUUID()));
+
+        assertThat(queue.list(owner, conversation))
+                .extracting(AgentMessageQueue.Item::id, AgentMessageQueue.Item::queuePosition)
+                .containsExactly(tuple(first.id(), 1), tuple(second.id(), 2));
     }
 
     @Test
