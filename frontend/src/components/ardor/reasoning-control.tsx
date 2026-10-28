@@ -84,7 +84,7 @@ export function ReasoningControl({ value, onChange, disabled, nativeControl, mod
       <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
         {models.map((item) => <button key={item.id} type="button" disabled={!item.available} aria-pressed={item.id === selected?.id} onClick={() => { onModelChange?.(item.id); }} className={`flex w-full items-center gap-2 rounded-2xl px-2.5 py-2 text-left transition ${item.id === selected?.id ? "bg-violet-50" : "hover:bg-stone-100"} disabled:cursor-not-allowed disabled:opacity-45`}>
           <ModelIcon label={item.label} />
-          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-stone-800" title={item.label}>{modelDisplayName(item.label)}</span><span className="block truncate text-[10px] text-stone-400">{!item.available ? t("Not configured", "未配置") : item.description == null ? t("Researching model", "正在调研") : item.description || t("No model summary", "暂无简述")}</span></span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-stone-800" title={item.label}>{modelDisplayName(item.label)}</span>{!item.available ? <span className="block truncate text-[10px] text-stone-400">{t("Not configured", "未配置")}</span> : item.description ? <span className="block truncate text-[10px] text-stone-400" title={item.description}>{item.description}</span> : null}</span>
           {item.id === selected?.id && <Check className="size-3.5 shrink-0 text-violet-600" />}
         </button>)}
         {models.length === 0 && <p className="px-3 py-4 text-xs text-stone-400">{t("No models available.", "暂无可用模型。")}</p>}

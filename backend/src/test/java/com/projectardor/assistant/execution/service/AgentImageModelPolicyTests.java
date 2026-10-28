@@ -12,13 +12,14 @@ import com.projectardor.platform.model.llm.service.LlmConfigService;
 class AgentImageModelPolicyTests {
     @ParameterizedTest
     @ValueSource(strings = { "gpt-4o", "openai/gpt-5.1", "o3-mini", "claude-sonnet-4-5",
-            "gemini-2.5-flash", "qwen2.5-vl-72b-instruct" })
+            "gemini-2.5-flash", "qwen2.5-vl-72b-instruct", "deepseek-flash", "deepseek-v4-flash",
+            "deepseek-v4-flash-vision-exp", "deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash" })
     void acceptsKnownImageModelFamilies(String model) {
         assertThat(AgentImageModelPolicy.supports(config(model))).isTrue();
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "gpt-3.5-turbo", "deepseek-chat", "qwen2.5-72b-instruct", "unknown-model" })
+    @ValueSource(strings = { "gpt-3.5-turbo", "deepseek-chat", "deepseek-v4-pro", "qwen2.5-72b-instruct", "unknown-model" })
     void rejectsModelsWithoutDeclaredImageSupport(String model) {
         assertThat(AgentImageModelPolicy.supports(config(model))).isFalse();
         assertThatThrownBy(() -> AgentImageModelPolicy.requireSupport(config(model)))
