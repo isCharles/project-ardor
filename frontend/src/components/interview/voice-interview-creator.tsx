@@ -202,10 +202,21 @@ export function VoiceInterviewCreator({ payload, onReady, onCancel, onError }: P
       }
     };
     socket.onerror = () => {
-      fail(tr("Live voice connection is unstable. Try again shortly.", "实时语音网络波动，请稍后重试"));
+      if (createdId) {
+        audioDone = true;
+        finish();
+      } else {
+        fail(tr("Live voice connection is unstable. Try again shortly.", "实时语音网络波动，请稍后重试"));
+      }
     };
     socket.onclose = () => {
-      if (!done) fail(tr("Live voice disconnected before the interview was ready.", "面试尚未准备好，实时语音连接已断开"));
+      if (done) return;
+      if (createdId) {
+        audioDone = true;
+        finish();
+      } else {
+        fail(tr("Live voice disconnected before the interview was ready.", "面试尚未准备好，实时语音连接已断开"));
+      }
     };
     creationTimer = window.setTimeout(
       () => fail(tr("Interview preparation timed out. Try again.", "准备面试超时，请重试")),
