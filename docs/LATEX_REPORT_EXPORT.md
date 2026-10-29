@@ -23,6 +23,17 @@ Supported engines:
 - XeLaTeX: any executable whose name ends in `xelatex`; it is run twice with
   `-interaction=nonstopmode -halt-on-error`.
 
+## Workspace compilation requires an isolated engine
+
+The resume workspace compiles user-authored TeX (`restrictReads: true`). Tectonic's
+filesystem layer explicitly makes no attempt to contain I/O inside the working
+directory, so a document containing file-reading primitives could reach host files
+even though Web2C variables are set. Only engines that honour
+`openin_any`/`openout_any` are accepted for the workspace; Tectonic remains the
+engine for the server-built report, which escapes every interpolated value.
+Local workspace previews and freezes therefore need `ARDOR_LATEX_ENGINE` to name
+XeLaTeX; the Docker runtime already does this.
+
 Optional environment variables:
 
 - `ARDOR_TECTONIC_CACHE_DIR`: persistent Tectonic bundle/cache directory.

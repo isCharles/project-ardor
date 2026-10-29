@@ -3,6 +3,9 @@ package com.projectardor.assistant.execution.service;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.projectardor.assistant.tools.capability.Capability;
+import com.projectardor.assistant.tools.capability.ToolCatalog;
+
 class ToolIntentPolicyTests {
     @Test void explicitCalendarAdviceChangesStillRequireUnquotedPositiveIntent() {
         for (String request : new String[] { "修改我的日历建议", "更新我的日历建议", "Change my calendar advice" }) {
@@ -83,5 +86,22 @@ class ToolIntentPolicyTests {
         assertThat(ToolIntentPolicy.verbatimQuote("我的回答是：线程池需要预热。", "线程池需要预热")).isTrue();
         assertThat(ToolIntentPolicy.verbatimQuote("我的回答是：线程池需要预热。", "线程池用懒加载")).isFalse();
         assertThat(ToolIntentPolicy.verbatimQuote("anything", "!!!")).isFalse();
+    }
+
+    /** A catalog read missing from this allowlist is treated as a write: intent-gated and once per run. */
+    @Test void everyCatalogReadIsExemptFromTheDuplicateWriteGuard() {
+        for (String tool : ToolCatalog.tools()) {
+            if (ToolCatalog.describe(tool).capability() == Capability.READ) {
+                assertThat(ToolIntentPolicy.isRead(tool))
+                        .as("read tool %s must not be intent-gated or blocked as a duplicate write", tool)
+                        .isTrue();
+            }
+        }
+    }
+
+    @Test void workspaceWritesAreNotReads() {
+        assertThat(ToolIntentPolicy.isRead("update_latex_project")).isFalse();
+        assertThat(ToolIntentPolicy.isRead("replace_latex_main_file")).isFalse();
+        assertThat(ToolIntentPolicy.isRead("freeze_latex_version")).isFalse();
     }
 }

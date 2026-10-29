@@ -171,6 +171,37 @@ class ResumeLibraryViewTests {
         verify(queue).statusIfPresent(owner, resume.getId());
     }
 
+    @Test void defaultReportHonoursThePersistedPin() {
+        var resume = resume("pinned.pdf");
+        var newer = ResumeAnalysis.create(owner, resume.getId(), Map.of("overallScore", 82), "new");
+        var older = ResumeAnalysis.create(owner, resume.getId(), Map.of("overallScore", 70), "old");
+        resume.showAnalysis(older.getId());
+        when(resumes.findByIdAndUserId(resume.getId(), owner)).thenReturn(Optional.of(resume));
+        when(analyses.findByIdAndUserId(older.getId(), owner)).thenReturn(Optional.of(older));
+        when(analyses.findByIdAndUserId(newer.getId(), owner)).thenReturn(Optional.of(newer));
+        when(analyses.findByResumeIdAndUserId(resume.getId(), owner)).thenReturn(Optional.of(newer));
+
+        assertThat(service.report(owner, resume.getId(), null).id()).isEqualTo(older.getId());
+        assertThat(service.report(owner, resume.getId(), newer.getId()).id()).isEqualTo(newer.getId());
+        verify(analyses, never()).findByResumeIdAndUserId(resume.getId(), owner);
+    }
+
+    @Test void promotingAnAlreadyPrimaryResumeKeepsItsPersistedFlag() {
+        var resume = resume("primary.pdf");
+        resume.markPrimary(true);
+        when(resumes.findByIdAndUserId(resume.getId(), owner)).thenReturn(Optional.of(resume));
+        service.setPrimary(owner, resume.getId());
+        verify(resumes, never()).clearPrimary(any());
+        verify(resumes, never()).saveAndFlush(any());
+
+        var other = resume("other.pdf");
+        when(resumes.findByIdAndUserId(other.getId(), owner)).thenReturn(Optional.of(other));
+        service.setPrimary(owner, other.getId());
+        verify(resumes).clearPrimary(owner);
+        verify(resumes).saveAndFlush(other);
+        assertThat(other.isPrimary()).isTrue();
+    }
+
     @Test void applicationEntryPointsRetainTheirTransactionDeclarations() throws Exception {
         for (String name : List.of("listViews", "detail", "analysisForResume", "analysisHistory", "report")) {
             var method = Arrays.stream(ResumeService.class.getMethods()).filter(item -> item.getName().equals(name)).findFirst().orElseThrow();

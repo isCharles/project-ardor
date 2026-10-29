@@ -14,7 +14,7 @@ let frozenRevision = null;
 let projectTitle = "我的简历";
 let archived = false;
 const archivedProjects = [];
-const freezes = [], previews = [], uploads = [], streams = [], renames = [], archives = [], restores = [], modelSaves = [];
+const freezes = [], previews = [], uploads = [], streams = [], renames = [], archives = [], restores = [], modelSaves = [], deletions = [];
 let conversations = 0;
 const resumes = [];
 const modelSettings = {
@@ -66,6 +66,7 @@ try {
         { type: "tool_start", toolName: "read_latex_project", label: "读取当前修订" },
         { type: "tool_end", toolName: "read_latex_project", label: "读取当前修订", elapsedMs: 12 },
         { type: "delta", content: "已按你的要求调整。" },
+        { type: "confirm", confirmation: { kind: "resume", targetId: "resume-target", label: "旧简历.pdf", detail: "将永久删除这份简历。", endpoint: "/api/resumes/resume-target" } },
         { type: "done", messageId: "assistant-1", conversationId, content: "已按你的要求调整。" },
       ];
       return route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("") });
@@ -74,6 +75,10 @@ try {
       archives.push(path);
       archived = true;
       archivedProjects.push(project());
+      return route.fulfill({ status: 204, body: "" });
+    }
+    if (method === "DELETE" && path === "/api/resumes/resume-target") {
+      deletions.push(path);
       return route.fulfill({ status: 204, body: "" });
     }
     if (method === "POST" && path === `/api/latex/projects/${projectId}/restore`) {
@@ -179,6 +184,7 @@ try {
   await waitFor(async () => (await bodyText()).includes("读取当前修订"), "the tool step chip");
 
   // Saving model settings must re-sync the active selection and its effort:
+
   // hiding the selected model cannot leave the old choice in the next request.
   await modelButton.click();
   await page.getByRole("button", { name: /^Manage models$|^管理模型$/ }).click();
@@ -195,13 +201,22 @@ try {
   await waitFor(() => streams.length === 2, "the second Ardor stream request");
   assert.equal(streams[1].modelChoice, "FALLBACK:backup", "a hidden model must not stay selected");
   assert.equal(streams[1].reasoningDepth, "STANDARD", "the next turn uses the selected model's effort");
+  // A business confirmation must offer the real, authorized delete action.
+  await waitFor(async () => (await bodyText()).includes("旧简历.pdf"), "the confirmation proposal");
+  await page.getByRole("button", { name: /^确认删除$|^Confirm deletion$/ }).click();
+  await waitFor(() => deletions.length === 1, "the confirmed deletion request");
+  assert.equal(deletions[0], "/api/resumes/resume-target", "the button calls the proposed endpoint");
+  await waitFor(async () => /已删除「旧简历\.pdf」|Deleted “旧简历\.pdf”/.test(await bodyText()), "the deletion result");
 
   // Freezing compiles the revision and files the PDF as a resume, so analysis can use it.
+  // A same-named PDF from another workspace must not be mistaken for this revision.
+  resumes.push({ id: "resume-foreign", originalFilename: "后端实习简历 v1.pdf", primary: false, displayAnalysisId: null });
   await page.getByRole("button", { name: /^Freeze$|^定稿$/ }).click();
   await waitFor(() => freezes.length === 1, "the freeze request");
   assert.equal(freezes[0].revisionNo, 1);
   await waitFor(() => uploads.length === 1, "the frozen PDF upload");
   assert.match(uploads[0], /后端实习简历 v1\.pdf$/, "the uploaded resume is named after the frozen version");
+  assert.equal(resumes.length, 2, "a same-named resume from another workspace is not adopted");
   await waitFor(async () => /已在简历分析|In Resume analysis/.test(await bodyText()), "the resume analysis link");
   await waitFor(async () => /定稿版本|Final version/i.test(await asideText()), "the frozen version label");
   assert.match(await asideText(), /v1\b/, "a frozen resume shows its version number");

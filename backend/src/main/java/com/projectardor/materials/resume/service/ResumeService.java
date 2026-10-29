@@ -137,6 +137,9 @@ public class ResumeService {
     @Transactional
     public void setPrimary(UUID userId, UUID resumeId) {
         Resume resume = get(userId, resumeId);
+        // The bulk update below bypasses this managed entity. Promoting a resume that
+        // is already primary would clear the flag in the database and skip the update.
+        if (resume.isPrimary()) return;
         resumeRepository.clearPrimary(userId);
         resume.markPrimary(true);
         resumeRepository.saveAndFlush(resume);
@@ -234,7 +237,10 @@ public class ResumeService {
 
     @Transactional(readOnly = true)
     public ResumeAnalysisSnapshot report(UUID userId, UUID resumeId, UUID analysisId) {
-        var analysis = analysisId == null ? getAnalysis(userId, resumeId) : getAnalysisById(userId, analysisId);
+        // Reopening without an explicit report must honour the persisted pin; the
+        // resume library already displays that report as the current one.
+        UUID selected = analysisId != null ? analysisId : get(userId, resumeId).getDisplayAnalysisId();
+        var analysis = selected == null ? getAnalysis(userId, resumeId) : getAnalysisById(userId, selected);
         if (!analysis.getResumeId().equals(resumeId)) throw new ResourceNotFoundException("简历分析不存在");
         return ResumeAnalysisSnapshot.from(analysis);
     }

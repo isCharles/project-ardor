@@ -40,6 +40,15 @@ export function latexEngine(): string {
   return existsSync(local) ? local : "tectonic";
 }
 
+/**
+ * Web2C engines (XeLaTeX here) honour openin_any/openout_any. Tectonic's own
+ * filesystem explicitly does not contain I/O inside the working directory, so it
+ * can never compile a user-authored document safely.
+ */
+export function isolatesUserDocuments(engine: string): boolean {
+  return /xelatex(?:\.exe)?$/i.test(engine);
+}
+
 /** Workspace paths stay relative and printable; anything else never reaches the compiler. */
 export function isSafeWorkspacePath(file: string): boolean {
   return typeof file === "string" && file.length > 0 && file.length <= 200
@@ -111,6 +120,13 @@ export async function compileLatex(
   }
   if (total > MAX_SOURCE_CHARS) throw new Error("LaTeX 源文件过大");
 
+  const restrictReads = options.restrictReads === true;
+  const engine = latexEngine();
+  const isXeLatex = isolatesUserDocuments(engine);
+  if (restrictReads && !isXeLatex) {
+    throw new Error("当前 LaTeX 引擎不隔离用户文档；工作区预览与定稿需要 xelatex");
+  }
+
   if (activeCompilations >= MAX_COMPILATIONS) throw new LatexBusyError();
   activeCompilations++;
   let workDir: string | undefined;
@@ -125,9 +141,6 @@ export async function compileLatex(
       await writeFile(target, content, "utf8");
     }
     const jobname = path.posix.basename(mainFile).replace(/\.tex$/i, "");
-    const engine = latexEngine();
-    const isXeLatex = /xelatex(?:\.exe)?$/i.test(engine);
-    const restrictReads = options.restrictReads === true;
     let compileError: unknown = null;
     try {
       if (isXeLatex) {
