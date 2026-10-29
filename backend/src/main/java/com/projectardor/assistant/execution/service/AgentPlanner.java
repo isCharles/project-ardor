@@ -49,8 +49,8 @@ public class AgentPlanner {
     /** Job execution states that are not a completed prerequisite. */
     private static final Set<String> PENDING_STATUSES =
             Set.of("QUEUED", "RUNNING", "PENDING", "PROCESSING");
-    private static final Set<String> FAILURE_STATUSES =
-            Set.of("FAILED", "ERROR", "TIMEOUT", "REJECTED", "DENIED", "NOT_FOUND", "UNAVAILABLE");
+    /** Hard failures that are never a successful resource terminal state. */
+    private static final Set<String> FAILURE_STATUSES = Set.of("FAILED", "ERROR", "TIMEOUT");
     /** Result markers that mean the tool did not accomplish anything, mirrored from the wrapper. */
     private static final Set<String> REFUSALS = Set.of(
             "PERMISSION_NOT_GRANTED", "TOOL_NOT_PERMITTED", "DUPLICATE_WRITE_BLOCKED", "PLAN_SCOPE_REFUSED",
@@ -333,13 +333,19 @@ public class AgentPlanner {
         JsonNode success = node.get("success");
         if (success != null && success.isBoolean() && !success.asBoolean()) return false;
         JsonNode status = node.get("status");
+        boolean job = node.has("jobId") || node.has("attempts");
+        if (job) {
+            // Job results carry jobId/attempts and use job lifecycle states. Only a completed job
+            // status is a successful prerequisite; IDs alone must not rescue FAILED/QUEUED/RUNNING.
+            return status != null && status.isTextual()
+                    && SUCCESS_STATUSES.contains(status.asText().toUpperCase(Locale.ROOT));
+        }
         if (status != null && !status.isNull()) {
             if (!status.isTextual()) return false;
             String normalized = status.asText().toUpperCase(Locale.ROOT);
             if (SUCCESS_STATUSES.contains(normalized)) return true;
-            // A failed or unfinished job must never fall through to the ID fallback just because
-            // it also carries a jobId/resumeId. Resource lifecycle states such as TODO/SCHEDULED
-            // are different: a returned resource with an ID is the successful write.
+            // Resource snapshots use domain states such as TODO/SCHEDULED/REJECTED; a returned
+            // resource with an ID is the successful write. Unfinished and hard-failed states are not.
             if (PENDING_STATUSES.contains(normalized) || FAILURE_STATUSES.contains(normalized)) return false;
             return hasId(node);
         }
