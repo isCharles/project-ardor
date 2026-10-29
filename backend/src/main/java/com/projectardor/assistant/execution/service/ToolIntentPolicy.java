@@ -38,6 +38,8 @@ public final class ToolIntentPolicy {
                     "面试|邀约|邀请|流程|进度|岗位|interview|opportunit|offer";
             case "research_knowledge_from_web" -> "知识库|收录|资料|knowledge|material";
             case "analyze_resume" -> "简历|resume|résumé";
+            case "update_latex_project", "replace_latex_main_file", "freeze_latex_version" ->
+                    "简历|LaTeX|latex|排版|模板|resume";
             case "record_application_count", "set_application_rhythm", "update_application_advice" -> "投递|投了|已投|申请|application|applied";
             case "create_automation", "update_automation", "delete_automation" ->
                     "自动化|定时|定期|每天|每周|每月|每年|以后|今后|automation|cron|schedule|daily|weekly|monthly";
@@ -71,6 +73,9 @@ public final class ToolIntentPolicy {
                     "添加|新增|加|安排|创建|补录|add|create|schedule";
             case "research_knowledge_from_web" -> "收录|添加|保存|整理|收集|save|add|collect|research";
             case "analyze_resume" -> "分析|评估|analy[sz]e|evaluate|review";
+            case "update_latex_project", "replace_latex_main_file" ->
+                    "修改|调整|更新|改成|改为|重写|润色|排版|update|change|edit|rewrite|reword";
+            case "freeze_latex_version" -> "定稿|冻结|正式版本|正式版|可以投递|freeze|finalize";
             case "record_application_count" -> "记录|record|log";
             case "set_application_rhythm" -> "设置|调整|修改|设为|set|change|update";
             case "update_application_advice" -> "保存|更新|写入|记录|建议|判断|节奏|save|update|write|record|advice|pace";

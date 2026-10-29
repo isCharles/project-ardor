@@ -45,6 +45,8 @@ jobs:
           grep -q '简历诊断报告' backend/target/report-export/report.txt
           tr -d '[:space:]' < backend/target/report-export/report.txt > backend/target/report-export/normalized.txt
           grep -q '合成问题9' backend/target/report-export/normalized.txt
+          pdftotext -layout backend/target/report-export/synthetic-latex-workspace.pdf backend/target/report-export/workspace.txt
+          grep -q '合成 LaTeX 工作区' backend/target/report-export/workspace.txt
           test "$(docker exec ardor-pdf-frontend id -u)" = 1000
           test -z "$(docker exec ardor-pdf-frontend find /tmp -maxdepth 1 -name '.latex-report-*' -print)"
           pdftoppm -scale-to 1000 -png backend/target/report-export/synthetic-report.pdf backend/target/report-export/page

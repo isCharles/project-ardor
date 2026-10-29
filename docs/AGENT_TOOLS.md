@@ -2,7 +2,7 @@
 
 Generated from `CareerAgentTools` `@Tool` annotations. This file is a reading copy; the Java annotations remain the source of truth.
 
-Total tools: **72**
+Total tools: **78**
 
 | # | Tool | Description | Chars |
 |---:|---|---|---:|
@@ -91,3 +91,9 @@ Total tools: **72**
 - `delete_recurring_task` (113 chars): 停止一条重复安排，并撤回它尚未开始、也没被用户动过的后续日程；已经发生或已完成的记录会保留。必须先调用 list_recurring_tasks 获取真实 UUID；只有用户明确要求取消该固定安排时使用，目标不唯一时必须先追问
 - `create_calendar_task` (107 chars): 为当前用户创建任意明确的日程或待办，不限于求职事项。用户说出自然语言安排，或粘贴含日期时间的通知时使用；日期确有歧义时必须先追问，不得猜测。若这条日程属于某场真实面试（面试时间或准备任务），传入该面试流程 UUID
 - `update_recurring_task` (103 chars): 修改当前用户重复安排的时间、标题、说明或优先级，保留规则和实例 UUID。先读取规则，只更新未被用户单独修改且尚未完成的未来实例；返回更新和保留数量，不会新建第二套规则。此工具不修改重复频率、日期范围或时区
+| 73 | `list_latex_projects` | 列出当前用户的 LaTeX 简历工作区，含当前修订号与已定稿的正式版本 | 35 |
+| 74 | `read_latex_project` | 读取当前用户某个 LaTeX 简历工作区的源码与修订号；未指定修订时读当前修订 | 39 |
+| 75 | `read_latex_project_history` | 列出当前用户某个 LaTeX 简历工作区的全部修订，确认要回退或定稿哪一版 | 37 |
+| 76 | `update_latex_project` | 把修改后的 LaTeX 源码保存为工作区的新修订；必须带上提交所基于的修订号，冲突时不会覆盖别人的修改 | 51 |
+| 77 | `replace_latex_main_file` | 只替换 main.tex 的完整源码并保存为新修订；其他文件保持不变，适合单文件简历的整段重写 | 47 |
+| 78 | `freeze_latex_version` | 把某个已存在的修订标记为该工作区的正式版本；正式版本不可覆盖，只有用户确认可以投递时才使用 | 45 |

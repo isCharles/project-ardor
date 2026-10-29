@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, ArrowUpRight, FileText, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, FileCode2, FileText, Plus, Trash2, Upload, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
 
@@ -357,7 +358,10 @@ export default function ResumesPage() {
   return <main className="ardor-workbench min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-6xl px-5 pb-24 pt-6 md:px-10">
     <header className="flex flex-wrap items-end justify-between gap-5 pb-10 pt-10 md:pb-12 md:pt-14">
       <div><p className="text-sm font-medium text-violet-600">RESUME</p><h1 className="mt-3 text-5xl font-semibold tracking-[-0.055em] md:text-6xl">{t("One resume, iterated well.", "把一份简历打磨好。")}</h1></div>
-      <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white transition hover:scale-[1.02] hover:bg-black"><Plus className="size-4" />{t("Upload resume", "上传新简历")}</button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Link href="/app/latex" className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-5 py-2.5 text-sm font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50"><FileCode2 className="size-4" />{t("LaTeX workspace", "LaTeX 工作区")}</Link>
+        <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white transition hover:scale-[1.02] hover:bg-black"><Plus className="size-4" />{t("Upload resume", "上传新简历")}</button>
+      </div>
     </header>
     {(error || notice) && <div className={`mb-8 rounded-2xl px-5 py-4 text-sm ${error ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{error || notice}</div>}
     {showUpload && <section className="mb-10 rounded-[2rem] bg-white p-6 shadow-[0_18px_70px_rgba(0,0,0,0.07)] md:p-8"><div className="flex items-center justify-between"><h2 className="text-2xl font-semibold">{t("Upload resume", "上传简历")}</h2><button onClick={() => setShowUpload(false)} aria-label={t("Close", "关闭")} className="rounded-full p-2 text-stone-400 hover:bg-stone-100"><X className="size-5" /></button></div><form onSubmit={upload} className="mt-6 flex flex-col gap-3 sm:flex-row"><label className="flex min-h-14 flex-1 cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-stone-300 bg-[#fafafa] px-5 text-sm text-stone-500 transition hover:border-violet-400 hover:bg-violet-50/40"><Upload className="size-5 text-violet-500" /><span className="truncate">{fileName || t("PDF or DOCX · up to 10 MB", "PDF 或 DOCX · 10 MB 内")}</span><input type="file" name="file" className="hidden" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required onChange={chooseFile} /></label><button disabled={busy === "upload"} className="min-h-14 rounded-2xl bg-violet-600 px-7 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">{busy === "upload" ? t("Parsing…", "解析中…") : t("Upload", "上传")}</button></form></section>}

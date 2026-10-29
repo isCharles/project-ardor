@@ -48,6 +48,10 @@ public final class ToolCatalog {
         register(risks, ToolModule.RESUMES, Capability.READ,
                 "list_resumes", "get_resume_analysis_status", "get_resume_analysis");
         register(risks, ToolModule.RESUMES, Capability.CREATE, "analyze_resume");
+        register(risks, ToolModule.RESUMES, Capability.READ,
+                "list_latex_projects", "read_latex_project", "read_latex_project_history");
+        register(risks, ToolModule.RESUMES, Capability.UPDATE,
+                "update_latex_project", "replace_latex_main_file", "freeze_latex_version");
         register(risks, ToolModule.RESUMES, Capability.DELETE, "delete_resume");
 
         register(risks, ToolModule.INTERVIEWS, Capability.READ,
