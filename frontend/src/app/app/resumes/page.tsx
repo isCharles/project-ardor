@@ -9,6 +9,7 @@ import { ApiError, api } from "@/lib/api";
 import { markBackgroundPending } from "@/lib/background-notifications";
 import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
+import { resumeScoreBand } from "@/lib/resume-score";
 import { ResumeReportV3, Radar, type IssueSeverity, type RadarGrade, type ResumeReportV3Data } from "@/components/ardor/resume-report-v3";
 import { ResumeRowMenu } from "@/components/ardor/resume-row-menu";
 import { ResumeScoreTrend } from "@/components/ardor/resume-score-trend";
@@ -26,14 +27,6 @@ type AnalysisTask = { jobId: string | null; status: "QUEUED" | "RUNNING" | "COMP
 type Evaluation = { id: string; label: string };
 type InterviewOption = { id: string; company: string; targetRole?: string | null; jdContent?: string | null };
 const DIMENSION_ORDER = ["technicalDepth", "outcomes", "ownership", "clarity", "roleFit", "background"] as const;
-
-function bandFor(score: number, t: (en: string, zh: string) => string): string {
-  if (score >= 85) return t("Top tier", "顶尖");
-  if (score >= 70) return t("Competitive", "有竞争力");
-  if (score >= 55) return t("Below average", "中下");
-  if (score >= 40) return t("Draft", "初稿");
-  return t("High risk", "高风险");
-}
 
 const evaluationDate = (value: string) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(value));
 
@@ -77,7 +70,7 @@ function buildReport(resume: ResumeItem, data: Record<string, unknown>, t: (en: 
     general: context.mode !== "USER_JD",
     condition: (context.mode === "USER_JD" ? `${familyLabel(String(data.roleFamily ?? context.roleFamily ?? "general"), t)} · ${typeof context.targetRole === "string" && context.targetRole ? context.targetRole : t("With JD", "含 JD")}` : `${familyLabel(String(data.roleFamily ?? context.roleFamily ?? "general"), t)} · ${t("Generalised", "通用化")}`),
     score,
-    band: bandFor(score, t),
+    band: resumeScoreBand(score, t),
     summary: typeof data.summary === "string" ? data.summary : "",
     dimensions: DIMENSION_ORDER.map(id => ({ id, grade: String(grades[id] ?? "F") as RadarGrade, marketGrade: String(benchmarks[id] ?? "B") as RadarGrade })),
     background: typeof data.background === "string" ? data.background : "",
@@ -343,7 +336,7 @@ export default function ResumesPage() {
           <div className="flex shrink-0 items-center gap-2">
             {resume.primary && <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-700">{t("Primary", "主简历")}</span>}
             {!(primary && currentReport) && (typeof resume.overallScore === "number"
-              ? <span title={bandFor(resume.overallScore, t)} className={`rounded-full px-3 py-1 text-[11px] font-semibold tabular-nums text-white ${scoreTone(resume.overallScore)}`}>{Math.round(resume.overallScore)}</span>
+              ? <span title={resumeScoreBand(resume.overallScore, t)} className={`rounded-full px-3 py-1 text-[11px] font-semibold tabular-nums text-white ${scoreTone(resume.overallScore)}`}>{Math.round(resume.overallScore)}</span>
               : status ? <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${status.className}`}>{status.label}</span> : null)}
           </div>
         </div>
@@ -435,7 +428,7 @@ export default function ResumesPage() {
                       <p className="mt-0.5 text-xs text-stone-400">{resumeDate(resume.createdAt)} · {(resume.sizeBytes / 1024).toFixed(0)} KB</p>
                     </div>
                     {typeof resume.overallScore === "number"
-                      ? <span title={bandFor(resume.overallScore, t)} className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums text-white ${scoreTone(resume.overallScore)}`}>{Math.round(resume.overallScore)}</span>
+                      ? <span title={resumeScoreBand(resume.overallScore, t)} className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums text-white ${scoreTone(resume.overallScore)}`}>{Math.round(resume.overallScore)}</span>
                       : status ? <span className={`hidden shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium sm:inline ${status.className}`}>{status.label}</span> : null}
                   </button>
                   <ResumeRowMenu label={resume.originalFilename} disabled={!!busy}
