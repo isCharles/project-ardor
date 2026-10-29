@@ -44,6 +44,8 @@ export default function LatexWorkspacePage() {
   const requestRef = useRef<string | null>(null);
   const sendControl = useRef<AbortController | null>(null);
   const threadEnd = useRef<HTMLDivElement | null>(null);
+  const previewSeq = useRef(0);
+  const openSeq = useRef(0);
 
   const loadProjects = useCallback(async (pick?: string) => {
     const list = await api<Project[]>("/api/latex/projects");
@@ -53,17 +55,19 @@ export default function LatexWorkspacePage() {
   }, []);
 
   const loadPreview = useCallback(async (project: string, revision: number) => {
+    const seq = ++previewSeq.current;
     setPreviewing(true);
     try {
       const blob = await blobApi(`/latex-api/${project}?revision=${revision}&t=${Date.now()}`);
+      if (seq !== previewSeq.current) return;
       setPdfUrl((previous) => {
         if (previous) URL.revokeObjectURL(previous);
         return URL.createObjectURL(blob);
       });
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.body.message ?? cause.message : t("Preview failed", "预览编译失败"));
+      if (seq === previewSeq.current) setError(cause instanceof ApiError ? cause.body.message ?? cause.message : t("Preview failed", "预览编译失败"));
     } finally {
-      setPreviewing(false);
+      if (seq === previewSeq.current) setPreviewing(false);
     }
   }, [t]);
 
@@ -85,10 +89,12 @@ export default function LatexWorkspacePage() {
 
   const openProject = useCallback(async (project: Project) => {
     const id = project.id;
+    const seq = ++openSeq.current;
     setError("");
     setNotice("");
     try {
       const result = await api<Snapshot>(`/api/latex/projects/${id}`);
+      if (seq !== openSeq.current) return;
       setSnapshot(result);
       setMessages([]);
       setConversationId(null);
@@ -99,6 +105,7 @@ export default function LatexWorkspacePage() {
       if (stored) {
         try {
           const state = await api<AgentState>(`/api/agent?conversationId=${encodeURIComponent(stored)}`);
+          if (seq !== openSeq.current) return;
           setConversationId(stored);
           setMessages(state.messages.filter((item) => item.role === "USER" || item.content.trim()).map((item) => ({ ...item })));
         } catch {
@@ -106,7 +113,7 @@ export default function LatexWorkspacePage() {
         }
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("Could not open the workspace", "无法打开工作区"));
+      if (seq === openSeq.current) setError(cause instanceof Error ? cause.message : t("Could not open the workspace", "无法打开工作区"));
     }
   }, [ensureFrozenResume, loadPreview, t]);
 
@@ -129,11 +136,14 @@ export default function LatexWorkspacePage() {
 
   async function refreshWorkspace() {
     if (!projectId) return;
+    const seq = openSeq.current;
     try {
       const list = await loadProjects(projectId);
+      if (seq !== openSeq.current) return;
       const project = list.find((item) => item.id === projectId);
       if (!project) return;
       const result = await api<Snapshot>(`/api/latex/projects/${projectId}`);
+      if (seq !== openSeq.current) return;
       setSnapshot(result);
       void loadPreview(projectId, result.revisionNo);
       if (project.frozenRevision != null) {
