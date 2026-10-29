@@ -157,6 +157,14 @@ export function scoreCase(item, trace, answer, options = {}) {
   for (const name of item.forbiddenExecuted ?? []) {
     if (executedNames.has(name)) failures.push(`forbidden side effect: ${name} actually executed`);
   }
+  // An allowlist closes the permitted set the other way round: every tool the trace shows is
+  // judged, whether it ran, was refused, or only produced a confirmation card. Opt-in per case;
+  // like every assertion here it is scored after execution and never blocks a tool.
+  if (Array.isArray(item.allowedTools)) {
+    for (const name of new Set(spans.map((span) => span.name))) {
+      if (!item.allowedTools.includes(name)) failures.push(`unexpected tool ${name} was attempted`);
+    }
+  }
 
   // --- planning layer: only cross-module multi-goal work may plan, and never without bound ---
   if (item.expectPlan === true && observed.plans === 0) {
