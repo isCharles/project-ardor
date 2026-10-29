@@ -136,10 +136,12 @@ function IssueCard({ issue, t }: { issue: ResumeIssue; t: (en: string, zh: strin
   </article>;
 }
 
-export function ResumeReportV3({ report, resumeId, analysisId, onBack, onViewResume, onReanalyze }: {
+export function ResumeReportV3({ report, resumeId, analysisId, evaluations, onSelectEvaluation, onBack, onViewResume, onReanalyze }: {
   report: ResumeReportV3Data;
   resumeId?: string;
   analysisId?: string | null;
+  evaluations?: { id: string; label: string }[];
+  onSelectEvaluation?: (id: string) => void;
   onBack?: () => void;
   onViewResume?: () => void;
   onReanalyze?: () => void;
@@ -181,7 +183,7 @@ export function ResumeReportV3({ report, resumeId, analysisId, onBack, onViewRes
   return <div className="min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-5xl px-5 pb-20 pt-6 md:px-10">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <button type="button" onClick={onBack} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 transition hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("All resumes", "所有简历")}</button>
-      <span className="rounded-full border border-white/80 bg-white/60 px-3 py-1.5 text-xs text-stone-500">{report.condition}</span>
+      {(!evaluations || evaluations.length <= 1) && <span className="rounded-full border border-white/80 bg-white/60 px-3 py-1.5 text-xs text-stone-500">{report.condition}</span>}
     </div>
 
     <header className="flex flex-wrap items-end justify-between gap-3 pb-5 pt-6">
@@ -190,8 +192,14 @@ export function ResumeReportV3({ report, resumeId, analysisId, onBack, onViewRes
         <h1 className="mt-1.5 truncate text-2xl font-semibold tracking-tight md:text-3xl">{report.filename}</h1>
       </div>
       <div className="flex flex-wrap items-center gap-2 text-sm">
+        {((evaluations && evaluations.length > 0) || onReanalyze) && <div data-resume-evaluations className="flex flex-wrap items-center gap-1 rounded-full border border-white/80 bg-white/70 p-1">
+          {evaluations && evaluations.length > 1 && evaluations.map((item) => <button key={item.id} type="button" data-evaluation={item.label} data-evaluation-active={analysisId === item.id}
+            title={item.label} onClick={() => onSelectEvaluation?.(item.id)}
+            className={`max-w-[16rem] truncate rounded-full px-3 py-1 text-[11px] font-medium tabular-nums transition ${analysisId === item.id ? "bg-[#1d1d1f] text-white" : "text-stone-600 hover:bg-white"}`}>{item.label}</button>)}
+          {evaluations && evaluations.length > 1 && onReanalyze && <span className="h-4 w-px bg-stone-200" aria-hidden="true" />}
+          {onReanalyze && <button type="button" onClick={onReanalyze} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-stone-600 hover:bg-white"><Sparkles className="size-3.5" />{t("Another JD", "换个 JD")}</button>}
+        </div>}
         <button type="button" onClick={onViewResume} className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-stone-600 hover:bg-white"><FileText className="size-4" />{t("View original", "查看原简历")}</button>
-        {onReanalyze && <button type="button" onClick={onReanalyze} className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-stone-600 hover:bg-white"><Sparkles className="size-4" />{t("Another JD", "换个 JD")}</button>}
         <button type="button" onClick={() => void exportReport()} disabled={exporting} className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 font-medium text-white hover:bg-black disabled:opacity-50"><Download className="size-4" />{exporting ? t("Exporting…", "导出中…") : t("Export report", "导出报告")}</button>
       </div>
     </header>

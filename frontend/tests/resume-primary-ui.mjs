@@ -102,7 +102,8 @@ try {
   assert.match(await bodyText(), /Primary|主简历/);
 
   // A history resume can be promoted, and the list reorders.
-  await page.getByRole("button", { name: /Set as primary resume|设为主简历/ }).first().click();
+  await page.getByRole("button", { name: /More actions for other-candidate\.pdf|other-candidate\.pdf 的更多操作/ }).first().click();
+  await page.getByRole("menuitem", { name: /Set as primary|设为主简历/ }).click();
   await waitFor(() => primaryCalls.length === 1, "the primary selection request");
   await waitFor(async () => (await bodyText()).includes("other-candidate.pdf") && /Primary resume|主简历/.test(await bodyText()), "the promoted resume");
 

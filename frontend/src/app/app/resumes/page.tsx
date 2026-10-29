@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, ArrowUpRight, Download, Eye, FileText, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Download, Eye, FileText, Plus, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
@@ -10,6 +10,8 @@ import { markBackgroundPending } from "@/lib/background-notifications";
 import { useReadVisibleResult } from "@/lib/background-tasks";
 import { useLocale } from "@/lib/locale";
 import { ResumeReportV3, Radar, type IssueSeverity, type RadarGrade, type ResumeReportV3Data } from "@/components/ardor/resume-report-v3";
+import { ResumeRowMenu } from "@/components/ardor/resume-row-menu";
+import { ResumeScoreTrend } from "@/components/ardor/resume-score-trend";
 import { ResumePreviewPanel } from "@/components/ardor/resume-preview-drawer";
 import { AppDialog } from "@/components/ui/app-dialog";
 
@@ -97,7 +99,16 @@ function buildReport(resume: ResumeItem, data: Record<string, unknown>, t: (en: 
   if (resume.analysisStatus === "FAILED") return { label: t("Analysis failed", "分析失败"), className: "bg-red-50 text-red-700" };
   if (resume.analysisId) return { label: t("Report ready", "报告已完成"), className: "bg-emerald-50 text-emerald-700" };
   if (resume.parseStatus === "FAILED") return { label: t("Parsing failed", "解析失败"), className: "bg-red-50 text-red-700" };
-  return { label: t("Ready to analyze", "可以分析"), className: "bg-stone-100 text-stone-600" };
+  return null;
+}
+
+/** The score pill carries the tier, so a glance is enough to tell versions apart. */
+function scoreTone(score: number) {
+  if (score >= 85) return "bg-emerald-600";
+  if (score >= 70) return "bg-violet-600";
+  if (score >= 55) return "bg-amber-600";
+  if (score >= 40) return "bg-orange-600";
+  return "bg-rose-600";
 }
 
 export default function ResumesPage() {
@@ -263,8 +274,10 @@ export default function ResumesPage() {
     const previewPanel = previewOpen && <ResumePreviewPanel resumeId={selected.id} filename={selected.originalFilename} width={previewWidth} onWidthChange={setPreviewWidth} onClose={() => setPreviewOpen(false)} />;
     if (report) return <main className="ardor-workbench min-h-screen text-[#1d1d1f]">
       <div style={{ paddingRight: previewOpen ? previewWidth : 0 }}>
-        {evaluationBar}
-        <ResumeReportV3 report={report} resumeId={selected.id} analysisId={analysis?.id} onBack={() => { setSelectedId(null); setPickedId(null); setAnalysis(null); }} onViewResume={viewOriginalResume} onReanalyze={pending ? undefined : () => setReanalyzeOpen(true)} />
+        <ResumeReportV3 report={report} resumeId={selected.id} analysisId={analysis?.id} evaluations={evaluations}
+          onSelectEvaluation={(id) => void showReport(selected, id)}
+          onBack={() => { setSelectedId(null); setPickedId(null); setAnalysis(null); }}
+          onViewResume={viewOriginalResume} onReanalyze={pending ? undefined : () => setReanalyzeOpen(true)} />
       </div>
       {previewPanel}
       {dialog}
@@ -299,6 +312,10 @@ export default function ResumesPage() {
   }
   const sortedResumes = [...resumes].sort((left, right) => Number(!!right.primary) - Number(!!left.primary)
     || (right.createdAt ?? "").localeCompare(left.createdAt ?? ""));
+  const scorePoints = sortedResumes
+    .filter((resume): resume is ResumeItem & { overallScore: number } => typeof resume.overallScore === "number")
+    .sort((left, right) => (left.createdAt ?? "").localeCompare(right.createdAt ?? ""))
+    .map((resume) => ({ id: resume.id, name: resume.originalFilename, score: resume.overallScore, createdAt: resume.createdAt }));
   async function markPrimary(resume: ResumeItem) {
     setError("");
     try {
@@ -326,8 +343,8 @@ export default function ResumesPage() {
           <div className="flex shrink-0 items-center gap-2">
             {resume.primary && <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-700">{t("Primary", "主简历")}</span>}
             {!(primary && currentReport) && (typeof resume.overallScore === "number"
-              ? <span className="rounded-full bg-[#1d1d1f] px-3 py-1 text-[11px] font-semibold tabular-nums text-white">{resume.overallScore}</span>
-              : <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${status.className}`}>{status.label}</span>)}
+              ? <span title={bandFor(resume.overallScore, t)} className={`rounded-full px-3 py-1 text-[11px] font-semibold tabular-nums text-white ${scoreTone(resume.overallScore)}`}>{Math.round(resume.overallScore)}</span>
+              : status ? <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${status.className}`}>{status.label}</span> : null)}
           </div>
         </div>
         <p className="mt-2 text-sm text-stone-400">{resumeDate(resume.createdAt)} · {(resume.sizeBytes / 1024).toFixed(0)} KB</p>
@@ -405,26 +422,25 @@ export default function ResumesPage() {
         {resumeCard(sortedResumes[0], true)}
         {sortedResumes.length > 1 && (
           <div className="mt-10">
+            {scorePoints.length > 1 && <div className="mb-7"><ResumeScoreTrend points={scorePoints} /></div>}
             <h2 className="mb-3 text-lg font-semibold">{t(`History (${sortedResumes.length - 1})`, `历史版本（${sortedResumes.length - 1}）`)}</h2>
-            <div className="divide-y divide-stone-100 overflow-hidden rounded-2xl border border-stone-200/70 bg-white/75">
+            <div className="divide-y divide-stone-100 rounded-2xl border border-stone-200/70 bg-white/75">
               {sortedResumes.slice(1).map(resume => {
                 const status = statusMeta(resume, t);
-                return <div key={resume.id} className="group flex w-full items-center gap-3 px-4 py-3.5 transition hover:bg-violet-50/50">
-                  <button onClick={() => openResume(resume)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                return <div key={resume.id} className="group flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 transition hover:bg-violet-50/50 sm:px-4">
+                  <button onClick={() => openResume(resume)} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-1 py-1 text-left">
                     <FileText className="size-4 shrink-0 text-stone-400" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-stone-800">{resume.originalFilename}</p>
                       <p className="mt-0.5 text-xs text-stone-400">{resumeDate(resume.createdAt)} · {(resume.sizeBytes / 1024).toFixed(0)} KB</p>
                     </div>
                     {typeof resume.overallScore === "number"
-                      ? <span className="shrink-0 rounded-full bg-[#1d1d1f] px-2.5 py-1 text-xs font-semibold tabular-nums text-white">{resume.overallScore}</span>
-                      : <span className={`hidden shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium sm:inline ${status.className}`}>{status.label}</span>}
-                    <ArrowRight className="size-4 shrink-0 text-stone-300" />
+                      ? <span title={bandFor(resume.overallScore, t)} className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums text-white ${scoreTone(resume.overallScore)}`}>{Math.round(resume.overallScore)}</span>
+                      : status ? <span className={`hidden shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium sm:inline ${status.className}`}>{status.label}</span> : null}
                   </button>
-                  <button type="button" onClick={() => previewResume(resume)} aria-label={t("Preview resume", "查看简历")} title={t("Preview resume", "查看简历")} className="grid size-8 shrink-0 place-items-center rounded-full text-stone-400 opacity-0 transition hover:bg-violet-50 hover:text-violet-700 focus-visible:opacity-100 group-hover:opacity-100"><Eye className="size-4" /></button>
-                  <a href={`/api/resumes/${resume.id}/file`} download={resume.originalFilename} aria-label={t("Download original", "下载原文件")} title={t("Download original", "下载原文件")} className="grid size-8 shrink-0 place-items-center rounded-full text-stone-400 opacity-0 transition hover:bg-violet-50 hover:text-violet-700 focus-visible:opacity-100 group-hover:opacity-100"><Download className="size-4" /></a>
-                  <button type="button" onClick={() => void markPrimary(resume)} aria-label={t("Set as primary resume", "设为主简历")} title={t("Set as primary resume", "设为主简历")} className="shrink-0 rounded-full px-2.5 py-1 text-[11px] text-stone-400 opacity-0 transition hover:bg-violet-50 hover:text-violet-700 focus-visible:opacity-100 group-hover:opacity-100">{t("Set primary", "设为主简历")}</button>
-                  <button type="button" onClick={() => { setDeleteTarget(resume); setDeleteError(""); }} aria-label={t("Delete resume", "删除简历")} title={t("Delete resume", "删除简历")} className="grid size-8 shrink-0 place-items-center rounded-full text-stone-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100"><Trash2 className="size-4" /></button>
+                  <ResumeRowMenu label={resume.originalFilename} disabled={!!busy}
+                    onSetPrimary={() => void markPrimary(resume)}
+                    onDelete={() => { setDeleteTarget(resume); setDeleteError(""); }} />
                 </div>;
               })}
             </div>
