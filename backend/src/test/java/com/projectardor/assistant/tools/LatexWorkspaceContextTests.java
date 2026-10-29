@@ -52,7 +52,8 @@ class LatexWorkspaceContextTests {
 
         String hint = tools.contextHint(user, "latex", projectId);
 
-        assertThat(hint).contains("我的简历", projectId.toString(), "第 3 版", "read_latex_project");
+        assertThat(hint).contains("我的简历", projectId.toString(), "read_latex_project", "不要当成版本号");
+        assertThat(hint).doesNotContain("第 3 版");
         assertThat(tools.resolveContext(user, "LATEX", projectId).label()).isEqualTo("我的简历");
     }
 }

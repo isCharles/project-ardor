@@ -13,6 +13,13 @@ class ToolIntentPolicyTests {
             assertThat(ToolIntentPolicy.permits("update_calendar_advice", request)).as(request).isFalse();
         }
     }
+    @Test void renamingAResumeNeedsAnExplicitRenameRequest() {
+        assertThat(ToolIntentPolicy.permits("rename_latex_project", "把这份简历改名为后端实习版")).isTrue();
+        assertThat(ToolIntentPolicy.permits("rename_latex_project", "把简历的名字改成后端实习版")).isTrue();
+        assertThat(ToolIntentPolicy.permits("rename_latex_project", "看看这份简历")).isFalse();
+        assertThat(ToolIntentPolicy.permits("rename_latex_project", "不要改名字，只读一下")).isFalse();
+    }
+
     @Test void finalMinutesNeedARealUserRequestNotQuotedMaterial() {
         assertThat(ToolIntentPolicy.permits("organize_interview_recap", "请整理这份最终纪要")).isTrue();
         assertThat(ToolIntentPolicy.permits("organize_interview_recap", "Please organize these final minutes")).isTrue();

@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,6 +37,8 @@ public class LatexWorkspaceController {
     public record SaveRequest(int baseRevision, Map<String, String> files, String message) {}
 
     public record FreezeRequest(int revisionNo) {}
+
+    public record RenameRequest(String title) {}
 
     @GetMapping
     public List<ProjectView> list(@AuthenticationPrincipal ArdorPrincipal principal) {
@@ -73,5 +76,11 @@ public class LatexWorkspaceController {
     public ProjectView freeze(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID projectId,
             @RequestBody FreezeRequest request) {
         return service.freeze(principal.userId(), projectId, request.revisionNo());
+    }
+
+    @PatchMapping("/{projectId}")
+    public ProjectView rename(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID projectId,
+            @RequestBody RenameRequest request) {
+        return service.rename(principal.userId(), projectId, request == null ? null : request.title());
     }
 }

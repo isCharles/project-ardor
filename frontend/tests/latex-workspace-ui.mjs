@@ -11,12 +11,14 @@ server.stdout.on("data", chunk => logs += chunk); server.stderr.on("data", chunk
 const projectId = "30000000-0000-4000-8000-000000000001";
 const conversationId = "30000000-0000-4000-8000-0000000000c1";
 let frozenRevision = null;
-const freezes = [], previews = [], uploads = [], streams = [];
+let projectTitle = "我的简历";
+const freezes = [], previews = [], uploads = [], streams = [], renames = [];
 let conversations = 0;
 const resumes = [];
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const project = () => ({ id: projectId, title: "我的简历", mainFile: "main.tex", currentRevision: 1, frozenRevision, updatedAt: new Date().toISOString() });
-const snapshot = () => ({ projectId, title: "我的简历", mainFile: "main.tex", revisionNo: 1, files: { "main.tex": "\\documentclass{article}\n\\begin{document}\n第一版\n\\end{document}\n" }, sha256: "x", frozenRevision });
+const project = () => ({ id: projectId, title: projectTitle, mainFile: "main.tex", currentRevision: 1, frozenRevision, updatedAt: new Date().toISOString() });
+const snapshot = () => ({ projectId, title: projectTitle, mainFile: "main.tex", revisionNo: 1, files: { "main.tex": "\\documentclass{article}\n\\begin{document}\n第一版\n\\end{document}\n" }, sha256: "x", frozenRevision });
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=", "base64");
 
 try {
   let ready = false;
@@ -31,7 +33,11 @@ try {
   const consoleErrors = [];
   context.on("page", page => page.on("pageerror", error => consoleErrors.push(String(error))));
   await context.route("**/latex-api/**", async route => {
-    previews.push(route.request().url());
+    const url = new URL(route.request().url());
+    previews.push(url.toString());
+    if (url.searchParams.has("page")) {
+      return route.fulfill({ contentType: "image/png", body: png, headers: { "X-Page-Count": "1" } });
+    }
     return route.fulfill({ contentType: "application/pdf", body: "%PDF-1.4\nsynthetic\n%%EOF\n" });
   });
   await context.route("**/api/**", async route => {
@@ -53,6 +59,12 @@ try {
         { type: "done", messageId: "assistant-1", conversationId, content: "已按你的要求调整。" },
       ];
       return route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("") });
+    }
+    if (method === "PATCH" && path === `/api/latex/projects/${projectId}`) {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      renames.push(body);
+      projectTitle = body.title;
+      return route.fulfill({ json: project() });
     }
     if (method === "POST" && path === `/api/latex/projects/${projectId}/freeze`) {
       const body = JSON.parse(route.request().postData() ?? "{}");
@@ -76,6 +88,7 @@ try {
     else if (path === "/api/profile") body = { displayName: "Synthetic owner", timezone: "Asia/Shanghai", targetRoles: [] };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
     else if (path.startsWith("/api/background-tasks/")) body = { activeCount: 0, items: [] };
+    else if (path === "/api/agent/models") body = [{ id: "PRIMARY", label: "Primary", provider: "synthetic", available: true, nativeControl: false, visible: true }];
     else if (path === "/api/latex/projects") body = [project()];
     else if (path === `/api/latex/projects/${projectId}`) body = snapshot();
     else if (path === "/api/resumes") body = resumes;
@@ -94,17 +107,40 @@ try {
   };
 
   await page.goto(`${origin}/app/latex`);
-  await waitFor(async () => (await bodyText()).includes("我的简历"), "the workspace title");
-  await waitFor(() => previews.some(entry => entry.includes(`/latex-api/${projectId}?revision=1`)), "the current version compile");
-  await waitFor(async () => (await page.locator("iframe").count()) >= 1, "the version preview iframe");
-  assert.match(await bodyText(), /当前版本|Current version/i, "the sidebar names the current version");
+  await waitFor(async () => (await bodyText()).includes("我的简历"), "the resume title");
 
-  // The chat is the editing surface and must scope the turn to this workspace.
+  // Renaming is available in the header, so duplicate titles can be told apart.
+  await page.getByRole("button", { name: /Rename resume|重命名简历/ }).click();
+  await page.getByRole("textbox", { name: /Resume name|简历名称/ }).fill("后端实习简历");
+  await page.getByRole("button", { name: /^Save$|^保存$/ }).click();
+  await waitFor(() => renames.length === 1, "the rename request");
+  assert.equal(renames[0].title, "后端实习简历");
+  await waitFor(async () => (await bodyText()).includes("后端实习简历"), "the renamed title");
+
+  // The sidebar reuses the rasterized page preview, not the dark PDF viewer.
+  await waitFor(() => previews.some(entry => {
+    const url = new URL(entry);
+    return url.pathname === `/latex-api/${projectId}` && url.searchParams.get("revision") === "1" && url.searchParams.get("page") === "1";
+  }), "the page preview request");
+  await waitFor(async () => (await page.getByAltText(/Current resume|当前简历/).count()) >= 1, "the page preview image");
+  assert.equal(await page.locator("iframe").count(), 0, "the preview is not a PDF iframe");
+  const asideText = async () => (await page.getByRole("complementary", { name: /Resume preview|简历预览/ }).innerText()).replace(/\s+/g, " ");
+  assert.match(await asideText(), /编辑中|Editing/i, "an editing resume has no version number");
+  assert.doesNotMatch(await asideText(), /\bv1\b/);
+
+  // The composer offers the same model picker as the main Ardor chat.
+  const modelButton = page.getByRole("button", { name: /Model and thinking depth|模型与思考深度/ });
+  await modelButton.waitFor();
+  await waitFor(() => modelButton.isEnabled(), "the model picker");
+
+  // The chat is the editing surface and must scope the turn to this resume.
   await page.getByRole("textbox", { name: /Message Ardor|给 Ardor 的消息/ }).fill("把项目经历写得更具体");
   await page.getByRole("textbox", { name: /Message Ardor|给 Ardor 的消息/ }).press("Enter");
   await waitFor(() => streams.length === 1, "the Ardor stream request");
   assert.equal(streams[0].message, "把项目经历写得更具体");
-  assert.deepEqual(streams[0].contextReferences, [{ type: "LATEX", id: projectId }], "the turn is scoped to this workspace");
+  assert.equal(streams[0].modelChoice, "PRIMARY", "the selected model is sent with the turn");
+  assert.equal(streams[0].reasoningDepth, "AUTO");
+  assert.deepEqual(streams[0].contextReferences, [{ type: "LATEX", id: projectId }], "the turn is scoped to this resume");
   assert.equal(conversations, 1, "one conversation is created and reused");
   await waitFor(async () => (await bodyText()).includes("已按你的要求调整。"), "the assistant reply");
   await waitFor(async () => (await bodyText()).includes("读取当前修订"), "the tool step chip");
@@ -114,8 +150,10 @@ try {
   await waitFor(() => freezes.length === 1, "the freeze request");
   assert.equal(freezes[0].revisionNo, 1);
   await waitFor(() => uploads.length === 1, "the frozen PDF upload");
-  assert.match(uploads[0], /v1\.pdf$/, "the uploaded resume is named after the frozen version");
+  assert.match(uploads[0], /后端实习简历 v1\.pdf$/, "the uploaded resume is named after the frozen version");
   await waitFor(async () => /已在简历分析|In Resume analysis/.test(await bodyText()), "the resume analysis link");
+  await waitFor(async () => /定稿版本|Final version/i.test(await asideText()), "the frozen version label");
+  assert.match(await asideText(), /v1\b/, "a frozen resume shows its version number");
 
   // Reloading finds the same frozen PDF and does not upload a duplicate.
   await page.reload();

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -16,6 +16,15 @@ export class LatexBusyError extends Error {
   }
 }
 
+export class LatexPreviewUnavailableError extends Error {
+  constructor() {
+    super("预览渲染暂不可用，请打开 PDF 查看");
+  }
+}
+
+const MAX_PREVIEW_PAGES = 20;
+const PREVIEW_RENDER_TIMEOUT_MS = 45_000;
+
 export function latexEngine(): string {
   if (process.env.ARDOR_LATEX_ENGINE) return process.env.ARDOR_LATEX_ENGINE;
   const local = path.resolve(process.cwd(), "..", "preview", "latex-tools", "tectonic.exe");
@@ -29,7 +38,7 @@ export function isSafeWorkspacePath(file: string): boolean {
     && !file.split("/").includes("..");
 }
 
-function run(command: string, args: string[], cwd: string, restrictReads: boolean): Promise<void> {
+function run(command: string, args: string[], cwd: string, restrictReads: boolean, timeoutMs = COMPILE_TIMEOUT_MS): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
@@ -54,7 +63,7 @@ function run(command: string, args: string[], cwd: string, restrictReads: boolea
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
-    }, COMPILE_TIMEOUT_MS);
+    }, timeoutMs);
     child.on("error", (error) => {
       clearTimeout(timer);
       reject(error);
@@ -144,5 +153,37 @@ export async function compileLatex(
     } finally {
       activeCompilations--;
     }
+  }
+}
+
+/**
+ * Rasterizes a compiled PDF into page images for the sidebar preview. Ghostscript
+ * runs with -dSAFER so a crafted document cannot read or write host files.
+ */
+export async function renderPdfPages(pdf: Buffer): Promise<Buffer[]> {
+  const scratch = process.env.ARDOR_LATEX_WORK_DIR ?? (process.platform === "win32" ? process.cwd() : tmpdir());
+  let workDir: string | undefined;
+  try {
+    workDir = await mkdtemp(path.join(scratch, ".latex-pages-"));
+    const root = workDir;
+    const source = path.join(root, "preview.pdf");
+    await writeFile(source, pdf);
+    try {
+      await run("gs", [
+        "-q", "-dSAFER", "-dBATCH", "-dNOPAUSE", "-sDEVICE=png16m", "-r150",
+        "-dTextAlphaBits=4", "-dGraphicsAlphaBits=4", `-dLastPage=${MAX_PREVIEW_PAGES}`,
+        `-sOutputFile=${path.join(root, "page-%03d.png")}`, source,
+      ], workDir, false, PREVIEW_RENDER_TIMEOUT_MS);
+    } catch (error) {
+      if (error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new LatexPreviewUnavailableError();
+      }
+      throw new Error(`无法渲染 PDF 预览：${error instanceof Error ? error.message.slice(0, 600) : "未知错误"}`);
+    }
+    const names = (await readdir(root)).filter(name => /^page-\d{3}\.png$/.test(name)).sort();
+    if (names.length === 0) throw new Error("PDF 预览没有生成页面");
+    return await Promise.all(names.map(name => readFile(path.join(root, name))));
+  } finally {
+    if (workDir) await rm(workDir, { recursive: true, force: true });
   }
 }

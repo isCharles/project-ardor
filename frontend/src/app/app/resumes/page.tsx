@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, ArrowUpRight, FileCode2, FileText, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, FileText, Plus, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
@@ -380,7 +380,7 @@ export default function ResumesPage() {
     <header className="flex flex-wrap items-end justify-between gap-5 pb-10 pt-10 md:pb-12 md:pt-14">
       <div><p className="text-sm font-medium text-violet-600">RESUME</p><h1 className="mt-3 text-5xl font-semibold tracking-[-0.055em] md:text-6xl">{t("One resume, iterated well.", "把一份简历打磨好。")}</h1></div>
       <div className="flex flex-wrap items-center gap-2">
-        <Link href="/app/latex" className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-5 py-2.5 text-sm font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50"><FileCode2 className="size-4" />{t("LaTeX workspace", "LaTeX 工作区")}</Link>
+        <Link href="/app/latex" className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-5 py-2.5 text-sm font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50"><FileText className="size-4" />{t("Write resume", "写简历")}</Link>
         <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm font-medium text-white transition hover:scale-[1.02] hover:bg-black"><Plus className="size-4" />{t("Upload resume", "上传新简历")}</button>
       </div>
     </header>

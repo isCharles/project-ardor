@@ -41,6 +41,12 @@ public class LatexProject {
         this.updatedAt = Instant.now();
     }
 
+    /** Renaming only changes the label; revisions and the frozen version stay untouched. */
+    public void rename(String title) {
+        this.title = title;
+        this.updatedAt = Instant.now();
+    }
+
     /** Freezing is idempotent: freezing the same revision twice is not a second version. */
     public void freeze(int revision) {
         if (revision > currentRevision) throw new IllegalArgumentException("正式版本必须是已有修订");

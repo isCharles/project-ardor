@@ -1,8 +1,9 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, FileDown, GripVertical, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { FileDown, GripVertical, X } from "lucide-react";
+import { useCallback, useEffect } from "react";
 
+import { PdfPagePreview } from "@/components/ardor/pdf-page-preview";
 import { useLocale } from "@/lib/locale";
 
 export function ResumePreviewPanel({ resumeId, filename, width, onWidthChange, onClose }: {
@@ -13,49 +14,13 @@ export function ResumePreviewPanel({ resumeId, filename, width, onWidthChange, o
   onClose: () => void;
 }) {
   const { t } = useLocale();
-  const [page, setPage] = useState(1);
-  const [pageCount, setPageCount] = useState(1);
-  const [src, setSrc] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let active = true;
-    let objectUrl = "";
-    fetch(`/api/resumes/${resumeId}/preview/pages/${page}`, { cache: "no-store" })
-      .then(async response => {
-        if (!response.ok) throw new Error(t("Could not render this resume page", "无法渲染该简历页"));
-        const count = Number(response.headers.get("X-Resume-Page-Count") ?? "");
-        if (active && Number.isFinite(count) && count > 0) setPageCount(count);
-        const blob = await response.blob();
-        if (!active) return;
-        objectUrl = URL.createObjectURL(blob);
-        setSrc(objectUrl);
-        setLoading(false);
-      })
-      .catch(reason => {
-        if (!active) return;
-        setError(reason instanceof Error ? reason.message : t("Could not render this resume page", "无法渲染该简历页"));
-        setLoading(false);
-      });
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [resumeId, page, t]);
+  const pageUrl = useCallback((page: number) => `/api/resumes/${resumeId}/preview/pages/${page}`, [resumeId]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) { if (event.key === "Escape") onClose(); }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-
-  function goToPage(next: number) {
-    setPage(next);
-    setLoading(true);
-    setError("");
-    setSrc("");
-  }
 
   function startResize(event: React.PointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -88,18 +53,14 @@ export function ResumePreviewPanel({ resumeId, filename, width, onWidthChange, o
       </div>
       <button type="button" onClick={onClose} aria-label={t("Close preview", "关闭预览")} className="grid size-9 shrink-0 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><X className="size-4" /></button>
     </header>
-    <div className="flex flex-1 items-start justify-center overflow-auto bg-stone-100/70 p-4">
-      {loading && <div className="mt-24 flex flex-col items-center gap-3 text-sm text-stone-400"><span className="size-8 animate-spin rounded-full border-2 border-stone-200 border-t-violet-500" />{t("Rendering page…", "正在渲染页面…")}</div>}
-      {!loading && error && <div className="mt-20 max-w-sm text-center">
-        <p className="text-sm text-stone-500">{error}</p>
-        <a href={`/api/resumes/${resumeId}/file`} download={filename} className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-medium text-white hover:bg-black"><FileDown className="size-4" />{t("Download original", "下载原文件")}</a>
-      </div>}
-      {!loading && !error && src && <img src={src} alt={t("Original resume page", "原简历页面")} className="h-auto w-full max-w-[620px] rounded-sm bg-white shadow-[0_10px_40px_rgba(30,25,20,0.12)]" />}
-    </div>
-    <footer className="flex items-center justify-between gap-3 border-t border-stone-100 px-5 py-3">
-      <button type="button" disabled={page <= 1 || loading} onClick={() => goToPage(Math.max(1, page - 1))} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-stone-100 disabled:opacity-30"><ChevronLeft className="size-4" />{t("Previous", "上一页")}</button>
-      <span className="text-xs text-stone-400">{page} / {pageCount}</span>
-      <button type="button" disabled={page >= pageCount || loading} onClick={() => goToPage(Math.min(pageCount, page + 1))} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm text-stone-600 hover:bg-stone-100 disabled:opacity-30">{t("Next", "下一页")}<ChevronRight className="size-4" /></button>
-    </footer>
+    <PdfPagePreview
+      key={resumeId}
+      pageUrl={pageUrl}
+      pageCountHeader="X-Resume-Page-Count"
+      alt={t("Original resume page", "原简历页面")}
+      className="min-h-0 flex-1"
+      footerClassName="border-t border-stone-100 px-5 py-3"
+      errorAction={<a href={`/api/resumes/${resumeId}/file`} download={filename} className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-medium text-white hover:bg-black"><FileDown className="size-4" />{t("Download original", "下载原文件")}</a>}
+    />
   </aside>;
 }

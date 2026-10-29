@@ -1,10 +1,13 @@
 "use client";
 
-import { ArrowUp, ArrowUpRight, FileText, Lock, Plus, RefreshCw, Square } from "lucide-react";
+import { ArrowUp, ArrowUpRight, FileText, Lock, Pencil, Plus, RefreshCw, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MarkdownContent } from "@/components/ardor/markdown-content";
+import { ModelSettingsDialog, type ModelSettingsUpdate } from "@/components/ardor/model-settings-dialog";
 import { OperationPermissions } from "@/components/ardor/operation-permissions";
+import { PdfPagePreview } from "@/components/ardor/pdf-page-preview";
+import { ReasoningControl, type ModelOption } from "@/components/ardor/reasoning-control";
 import { ApiError, api, blobApi, streamApi } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
@@ -18,10 +21,29 @@ type StreamEvent = { type: string; content: string | null; toolName: string | nu
 type AgentState = { messages: AgentMessage[] };
 
 const conversationKey = (projectId: string) => `ardor.latex.conversation.${projectId}`;
+const frozenKey = (projectId: string) => `ardor.latex.frozen.${projectId}`;
 
 function resumeFileName(title: string, revision: number) {
   const safe = title.replace(/[\\/:*?"<>|]+/g, "-").trim().slice(0, 80) || "resume";
   return `${safe} v${revision}.pdf`;
+}
+
+function readStoredFrozen(projectId: string): { revision: number; name: string } | null {
+  try {
+    const raw = window.localStorage.getItem(frozenKey(projectId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { revision?: unknown; name?: unknown };
+    return typeof parsed.revision === "number" && typeof parsed.name === "string"
+      ? { revision: parsed.revision, name: parsed.name }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeFrozen(projectId: string, revision: number, name: string) {
+  try { window.localStorage.setItem(frozenKey(projectId), JSON.stringify({ revision, name })); }
+  catch { /* storage is best-effort; the resume list is still checked */ }
 }
 
 export default function LatexWorkspacePage() {
@@ -30,9 +52,18 @@ export default function LatexWorkspacePage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [previewing, setPreviewing] = useState(false);
+  const [previewReload, setPreviewReload] = useState(0);
   const [freezing, setFreezing] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const [modelChoice, setModelChoice] = useState("PRIMARY");
+  const [reasoningDepth, setReasoningDepth] = useState<"AUTO" | "QUICK" | "STANDARD" | "DEEP">("AUTO");
+  const [nativeReasoning, setNativeReasoning] = useState(false);
+  const [modelCatalogState, setModelCatalogState] = useState<"LOADING" | "READY" | "FAILED">("LOADING");
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
+  const modelAccount = useRef<string | null>(null);
   const [frozenResume, setFrozenResume] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatItem[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -44,7 +75,6 @@ export default function LatexWorkspacePage() {
   const requestRef = useRef<string | null>(null);
   const sendControl = useRef<AbortController | null>(null);
   const threadEnd = useRef<HTMLDivElement | null>(null);
-  const previewSeq = useRef(0);
   const openSeq = useRef(0);
 
   const loadProjects = useCallback(async (pick?: string) => {
@@ -53,23 +83,6 @@ export default function LatexWorkspacePage() {
     setProjectId((current) => pick ?? current ?? list[0]?.id ?? null);
     return list;
   }, []);
-
-  const loadPreview = useCallback(async (project: string, revision: number) => {
-    const seq = ++previewSeq.current;
-    setPreviewing(true);
-    try {
-      const blob = await blobApi(`/latex-api/${project}?revision=${revision}&t=${Date.now()}`);
-      if (seq !== previewSeq.current) return;
-      setPdfUrl((previous) => {
-        if (previous) URL.revokeObjectURL(previous);
-        return URL.createObjectURL(blob);
-      });
-    } catch (cause) {
-      if (seq === previewSeq.current) setError(cause instanceof ApiError ? cause.body.message ?? cause.message : t("Preview failed", "预览编译失败"));
-    } finally {
-      if (seq === previewSeq.current) setPreviewing(false);
-    }
-  }, [t]);
 
   const uploadFrozen = useCallback(async (name: string, blob: Blob) => {
     const body = new FormData();
@@ -80,11 +93,24 @@ export default function LatexWorkspacePage() {
 
   const ensureFrozenResume = useCallback(async (project: Project) => {
     if (project.frozenRevision == null) { setFrozenResume(null); return; }
-    const name = resumeFileName(project.title, project.frozenRevision);
     const resumes = await api<ResumeItem[]>("/api/resumes");
-    if (resumes.some((item) => item.originalFilename === name)) { setFrozenResume(name); return; }
+    // The uploaded resume is keyed by the title it had when frozen; a later rename
+    // must not create a second copy of the same frozen revision.
+    const stored = readStoredFrozen(project.id);
+    if (stored && stored.revision === project.frozenRevision
+        && resumes.some((item) => item.originalFilename === stored.name)) {
+      setFrozenResume(stored.name);
+      return;
+    }
+    const name = resumeFileName(project.title, project.frozenRevision);
+    if (resumes.some((item) => item.originalFilename === name)) {
+      setFrozenResume(name);
+      storeFrozen(project.id, project.frozenRevision, name);
+      return;
+    }
     const blob = await blobApi(`/latex-api/${project.id}?revision=${project.frozenRevision}`);
     await uploadFrozen(name, blob);
+    storeFrozen(project.id, project.frozenRevision, name);
   }, [uploadFrozen]);
 
   const openProject = useCallback(async (project: Project) => {
@@ -98,8 +124,6 @@ export default function LatexWorkspacePage() {
       setSnapshot(result);
       setMessages([]);
       setConversationId(null);
-      setPdfUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return null; });
-      void loadPreview(id, result.revisionNo);
       if (result.frozenRevision != null) void ensureFrozenResume(project).catch(() => undefined);
       const stored = window.localStorage.getItem(conversationKey(id));
       if (stored) {
@@ -113,9 +137,9 @@ export default function LatexWorkspacePage() {
         }
       }
     } catch (cause) {
-      if (seq === openSeq.current) setError(cause instanceof Error ? cause.message : t("Could not open the workspace", "无法打开工作区"));
+      if (seq === openSeq.current) setError(cause instanceof Error ? cause.message : t("Could not open this resume", "无法打开这份简历"));
     }
-  }, [ensureFrozenResume, loadPreview, t]);
+  }, [ensureFrozenResume, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,13 +148,37 @@ export default function LatexWorkspacePage() {
         const list = await loadProjects();
         if (!cancelled && list[0]) await openProject(list[0]);
       } catch (cause) {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : t("Could not load workspaces", "无法读取简历工作区"));
+        if (!cancelled) setError(cause instanceof Error ? cause.message : t("Could not load resumes", "无法读取简历"));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, [loadProjects, openProject, t]);
+
+  useEffect(() => {
+    let active = true;
+    void api<{ id: string; admin: boolean }>("/api/auth/me").then(account => {
+      if (!active) return;
+      modelAccount.current = account.id;
+      void api<ModelOption[]>("/api/agent/models").then(items => {
+        if (!active || !Array.isArray(items)) return;
+        setModelOptions(items);
+        setModelCatalogState("READY");
+        const saved = window.sessionStorage.getItem(`ardor:model-choice:${account.id}`);
+        const usable = (item: ModelOption) => item.available && item.visible !== false;
+        const initial = items.find(item => item.id === saved && usable(item))
+          ?? items.find(item => item.id === "PRIMARY" && usable(item))
+          ?? items.find(usable);
+        if (initial) {
+          setModelChoice(initial.id);
+          setNativeReasoning(initial.nativeControl);
+          setReasoningDepth(initial.thinkingEffort ?? "AUTO");
+        }
+      }).catch(() => { if (active) setModelCatalogState("FAILED"); });
+    }).catch(() => { if (active) setModelCatalogState("FAILED"); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => { threadEnd.current?.scrollIntoView({ block: "end" }); }, [messages]);
 
@@ -145,7 +193,6 @@ export default function LatexWorkspacePage() {
       const result = await api<Snapshot>(`/api/latex/projects/${projectId}`);
       if (seq !== openSeq.current) return;
       setSnapshot(result);
-      void loadPreview(projectId, result.revisionNo);
       if (project.frozenRevision != null) {
         try { await ensureFrozenResume(project); }
         catch { setError(t("Frozen, but the PDF could not be copied to Resume analysis yet.", "已定稿，但 PDF 还没能同步到简历分析，请稍后重试。")); }
@@ -163,7 +210,27 @@ export default function LatexWorkspacePage() {
       const project = list.find((item) => item.id === created.projectId);
       if (project) await openProject(project);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("Could not create a workspace", "创建简历失败"));
+      setError(cause instanceof Error ? cause.message : t("Could not create this resume", "新建简历失败"));
+    }
+  }
+
+  async function renameProject() {
+    if (!snapshot || renameBusy) return;
+    const title = renameDraft.trim();
+    if (!title || title === snapshot.title) { setRenaming(false); return; }
+    setRenameBusy(true);
+    setError("");
+    try {
+      const updated = await api<Project>(`/api/latex/projects/${snapshot.projectId}`, {
+        method: "PATCH", body: JSON.stringify({ title }),
+      });
+      setSnapshot((current) => current ? { ...current, title: updated.title } : current);
+      setProjects((current) => current.map((item) => item.id === updated.id ? { ...item, title: updated.title } : item));
+      setRenaming(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("Could not rename this resume", "改名失败"));
+    } finally {
+      setRenameBusy(false);
     }
   }
 
@@ -186,6 +253,7 @@ export default function LatexWorkspacePage() {
         const resumes = await api<ResumeItem[]>("/api/resumes");
         if (resumes.some((item) => item.originalFilename === name)) setFrozenResume(name);
         else await uploadFrozen(name, blob);
+        storeFrozen(project.id, project.frozenRevision, name);
       }
       setSnapshot((current) => current ? { ...current, frozenRevision: snapshot.revisionNo } : current);
       setNotice(t("Frozen. The PDF is now in Resume analysis.", "已定稿，这份简历已出现在简历分析里。"));
@@ -247,6 +315,8 @@ export default function LatexWorkspacePage() {
         requestId,
         conversationId: activeConversation,
         message: content,
+        modelChoice,
+        reasoningDepth,
         contextReferences: [{ type: "LATEX", id: snapshot.projectId }],
       }, (event) => {
         if (event.type === "delta" && event.content) {
@@ -288,21 +358,53 @@ export default function LatexWorkspacePage() {
   }
 
   const frozen = snapshot != null && snapshot.frozenRevision === snapshot.revisionNo;
+  const previewProjectId = snapshot?.projectId;
+  const previewRevision = snapshot?.revisionNo;
+  const pageUrl = useCallback((page: number) => previewProjectId != null && previewRevision != null
+    ? `/latex-api/${previewProjectId}?revision=${previewRevision}&page=${page}`
+    : "", [previewProjectId, previewRevision]);
   const suggestions = [
     t("Make the project bullets more concrete and measurable.", "把项目经历写得更具体，补上量化结果"),
     t("Tighten the whole resume onto one page.", "压缩篇幅，保持在一页以内"),
     t("Rewrite the summary for a backend internship.", "按后端实习岗位调整这份简历"),
   ];
+  const saveModelSettings = useCallback(async (updates: ModelSettingsUpdate[]) => {
+    const items = await api<ModelOption[]>("/api/agent/models/settings", {
+      method: "PUT", body: JSON.stringify({ settings: updates }),
+    });
+    if (!Array.isArray(items)) throw new Error(t("Could not reload the model catalog", "无法重新加载模型目录"));
+    setModelOptions(items);
+    setModelCatalogState("READY");
+  }, [t]);
+  const modelPicker = <ReasoningControl value={reasoningDepth} disabled={modelCatalogState !== "READY"}
+    nativeControl={nativeReasoning} models={modelOptions} model={modelChoice}
+    onManageModels={() => setModelSettingsOpen(true)}
+    onModelChange={(value) => {
+      const selected = modelOptions.find(item => item.id === value);
+      if (!selected || !selected.available || selected.visible === false) return;
+      setModelChoice(value);
+      setNativeReasoning(selected.nativeControl);
+      setReasoningDepth(selected.thinkingEffort ?? "AUTO");
+      try {
+        if (modelAccount.current) window.sessionStorage.setItem(`ardor:model-choice:${modelAccount.current}`, value);
+      } catch { /* The current selection remains usable when browser storage is unavailable. */ }
+    }} />;
 
-  if (loading) return <main className="ardor-workbench flex h-full items-center justify-center text-sm text-stone-400">{t("Opening workspace…", "正在打开工作区…")}</main>;
+  if (loading) return <main className="ardor-workbench flex h-full items-center justify-center text-sm text-stone-400">{t("Opening resume…", "正在打开简历…")}</main>;
 
   return <main className="ardor-workbench flex h-full flex-col overflow-hidden text-[#1d1d1f]">
     <header className="flex flex-wrap items-center gap-3 px-4 py-3 lg:px-6">
       <FileText className="size-4 text-violet-600" />
-      <h1 className="text-sm font-semibold">{t("Resume workspace", "简历工作区")}</h1>
-      {snapshot && <span className="text-xs text-stone-400">{snapshot.title}</span>}
+      <h1 className="text-sm font-semibold">{t("Write resume", "写简历")}</h1>
+      {snapshot && (renaming ? <form onSubmit={(event) => { event.preventDefault(); void renameProject(); }} className="flex items-center gap-1">
+        <input aria-label={t("Resume name", "简历名称")} value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} autoFocus maxLength={160} className="w-44 rounded-full border border-stone-200 px-3 py-1 text-xs outline-none focus:border-violet-300" />
+        <button type="submit" disabled={renameBusy} className="rounded-full bg-[#1d1d1f] px-2.5 py-1 text-[11px] text-white hover:bg-black disabled:opacity-40">{t("Save", "保存")}</button>
+        <button type="button" onClick={() => setRenaming(false)} className="rounded-full px-2 py-1 text-[11px] text-stone-500 hover:bg-stone-100">{t("Cancel", "取消")}</button>
+      </form> : <button type="button" onClick={() => { setRenameDraft(snapshot.title); setRenaming(true); }} aria-label={t("Rename resume", "重命名简历")} className="group inline-flex items-center gap-1 text-xs text-stone-400 hover:text-stone-700">
+        {snapshot.title}<Pencil className="size-3 opacity-50 transition group-hover:opacity-100" />
+      </button>)}
       <div className="ml-auto flex items-center gap-2">
-        {projects.length > 1 && <select aria-label={t("Switch workspace", "切换工作区")} value={projectId ?? ""} onChange={(event) => { const next = projects.find((item) => item.id === event.target.value); if (next) { setProjectId(next.id); void openProject(next); } }} className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs outline-none">
+        {projects.length > 1 && <select aria-label={t("Switch resume", "切换简历")} value={projectId ?? ""} onChange={(event) => { const next = projects.find((item) => item.id === event.target.value); if (next) { setProjectId(next.id); void openProject(next); } }} className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs outline-none">
           {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
         </select>}
         <button onClick={() => void createProject()} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-700 hover:bg-stone-50"><Plus className="size-3.5" />{t("New", "新建")}</button>
@@ -316,9 +418,9 @@ export default function LatexWorkspacePage() {
 
     {!snapshot ? <section className="m-auto max-w-md rounded-[2rem] bg-white px-8 py-14 text-center shadow-[0_18px_70px_rgba(0,0,0,0.06)]">
       <FileText className="mx-auto size-8 text-stone-300" />
-      <p className="mt-4 text-base font-medium">{t("No resume workspace yet", "还没有简历工作区")}</p>
-      <p className="mt-2 text-sm text-stone-500">{t("Start from a one-page layout, then let Ardor rewrite it.", "从一页纸的简历版式开始，之后交给 Ardor 修改。")}</p>
-      <button onClick={() => void createProject()} className="mt-6 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm text-white hover:bg-black">{t("Create one", "新建一份")}</button>
+      <p className="mt-4 text-base font-medium">{t("No resume yet", "还没有简历")}</p>
+      <p className="mt-2 text-sm text-stone-500">{t("Start from a clean layout, then let Ardor rewrite it.", "从一个干净的版式开始，之后交给 Ardor 修改。")}</p>
+      <button onClick={() => void createProject()} className="mt-6 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-sm text-white hover:bg-black">{t("Create one", "新建简历")}</button>
     </section> : <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4 lg:flex-row lg:overflow-hidden lg:px-6 lg:pb-6">
       <section aria-label={t("Ardor", "Ardor")} className="flex h-[58vh] min-h-[380px] min-w-0 flex-1 flex-col overflow-hidden rounded-3xl border border-stone-200/70 bg-white lg:h-auto lg:min-h-0">
         <div className="flex items-center gap-2 border-b border-stone-100 px-4 py-2.5">
@@ -342,32 +444,43 @@ export default function LatexWorkspacePage() {
 
         <form onSubmit={(event) => { event.preventDefault(); void send(draft); }} className="border-t border-stone-100 p-3">
           {activeRunId && <OperationPermissions runId={activeRunId} onConfirming={() => undefined} onConfirmed={() => undefined} onFailed={() => undefined} />}
-          <div className="flex items-end gap-2 rounded-2xl border border-stone-200 px-3 py-2 focus-within:border-violet-300">
-            <textarea aria-label={t("Message Ardor", "给 Ardor 的消息")} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(draft); } }} rows={2} placeholder={t("Tell Ardor what to change…", "告诉 Ardor 要怎么改…")} className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent py-1 text-sm leading-6 outline-none" />
-            {sending ? <button type="button" onClick={() => void stop()} aria-label={t("Stop", "停止")} className="mb-0.5 rounded-full bg-stone-900 p-2 text-white hover:bg-black"><Square className="size-3.5" /></button>
-              : <button type="submit" disabled={!draft.trim()} aria-label={t("Send", "发送")} className="mb-0.5 rounded-full bg-[#1d1d1f] p-2 text-white hover:bg-black disabled:opacity-30"><ArrowUp className="size-4" /></button>}
+          <div className="rounded-2xl border border-stone-200 transition focus-within:border-violet-300">
+            <textarea aria-label={t("Message Ardor", "给 Ardor 的消息")} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(draft); } }} rows={2} placeholder={t("Tell Ardor what to change…", "告诉 Ardor 要怎么改…")} className="max-h-40 min-h-[60px] w-full resize-none bg-transparent px-3 pt-2.5 text-sm leading-6 outline-none" />
+            <div className="flex items-center justify-between gap-1 px-1 pb-1">
+              <p className="truncate px-2 text-[10px] text-stone-400">{t("Ardor edits this resume", "Ardor 直接改这份简历")}</p>
+              <div className="flex min-w-0 items-center justify-end gap-1">
+                {modelPicker}
+                {sending ? <button type="button" onClick={() => void stop()} aria-label={t("Stop", "停止")} className="grid size-9 place-items-center rounded-full bg-stone-950 text-white hover:bg-stone-800"><Square className="size-3 fill-current" /></button>
+                  : <button type="submit" disabled={!draft.trim() || modelCatalogState !== "READY"} aria-label={t("Send", "发送")} className="grid size-9 place-items-center rounded-full bg-stone-950 text-white hover:bg-stone-800 disabled:opacity-30"><ArrowUp className="size-4" /></button>}
+              </div>
+            </div>
           </div>
         </form>
       </section>
 
-      <aside className="flex w-full shrink-0 flex-col lg:w-[340px] xl:w-[380px]">
+      <aside aria-label={t("Resume preview", "简历预览")} className="flex w-full shrink-0 flex-col lg:w-[340px] xl:w-[380px]">
         <section className="flex min-h-0 flex-1 flex-col rounded-3xl border border-stone-200/70 bg-white p-3">
           <div className="flex items-center justify-between px-1 pb-2">
             <div className="flex items-baseline gap-2">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-stone-400">{t("Current version", "当前版本")}</p>
-              <p className="text-sm font-semibold tabular-nums">v{snapshot.revisionNo}</p>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-stone-400">{frozen ? t("Final version", "定稿版本") : t("Editing", "编辑中")}</p>
+              {frozen && <p className="text-sm font-semibold tabular-nums">v{snapshot.revisionNo}</p>}
             </div>
             {frozen ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">{t("Frozen", "已定稿")}</span>
-              : <button onClick={() => void freeze()} disabled={freezing || previewing} className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50"><Lock className="size-3" />{freezing ? "…" : t("Freeze", "定稿")}</button>}
+              : <button onClick={() => void freeze()} disabled={freezing} className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-3 py-1 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50"><Lock className="size-3" />{freezing ? "…" : t("Freeze", "定稿")}</button>}
           </div>
-          <div className="min-h-[360px] flex-1 overflow-hidden rounded-2xl border border-stone-100 bg-[#f4f2ee]">
-            {pdfUrl ? <iframe src={`${pdfUrl}#view=FitH&toolbar=0&navpanes=0`} title={t("Current resume", "当前简历")} className="size-full" />
-              : <div className="flex size-full items-center justify-center text-xs text-stone-400">{previewing ? <span className="inline-flex items-center gap-2"><RefreshCw className="size-3 animate-spin" />{t("Compiling…", "正在编译…")}</span> : t("No preview", "暂无预览")}</div>}
+          <div className="min-h-[360px] flex-1 overflow-hidden rounded-2xl">
+            <PdfPagePreview
+              key={`${snapshot.projectId}:${snapshot.revisionNo}:${previewReload}`}
+              pageUrl={pageUrl}
+              alt={t("Current resume", "当前简历")}
+              className="h-full"
+              errorAction={<a href={`/latex-api/${snapshot.projectId}?revision=${snapshot.revisionNo}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-medium text-white hover:bg-black"><ArrowUpRight className="size-4" />{t("Open PDF", "打开 PDF")}</a>}
+            />
           </div>
           <div className="flex items-center justify-between gap-2 px-1 pt-2 text-xs">
             <div className="flex items-center gap-3">
-              <button onClick={() => void loadPreview(snapshot.projectId, snapshot.revisionNo)} disabled={previewing} className="inline-flex items-center gap-1 text-stone-500 hover:text-stone-800 disabled:opacity-40"><RefreshCw className={`size-3 ${previewing ? "animate-spin" : ""}`} />{t("Recompile", "重新编译")}</button>
-              {pdfUrl && <a href={pdfUrl} target="_blank" rel="noreferrer" aria-label={t("Open PDF", "打开 PDF")} className="text-stone-400 hover:text-stone-700"><ArrowUpRight className="size-3.5" /></a>}
+              <button onClick={() => setPreviewReload((value) => value + 1)} className="inline-flex items-center gap-1 text-stone-500 hover:text-stone-800"><RefreshCw className="size-3" />{t("Refresh preview", "刷新预览")}</button>
+              <a href={`/latex-api/${snapshot.projectId}?revision=${snapshot.revisionNo}`} target="_blank" rel="noreferrer" aria-label={t("Open PDF", "打开 PDF")} className="text-stone-400 hover:text-stone-700"><ArrowUpRight className="size-3.5" /></a>
             </div>
             {frozenResume ? <a href="/app/resumes" className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-800">{t("In Resume analysis", "已在简历分析")}<ArrowUpRight className="size-3" /></a>
               : snapshot.frozenRevision != null ? <button onClick={() => void syncFrozen(snapshot.projectId)} className="text-violet-600 hover:text-violet-700">{t("Sync to analysis", "同步到简历分析")}</button> : null}
@@ -375,5 +488,6 @@ export default function LatexWorkspacePage() {
         </section>
       </aside>
     </div>}
+    {modelSettingsOpen && <ModelSettingsDialog models={modelOptions} onClose={() => setModelSettingsOpen(false)} onSave={saveModelSettings} />}
   </main>;
 }
