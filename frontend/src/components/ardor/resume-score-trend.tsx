@@ -3,6 +3,7 @@
 import { useId } from "react";
 
 import { useLocale } from "@/lib/locale";
+import { resumeScoreBand } from "@/lib/resume-score";
 
 export type ResumeScoreTrendPoint = {
   id: string;
@@ -13,7 +14,7 @@ export type ResumeScoreTrendPoint = {
 
 const WIDTH = 720;
 const HEIGHT = 220;
-const PLOT = { left: 48, right: 22, top: 28, bottom: 42 };
+const PLOT = { left: 104, right: 22, top: 28, bottom: 42 };
 
 export function ResumeScoreTrend({ points }: { points: ResumeScoreTrendPoint[] }) {
   const { locale, t } = useLocale();
@@ -82,7 +83,9 @@ export function ResumeScoreTrend({ points }: { points: ResumeScoreTrendPoint[] }
         const y = PLOT.top + (index * plotHeight) / 2;
         return <g key={value}>
           <line x1={PLOT.left} x2={WIDTH - PLOT.right} y1={y} y2={y} stroke="rgba(41,37,36,0.08)" strokeDasharray={index === 2 ? undefined : "3 7"} />
-          <text x={PLOT.left - 10} y={y + 3.5} textAnchor="end" fill="#a8a29e" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{value}</text>
+          <text x={PLOT.left - 10} y={y + 3.5} textAnchor="end" fill="#a8a29e" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums" }}>
+            {value}<tspan dx="6" fill="#b3ada7" style={{ fontSize: 9.5 }}>{resumeScoreBand(value, t)}</tspan>
+          </text>
         </g>;
       })}
 
