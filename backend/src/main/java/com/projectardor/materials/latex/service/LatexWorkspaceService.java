@@ -42,70 +42,158 @@ public class LatexWorkspaceService {
     private static final Set<String> ALLOWED_SUFFIXES =
             Set.of(".tex", ".cls", ".sty", ".bib", ".txt", ".md", ".cfg");
 
-    private static final String TEMPLATE = """
+    private static final String MAIN_TEMPLATE = """
             % 示例模板：以下内容均为虚构占位，替换成真实信息后再投递。
-            \\documentclass[11pt]{article}
-            \\usepackage[a4paper,left=0.7in,right=0.7in,top=0.5in,bottom=0.5in,nohead]{geometry}
-            \\usepackage{fontspec}
-            \\usepackage{xeCJK}
-            \\usepackage{titlesec}
-            \\usepackage{enumitem}
-            \\usepackage[hidelinks]{hyperref}
-            \\setmainfont{texgyretermes-regular.otf}[BoldFont=texgyretermes-bold.otf,ItalicFont=texgyretermes-italic.otf,BoldItalicFont=texgyretermes-bolditalic.otf]
-            \\setCJKmainfont[AutoFakeBold=2]{Noto Serif CJK SC}
-            \\setCJKsansfont[AutoFakeBold=2]{Noto Sans CJK SC}
-            \\setCJKmonofont{Noto Sans Mono CJK SC}
-            \\setlength{\\parindent}{0pt}
-            \\titleformat{\\section}{\\large\\bfseries}{}{0em}{}[\\vspace{-0.5em}\\rule{\\linewidth}{0.6pt}]
-            \\titlespacing*{\\section}{0pt}{2.2ex}{1ex}
-            \\setlist[itemize]{topsep=0.35ex, itemsep=0.2ex, leftmargin=1.6em}
-            \\newcommand{\\name}[1]{\\begin{center}{\\Huge #1}\\end{center}\\vspace{0.6ex}}
-            \\newcommand{\\contact}[1]{\\begin{center}\\small #1\\end{center}\\vspace{0.6ex}}
-            \\newcommand{\\entry}[2]{\\par\\noindent #1 \\hfill #2\\par\\vspace{0.4ex}}
+            \\documentclass{resume}
+            \\usepackage{zh_CN-Noto}
+            \\usepackage{linespacing_fix}
+            \\usepackage[bookmarks=false,hidelinks]{hyperref}
+
             \\begin{document}
             \\pagenumbering{gobble}
+
             \\name{示例姓名}
-            \\contact{138-0000-0000（微信）\\quad·\\quad example@ardor.invalid\\quad·\\quad 北京\\quad·\\quad github.com/example}
-            \\begin{center}\\small 求职方向：后端开发（可立即到岗）\\end{center}
-            \\vspace{1ex}
+            \\contactInfo{you@example.com}{+86 138-0000-0000}{github.com/example}{}
+            \\centerline{现居示例城市 \\quad |\\quad 可立即到岗 \\quad |\\quad 每周 5 天 \\quad |\\quad 可连续实习 6 个月以上}
+            \\vspace{0.7ex}
 
             \\section{教育背景}
-            \\entry{\\textbf{示例大学}，计算机科学与技术，\\textit{2028 届硕士}}{2025.09 -- 2028.06}
-            \\begin{itemize}
+            \\textbf{示例大学}，计算机科学与技术，硕士 \\hfill 2025.09 -- 2028.06
+            \\begin{itemize}[parsep=0.2ex]
             \\item 示例：推免入学，研究方向为分布式系统与数据库
             \\end{itemize}
-            \\entry{\\textbf{示例大学}，软件工程，\\textit{工学学士}}{2021.09 -- 2025.06}
-            \\begin{itemize}
+            \\textbf{示例大学}，软件工程，工学学士 \\hfill 2021.09 -- 2025.06
+            \\begin{itemize}[parsep=0.2ex]
             \\item 示例：专业排名前 10\\%，通过 CET-6
             \\end{itemize}
 
-            \\section{技术能力}
-            \\begin{itemize}
+            \\section{专业技能}
+            \\begin{itemize}[parsep=0.2ex]
             \\item \\textbf{编程语言：}Java、Python、SQL
             \\item \\textbf{后端开发：}Spring Boot、PostgreSQL、Redis、消息队列
-            \\item \\textbf{Agent 开发：}LangChain4j、工具调用、RAG 与评测
+            \\item \\textbf{Agent 开发：}工具调用、RAG 与评测
             \\item \\textbf{工程实践：}Docker、Linux、Git、CI
             \\end{itemize}
 
             \\section{项目经历}
-            \\entry{\\textbf{示例项目｜独立开发}}{2026.01 -- 2026.06}
-            技术栈：Java 21、Spring Boot、PostgreSQL
-            \\begin{itemize}
+            \\textbf{示例项目｜独立开发} \\hfill 2026.01 -- 2026.06
+            \\begin{itemize}[parsep=0.2ex]
             \\item 示例：负责从需求拆解到上线的完整流程，接口 P99 从 [X] ms 降到 [Y] ms
             \\item 示例：为用户隔离与幂等设计数据库约束，异常重试不会产生重复数据
             \\end{itemize}
 
-            \\section{实习经历}
-            \\entry{\\textbf{示例科技｜后端开发实习生}}{2025.06 -- 2025.09}
-            \\begin{itemize}
-            \\item 示例：维护 [业务模块]，补充监控与告警，定位并修复 [问题]
+            \\section{科研成果}
+            语音合成与说话人识别研究 \\hfill 2023.09 -- 2025.06
+            \\begin{itemize}[parsep=0.2ex]
+            \\item 示例：论文 [标题] 发表于 [会议/期刊]
+            \\item 示例：参与 [数据/实验/评测] 环节
             \\end{itemize}
 
-            \\section{其他}
-            \\begin{itemize}
-            \\item 示例：在 [竞赛/论文/开源] 中获得 [结果]
+            \\section{荣誉与奖项}
+            \\begin{itemize}[parsep=0.2ex]
+            \\item 示例：在 [竞赛/奖学金/开源] 中获得 [结果]
             \\end{itemize}
+
             \\end{document}
+            """;
+
+    private static final String RESUME_CLASS = """
+            \\NeedsTeXFormat{LaTeX2e}
+            \\ProvidesClass{resume}[2015/05/25 An elegant Résumé class]
+            \\LoadClass[11pt]{article}
+
+            \\setlength{\\parindent}{0pt}
+            \\RequirePackage{xifthen}
+            \\RequirePackage{fontspec}
+            \\setmainfont{texgyretermes-regular.otf}[
+              BoldFont = texgyretermes-bold.otf,
+              ItalicFont = texgyretermes-italic.otf,
+              BoldItalicFont = texgyretermes-bolditalic.otf
+            ]
+
+            \\RequirePackage[a4paper,left=0.7in,right=0.7in,top=0.50in,bottom=0.5in,nohead]{geometry}
+            \\RequirePackage{titlesec}
+            \\RequirePackage{enumitem}
+            \\setlist{noitemsep}
+            \\setlist[itemize]{topsep=0.25em, leftmargin=1.5pc}
+            \\setlist[enumerate]{topsep=0.25em, leftmargin=1.5pc}
+
+            \\titleformat{\\section}
+              {\\Large\\scshape\\raggedright}
+              {}{0em}
+              {}
+              [\\titlerule]
+            \\titlespacing*{\\section}{0cm}{*1}{*1}
+
+            \\titleformat{\\subsection}
+              {\\large\\raggedright}
+              {}{0em}
+              {}
+            \\titlespacing*{\\subsection}{0cm}{*1}{*0.5}
+
+            \\newcommand{\\datedsection}[2]{%
+              \\section[#1]{#1 \\hfill #2}%
+            }
+            \\newcommand{\\datedsubsection}[2]{%
+              \\subsection[#1]{#1 \\hfill #2}%
+            }
+            \\newcommand{\\datedline}[2]{%
+              {\\par #1 \\hfill #2 \\par}%
+            }
+
+            \\newcommand{\\name}[1]{
+              \\centerline{\\Huge\\scshape{#1}}
+              \\vspace{1.2ex}
+            }
+
+            \\newcommand{\\contactInfo}[4]{
+              \\centerline{\\sffamily\\large{\\ {#1} \\textperiodcentered\\ \\ {#2}}
+                \\ifthenelse{\\isempty{#3}}%
+                  { } %
+                  {\\textperiodcentered\\ \\ {#3} } %
+                \\ifthenelse{\\isempty{#4}}%
+                  { } %
+                  {\\textperiodcentered\\ \\ {#4} }
+              }
+              \\vspace{0.7ex}
+            }
+
+            \\newcommand{\\role}[2]{
+              {\\par \\textit{#1} ~ #2 \\par}
+              \\vspace{0.5ex}
+            }
+            """;
+
+    private static final String LINESPACING_FIX = """
+            \\NeedsTeXFormat{LaTeX2e}[1994/06/01]
+            \\ProvidesPackage{linespacing_fix}[2015/06/06 linespacing_fix Package]
+
+            \\RequirePackage{setspace}
+            \\RequirePackage{calc}
+            \\newlength\\modparskip
+            \\newlength\\modbaselineskip
+              \\def\\baselinestretch{1}
+              \\setlength\\modparskip{\\parskip/\\real{\\baselinestretch}}%
+              \\setlength\\modbaselineskip{\\baselineskip/\\real{\\baselinestretch}}%
+            \\makeatletter
+            \\renewenvironment{spacing}[1]{\\par%
+               \\def\\baselinestretch{#1}%
+               \\ifx\\@currsize\\normalsize\\@normalsize\\else\\@currsize\\fi%
+            }%
+            {\\par%
+               \\vskip \\modparskip%
+               \\vskip \\modbaselineskip%
+            }
+            \\makeatother
+            """;
+
+    private static final String CJK_FONT_STYLE = """
+            \\NeedsTeXFormat{LaTeX2e}
+            \\ProvidesPackage{zh_CN-Noto}
+            \\RequirePackage{xeCJK}
+            \\setCJKmainfont[AutoFakeBold=2]{Noto Serif CJK SC}
+            \\setCJKsansfont[AutoFakeBold=2]{Noto Sans CJK SC}
+            \\setCJKmonofont{Noto Sans Mono CJK SC}
             """;
 
     private final LatexProjectRepository projects;
@@ -170,13 +258,24 @@ public class LatexWorkspaceService {
         return ProjectView.of(project);
     }
 
+    @Transactional
+    public ProjectView rename(UUID userId, UUID projectId, String title) {
+        LatexProject project = owned(userId, projectId);
+        project.rename(title(title));
+        return ProjectView.of(project);
+    }
+
     public static Map<String, String> template() {
-        return Map.of(DEFAULT_MAIN_FILE, TEMPLATE);
+        return Map.of(
+                DEFAULT_MAIN_FILE, MAIN_TEMPLATE,
+                "resume.cls", RESUME_CLASS,
+                "linespacing_fix.sty", LINESPACING_FIX,
+                "zh_CN-Noto.sty", CJK_FONT_STYLE);
     }
 
     private LatexProject owned(UUID userId, UUID projectId) {
         return projects.findByIdAndUserId(projectId, userId)
-                .orElseThrow(() -> new ResourceNotFoundException("工作区不存在"));
+                .orElseThrow(() -> new ResourceNotFoundException("简历不存在"));
     }
 
     private LatexRevision revision(UUID userId, UUID projectId, int revisionNo) {
@@ -185,7 +284,7 @@ public class LatexWorkspaceService {
     }
 
     private static ResponseStatusException conflict() {
-        return new ResponseStatusException(HttpStatus.CONFLICT, "工作区已被更新，请基于最新修订重新提交");
+        return new ResponseStatusException(HttpStatus.CONFLICT, "这份简历已被更新，请基于最新修订重新提交");
     }
 
     /**
@@ -193,7 +292,7 @@ public class LatexWorkspaceService {
      * that could escape the compile directory or smuggle binary content is rejected outright.
      */
     static Map<String, String> sanitize(Map<String, String> files) {
-        if (files == null || files.isEmpty()) throw new IllegalArgumentException("工作区至少需要一个文件");
+        if (files == null || files.isEmpty()) throw new IllegalArgumentException("简历至少需要一个文件");
         if (files.size() > MAX_FILES) throw new IllegalArgumentException("文件数超过上限");
         Map<String, String> clean = new LinkedHashMap<>();
         int total = 0;
@@ -210,7 +309,7 @@ public class LatexWorkspaceService {
             clean.put(path, content);
         }
         if (!clean.containsKey(DEFAULT_MAIN_FILE)) throw new IllegalArgumentException("缺少 " + DEFAULT_MAIN_FILE);
-        if (total > MAX_TOTAL_CHARS) throw new IllegalArgumentException("工作区内容超过上限");
+        if (total > MAX_TOTAL_CHARS) throw new IllegalArgumentException("简历内容超过上限");
         return Map.copyOf(clean);
     }
 

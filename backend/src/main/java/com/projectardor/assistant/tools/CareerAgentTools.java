@@ -223,10 +223,11 @@ public class CareerAgentTools {
             case "LATEX" -> {
                 if (latexWorkspaceService == null) throw new IllegalArgumentException("不支持的资料类型");
                 LatexWorkspaceService.Snapshot project = latexWorkspaceService.read(userId, contextId, null);
-                yield "用户正在简历工作区《" + project.title() + "》里（工作区 ID：" + project.projectId()
-                        + "，当前第 " + project.revisionNo() + " 版）。需要修改时先调用 read_latex_project 读取当前修订，"
+                yield "用户正在写简历《" + project.title() + "》（简历 ID：" + project.projectId()
+                        + "）。需要修改时先调用 read_latex_project 读取当前修订，"
                         + "再用 replace_latex_main_file 或 update_latex_project 基于该修订保存，不要用聊天正文代替文件修改。"
-                        + "只有用户明确要求定稿时才调用 freeze_latex_version。";
+                        + "要改简历名称时调用 rename_latex_project。只有用户明确要求定稿时才调用 freeze_latex_version。"
+                        + "编辑中的修订号只用于保存时定位，不要当成版本号展示给用户；只有定稿版本才称 vN。";
             }
             default -> throw new IllegalArgumentException("不支持的资料类型");
         };

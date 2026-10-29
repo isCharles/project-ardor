@@ -109,8 +109,22 @@ class LatexWorkspaceServiceTests {
 
         assertThat(created.revisionNo()).isEqualTo(1);
         assertThat(created.mainFile()).isEqualTo(LatexWorkspaceService.DEFAULT_MAIN_FILE);
-        assertThat(created.files()).containsKey(LatexWorkspaceService.DEFAULT_MAIN_FILE);
-        assertThat(created.files().get(LatexWorkspaceService.DEFAULT_MAIN_FILE)).contains("\\documentclass");
+        assertThat(created.files()).containsKeys(
+                LatexWorkspaceService.DEFAULT_MAIN_FILE, "resume.cls", "linespacing_fix.sty", "zh_CN-Noto.sty");
+        assertThat(created.files().get(LatexWorkspaceService.DEFAULT_MAIN_FILE)).contains("\\documentclass{resume}");
+        assertThat(created.files().get("resume.cls")).contains("[\\titlerule]");
+        assertThat(created.files().get("resume.cls")).doesNotContain("\\vspace{-0.5em}\\rule");
+    }
+
+    @Test
+    void templateKeepsTheSourceClassLayoutWithoutNegativeSectionSpacing() {
+        Map<String, String> template = LatexWorkspaceService.template();
+
+        assertThat(template.get("resume.cls")).contains("\\ProvidesClass{resume}", "[\\titlerule]",
+                "\\titlespacing*{\\section}{0cm}{*1}{*1}");
+        assertThat(template.get("resume.cls")).doesNotContain("\\vspace{-0.5em}\\rule");
+        assertThat(template.get(LatexWorkspaceService.DEFAULT_MAIN_FILE))
+                .contains("示例姓名", "you@example.com", "138-0000-0000", "\\section{荣誉与奖项}");
     }
 
     @Test
