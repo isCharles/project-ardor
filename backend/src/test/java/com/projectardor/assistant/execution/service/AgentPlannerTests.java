@@ -77,6 +77,16 @@ class AgentPlannerTests {
                 """, Optional.empty()).rejection()).contains("verify.op");
     }
 
+    @Test void refusesAVerificationValueThatPersistenceWouldHaveToTruncate() {
+        String longValue = "x".repeat(201);
+        String steps = """
+                [{"intent":"读","doneWhen":"好","verify":{"tool":"list_interview_recaps","path":"$","op":"CONTAINS","value":"%s"},"tools":["list_interview_recaps"],"effect":"READ"},
+                 {"intent":"写","doneWhen":"好","verify":{"tool":"update_learning_plan","path":"$","op":"SUCCESS"},"tools":["update_learning_plan"],"effect":"WRITE"},
+                 {"intent":"看","doneWhen":"好","verify":{"tool":"check_calendar_conflict","path":"$","op":"MAX_ITEMS","value":0},"tools":["check_calendar_conflict"],"effect":"READ"}]
+                """.formatted(longValue);
+        assertThat(admit(steps, Optional.empty()).rejection()).contains("verify.value");
+    }
+
     @Test void refusesASecondPlanWhileOneIsRunningAndStopsAfterTheRevisionCap() {
         assertThat(admit(crossModuleSteps(), Optional.of(plan("RUNNING", 0,
                 step(0, AgentPlanStore.PENDING, List.of("list_interview_recaps"))))).rejection())
@@ -198,6 +208,30 @@ class AgentPlannerTests {
                 </untrusted_external_content>
                 """;
         assertThat(planner.attribute(running, "search_knowledge", true, envelope, Map.of()).verified()).isTrue();
+    }
+
+    @Test void successAcceptsAResourceLifecycleStatusWhenTheResourceWasReturned() {
+        AgentPlanStore.Plan task = plan("RUNNING", 0,
+                step(0, AgentPlanStore.PENDING, List.of("create_calendar_task"),
+                        verify("create_calendar_task", "$", "SUCCESS", null)));
+        assertThat(planner.attribute(task, "create_calendar_task", true,
+                "{\"id\":\"c1\",\"status\":\"TODO\"}", Map.of()).verified()).isTrue();
+
+        AgentPlanStore.Plan learning = plan("RUNNING", 0,
+                step(0, AgentPlanStore.PENDING, List.of("update_learning_plan"),
+                        verify("update_learning_plan", "$", "SUCCESS", null)));
+        assertThat(planner.attribute(learning, "update_learning_plan", true,
+                "{\"id\":\"p1\",\"status\":\"SCHEDULED\"}", Map.of()).verified()).isTrue();
+    }
+
+    @Test void anUnfinishedJobIsNotASuccessfulPrerequisite() {
+        AgentPlanStore.Plan running = plan("RUNNING", 0,
+                step(0, AgentPlanStore.PENDING, List.of("get_resume_analysis_status"),
+                        verify("get_resume_analysis_status", "$", "SUCCESS", null)));
+        assertThat(planner.attribute(running, "get_resume_analysis_status", true,
+                "{\"jobId\":\"j1\",\"resumeId\":\"r1\",\"status\":\"QUEUED\"}", Map.of()).failed()).isTrue();
+        assertThat(planner.attribute(running, "get_resume_analysis_status", true,
+                "{\"jobId\":\"j1\",\"resumeId\":\"r1\",\"status\":\"RUNNING\"}", Map.of()).failed()).isTrue();
     }
 
     @Test void aFailedJobStatusIsNotRescuedByItsJobAndResumeIds() {

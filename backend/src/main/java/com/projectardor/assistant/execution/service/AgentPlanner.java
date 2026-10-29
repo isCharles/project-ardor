@@ -41,10 +41,16 @@ public class AgentPlanner {
     static final int REVISION_CEILING = 2;
     static final int MODEL_CALL_CEILING = 12;
     private static final int TEXT_LIMIT = 200;
+    private static final int VERIFY_VALUE_LIMIT = 200;
     private static final Set<String> VERIFY_OPS =
             Set.of("MIN_ITEMS", "MAX_ITEMS", "AT_LEAST", "EQUALS", "CONTAINS", "HAS_ID", "SUCCESS");
     private static final Set<String> SUCCESS_STATUSES =
             Set.of("OK", "SUCCESS", "CREATED", "UPDATED", "COMPLETED", "DONE", "ACCEPTED");
+    /** Job execution states that are not a completed prerequisite. */
+    private static final Set<String> PENDING_STATUSES =
+            Set.of("QUEUED", "RUNNING", "PENDING", "PROCESSING");
+    private static final Set<String> FAILURE_STATUSES =
+            Set.of("FAILED", "ERROR", "TIMEOUT", "REJECTED", "DENIED", "NOT_FOUND", "UNAVAILABLE");
     /** Result markers that mean the tool did not accomplish anything, mirrored from the wrapper. */
     private static final Set<String> REFUSALS = Set.of(
             "PERMISSION_NOT_GRANTED", "TOOL_NOT_PERMITTED", "DUPLICATE_WRITE_BLOCKED", "PLAN_SCOPE_REFUSED",
@@ -168,6 +174,9 @@ public class AgentPlanner {
         boolean requiresValue = Set.of("MIN_ITEMS", "MAX_ITEMS", "AT_LEAST", "EQUALS", "CONTAINS").contains(op);
         if (requiresValue && (value == null || value.isBlank())) {
             throw new IllegalArgumentException("verify.op=" + op + " 需要 value");
+        }
+        if (value != null && value.length() > VERIFY_VALUE_LIMIT) {
+            throw new IllegalArgumentException("verify.value 不能超过 " + VERIFY_VALUE_LIMIT + " 字符");
         }
         if (Set.of("MIN_ITEMS", "MAX_ITEMS", "AT_LEAST").contains(op) && !value.matches("\\d+")) {
             throw new IllegalArgumentException("verify.op=" + op + " 的 value 必须是非负整数");
@@ -325,10 +334,14 @@ public class AgentPlanner {
         if (success != null && success.isBoolean() && !success.asBoolean()) return false;
         JsonNode status = node.get("status");
         if (status != null && !status.isNull()) {
-            // An explicit status must be a success status; FAILED/QUEUED/RUNNING must never fall
-            // through to the ID fallback just because the job also carries a jobId/resumeId.
-            return status.isTextual()
-                    && SUCCESS_STATUSES.contains(status.asText().toUpperCase(Locale.ROOT));
+            if (!status.isTextual()) return false;
+            String normalized = status.asText().toUpperCase(Locale.ROOT);
+            if (SUCCESS_STATUSES.contains(normalized)) return true;
+            // A failed or unfinished job must never fall through to the ID fallback just because
+            // it also carries a jobId/resumeId. Resource lifecycle states such as TODO/SCHEDULED
+            // are different: a returned resource with an ID is the successful write.
+            if (PENDING_STATUSES.contains(normalized) || FAILURE_STATUSES.contains(normalized)) return false;
+            return hasId(node);
         }
         if (success != null && success.isBoolean()) return true;
         return hasId(node);
