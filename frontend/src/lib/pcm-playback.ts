@@ -22,21 +22,24 @@ export class PcmPlayer {
   private context: AudioContext | null;
   private readonly sources = new Set<AudioBufferSourceNode>();
   private nextAt = 0;
+  private closed = false;
 
   constructor(context: AudioContext | null = null) {
     this.context = context;
   }
 
-  async resume(): Promise<AudioContext> {
+  async resume(): Promise<AudioContext | null> {
+    if (this.closed) return null;
     if (!this.context || this.context.state === "closed") {
       this.context = new AudioContext({ sampleRate: SAMPLE_RATE });
     }
     if (this.context.state === "suspended") await this.context.resume();
-    return this.context;
+    return this.closed ? null : this.context;
   }
 
   async play(base64: string): Promise<void> {
     const context = await this.resume();
+    if (!context || this.closed) return;
     const bytes = base64ToBytes(base64);
     const samples = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
     if (samples.length === 0) return;
@@ -67,6 +70,7 @@ export class PcmPlayer {
   }
 
   close(): void {
+    this.closed = true;
     this.clear();
     const context = this.context;
     this.context = null;
