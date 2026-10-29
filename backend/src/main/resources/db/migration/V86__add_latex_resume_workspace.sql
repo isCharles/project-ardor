@@ -22,7 +22,7 @@ CREATE TABLE latex_project_revisions (
     user_id UUID NOT NULL,
     revision_no INTEGER NOT NULL,
     files JSONB NOT NULL,
-    sha256 CHAR(64) NOT NULL,
+    sha256 VARCHAR(64) NOT NULL,
     message VARCHAR(240),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_latex_revisions_project_no UNIQUE (project_id, revision_no),
