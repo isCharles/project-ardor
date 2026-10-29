@@ -458,9 +458,9 @@ export default function LatexWorkspacePage() {
         </form>
       </section>
 
-      <aside aria-label={t("Resume preview", "简历预览")} className="flex w-full shrink-0 flex-col lg:w-[340px] xl:w-[380px]">
-        <section className="flex min-h-0 flex-1 flex-col rounded-3xl border border-stone-200/70 bg-white p-3">
-          <div className="flex items-center justify-between px-1 pb-2">
+      <aside aria-label={t("Resume preview", "简历预览")} className="latex-preview-aside flex w-full shrink-0 flex-col">
+        <section className="flex min-h-0 flex-1 flex-col rounded-3xl border border-stone-200/70 bg-white p-2">
+          <div className="flex items-center justify-between px-2 pb-2">
             <div className="flex items-baseline gap-2">
               <p className="text-[11px] uppercase tracking-[0.14em] text-stone-400">{frozen ? t("Final version", "定稿版本") : t("Editing", "编辑中")}</p>
               {frozen && <p className="text-sm font-semibold tabular-nums">v{snapshot.revisionNo}</p>}
@@ -474,10 +474,11 @@ export default function LatexWorkspacePage() {
               pageUrl={pageUrl}
               alt={t("Current resume", "当前简历")}
               className="h-full"
+              bodyClassName="bg-stone-100/70 p-2"
               errorAction={<a href={`/latex-api/${snapshot.projectId}?revision=${snapshot.revisionNo}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-medium text-white hover:bg-black"><ArrowUpRight className="size-4" />{t("Open PDF", "打开 PDF")}</a>}
             />
           </div>
-          <div className="flex items-center justify-between gap-2 px-1 pt-2 text-xs">
+          <div className="flex items-center justify-between gap-2 px-2 pt-2 text-xs">
             <div className="flex items-center gap-3">
               <button onClick={() => setPreviewReload((value) => value + 1)} className="inline-flex items-center gap-1 text-stone-500 hover:text-stone-800"><RefreshCw className="size-3" />{t("Refresh preview", "刷新预览")}</button>
               <a href={`/latex-api/${snapshot.projectId}?revision=${snapshot.revisionNo}`} target="_blank" rel="noreferrer" aria-label={t("Open PDF", "打开 PDF")} className="text-stone-400 hover:text-stone-700"><ArrowUpRight className="size-3.5" /></a>
