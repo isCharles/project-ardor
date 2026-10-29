@@ -131,7 +131,7 @@ class ModularAgentToolsTests {
         when(audit.startToolCall(any(), any(), any(), any(), any())).thenReturn(row);
         var executors = wrapped(bound, null, audit);
         assertThat(execute(executors, "research_knowledge_from_web", "{\"query\":\"Redis\"}"))
-                .contains("untrusted_external_content");
+                .contains("untrusted_external_content").contains("\"imported\"");
         assertThat(execute(executors, "research_knowledge_from_web", "{\"query\":\"Redis\"}"))
                 .contains("DUPLICATE_WRITE_BLOCKED");
         verify(knowledge, times(1)).researchFromWeb(owner, "Redis");
