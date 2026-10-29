@@ -56,6 +56,39 @@ for (const path of [`/api/resumes/${first.id}/analysis?analysisId=${report.id}`,
   await foreign.request(path, { expected: 404 });
 }
 await foreign.request(`/api/resumes/${first.id}`, { method: "DELETE", expected: 404 });
+
+// LaTeX workspace: revisions append, a stale base conflicts instead of overwriting,
+// and a frozen revision cannot be rewritten by a later edit.
+const project = await owner.request("/api/latex/projects", { method: "POST", expected: 201,
+  body: { title: "Synthetic LaTeX workspace" } });
+assert.equal(project.mainFile, "main.tex");
+assert.equal(project.revisionNo, 1);
+assert.ok(project.files["main.tex"].includes("documentclass"), "a new workspace starts from the template");
+assert.equal(project.frozenRevision, null);
+const projects = await owner.request("/api/latex/projects");
+assert.ok(projects.some(item => item.id === project.projectId));
+const edited = { ...project.files, "main.tex": `${project.files["main.tex"]}
+% synthetic edit
+` };
+const secondRevision = await owner.request(`/api/latex/projects/${project.projectId}/revisions`, { method: "POST", expected: 201,
+  body: { baseRevision: 1, files: edited, message: "synthetic edit" } });
+assert.equal(secondRevision.revisionNo, 2);
+await owner.request(`/api/latex/projects/${project.projectId}/revisions`, { method: "POST", expected: 409,
+  body: { baseRevision: 1, files: edited, message: "stale base" } });
+await owner.request(`/api/latex/projects/${project.projectId}/revisions`, { method: "POST", expected: 400,
+  body: { baseRevision: 2, files: { ...edited, "../escape.tex": "x" }, message: "traversal" } });
+assert.equal((await owner.request(`/api/latex/projects/${project.projectId}?revision=1`)).files["main.tex"], project.files["main.tex"],
+  "an old revision is still readable after a newer one lands");
+const history = await owner.request(`/api/latex/projects/${project.projectId}/revisions`);
+assert.deepEqual(history.map(item => item.revisionNo), [2, 1]);
+const frozen = await owner.request(`/api/latex/projects/${project.projectId}/freeze`, { method: "POST", expected: 200,
+  body: { revisionNo: 2 } });
+assert.equal(frozen.frozenRevision, 2);
+assert.equal((await owner.request(`/api/latex/projects/${project.projectId}/freeze`, { method: "POST", expected: 200,
+  body: { revisionNo: 2 } })).frozenRevision, 2, "freezing the same revision is idempotent");
+await foreign.request(`/api/latex/projects/${project.projectId}`, { expected: 404 });
+await foreign.request(`/api/latex/projects/${project.projectId}/revisions`, { expected: 404 });
+await foreign.request(`/api/latex/projects/${project.projectId}/freeze`, { method: "POST", expected: 404, body: { revisionNo: 2 } });
 await owner.request(`/api/resumes/${first.id}/display-analysis`, { method: "POST", expected: 204, body: { analysisId: report.id } });
 await foreign.request(`/api/resumes/${first.id}/display-analysis`, { method: "POST", expected: 404, body: { analysisId: report.id } });
 await owner.request(`/api/resumes/${second.id}/primary`, { method: "POST", expected: 204 });
