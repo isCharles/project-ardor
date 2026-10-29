@@ -267,6 +267,20 @@ public class LatexWorkspaceService {
                 .archive();
     }
 
+    @Transactional(readOnly = true)
+    public List<ProjectView> archived(UUID userId) {
+        return projects.findByUserIdAndArchivedAtIsNotNullOrderByUpdatedAtDesc(userId).stream()
+                .map(ProjectView::of).toList();
+    }
+
+    @Transactional
+    public ProjectView restore(UUID userId, UUID projectId) {
+        LatexProject project = projects.findByIdAndUserId(projectId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("简历不存在"));
+        project.restore();
+        return ProjectView.of(project);
+    }
+
     @Transactional
     public ProjectView rename(UUID userId, UUID projectId, String title) {
         LatexProject project = owned(userId, projectId);

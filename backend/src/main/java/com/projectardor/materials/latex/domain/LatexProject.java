@@ -65,6 +65,12 @@ public class LatexProject {
         updatedAt = archivedAt;
     }
 
+    public void restore() {
+        if (archivedAt == null) return;
+        archivedAt = null;
+        updatedAt = Instant.now();
+    }
+
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public String getTitle() { return title; }

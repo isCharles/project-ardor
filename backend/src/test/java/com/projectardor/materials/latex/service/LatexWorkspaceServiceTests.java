@@ -142,6 +142,33 @@ class LatexWorkspaceServiceTests {
     }
 
     @Test
+    void restoringBringsAnArchivedWorkspaceBackAndIsIdempotent() {
+        UUID userId = UUID.randomUUID();
+        LatexProject project = ownedProject(userId, 2);
+        service.archive(userId, project.getId());
+
+        service.restore(userId, project.getId());
+        service.restore(userId, project.getId());
+
+        assertThat(project.isArchived()).isFalse();
+        assertThat(service.rename(userId, project.getId(), "恢复后的简历").title()).isEqualTo("恢复后的简历");
+    }
+
+    @Test
+    void archivedListUsesTheArchivedFinder() {
+        UUID userId = UUID.randomUUID();
+        LatexProject project = ownedProject(userId, 2);
+        project.archive();
+        when(projects.findByUserIdAndArchivedAtIsNotNullOrderByUpdatedAtDesc(userId))
+                .thenReturn(List.of(project));
+
+        assertThat(service.archived(userId)).extracting(LatexWorkspaceService.ProjectView::id)
+                .containsExactly(project.getId());
+
+        verify(projects).findByUserIdAndArchivedAtIsNotNullOrderByUpdatedAtDesc(userId);
+    }
+
+    @Test
     void listOnlyAsksForActiveWorkspaces() {
         UUID userId = UUID.randomUUID();
         when(projects.findByUserIdAndArchivedAtIsNullOrderByUpdatedAtDesc(userId)).thenReturn(List.of());

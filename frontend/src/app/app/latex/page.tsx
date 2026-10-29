@@ -1,8 +1,9 @@
 "use client";
 
-import { Archive, ArrowUp, ArrowUpRight, FileText, Lock, Pencil, Plus, RefreshCw, Square } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowUp, ArrowUpRight, FileText, Lock, Pencil, Plus, RefreshCw, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AppDialog } from "@/components/ui/app-dialog";
 import { MarkdownContent } from "@/components/ardor/markdown-content";
 import { ModelSettingsDialog, type ModelSettingsUpdate } from "@/components/ardor/model-settings-dialog";
 import { OperationPermissions } from "@/components/ardor/operation-permissions";
@@ -47,7 +48,7 @@ function storeFrozen(projectId: string, revision: number, name: string) {
 }
 
 export default function LatexWorkspacePage() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -58,6 +59,10 @@ export default function LatexWorkspacePage() {
   const [renameDraft, setRenameDraft] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelChoice, setModelChoice] = useState("PRIMARY");
   const [reasoningDepth, setReasoningDepth] = useState<"AUTO" | "QUICK" | "STANDARD" | "DEEP">("AUTO");
@@ -265,6 +270,38 @@ export default function LatexWorkspacePage() {
     }
   }
 
+  async function openArchived() {
+    setArchivedOpen(true);
+    setArchivedLoading(true);
+    setError("");
+    try {
+      setArchivedProjects(await api<Project[]>("/api/latex/projects/archived"));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("Could not load archived resumes", "无法读取已归档简历"));
+    } finally {
+      setArchivedLoading(false);
+    }
+  }
+
+  async function restoreProject(project: Project) {
+    if (restoringId) return;
+    setRestoringId(project.id);
+    setError("");
+    try {
+      await api<Project>(`/api/latex/projects/${project.id}/restore`, { method: "POST" });
+      setArchivedOpen(false);
+      const list = await loadProjects(project.id);
+      const restored = list.find((item) => item.id === project.id);
+      if (restored) await openProject(restored);
+      setArchivedProjects((current) => current.filter((item) => item.id !== project.id));
+      setNotice(t("Restored. It is back in the list.", "已恢复，重新出现在列表里。"));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("Could not restore this resume", "恢复失败"));
+    } finally {
+      setRestoringId(null);
+    }
+  }
+
   async function freeze() {
     if (!snapshot || freezing) return;
     setFreezing(true);
@@ -438,6 +475,7 @@ export default function LatexWorkspacePage() {
         {projects.length > 1 && <select aria-label={t("Switch resume", "切换简历")} value={projectId ?? ""} onChange={(event) => { const next = projects.find((item) => item.id === event.target.value); if (next) { setProjectId(next.id); void openProject(next); } }} className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs outline-none">
           {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
         </select>}
+        <button onClick={() => void openArchived()} aria-label={t("Archived resumes", "已归档简历")} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 hover:bg-stone-50"><ArchiveRestore className="size-3.5" />{t("Archived", "已归档")}</button>
         {snapshot && <button onClick={() => void archiveProject()} disabled={archiving} aria-label={t("Archive resume", "归档简历")} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-700 hover:bg-stone-50 disabled:opacity-40"><Archive className="size-3.5" />{t("Archive", "归档")}</button>}
         <button onClick={() => void createProject()} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-700 hover:bg-stone-50"><Plus className="size-3.5" />{t("New", "新建")}</button>
       </div>
@@ -521,6 +559,16 @@ export default function LatexWorkspacePage() {
         </section>
       </aside>
     </div>}
+    {archivedOpen && <AppDialog title={t("Archived resumes", "已归档简历")} onClose={() => setArchivedOpen(false)}>
+      <div className="space-y-2">
+        {archivedLoading ? <p className="py-6 text-center text-sm text-stone-400">{t("Opening archived resumes…", "正在读取已归档简历…")}</p>
+          : archivedProjects.length === 0 ? <p className="py-6 text-center text-sm text-stone-500">{t("No archived resumes.", "没有已归档的简历。")}</p>
+            : archivedProjects.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-stone-200/70 px-4 py-3">
+              <div className="min-w-0"><p className="truncate text-sm font-medium">{item.title}</p><p className="mt-0.5 text-[11px] text-stone-400">{new Date(item.updatedAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN")}</p></div>
+              <button onClick={() => void restoreProject(item)} disabled={restoringId !== null} className="shrink-0 rounded-full bg-[#1d1d1f] px-3 py-1.5 text-xs text-white hover:bg-black disabled:opacity-40">{restoringId === item.id ? "…" : t("Restore", "恢复")}</button>
+            </div>)}
+      </div>
+    </AppDialog>}
     {modelSettingsOpen && <ModelSettingsDialog models={modelOptions} onClose={() => setModelSettingsOpen(false)} onSave={saveModelSettings} />}
   </main>;
 }
