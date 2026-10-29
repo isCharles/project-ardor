@@ -34,14 +34,21 @@ class AgentPlanFencePostgresTests {
 
     private static final String GOAL = "结合面试薄弱点调整学习计划并排入日历";
     private static final String STEPS = """
-            [{"intent":"读出最近面试的薄弱点","doneWhen":"已得到至少一条薄弱点结论","tools":["list_interview_recaps"],"effect":"READ"},
-             {"intent":"按薄弱点调整学习安排","doneWhen":"学习计划已更新","tools":["update_learning_plan"],"effect":"WRITE"},
-             {"intent":"把复习安排进日历","doneWhen":"日程已创建","tools":["create_calendar_task"],"effect":"WRITE"}]
+            [{"intent":"读出最近面试的薄弱点","doneWhen":"已得到至少一条薄弱点结论","verify":{"tool":"list_interview_recaps","path":"$","op":"MIN_ITEMS","value":1},"tools":["list_interview_recaps"],"effect":"READ"},
+             {"intent":"按薄弱点调整学习安排","doneWhen":"学习计划已更新","verify":{"tool":"update_learning_plan","path":"$","op":"SUCCESS"},"tools":["update_learning_plan"],"effect":"WRITE"},
+             {"intent":"把复习安排进日历","doneWhen":"日程已创建","verify":{"tool":"create_calendar_task","path":"$","op":"SUCCESS"},"tools":["create_calendar_task"],"effect":"WRITE"}]
             """;
 
     static class ProbeTools {
+        final AtomicInteger recaps = new AtomicInteger();
         final AtomicInteger learning = new AtomicInteger();
         final AtomicInteger offPlan = new AtomicInteger();
+
+        @Tool(name = "list_interview_recaps", value = "列出面经")
+        public java.util.List<java.util.Map<String, Object>> listInterviewRecaps() {
+            recaps.incrementAndGet();
+            return java.util.List.of(java.util.Map.of("recapId", "r1", "weakQuestionCount", 1));
+        }
 
         @Tool(name = "update_learning_plan", value = "调整学习计划")
         public String updateLearningPlan(@P("说明") String note) {
@@ -85,6 +92,7 @@ class AgentPlanFencePostgresTests {
 
             var approvals = mock(AgentToolApprovals.class);
             when(approvals.canPropose(eq(user), any())).thenReturn(true);
+            when(approvals.canRead(eq(user), any())).thenReturn(true);
             var permissions = mock(AgentPermissionGrants.class);
             when(permissions.autoApproves(eq(user), anyString())).thenReturn(true);
             when(permissions.requiresConfirmationForBatch(eq(user), anyInt())).thenReturn(false);
@@ -94,6 +102,9 @@ class AgentPlanFencePostgresTests {
                             GOAL, permissions, null, conversation, false, tracer, planning)
                     .forEach((specification, executor) -> byName.put(specification.name(), executor));
 
+            assertThat(byName.get("list_interview_recaps").execute(request("list_interview_recaps"), null))
+                    .contains("recapId");
+            assertThat(tools.recaps).hasValue(1);
             byName.get("update_learning_plan").execute(request("update_learning_plan"), null);
             assertThat(tools.learning).hasValue(1);
             assertThat(byName.get("update_memory").execute(request("update_memory"), null)).contains("PLAN_SCOPE_REFUSED");
@@ -101,13 +112,14 @@ class AgentPlanFencePostgresTests {
             planning.finish("COMPLETED");
 
             List<String> stepStatuses = jdbc.queryForList("SELECT status FROM agent_plan_steps ORDER BY step_index", String.class);
-            assertThat(stepStatuses).as("only the step the tool call really satisfied is VERIFIED").containsExactly("SKIPPED", "VERIFIED", "SKIPPED");
+            assertThat(stepStatuses).as("the current step had to finish before the next one could write")
+                    .containsExactly("VERIFIED", "VERIFIED", "SKIPPED");
             assertThat(jdbc.queryForObject("SELECT status FROM agent_plans WHERE id = (SELECT id FROM agent_plans LIMIT 1)",
                     String.class)).isEqualTo("FAILED");
             var kinds = jdbc.queryForList("SELECT kind FROM agent_trace_spans WHERE run_id = ?", String.class, run);
             assertThat(kinds).contains("PLAN", "PLAN_STEP");
             var planSpan = traces.find(user, run).stream().filter(span -> "PLAN".equals(span.kind())).findFirst().orElseThrow();
-            assertThat(planSpan.attributes()).containsEntry("stepCount", 3).containsEntry("verifiedSteps", 1);
+            assertThat(planSpan.attributes()).containsEntry("stepCount", 3).containsEntry("verifiedSteps", 2);
             assertThat(planSpan.name()).isEqualTo("agent.plan");
             var stepSpan = traces.find(user, run).stream().filter(span -> "PLAN_STEP".equals(span.kind())).findFirst().orElseThrow();
             assertThat(stepSpan.attributes()).containsEntry("verified", true);
@@ -171,7 +183,8 @@ class AgentPlanFencePostgresTests {
     }
 
     private static ToolExecutionRequest request(String tool) {
-        return ToolExecutionRequest.builder().id("call-" + tool).name(tool)
-                .arguments("{\"note\":\"weakness\",\"content\":\"别的\",\"title\":\"复习\"}").build();
+        String arguments = "list_interview_recaps".equals(tool) ? "{}"
+                : "{\"note\":\"weakness\",\"content\":\"别的\",\"title\":\"复习\"}";
+        return ToolExecutionRequest.builder().id("call-" + tool).name(tool).arguments(arguments).build();
     }
 }

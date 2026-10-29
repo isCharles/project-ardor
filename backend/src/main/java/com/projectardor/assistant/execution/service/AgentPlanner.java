@@ -1,8 +1,15 @@
 package com.projectardor.assistant.execution.service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -34,9 +41,14 @@ public class AgentPlanner {
     static final int REVISION_CEILING = 2;
     static final int MODEL_CALL_CEILING = 12;
     private static final int TEXT_LIMIT = 200;
+    private static final Set<String> VERIFY_OPS =
+            Set.of("MIN_ITEMS", "MAX_ITEMS", "AT_LEAST", "EQUALS", "CONTAINS", "HAS_ID", "SUCCESS");
+    private static final Set<String> SUCCESS_STATUSES =
+            Set.of("OK", "SUCCESS", "CREATED", "UPDATED", "COMPLETED", "DONE", "ACCEPTED");
     /** Result markers that mean the tool did not accomplish anything, mirrored from the wrapper. */
     private static final Set<String> REFUSALS = Set.of(
-            "PERMISSION_NOT_GRANTED", "TOOL_NOT_PERMITTED", "DUPLICATE_WRITE_BLOCKED", "PLAN_SCOPE_REFUSED");
+            "PERMISSION_NOT_GRANTED", "TOOL_NOT_PERMITTED", "DUPLICATE_WRITE_BLOCKED", "PLAN_SCOPE_REFUSED",
+            "PLAN_REPLAN_REQUIRED");
 
     private final ObjectMapper objectMapper;
 
@@ -54,17 +66,25 @@ public class AgentPlanner {
         }
     }
 
-    /** What the wrapper should do after one recorded tool outcome for the active plan. */
+    /**
+     * What the wrapper should do after one recorded tool outcome for the active plan. Results are the
+     * actual tool payloads seen for this step; evidence is a verifier summary, never the model's
+     * natural-language doneWhen.
+     */
     public record StepOutcome(UUID stepId, int stepIndex, boolean verified, boolean failed,
-            Set<String> toolsDone, String guidance) {
-        static final StepOutcome IGNORED = new StepOutcome(null, -1, false, false, Set.of(), null);
+            Map<String, String> results, String evidence, String guidance) {
+        static final StepOutcome IGNORED = new StepOutcome(null, -1, false, false, Map.of(), null, null);
+
+        public Set<String> toolsDone() {
+            return results.keySet();
+        }
     }
 
     public Admission admit(UUID userId, UUID requestId, UUID conversationId, String goal, String stepsJson,
             Optional<AgentPlanStore.Plan> existing) {
         if (goal == null || goal.isBlank()) return Admission.rejected("总目标不能为空");
-        if (existing.isPresent() && existing.get().active()) {
-            return Admission.rejected("本轮已有进行中的计划；请按当前计划的剩余步骤继续，或先向用户说明进展");
+        if (existing.isPresent() && existing.get().active() && !existing.get().hasFailedStep()) {
+            return Admission.rejected("本轮已有进行中的计划；只有当前步骤执行失败后才可重规划，否则请按剩余步骤继续");
         }
         if (existing.isPresent() && existing.get().revision() >= REVISION_CEILING) {
             return Admission.rejected("重规划次数已达上限（" + REVISION_CEILING + " 次）；请停止重排，向用户说明未完成的部分和原因");
@@ -114,51 +134,242 @@ public class AgentPlanner {
             if (doneWhen.isBlank() || doneWhen.length() > TEXT_LIMIT) throw new IllegalArgumentException("每一步都要给出完成条件 doneWhen");
             if (tools.isEmpty() || tools.size() > MAX_TOOLS_PER_STEP) throw new IllegalArgumentException("每一步需要 1 到 " + MAX_TOOLS_PER_STEP + " 个已登记工具");
             if (!"READ".equals(effect) && !"WRITE".equals(effect)) throw new IllegalArgumentException("effect 只能是 READ 或 WRITE");
-            drafts.add(new AgentPlanStore.StepDraft(intent, doneWhen, List.copyOf(tools), effect));
+            AgentPlanStore.Verification verification = parseVerification(step, tools);
+            drafts.add(new AgentPlanStore.StepDraft(intent, doneWhen, verification, List.copyOf(tools), effect));
         }
         return List.copyOf(drafts);
     }
 
-    /** A tool the model wants to call now, judged against the steps that are still open. */
-    public Optional<String> refusal(AgentPlanStore.Plan plan, String tool) {
-        if (plan == null) return Optional.empty();
-        if (plan.openToolScope().contains(tool)) return Optional.empty();
-        return Optional.of("{\"status\":\"PLAN_SCOPE_REFUSED\",\"retryable\":false,"
-                + "\"message\":\"该工具不在当前计划未完成步骤的范围内；先完成当前步骤，或向用户说明需要调整计划，不要改做别的写入。\"}");
+    /**
+     * A step is only accepted with a predicate that can be checked against a real tool result. The
+     * doneWhen text remains a human description and is never used as proof.
+     */
+    private AgentPlanStore.Verification parseVerification(JsonNode step, List<String> tools) {
+        JsonNode verify = step.path("verify");
+        if (!verify.isObject()) {
+            throw new IllegalArgumentException("每一步都要给出可核验的 verify 对象，例如 "
+                    + "{\"tool\":\"list_interview_recaps\",\"path\":\"$\",\"op\":\"MIN_ITEMS\",\"value\":1}");
+        }
+        String tool = text(verify, "tool");
+        String path = text(verify, "path");
+        if (path.isBlank()) path = "$";
+        String op = text(verify, "op").toUpperCase(Locale.ROOT);
+        if (tool.isBlank() || !tools.contains(tool)) {
+            throw new IllegalArgumentException("verify.tool 必须是本步骤 tools 中的一个：" + tool);
+        }
+        if (ToolCatalog.describe(tool) == null) throw new IllegalArgumentException("未登记的工具：" + tool);
+        if (!VERIFY_OPS.contains(op)) {
+            throw new IllegalArgumentException("verify.op 只支持 " + String.join("/", VERIFY_OPS));
+        }
+        if (path.length() > 200) throw new IllegalArgumentException("verify.path 过长");
+        JsonNode valueNode = verify.path("value");
+        String value = valueNode.isNumber() || valueNode.isBoolean() || valueNode.isTextual()
+                ? valueNode.asText().strip() : null;
+        boolean requiresValue = Set.of("MIN_ITEMS", "MAX_ITEMS", "AT_LEAST", "EQUALS", "CONTAINS").contains(op);
+        if (requiresValue && (value == null || value.isBlank())) {
+            throw new IllegalArgumentException("verify.op=" + op + " 需要 value");
+        }
+        if (Set.of("MIN_ITEMS", "MAX_ITEMS", "AT_LEAST").contains(op) && !value.matches("\\d+")) {
+            throw new IllegalArgumentException("verify.op=" + op + " 的 value 必须是非负整数");
+        }
+        return new AgentPlanStore.Verification(tool, path, op, value);
     }
 
     /**
-     * Attributes one recorded tool outcome to the earliest open step that asked for that tool.
-     * A step is verified only once every tool it declared has run successfully, so a read cannot
-     * stand in for the write it was paired with; a refused or unexecuted call fails the step.
+     * A write the model wants to call now, judged against the current step only. Later steps wait:
+     * a reschedule write cannot run before the conflict check that was declared first.
+     */
+    public Optional<String> refusal(AgentPlanStore.Plan plan, String tool) {
+        if (plan == null || !plan.active()) return Optional.empty();
+        Optional<AgentPlanStore.Step> current = plan.currentStep();
+        if (current.isEmpty()) {
+            return Optional.of(refusalJson("PLAN_SCOPE_REFUSED",
+                    "计划的所有步骤都已完成，不能再发起新的写入；请向用户说明结果并结束本轮。"));
+        }
+        AgentPlanStore.Step step = current.get();
+        if (step.failed()) {
+            return Optional.of(refusalJson("PLAN_REPLAN_REQUIRED", "步骤 " + (step.index() + 1) + "「"
+                    + step.intent() + "」已经失败；后续写入不能继续。请先调用 propose_plan 提交修订计划，再执行新的写入。"));
+        }
+        if (step.tools().contains(tool)) return Optional.empty();
+        return Optional.of(refusalJson("PLAN_SCOPE_REFUSED", "该工具属于后续步骤。当前只能执行第 "
+                + (step.index() + 1) + " 步「" + step.intent()
+                + "」声明的工具；先完成当前步骤，不要提前执行后续写入。"));
+    }
+
+    private String refusalJson(String status, String message) {
+        try {
+            return objectMapper.writeValueAsString(Map.of("status", status, "retryable", false, "message", message));
+        } catch (RuntimeException failure) {
+            return "{\"status\":\"" + status + "\",\"retryable\":false}";
+        }
+    }
+
+    /**
+     * Attributes one recorded tool outcome to the current step. A step is verified only after every
+     * declared tool ran and its verify predicate holds against the real result; a refused,
+     * unexecuted, empty, or structurally unverifiable result fails the step instead.
      *
-     * @param toolsDoneThisRun the tools this run already completed for that step, without this call
+     * @param resultsThisRun the tool results this run already recorded for that step, without this call
      */
     public StepOutcome attribute(AgentPlanStore.Plan plan, String tool, boolean executed, String result,
-            Set<String> toolsDoneThisRun) {
-        if (plan == null) return StepOutcome.IGNORED;
-        Optional<AgentPlanStore.Step> match = plan.steps().stream()
-                .filter(step -> step.open() && step.tools().contains(tool))
-                .findFirst();
-        if (match.isEmpty()) return StepOutcome.IGNORED;
-        AgentPlanStore.Step step = match.get();
+            Map<String, String> resultsThisRun) {
+        if (plan == null || !plan.active()) return StepOutcome.IGNORED;
+        Optional<AgentPlanStore.Step> current = plan.currentStep();
+        if (current.isEmpty()) return StepOutcome.IGNORED;
+        AgentPlanStore.Step step = current.get();
+        if (step.failed() || !step.tools().contains(tool)) return StepOutcome.IGNORED;
+        Map<String, String> results = new LinkedHashMap<>(resultsThisRun);
         boolean refused = executed && result != null && REFUSALS.stream().anyMatch(result::contains);
-        if (!executed || refused || result == null) {
-            return new StepOutcome(step.id(), step.index(), false, true, toolsDoneThisRun,
+        if (!executed || refused || result == null || result.isBlank()) {
+            return new StepOutcome(step.id(), step.index(), false, true, Map.copyOf(results), null,
                     "步骤 " + (step.index() + 1) + "「" + step.intent() + "」未能完成："
                             + (refused ? "本次写入被拒绝" : "工具调用未执行或未返回结果")
-                            + "。请如实说明未完成，不要改口声称成功。");
+                            + "。请如实说明未完成，不要改口声称成功；需要时重规划。");
         }
-        Set<String> done = new java.util.LinkedHashSet<>(toolsDoneThisRun);
-        done.add(tool);
-        List<String> missing = step.tools().stream().filter(name -> !done.contains(name)).toList();
+        results.put(tool, result);
+        List<String> missing = step.tools().stream().filter(name -> !results.containsKey(name)).toList();
         if (!missing.isEmpty()) {
-            return new StepOutcome(step.id(), step.index(), false, false, done,
+            return new StepOutcome(step.id(), step.index(), false, false, Map.copyOf(results), null,
                     "步骤 " + (step.index() + 1) + "「" + step.intent() + "」已记录 " + tool
                             + "，还差：" + String.join("、", missing) + "。继续完成这些动作后该步骤才算核验通过。");
         }
-        return new StepOutcome(step.id(), step.index(), true, false, done,
-                "步骤 " + (step.index() + 1) + "「" + step.intent() + "」已按工具执行结果核验通过，请继续下一步。");
+        VerificationResult verification = verify(step, results);
+        if (!verification.passed()) {
+            return new StepOutcome(step.id(), step.index(), false, true, Map.copyOf(results),
+                    verification.evidence(),
+                    "步骤 " + (step.index() + 1) + "「" + step.intent() + "」的完成条件未被工具结果证实（"
+                            + verification.reason() + "）。不要声称完成；请调用 propose_plan 重规划，或向用户说明未完成。");
+        }
+        return new StepOutcome(step.id(), step.index(), true, false, Map.copyOf(results),
+                verification.evidence(),
+                "步骤 " + (step.index() + 1) + "「" + step.intent() + "」已按工具结果核验通过，请继续下一步。");
+    }
+
+    private record VerificationResult(boolean passed, String evidence, String reason) {
+    }
+
+    private VerificationResult verify(AgentPlanStore.Step step, Map<String, String> results) {
+        AgentPlanStore.Verification verification = step.verification();
+        if (verification == null) {
+            return new VerificationResult(false, null, "该步骤没有声明可核验的 verify");
+        }
+        String raw = results.get(verification.tool());
+        if (raw == null) {
+            return new VerificationResult(false, null, "缺少核验工具 " + verification.tool() + " 的结果");
+        }
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(raw);
+        } catch (RuntimeException failure) {
+            return new VerificationResult(false, null, "核验工具返回的不是可解析的 JSON");
+        }
+        JsonNode node = at(root, verification.path());
+        boolean passed = switch (verification.op()) {
+            case "MIN_ITEMS" -> node != null && node.isArray() && longValue(verification.value()) >= 0
+                    && node.size() >= longValue(verification.value());
+            case "MAX_ITEMS" -> node != null && node.isArray() && longValue(verification.value()) >= 0
+                    && node.size() <= longValue(verification.value());
+            case "AT_LEAST" -> node != null && node.isNumber() && longValue(verification.value()) >= 0
+                    && node.asLong() >= longValue(verification.value());
+            case "EQUALS" -> node != null && node.asText().equals(verification.value());
+            case "CONTAINS" -> contains(node, verification.value());
+            case "HAS_ID" -> node != null && node.isObject() && hasId(node);
+            case "SUCCESS" -> success(node);
+            default -> false;
+        };
+        String evidence = "verify=" + verification.op() + " tool=" + verification.tool()
+                + " path=" + verification.path() + " observed=" + summarize(node)
+                + " sha256=" + sha(raw);
+        return new VerificationResult(passed, evidence, passed ? null : "观测值 " + summarize(node) + " 不满足条件");
+    }
+
+    private static long longValue(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException failure) {
+            return -1;
+        }
+    }
+
+    private static boolean contains(JsonNode node, String value) {
+        if (node == null || value == null) return false;
+        if (node.isArray()) {
+            for (JsonNode item : node) if (item.asText().contains(value)) return true;
+            return false;
+        }
+        return node.isValueNode() && node.asText().contains(value);
+    }
+
+    private static boolean hasId(JsonNode node) {
+        for (Map.Entry<String, JsonNode> field : node.properties()) {
+            if (("id".equals(field.getKey()) || field.getKey().endsWith("Id"))
+                    && field.getValue() != null && !field.getValue().isNull()
+                    && !field.getValue().asText().isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean success(JsonNode node) {
+        if (node == null || !node.isObject()) return false;
+        JsonNode error = node.get("error");
+        if (error != null && !error.isNull() && !error.asText().isBlank()) return false;
+        JsonNode success = node.get("success");
+        if (success != null && success.isBoolean()) return success.asBoolean();
+        JsonNode status = node.get("status");
+        if (status != null && status.isTextual()
+                && SUCCESS_STATUSES.contains(status.asText().toUpperCase(Locale.ROOT))) {
+            return true;
+        }
+        return hasId(node);
+    }
+
+    /** Supports $, $.field, $[0] and $.items[0].field for verifiers; anything else is unresolved. */
+    private static JsonNode at(JsonNode root, String path) {
+        if (path == null || path.isBlank() || "$".equals(path.strip())) return root;
+        String value = path.strip();
+        if (value.startsWith("$")) value = value.substring(1);
+        JsonNode current = root;
+        int index = 0;
+        while (index < value.length() && current != null) {
+            char character = value.charAt(index);
+            if (character == '.') {
+                int start = ++index;
+                while (index < value.length() && value.charAt(index) != '.' && value.charAt(index) != '[') index++;
+                if (start == index) return null;
+                current = current.get(value.substring(start, index));
+            } else if (character == '[') {
+                int end = value.indexOf(']', index);
+                if (end < 0) return null;
+                String number = value.substring(index + 1, end).strip();
+                if (!number.matches("\\d+")) return null;
+                current = current.get(Integer.parseInt(number));
+                index = end + 1;
+            } else {
+                return null;
+            }
+        }
+        return current;
+    }
+
+    private static String summarize(JsonNode node) {
+        if (node == null) return "missing";
+        if (node.isArray()) return "array(" + node.size() + ")";
+        if (node.isObject()) return "object(" + node.size() + " fields)";
+        // Do not copy user content into trace evidence; length and scalar values are enough to debug.
+        if (node.isTextual()) return "text(" + node.asText().length() + ")";
+        return node.asText();
+    }
+
+    private static String sha(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8))).substring(0, 16);
+        } catch (NoSuchAlgorithmException failure) {
+            throw new IllegalStateException(failure);
+        }
     }
 
     /** The three situations that legitimately justify a new plan; anything else must not re-plan. */

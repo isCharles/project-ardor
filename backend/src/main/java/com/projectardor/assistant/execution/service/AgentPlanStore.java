@@ -35,7 +35,8 @@ public class AgentPlanStore {
             FROM agent_plans WHERE id = ? AND user_id = ?
             """;
     private static final String STEP_SELECT = """
-            SELECT id, step_index, intent, done_when, tools, effect, status, logical_action_id, evidence
+            SELECT id, step_index, intent, done_when, verify_tool, verify_path, verify_op, verify_value,
+                   tools, effect, status, logical_action_id, evidence
             FROM agent_plan_steps WHERE plan_id = ? AND user_id = ? ORDER BY step_index
             """;
 
@@ -45,14 +46,23 @@ public class AgentPlanStore {
         this.jdbc = jdbc;
     }
 
-    public record StepDraft(String intent, String doneWhen, List<String> tools, String effect) {
+    /** A machine-checkable claim over the actual result of one tool in the same step. */
+    public record Verification(String tool, String path, String op, String value) {
     }
 
-    public record Step(UUID id, int index, String intent, String doneWhen, List<String> tools, String effect,
-            String status, UUID logicalActionId, String evidence) {
+    public record StepDraft(String intent, String doneWhen, Verification verification, List<String> tools,
+            String effect) {
+    }
+
+    public record Step(UUID id, int index, String intent, String doneWhen, Verification verification,
+            List<String> tools, String effect, String status, UUID logicalActionId, String evidence) {
 
         public boolean verified() {
             return VERIFIED.equals(status);
+        }
+
+        public boolean failed() {
+            return FAILED.equals(status);
         }
 
         public boolean open() {
@@ -71,18 +81,48 @@ public class AgentPlanStore {
             return (int) steps.stream().filter(Step::verified).count();
         }
 
-        public Optional<Step> nextOpenStep() {
-            return steps.stream().filter(Step::open).findFirst();
+        public boolean hasFailedStep() {
+            return steps.stream().anyMatch(Step::failed);
         }
 
-        /** Only the still-open steps may grant tools; a verified step's tools are no longer in scope. */
-        public List<String> openToolScope() {
-            return steps.stream().filter(Step::open).flatMap(step -> step.tools().stream()).distinct().toList();
+        /**
+         * The first step that has not been verified or skipped. A failed step stays current so later
+         * steps cannot quietly run past it; replanning is the only way forward.
+         */
+        public Optional<Step> currentStep() {
+            return steps.stream()
+                    .filter(step -> !VERIFIED.equals(step.status()) && !SKIPPED.equals(step.status()))
+                    .findFirst();
+        }
+
+        /** Only the current step may grant a write; later steps wait for it to be verified. */
+        public List<String> currentToolScope() {
+            return currentStep().filter(step -> !step.failed()).map(Step::tools).orElse(List.of());
         }
     }
 
     @Transactional
     public UUID create(UUID userId, UUID requestId, UUID conversationId, String goal, int revision,
+            int modelCallCeiling, List<StepDraft> drafts) {
+        return insertPlan(userId, requestId, conversationId, goal, revision, modelCallCeiling, drafts);
+    }
+
+    /**
+     * Replaces an active plan whose current step failed. The old verified steps stay as facts, its
+     * unreached steps become SKIPPED, and the new revision is created in the same transaction so a
+     * half-superseded run can never leave two active plans.
+     */
+    @Transactional
+    public UUID createRevision(UUID userId, UUID requestId, UUID conversationId, String goal, int revision,
+            int modelCallCeiling, List<StepDraft> drafts, UUID supersededPlanId) {
+        if (supersededPlanId != null) {
+            skipOpenSteps(userId, supersededPlanId);
+            supersede(userId, supersededPlanId);
+        }
+        return insertPlan(userId, requestId, conversationId, goal, revision, modelCallCeiling, drafts);
+    }
+
+    private UUID insertPlan(UUID userId, UUID requestId, UUID conversationId, String goal, int revision,
             int modelCallCeiling, List<StepDraft> drafts) {
         UUID planId = UUID.randomUUID();
         jdbc.update("""
@@ -91,13 +131,16 @@ public class AgentPlanStore {
                 """, planId, userId, requestId, conversationId, truncate(goal, 600), revision, modelCallCeiling);
         for (int index = 0; index < drafts.size(); index++) {
             StepDraft draft = drafts.get(index);
+            Verification verification = draft.verification();
             jdbc.update("""
-                    INSERT INTO agent_plan_steps (id, plan_id, user_id, step_index, intent, done_when, tools, effect,
-                            logical_action_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO agent_plan_steps (id, plan_id, user_id, step_index, intent, done_when,
+                            verify_tool, verify_path, verify_op, verify_value, tools, effect, logical_action_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, UUID.randomUUID(), planId, userId, index, truncate(draft.intent(), 600),
-                    truncate(draft.doneWhen(), 600), String.join(",", draft.tools()), draft.effect(),
-                    stepActionId(planId, index));
+                    truncate(draft.doneWhen(), 600),
+                    truncate(verification.tool(), 80), truncate(verification.path(), 200),
+                    truncate(verification.op(), 24), truncate(verification.value(), 200),
+                    String.join(",", draft.tools()), draft.effect(), stepActionId(planId, index));
         }
         return planId;
     }
@@ -152,11 +195,16 @@ public class AgentPlanStore {
     }
 
     private List<Step> steps(UUID planId, UUID userId) {
-        return jdbc.query(STEP_SELECT, (rs, rowNum) -> new Step(
-                rs.getObject("id", UUID.class), rs.getInt("step_index"), rs.getString("intent"),
-                rs.getString("done_when"), Arrays.stream(rs.getString("tools").split(",")).filter(value -> !value.isBlank()).toList(),
-                rs.getString("effect"), rs.getString("status"),
-                rs.getObject("logical_action_id", UUID.class), rs.getString("evidence")), planId, userId);
+        return jdbc.query(STEP_SELECT, (rs, rowNum) -> {
+            String verifyTool = rs.getString("verify_tool");
+            Verification verification = verifyTool == null ? null : new Verification(verifyTool,
+                    rs.getString("verify_path"), rs.getString("verify_op"), rs.getString("verify_value"));
+            return new Step(rs.getObject("id", UUID.class), rs.getInt("step_index"), rs.getString("intent"),
+                    rs.getString("done_when"), verification,
+                    Arrays.stream(rs.getString("tools").split(",")).filter(value -> !value.isBlank()).toList(),
+                    rs.getString("effect"), rs.getString("status"),
+                    rs.getObject("logical_action_id", UUID.class), rs.getString("evidence"));
+        }, planId, userId);
     }
 
     public int markRunning(UUID userId, UUID planId) {

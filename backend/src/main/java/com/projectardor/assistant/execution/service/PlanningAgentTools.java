@@ -5,7 +5,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -30,8 +29,8 @@ public final class PlanningAgentTools implements AgentToolBundle {
 
     private volatile AgentPlanStore.Plan plan;
     private volatile UUID planSpanId;
-    /** Which tools this run already completed for each step; a step with several tools is not done after one. */
-    private final Map<String, Set<String>> stepProgress = new ConcurrentHashMap<>();
+    /** Actual results this run recorded per step; a step with several tools is not done after one. */
+    private final Map<String, Map<String, String>> stepResults = new ConcurrentHashMap<>();
 
     public PlanningAgentTools(UUID userId, UUID requestId, UUID conversationId,
             AgentPlanner planner, AgentPlanStore store, AgentRunTracer tracer) {
@@ -69,26 +68,30 @@ public final class PlanningAgentTools implements AgentToolBundle {
      */
     void applyOutcome(String tool, boolean executed, String result) {
         AgentPlanStore.Plan current = plan;
-        if (current == null) return;
-        AgentPlanStore.Step step = current.steps().stream()
-                .filter(candidate -> candidate.open() && candidate.tools().contains(tool))
-                .findFirst().orElse(null);
+        if (current == null || !current.active()) return;
+        AgentPlanStore.Step step = current.currentStep()
+                .filter(candidate -> !candidate.failed() && candidate.tools().contains(tool))
+                .orElse(null);
         AgentPlanner.StepOutcome outcome = planner.attribute(current, tool, executed, result,
-                step == null ? Set.of() : stepProgress.getOrDefault(step.id().toString(), Set.of()));
+                step == null ? Map.of() : stepResults.getOrDefault(step.id().toString(), Map.of()));
         if (outcome.stepId() == null) return;
         if (outcome.verified()) {
-            store.verifyStep(userId, outcome.stepId(), step == null ? outcome.guidance() : step.doneWhen());
+            store.verifyStep(userId, outcome.stepId(), outcome.evidence());
+            stepResults.remove(outcome.stepId().toString());
         } else if (outcome.failed()) {
-            store.failStep(userId, outcome.stepId(), outcome.guidance());
+            store.failStep(userId, outcome.stepId(),
+                    outcome.evidence() != null ? outcome.evidence() : outcome.guidance());
+            stepResults.remove(outcome.stepId().toString());
         } else {
             // The step asked for more than this one call. It stays open; only this run knows how far it got.
             store.startStep(userId, outcome.stepId());
-            stepProgress.put(outcome.stepId().toString(), Set.copyOf(outcome.toolsDone()));
+            stepResults.put(outcome.stepId().toString(), outcome.results());
         }
         if (outcome.verified() || outcome.failed()) {
-            recordStepSpan(outcome.stepIndex(), step == null ? tool : step.intent(), outcome.verified(), outcome.guidance());
+            recordStepSpan(outcome.stepIndex(), step == null ? tool : step.intent(), outcome.verified(),
+                    outcome.evidence() != null ? outcome.evidence() : outcome.guidance());
         }
-        // The next call is judged against the tools that are still open, not the step just settled.
+        // The next call is judged against the current step, not the step just settled.
         plan = store.find(userId, current.id()).orElse(current);
     }
 
@@ -114,13 +117,19 @@ public final class PlanningAgentTools implements AgentToolBundle {
     @Tool(name = "propose_plan", value = """
             仅当本轮任务同时涉及两个以上业务模块、且需要多个目标按顺序完成时调用，例如“结合面试薄弱点调整学习计划并检查日历冲突”。\
             普通问答、单项操作、同一模块内的多步操作都不要调用本工具，直接按正常流程完成。\
-            本工具只登记计划，不会修改任何业务数据：每个步骤必须给出可核验的完成条件 doneWhen，\
+            本工具只登记计划，不会修改任何业务数据。每个步骤必须给出：\
+            intent、给人看的 doneWhen、以及可机器核验的 verify；verify.tool 必须是本步骤 tools 之一，\
+            并按该次调用的真实返回选择条件：MIN_ITEMS/MAX_ITEMS（数组条数）、AT_LEAST（数字）、\
+            EQUALS/CONTAINS（值）、HAS_ID（返回记录 ID）、SUCCESS（成功状态）。\
             tools 只能填写已登记的工具名，effect 按该步骤是否会改数据填 READ 或 WRITE。\
-            计划被接受后按步骤顺序继续调用相应工具，不要跳过未核验的步骤，也不要替用户声称完成。""")
+            计划被接受后严格按当前步骤执行，后续步骤的写入会被拒绝；当前步骤失败后才能重新调用本工具提交修订计划。\
+            系统只依据 verify 检查真实工具结果，不要用 doneWhen 或对话文本代替执行，也不要替用户声称完成。""")
     public Map<String, Object> proposePlan(
             @P("本轮任务的总目标，一句话，使用简洁中文") String goal,
             @P("步骤数组的 JSON 字符串，形如 "
-                    + "[{\"intent\":\"读出最近面试的薄弱点\",\"doneWhen\":\"已得到至少一条薄弱点结论\",\"tools\":[\"list_interview_recaps\"],\"effect\":\"READ\"}]，3 到 6 步")
+                    + "[{\"intent\":\"读出最近面试的薄弱点\",\"doneWhen\":\"已得到至少一条薄弱点结论\","
+                    + "\"verify\":{\"tool\":\"list_interview_recaps\",\"path\":\"$\",\"op\":\"MIN_ITEMS\",\"value\":1},"
+                    + "\"tools\":[\"list_interview_recaps\"],\"effect\":\"READ\"}]，3 到 6 步")
                     String stepsJson) {
         Optional<AgentPlanStore.Plan> existing = store.findByRequest(userId, requestId);
         AgentPlanner.Admission admission = planner.admit(userId, requestId, conversationId, goal, stepsJson, existing);
@@ -132,8 +141,19 @@ public final class PlanningAgentTools implements AgentToolBundle {
             return refused;
         }
         int revision = existing.map(AgentPlanStore.Plan::revision).orElse(-1) + 1;
-        UUID planId = store.create(userId, requestId, conversationId, goal, revision,
-                AgentPlanner.MODEL_CALL_CEILING, admission.steps());
+        boolean replacing = existing.filter(AgentPlanStore.Plan::active).isPresent();
+        UUID planId;
+        if (replacing) {
+            AgentPlanStore.Plan superseded = existing.orElseThrow();
+            // Close the previous span before starting the revised plan; its verified steps stay as facts.
+            finishPlanSpan("FAILED", superseded);
+            stepResults.clear();
+            planId = store.createRevision(userId, requestId, conversationId, goal, revision,
+                    AgentPlanner.MODEL_CALL_CEILING, admission.steps(), superseded.id());
+        } else {
+            planId = store.create(userId, requestId, conversationId, goal, revision,
+                    AgentPlanner.MODEL_CALL_CEILING, admission.steps());
+        }
         store.markRunning(userId, planId);
         AgentPlanStore.Plan created = store.find(userId, planId).orElseThrow();
         plan = created;
@@ -142,9 +162,10 @@ public final class PlanningAgentTools implements AgentToolBundle {
         accepted.put("accepted", true);
         accepted.put("planId", planId.toString());
         accepted.put("revision", revision);
+        accepted.put("revised", replacing);
         accepted.put("steps", describe(created));
-        accepted.put("remainingToolScope", created.openToolScope());
-        accepted.put("instruction", "按步骤顺序继续；每一步完成后系统会依据工具执行结果自动核验");
+        accepted.put("currentToolScope", created.currentToolScope());
+        accepted.put("instruction", "严格按当前步骤执行；每一步完成后系统会依据 verify 和真实工具结果自动核验");
         return accepted;
     }
 
@@ -155,8 +176,13 @@ public final class PlanningAgentTools implements AgentToolBundle {
             entry.put("index", step.index() + 1);
             entry.put("intent", step.intent());
             entry.put("doneWhen", step.doneWhen());
+            AgentPlanStore.Verification verification = step.verification();
+            entry.put("verify", verification == null ? null : Map.of(
+                    "tool", verification.tool(), "path", verification.path(), "op", verification.op(),
+                    "value", verification.value() == null ? "" : verification.value()));
             entry.put("tools", step.tools());
             entry.put("effect", step.effect());
+            entry.put("status", step.status());
             steps.add(entry);
         }
         return steps;
