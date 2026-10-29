@@ -114,6 +114,8 @@ jobs:
         run: node tests/resume-primary-ui.mjs
       - name: Resume workspace chat and frozen-resume UI regression (mock APIs)
         run: node tests/latex-workspace-ui.mjs
+      - name: Resume library preview and download UI regression (mock APIs)
+        run: node tests/resume-library-preview-ui.mjs
       - name: Compact chat layout UI regression (mock APIs)
         run: node tests/compact-chat-ui.mjs
       - name: Learning feedback and status groups UI regression (mock APIs)

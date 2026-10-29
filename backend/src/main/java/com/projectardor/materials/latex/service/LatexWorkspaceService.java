@@ -215,7 +215,8 @@ public class LatexWorkspaceService {
 
     @Transactional(readOnly = true)
     public List<ProjectView> list(UUID userId) {
-        return projects.findByUserIdOrderByUpdatedAtDesc(userId).stream().map(ProjectView::of).toList();
+        return projects.findByUserIdAndArchivedAtIsNullOrderByUpdatedAtDesc(userId).stream()
+                .map(ProjectView::of).toList();
     }
 
     @Transactional(readOnly = true)
@@ -258,6 +259,14 @@ public class LatexWorkspaceService {
         return ProjectView.of(project);
     }
 
+    /** Archiving is idempotent and keeps every revision; archived projects are not addressable elsewhere. */
+    @Transactional
+    public void archive(UUID userId, UUID projectId) {
+        projects.findByIdAndUserId(projectId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("简历不存在"))
+                .archive();
+    }
+
     @Transactional
     public ProjectView rename(UUID userId, UUID projectId, String title) {
         LatexProject project = owned(userId, projectId);
@@ -274,8 +283,10 @@ public class LatexWorkspaceService {
     }
 
     private LatexProject owned(UUID userId, UUID projectId) {
-        return projects.findByIdAndUserId(projectId, userId)
+        LatexProject project = projects.findByIdAndUserId(projectId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("简历不存在"));
+        if (project.isArchived()) throw new ResourceNotFoundException("简历不存在");
+        return project;
     }
 
     private LatexRevision revision(UUID userId, UUID projectId, int revisionNo) {

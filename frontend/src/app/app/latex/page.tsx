@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, ArrowUpRight, FileText, Lock, Pencil, Plus, RefreshCw, Square } from "lucide-react";
+import { Archive, ArrowUp, ArrowUpRight, FileText, Lock, Pencil, Plus, RefreshCw, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MarkdownContent } from "@/components/ardor/markdown-content";
@@ -57,6 +57,7 @@ export default function LatexWorkspacePage() {
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelChoice, setModelChoice] = useState("PRIMARY");
   const [reasoningDepth, setReasoningDepth] = useState<"AUTO" | "QUICK" | "STANDARD" | "DEEP">("AUTO");
@@ -234,6 +235,36 @@ export default function LatexWorkspacePage() {
     }
   }
 
+  async function archiveProject() {
+    if (!snapshot || archiving) return;
+    if (!window.confirm(t("Archive this resume? It leaves the workspace list, but saved revisions stay.",
+        "归档这份简历？它会从写简历列表里移除，历史修订仍会保留。"))) return;
+    setArchiving(true);
+    setError("");
+    setNotice("");
+    try {
+      await api<void>(`/api/latex/projects/${snapshot.projectId}`, { method: "DELETE" });
+      const list = await api<Project[]>("/api/latex/projects");
+      setProjects(list);
+      if (list[0]) {
+        setProjectId(list[0].id);
+        await openProject(list[0]);
+      } else {
+        setProjectId(null);
+        setSnapshot(null);
+        setMessages([]);
+        setConversationId(null);
+        setFrozenResume(null);
+      }
+      setNotice(t("Archived. It no longer appears in the list.", "已归档，不会再出现在列表里。"));
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.body.message ?? cause.message
+        : cause instanceof Error ? cause.message : t("Could not archive this resume", "归档失败"));
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   async function freeze() {
     if (!snapshot || freezing) return;
     setFreezing(true);
@@ -407,6 +438,7 @@ export default function LatexWorkspacePage() {
         {projects.length > 1 && <select aria-label={t("Switch resume", "切换简历")} value={projectId ?? ""} onChange={(event) => { const next = projects.find((item) => item.id === event.target.value); if (next) { setProjectId(next.id); void openProject(next); } }} className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs outline-none">
           {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
         </select>}
+        {snapshot && <button onClick={() => void archiveProject()} disabled={archiving} aria-label={t("Archive resume", "归档简历")} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-700 hover:bg-stone-50 disabled:opacity-40"><Archive className="size-3.5" />{t("Archive", "归档")}</button>}
         <button onClick={() => void createProject()} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-700 hover:bg-stone-50"><Plus className="size-3.5" />{t("New", "新建")}</button>
       </div>
     </header>

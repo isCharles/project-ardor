@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -76,6 +77,12 @@ public class LatexWorkspaceController {
     public ProjectView freeze(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID projectId,
             @RequestBody FreezeRequest request) {
         return service.freeze(principal.userId(), projectId, request.revisionNo());
+    }
+
+    @DeleteMapping("/{projectId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void archive(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID projectId) {
+        service.archive(principal.userId(), projectId);
     }
 
     @PatchMapping("/{projectId}")

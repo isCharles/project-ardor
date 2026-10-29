@@ -1,6 +1,6 @@
 "use client";
 
-import { FileDown, GripVertical, X } from "lucide-react";
+import { Download, FileDown, GripVertical, X } from "lucide-react";
 import { useCallback, useEffect } from "react";
 
 import { PdfPagePreview } from "@/components/ardor/pdf-page-preview";
@@ -51,7 +51,10 @@ export function ResumePreviewPanel({ resumeId, filename, width, onWidthChange, o
         <p className="text-xs font-medium uppercase tracking-[0.14em] text-violet-600">{t("Original resume", "原简历")}</p>
         <p className="mt-1 truncate text-sm font-medium text-stone-800">{filename}</p>
       </div>
-      <button type="button" onClick={onClose} aria-label={t("Close preview", "关闭预览")} className="grid size-9 shrink-0 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><X className="size-4" /></button>
+      <div className="flex shrink-0 items-center gap-1">
+        <a href={`/api/resumes/${resumeId}/file`} download={filename} aria-label={t("Download original", "下载原文件")} title={t("Download original", "下载原文件")} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><Download className="size-4" /></a>
+        <button type="button" onClick={onClose} aria-label={t("Close preview", "关闭预览")} className="grid size-9 place-items-center rounded-full text-stone-500 hover:bg-stone-100"><X className="size-4" /></button>
+      </div>
     </header>
     <PdfPagePreview
       key={resumeId}
