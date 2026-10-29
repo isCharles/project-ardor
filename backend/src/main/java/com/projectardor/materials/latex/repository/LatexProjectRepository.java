@@ -12,4 +12,6 @@ public interface LatexProjectRepository extends JpaRepository<LatexProject, UUID
     Optional<LatexProject> findByIdAndUserId(UUID id, UUID userId);
 
     List<LatexProject> findByUserIdAndArchivedAtIsNullOrderByUpdatedAtDesc(UUID userId);
+
+    List<LatexProject> findByUserIdAndArchivedAtIsNotNullOrderByUpdatedAtDesc(UUID userId);
 }

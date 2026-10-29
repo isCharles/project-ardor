@@ -54,6 +54,11 @@ public class LatexWorkspaceController {
         return service.create(principal.userId(), body.title(), body.files(), body.message());
     }
 
+    @GetMapping("/archived")
+    public List<ProjectView> archived(@AuthenticationPrincipal ArdorPrincipal principal) {
+        return service.archived(principal.userId());
+    }
+
     @GetMapping("/{projectId}")
     public Snapshot read(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID projectId,
             @RequestParam(required = false) Integer revision) {
@@ -83,6 +88,11 @@ public class LatexWorkspaceController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void archive(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID projectId) {
         service.archive(principal.userId(), projectId);
+    }
+
+    @PostMapping("/{projectId}/restore")
+    public ProjectView restore(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID projectId) {
+        return service.restore(principal.userId(), projectId);
     }
 
     @PatchMapping("/{projectId}")
