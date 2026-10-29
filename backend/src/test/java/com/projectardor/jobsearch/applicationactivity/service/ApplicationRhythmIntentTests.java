@@ -11,8 +11,20 @@ class ApplicationRhythmIntentTests {
                 "今天打招呼 89 个，发了大约五份简历",
                 "打招呼 89 个，简历发了 5 份左右",
                 "I sent 89 greetings and about 5 resumes today",
-                "around 5 resumes sent today"}) {
+                "around 5 resumes sent today",
+                "今天简历约 5 份"}) {
             assertThat(ApplicationRhythmIntent.approximateResumeCount(request)).as(request).isTrue();
+        }
+    }
+
+    @Test void approximateGreetingCountsDoNotMakeAnExactResumeCountApproximate() {
+        for (String request : new String[]{
+                "今天约 89 个招呼，发了 5 份简历",
+                "I sent about 89 greetings and exactly 5 resumes today",
+                "today I sent about 89 greetings and 5 resumes",
+                "今天打了 89 个招呼、简历 5 份",
+                "今天约了 3 个面试，简历 5 份"}) {
+            assertThat(ApplicationRhythmIntent.approximateResumeCount(request)).as(request).isFalse();
         }
     }
 

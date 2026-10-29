@@ -52,7 +52,7 @@ export default function ApplicationRhythmPage() {
     return value == null ? "" : String(value);
   }
 
-  function apply(next: Rhythm, keepDate = false) {
+  function apply(next: Rhythm, keepDate = false, preserve: { greeting?: string; resume?: string } = {}) {
     setRhythm(next);
     setResumeGoalDraft(String(next.weeklyResumeGoal));
     setGreetingGoalDraft(next.weeklyGreetingGoal == null ? "" : String(next.weeklyGreetingGoal));
@@ -62,8 +62,8 @@ export default function ApplicationRhythmPage() {
     const date = keepDate && selectedDate ? selectedDate : next.today;
     setSelectedDate(date);
     const day = next.days.find((item) => item.date === date);
-    setGreetingDraft(draftFor(day, "greeting"));
-    setResumeDraft(draftFor(day, "resume"));
+    setGreetingDraft(preserve.greeting !== undefined ? preserve.greeting : draftFor(day, "greeting"));
+    setResumeDraft(preserve.resume !== undefined ? preserve.resume : draftFor(day, "resume"));
   }
 
   useEffect(() => {
@@ -97,9 +97,10 @@ export default function ApplicationRhythmPage() {
     setBusy(true); setError("");
     try {
       const body = metric === "greeting" ? { greetingCount: count } : { resumeCount: count };
+      const preserve = metric === "greeting" ? { resume: resumeDraft } : { greeting: greetingDraft };
       apply(await api<Rhythm>(`/api/applications/rhythm/days/${selectedDate}`, {
         method: "PUT", body: JSON.stringify(body),
-      }), true);
+      }), true, preserve);
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not save", "保存失败")); }
     finally { setBusy(false); }
   }
@@ -107,7 +108,8 @@ export default function ApplicationRhythmPage() {
   async function increment(metric: Metric) {
     setBusy(true); setError("");
     try {
-      apply(await api<Rhythm>(`/api/applications/rhythm/today/increment?metric=${metric.toUpperCase()}`, { method: "POST" }));
+      const preserve = metric === "greeting" ? { resume: resumeDraft } : { greeting: greetingDraft };
+      apply(await api<Rhythm>(`/api/applications/rhythm/today/increment?metric=${metric.toUpperCase()}`, { method: "POST" }), false, preserve);
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not record application activity", "记录失败")); }
     finally { setBusy(false); }
   }
@@ -125,14 +127,14 @@ export default function ApplicationRhythmPage() {
     try {
       apply(await api<Rhythm>("/api/applications/rhythm/settings", {
         method: "PUT", body: JSON.stringify({ weeklyResumeGoal, weeklyGreetingGoal, reminderEnabled, reminderTime, weekdaysOnly }),
-      }), true);
+      }), true, { greeting: greetingDraft, resume: resumeDraft });
       setSettingsOpen(false);
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not save settings", "设置保存失败")); }
     finally { setBusy(false); }
   }
 
   async function dismiss() {
-    try { apply(await api<Rhythm>("/api/applications/rhythm/reminder/dismiss", { method: "POST" }), true); }
+    try { apply(await api<Rhythm>("/api/applications/rhythm/reminder/dismiss", { method: "POST" }), true, { greeting: greetingDraft, resume: resumeDraft }); }
     catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not dismiss reminder", "暂时无法关闭提醒")); }
   }
 
