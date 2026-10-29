@@ -19,6 +19,8 @@ export type ContextUsage = {
   model: string; estimatedTokens: number | null; compressionBudgetTokens: number;
   modelWindowTokens: number | null; summaryVersion: number; compactedMessages: number;
   compaction?: ContextCompaction | null;
+  authoritative?: boolean;
+  conversationAnchor?: boolean;
 };
 
 /**

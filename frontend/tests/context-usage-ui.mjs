@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 // Synthetic progress and persisted message fixtures only; never calls a model or a real account.
 const origin = "http://127.0.0.1:3120";
 const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", "3120"], { stdio: "pipe" });
-let logs = "", browser, usage = null, running = false;
+let logs = "", browser, usage = null, conversationContext = null, running = false;
 server.stdout.on("data", chunk => logs += chunk); server.stderr.on("data", chunk => logs += chunk);
 try {
   let ready = false;
@@ -26,7 +26,7 @@ try {
     else if (path === "/api/profile/sidebar") body = { userId: "context-owner", hrefs: ["/app"], configured: true, revision: 0 };
     else if (path === "/api/profile") body = { displayName: "Synthetic owner", timezone: "Asia/Shanghai", targetRoles: [] };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
-    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [{ id: "context-answer", role: "ASSISTANT", content: "Synthetic answer", runId: "context-run", createdAt: conversation.createdAt, runTrace: JSON.stringify({ elapsedMs: 10, status: "COMPLETED", steps: [], contextUsage: running ? null : usage }) }] };
+    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [{ id: "context-answer", role: "ASSISTANT", content: "Synthetic answer", runId: "context-run", createdAt: conversation.createdAt, runTrace: JSON.stringify({ elapsedMs: 10, status: "COMPLETED", steps: [], contextUsage: running ? null : usage, conversationContextUsage: conversationContext }) }] };
     else if (path === "/api/agent/runs/latest") {
       if (!running) return route.fulfill({ status: 204 });
       body = { id: "context-run", conversationId: conversation.id, message: "Synthetic request", status: "RUNNING", label: "Working", createdAt: conversation.createdAt };
@@ -73,6 +73,17 @@ try {
   await page.getByTitle("synthetic-model", { exact: true }).click();
   await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
   await page.locator('[data-context-state="READY"]').waitFor();
+  // The ring reads the first provider request of the turn, not the tool-heavy last request.
+  usage = { state: "READY", model: "synthetic-model", estimatedTokens: 62000, compressionBudgetTokens: 139428,
+    modelWindowTokens: 200000, summaryVersion: 2, compactedMessages: 8, authoritative: true, conversationAnchor: false };
+  conversationContext = { ...usage, estimatedTokens: 18000, conversationAnchor: true };
+  await page.reload();
+  await page.locator('[data-context-state="READY"]').waitFor();
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
+    "The ring must use the conversation anchor, not the transient tool-round peak");
+  await indicator.hover();
+  await tooltip.getByText("9% full", { exact: true }).waitFor();
+  conversationContext = null;
   running = true;
   usage = { ...usage, state: "COMPACTING", estimatedTokens: null };
   await page.reload();

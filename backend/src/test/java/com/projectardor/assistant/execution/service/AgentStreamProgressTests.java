@@ -40,6 +40,22 @@ class AgentStreamProgressTests {
                 AgentStreamProgress.View.class).contextUsage()).isNull();
     }
 
+    @Test
+    void conversationAnchorStaysStableAcrossToolRoundUsage() {
+        var live = new AgentStreamProgress(clock);
+        live.begin(owner, request);
+        var estimate = new AgentContextUsage("READY", "synthetic", 9000L, 12000, 200000L, 2, 0, null);
+        var anchor = new AgentContextUsage("READY", "synthetic", 18000L, 12000, 200000L, 2, 0, null, true, true);
+        var toolRound = new AgentContextUsage("READY", "synthetic", 62000L, 12000, 200000L, 2, 0, null, true, false);
+        live.context(request, estimate);
+        assertThat(live.get(owner, request).conversationContextUsage()).isNull();
+        live.context(request, anchor);
+        live.context(request, toolRound);
+        var view = live.get(owner, request);
+        assertThat(view.contextUsage()).isEqualTo(toolRound);
+        assertThat(view.conversationContextUsage()).isEqualTo(anchor);
+    }
+
     private final MutableClock clock = new MutableClock();
     private final AgentStreamProgress progress = new AgentStreamProgress(clock);
     private final UUID owner = UUID.randomUUID();

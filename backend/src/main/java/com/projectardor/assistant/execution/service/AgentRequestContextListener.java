@@ -17,6 +17,7 @@ final class AgentRequestContextListener implements ChatModelListener {
     private final BooleanSupplier active;
     private final AgentContextUsage base;
     private final AtomicLong sequence = new AtomicLong();
+    private boolean anchored;
 
     AgentRequestContextListener(TokenCountEstimator estimator, AgentContextUsage base,
             Consumer<AgentContextUsage> observer, BooleanSupplier active) {
@@ -38,13 +39,18 @@ final class AgentRequestContextListener implements ChatModelListener {
         var response = context.chatResponse();
         var usage = response == null ? null : response.tokenUsage();
         // Provider input usage is per request, never the run's cumulative billing total.
-        if (usage != null && usage.inputTokenCount() != null && usage.inputTokenCount() > 0)
-            publish(usage.inputTokenCount().longValue());
+        if (usage != null && usage.inputTokenCount() != null && usage.inputTokenCount() > 0) {
+            boolean anchor = !anchored;
+            anchored = true;
+            publish(usage.inputTokenCount().longValue(), true, anchor);
+        }
     }
 
-    private void publish(long tokens) {
+    private void publish(long tokens) { publish(tokens, false, false); }
+
+    private void publish(long tokens, boolean authoritative, boolean conversationAnchor) {
         observer.accept(new AgentContextUsage(base.state(), base.model(), tokens,
                 base.compressionBudgetTokens(), base.modelWindowTokens(), base.summaryVersion(),
-                base.compactedMessages(), base.compaction()));
+                base.compactedMessages(), base.compaction(), authoritative, conversationAnchor));
     }
 }

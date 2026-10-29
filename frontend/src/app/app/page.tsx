@@ -84,8 +84,13 @@ function formatElapsed(milliseconds: number) {
 
 function savedRunTrace(raw?: string | null) {
   if (!raw) return null;
-  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<ToolMeasurement & { label: string; elapsedMs: number; status: string }>; proposals?: AgentConfirmation[]; thinkingOutput?: string; firstOutputMs?: number; contextUsage?: ContextUsage }; }
+  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<ToolMeasurement & { label: string; elapsedMs: number; status: string }>; proposals?: AgentConfirmation[]; thinkingOutput?: string; firstOutputMs?: number; contextUsage?: ContextUsage; conversationContextUsage?: ContextUsage }; }
   catch { return null; }
+}
+
+/** Compaction state is still useful live; token estimates are not. */
+function liveContextState(usage?: ContextUsage | null) {
+  return usage && ["PREPARING", "COMPACTING", "COMPACTION_FAILED"].includes(usage.state) ? usage : null;
 }
 
 function confirmationKey(value: AgentConfirmation) {
@@ -1042,7 +1047,7 @@ export default function AgentHomePage() {
               void stopRunOnce(requestId).catch((reason) => setError(reason instanceof Error ? reason.message : t("Could not confirm stop request", "暂时无法确认停止请求")));
             }
             if (event.type !== "error") setStreamAccepted(true);
-            if (event.type === "context" && event.contextUsage) {
+            if (event.type === "context" && event.contextUsage?.authoritative && event.contextUsage.conversationAnchor) {
               setLiveContext({ conversationId: activeConversationId!, usage: event.contextUsage });
             } else if (event.type === "thinking" && event.content) {
               setStreamPhase("THINKING");
@@ -1489,7 +1494,7 @@ export default function AgentHomePage() {
       </div>
       <div data-composer-actions className="flex min-w-0 items-center justify-end gap-1">
         <ContextUsageIndicator selectedModel={modelOptions.find(item => item.id === modelChoice)?.label}
-          usage={liveContext?.conversationId === state?.conversationId ? liveContext?.usage : streamProgress?.contextUsage ?? messages.slice().reverse().map(item => savedRunTrace(item.runTrace)?.contextUsage).find(Boolean)} />
+          usage={liveContextState(streamProgress?.contextUsage) ?? (liveContext?.conversationId === state?.conversationId ? liveContext?.usage : messages.slice().reverse().map(item => { const trace = savedRunTrace(item.runTrace); return trace?.conversationContextUsage ?? trace?.contextUsage; }).find(Boolean))} />
         {reasoningPicker()}
         <ChatVoiceButton disabled={!state?.llmConfigured} onTranscript={(text) => { setDraft((current) => current.trim() ? `${current.trim()} ${text}` : text); setError(""); }} onError={setError} />
         {isRunning && !draft.trim() && chatImages.length === 0 ? <Button type="button" aria-label={t("Stop", "停止")} disabled={cancelPending} onClick={() => void cancelExecution()} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800 disabled:opacity-50"><Square className="size-3 fill-current" /></Button> : <Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || (!draft.trim() && chatImages.length === 0) || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured || modelCatalogState !== "READY"} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button>}

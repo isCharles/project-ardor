@@ -1,8 +1,20 @@
 package com.projectardor.assistant.execution.service;
 
-/** Latest request input usage (estimated until provider usage arrives), never cumulative billing. */
+/**
+ * Latest request input usage (estimated until provider usage arrives), never cumulative billing.
+ * {@code authoritative} marks provider-reported input; {@code conversationAnchor} marks the first
+ * provider response of a run, whose input excludes transient tool results. The context ring reads
+ * only the anchor so tool rounds cannot make the displayed conversation size rise and fall.
+ */
 public record AgentContextUsage(String state, String model, Long estimatedTokens, int compressionBudgetTokens,
-        Long modelWindowTokens, int summaryVersion, int compactedMessages, Compaction compaction) {
+        Long modelWindowTokens, int summaryVersion, int compactedMessages, Compaction compaction,
+        boolean authoritative, boolean conversationAnchor) {
+    public AgentContextUsage(String state, String model, Long estimatedTokens, int compressionBudgetTokens,
+            Long modelWindowTokens, int summaryVersion, int compactedMessages, Compaction compaction) {
+        this(state, model, estimatedTokens, compressionBudgetTokens, modelWindowTokens, summaryVersion,
+                compactedMessages, compaction, false, false);
+    }
+
     public static AgentContextUsage preparing(String model) {
         return new AgentContextUsage("PREPARING", model, null, 0, null, 0, 0, null);
     }
