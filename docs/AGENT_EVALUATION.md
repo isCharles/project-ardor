@@ -10,12 +10,12 @@ span 仍可能是 `COMPLETED` 且带 `attributes.proposal=true`；用户拒绝�
 - `scripts/agent-eval-assertions.mjs`：分层评分（`scoreCase`）；
 - `scripts/agent-eval-report.mjs`：报告与哈希、带分母的指标；
 - `scripts/agent-eval-diff.mjs`：历史 diff 与回归识别；
-- `scripts/agent-eval-cases.json`：版本化案例集；
+- `scripts/agent-eval-cases.json`：版本化案例集；用例可选声明 `allowedTools`，一旦声明，trace 里出现列表之外的任何工具都记为失败（含被拒绝或只产生确认卡片的调用）。这是事后评测断言，**不会阻止工具执行**，未声明的用例仍按 `forbiddenTools` / `forbiddenExecuted` 判定；
 - `scripts/agent-eval-demo.mjs`：零成本 fixture→报告 diff 演示。
 
 ## 数据集
 
-`scripts/agent-eval-cases.json` 当前 `datasetVersion=2026-10-27.agent-eval.v2`，24 个 case：
+`scripts/agent-eval-cases.json` 当前 `datasetVersion=2026-10-28.agent-eval.v3`，30 个 case（15 representative / 15 challenge，其中 4 个 held out）：
 
 - `tier=representative`：核心读写流程，应稳定通过；
 - `tier=challenge`：澄清、审批拒绝、取消、错误参数、资源归属、工具失败、写后响应丢失；

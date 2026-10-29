@@ -176,6 +176,17 @@ test("cached tokens are read from totals and stay unknown when absent", () => {
   assert.equal(plain.observed.cacheUsageMissing, true);
 });
 
+test("a declared tool allowlist catches every unexpected attempt, including refused writes", () => {
+  const item = { id: "read-only-no-write", allowedTools: ["list_calendar_tasks"] };
+  const result = scoreCase(item, trace("COMPLETED", [executed("list_calendar_tasks"), tool("update_calendar_task", "NOT_EXECUTED")]), "可以");
+  assert.match(result.failures.join(" "), /unexpected tool update_calendar_task was attempted/);
+  const clean = scoreCase(item, trace("COMPLETED", [executed("list_calendar_tasks")]), "可以");
+  assert.equal(clean.failures.filter((failure) => failure.startsWith("unexpected tool")).length, 0);
+  const open = scoreCase({ id: "no-allowlist" }, trace("COMPLETED", [executed("list_resumes")]), "可以");
+  assert.equal(open.failures.filter((failure) => failure.startsWith("unexpected tool")).length, 0,
+    "a case without an allowlist stays open, as before");
+});
+
 test("answer assertion does not expose expected private text", () => {
   const result = scoreCase({ id: "private", mustContain: "private text" }, trace("COMPLETED", []), "other");
   assert.deepEqual(result.failures, ["answer assertion failed"]);
