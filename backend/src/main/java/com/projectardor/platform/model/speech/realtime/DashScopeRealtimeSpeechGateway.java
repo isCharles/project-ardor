@@ -10,14 +10,15 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.UUID;
-import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -65,18 +66,35 @@ public class DashScopeRealtimeSpeechGateway {
             AuxiliaryRuntimeConfig config,
             Consumer<RealtimeSpeechEvent> events) {
         requireDashScope(config);
-        UpstreamSession session = new UpstreamSession(events, Protocol.ASR, null);
+        UpstreamSession session = new UpstreamSession(events, Protocol.ASR);
         session.connect(realtimeUri(config.baseUrl(), realtimeModel(config.model(), asrModel, "asr")), config.apiKey());
         return session;
     }
 
+    /** Whole-text synthesis, used by explicit replay where nothing is known incrementally. */
     public RealtimeSession openTts(
             AuxiliaryRuntimeConfig config,
             String text,
             Consumer<RealtimeSpeechEvent> events) {
+        RealtimeSession session = openTtsStream(config, events);
+        if (text != null && !text.isBlank()) {
+            session.appendText(text);
+            session.commitText();
+            session.finishText();
+        }
+        return session;
+    }
+
+    /**
+     * One synthesis session that keeps accepting text while the answer is still being written.
+     * Qwen TTS realtime allows several append plus commit cycles per session, so a sentence costs a
+     * text frame instead of a fresh WebSocket handshake and session update.
+     */
+    public RealtimeSession openTtsStream(
+            AuxiliaryRuntimeConfig config,
+            Consumer<RealtimeSpeechEvent> events) {
         requireDashScope(config);
-        if (text == null || text.isBlank()) throw new IllegalArgumentException("朗读内容不能为空");
-        UpstreamSession session = new UpstreamSession(events, Protocol.TTS, text.strip());
+        UpstreamSession session = new UpstreamSession(events, Protocol.TTS);
         session.connect(realtimeUri(config.baseUrl(), realtimeModel(config.model(), ttsModel, "tts")), config.apiKey());
         return session;
     }
@@ -108,9 +126,24 @@ public class DashScopeRealtimeSpeechGateway {
 
     public interface RealtimeSession extends AutoCloseable {
         void appendPcm(String base64Pcm);
+
+        void appendText(String text);
+
+        void commitText();
+
+        void clearText();
+
+        /** No more text will follow: let the service flush what is buffered and close the session. */
+        void finishText();
+
         void finish();
+
         void cancel();
-        @Override default void close() { cancel(); }
+
+        @Override
+        default void close() {
+            cancel();
+        }
     }
 
     private enum Protocol { ASR, TTS }
@@ -118,17 +151,18 @@ public class DashScopeRealtimeSpeechGateway {
     private final class UpstreamSession implements RealtimeSession, WebSocket.Listener {
         private final Consumer<RealtimeSpeechEvent> events;
         private final Protocol protocol;
-        private final String text;
         private final AtomicReference<WebSocket> socket = new AtomicReference<>();
         private final Queue<String> pending = new ConcurrentLinkedQueue<>();
         private final AtomicBoolean closed = new AtomicBoolean();
-        private final AtomicBoolean ttsInputSent = new AtomicBoolean();
         private final StringBuilder incoming = new StringBuilder();
 
-        private UpstreamSession(Consumer<RealtimeSpeechEvent> events, Protocol protocol, String text) {
+        private volatile boolean ready;
+        private volatile boolean inputFinished;
+        private boolean firstAudioDelivered;
+
+        private UpstreamSession(Consumer<RealtimeSpeechEvent> events, Protocol protocol) {
             this.events = Objects.requireNonNull(events);
             this.protocol = protocol;
-            this.text = text;
         }
 
         private void connect(URI uri, String apiKey) {
@@ -165,7 +199,6 @@ public class DashScopeRealtimeSpeechGateway {
                             "language_type", "Chinese",
                             "response_format", "pcm",
                             "sample_rate", 24_000)));
-            flushPending();
             webSocket.request(1);
         }
 
@@ -189,7 +222,12 @@ public class DashScopeRealtimeSpeechGateway {
 
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-            closed.set(true);
+            boolean alreadyClosed = closed.getAndSet(true);
+            // A finish can be acknowledged by closing the socket instead of a session.finished frame.
+            if (!alreadyClosed && protocol == Protocol.TTS) {
+                if (inputFinished) events.accept(RealtimeSpeechEvent.signal("tts_done"));
+                else emitError("语音合成连接已断开");
+            }
             return null;
         }
 
@@ -201,8 +239,34 @@ public class DashScopeRealtimeSpeechGateway {
 
         @Override
         public void appendPcm(String base64Pcm) {
-            if (protocol != Protocol.ASR || closed.get()) return;
+            if (protocol != Protocol.ASR || closed.get() || inputFinished) return;
             send(Map.of("event_id", eventId(), "type", "input_audio_buffer.append", "audio", base64Pcm));
+        }
+
+        @Override
+        public void appendText(String text) {
+            if (protocol != Protocol.TTS || closed.get() || inputFinished) return;
+            if (text == null || text.isBlank()) return;
+            send(Map.of("event_id", eventId(), "type", "input_text_buffer.append", "text", text.strip()));
+        }
+
+        @Override
+        public void commitText() {
+            if (protocol != Protocol.TTS || closed.get() || inputFinished) return;
+            send(Map.of("event_id", eventId(), "type", "input_text_buffer.commit"));
+        }
+
+        @Override
+        public void clearText() {
+            if (protocol != Protocol.TTS || closed.get()) return;
+            send(Map.of("event_id", eventId(), "type", "input_text_buffer.clear"));
+        }
+
+        @Override
+        public void finishText() {
+            if (protocol != Protocol.TTS || closed.get() || inputFinished) return;
+            inputFinished = true;
+            send(Map.of("event_id", eventId(), "type", "session.finish"));
         }
 
         @Override
@@ -232,7 +296,10 @@ public class DashScopeRealtimeSpeechGateway {
 
         private void handleAsr(String type, JsonNode message) {
             switch (type) {
-                case "session.updated" -> events.accept(RealtimeSpeechEvent.signal("asr_ready"));
+                case "session.updated" -> {
+                    markReady();
+                    events.accept(RealtimeSpeechEvent.signal("asr_ready"));
+                }
                 case "input_audio_buffer.speech_started" -> events.accept(RealtimeSpeechEvent.signal("speech_started"));
                 case "input_audio_buffer.speech_stopped" -> events.accept(RealtimeSpeechEvent.signal("speech_stopped"));
                 case "conversation.item.input_audio_transcription.text" -> events.accept(
@@ -248,21 +315,32 @@ public class DashScopeRealtimeSpeechGateway {
 
         private void handleTts(String type, JsonNode message) {
             switch (type) {
-                case "session.updated" -> sendTtsInput();
-                case "response.audio.delta" -> events.accept(RealtimeSpeechEvent.audio(message.path("delta").asText()));
-                case "response.audio.done" -> events.accept(RealtimeSpeechEvent.signal("tts_done"));
+                case "session.updated" -> {
+                    markReady();
+                    events.accept(RealtimeSpeechEvent.signal("tts_started"));
+                }
+                case "response.audio.delta" -> {
+                    if (!firstAudioDelivered) {
+                        firstAudioDelivered = true;
+                        events.accept(RealtimeSpeechEvent.signal("tts_first_audio"));
+                    }
+                    events.accept(RealtimeSpeechEvent.audio(message.path("delta").asText()));
+                }
+                case "response.audio.done" -> events.accept(RealtimeSpeechEvent.signal("tts_response_done"));
+                case "response.done" -> {
+                    int characters = message.path("response").path("usage").path("characters").asInt(0);
+                    if (characters > 0) events.accept(RealtimeSpeechEvent.text("tts_usage", String.valueOf(characters)));
+                    events.accept(RealtimeSpeechEvent.signal("tts_response_done"));
+                }
                 case "error" -> emitError(providerMessage(message));
-                case "session.finished" -> cancel();
+                case "session.finished" -> {
+                    // The service has flushed every committed segment: this is the only definitive
+                    // end-of-audio signal the browser gets, so send it before closing the socket.
+                    events.accept(RealtimeSpeechEvent.signal("tts_done"));
+                    cancel();
+                }
                 default -> { }
             }
-        }
-
-        private void sendTtsInput() {
-            if (!ttsInputSent.compareAndSet(false, true)) return;
-            events.accept(RealtimeSpeechEvent.signal("tts_started"));
-            send(Map.of("event_id", eventId(), "type", "input_text_buffer.append", "text", text));
-            send(Map.of("event_id", eventId(), "type", "input_text_buffer.commit"));
-            send(Map.of("event_id", eventId(), "type", "session.finish"));
         }
 
         private String providerMessage(JsonNode message) {
@@ -276,24 +354,37 @@ public class DashScopeRealtimeSpeechGateway {
 
         private void send(Map<String, Object> value) {
             try {
-                sendText(objectMapper.writeValueAsString(value));
+                enqueue(objectMapper.writeValueAsString(value));
             } catch (Exception exception) {
                 emitError("实时语音请求无法编码");
             }
         }
 
-        private void sendText(String value) {
-            WebSocket active = socket.get();
-            if (active == null) {
-                pending.add(value);
+        /** Frames are held until the session is configured, so appends never arrive before session.update. */
+        private synchronized void enqueue(String frame) {
+            if (closed.get()) return;
+            if (!ready || socket.get() == null) {
+                pending.add(frame);
                 return;
             }
-            if (!closed.get()) active.sendText(value, true);
+            deliver(frame);
         }
 
-        private void flushPending() {
-            String value;
-            while ((value = pending.poll()) != null) sendText(value);
+        private synchronized void markReady() {
+            ready = true;
+            if (closed.get()) return;
+            List<String> queued = new ArrayList<>(pending);
+            pending.clear();
+            for (String frame : queued) deliver(frame);
+        }
+
+        private void deliver(String frame) {
+            WebSocket active = socket.get();
+            if (active == null || closed.get()) {
+                pending.add(frame);
+                return;
+            }
+            active.sendText(frame, true);
         }
     }
 

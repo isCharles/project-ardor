@@ -44,6 +44,13 @@ public class InterviewService {
             "strengths", "weaknesses", "knowledgeGaps",
             "communicationIssues", "suggestedNextSteps");
 
+    private static final String QUESTION_SYSTEM_PROMPT = """
+            你是中文技术面试官。只输出 JSON 对象，不要 Markdown。
+            格式必须为 {"questions":[{"questionText":"...","questionType":"TECHNICAL|PROJECT|BEHAVIORAL|CODING","evaluationCriteria":["..."]}]}。
+            问题应结合候选人背景、简历分析、目标公司和岗位，循序渐进，不得编造候选人经历。
+            不要生成 CODING 编程题；需要编程题时由系统从 LeetCode Hot 100 题库另行加入。每道题都必须是完整、可直接回答的题目。
+            """;
+
     private final InterviewSessionRepository sessionRepository;
     private final InterviewQuestionRepository questionRepository;
     private final InterviewAnswerRepository answerRepository;
@@ -160,6 +167,41 @@ public class InterviewService {
             String targetRole,
             int questionCount,
             UUID jobOpportunityId) {
+        return createInternal(userId, resumeAnalysisId, modality, targetCompany, targetRole, questionCount,
+                jobOpportunityId, null, () -> false, false);
+    }
+
+    /**
+     * Generates the questions while reporting each question's text as it appears, so a voice session
+     * can start reading the first question before the model has written the rest. The document is still
+     * parsed and saved once at the end: streamed text only drives speech, and a stream that stops early
+     * saves nothing.
+     */
+    public InterviewSession createStreaming(
+            UUID userId,
+            UUID resumeAnalysisId,
+            InterviewModality modality,
+            String targetCompany,
+            String targetRole,
+            int questionCount,
+            UUID jobOpportunityId,
+            QuestionTextListener listener,
+            java.util.function.BooleanSupplier stopRequested) {
+        return createInternal(userId, resumeAnalysisId, modality, targetCompany, targetRole, questionCount,
+                jobOpportunityId, listener, stopRequested, true);
+    }
+
+    private InterviewSession createInternal(
+            UUID userId,
+            UUID resumeAnalysisId,
+            InterviewModality modality,
+            String targetCompany,
+            String targetRole,
+            int questionCount,
+            UUID jobOpportunityId,
+            QuestionTextListener listener,
+            java.util.function.BooleanSupplier stopRequested,
+            boolean questionsAreReadAloud) {
         if (questionCount < 3 || questionCount > 10) {
             throw new IllegalArgumentException("面试题数量必须在 3 到 10 之间");
         }
@@ -179,24 +221,23 @@ public class InterviewService {
                 "targetCompany", normalizedCompany == null ? "" : normalizedCompany,
                 "targetRole", normalizedRole,
                 "questionCount", questionCount));
-        LlmGateway.LlmResult result = llmGateway.completeJson(
-                userId,
-                """
-                你是中文技术面试官。只输出 JSON 对象，不要 Markdown。
-                格式必须为 {"questions":[{"questionText":"...","questionType":"TECHNICAL|PROJECT|BEHAVIORAL|CODING","evaluationCriteria":["..."]}]}。
-                问题应结合候选人背景、简历分析、目标公司和岗位，循序渐进，不得编造候选人经历。
-                不要生成 CODING 编程题；需要编程题时由系统从 LeetCode Hot 100 题库另行加入。每道题都必须是完整、可直接回答的题目。
-                """,
-                "请生成模拟面试题：\n" + context);
+        String userPrompt = "请生成模拟面试题：\n" + context;
+        QuestionTextStreamScanner scanner = new QuestionTextStreamScanner();
+        LlmGateway.LlmResult result = listener == null
+                ? llmGateway.completeJson(userId, QUESTION_SYSTEM_PROMPT, userPrompt)
+                : llmGateway.completeJsonStreaming(userId, QUESTION_SYSTEM_PROMPT, userPrompt,
+                        delta -> scanner.feed(delta).forEach(listener::onQuestionText), stopRequested);
         List<QuestionDraft> drafts = parseQuestions(jsonParser.parseObject(result.content()), questionCount);
         if (questionCount >= 3 && isTechnicalRole(normalizedRole)) {
-            // Replace the model's first coding question (or the last question) with a random
-            // Hot 100 problem, so every technical interview has exactly one curated coding task.
-            int slot = drafts.size() - 1;
-            for (int index = 0; index < drafts.size(); index++) {
-                if ("CODING".equals(drafts.get(index).questionType())) { slot = index; break; }
+            // Replace a model-written coding question with a random Hot 100 problem, so every technical
+            // interview has exactly one curated task. When questions are already being read aloud, the
+            // swap must skip the first slot: what the user heard has to match what gets saved.
+            int slot = questionsAreReadAloud
+                    ? spokenSafeCodingSlot(drafts)
+                    : firstCodingSlotOrLast(drafts);
+            if (slot > 0 || !questionsAreReadAloud) {
+                drafts.set(slot, codingDraft(hot100.random()));
             }
-            drafts.set(slot, codingDraft(hot100.random()));
         }
         // Any other model-written CODING question becomes TECHNICAL so only Hot 100 tasks are coding.
         for (int index = 0; index < drafts.size(); index++) {
@@ -220,6 +261,20 @@ public class InterviewService {
             questionRepository.saveAll(questions);
             return session;
         });
+    }
+
+    private static int firstCodingSlotOrLast(List<QuestionDraft> drafts) {
+        for (int index = 0; index < drafts.size(); index++) {
+            if ("CODING".equals(drafts.get(index).questionType())) return index;
+        }
+        return drafts.size() - 1;
+    }
+
+    private static int spokenSafeCodingSlot(List<QuestionDraft> drafts) {
+        for (int index = 1; index < drafts.size(); index++) {
+            if ("CODING".equals(drafts.get(index).questionType())) return index;
+        }
+        return drafts.size() - 1;
     }
 
     @Transactional(readOnly = true)
