@@ -138,8 +138,7 @@ public class AgentPlanStore {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, UUID.randomUUID(), planId, userId, index, truncate(draft.intent(), 600),
                     truncate(draft.doneWhen(), 600),
-                    truncate(verification.tool(), 80), truncate(verification.path(), 200),
-                    truncate(verification.op(), 24), truncate(verification.value(), 200),
+                    verification.tool(), verification.path(), verification.op(), verification.value(),
                     String.join(",", draft.tools()), draft.effect(), stepActionId(planId, index));
         }
         return planId;
