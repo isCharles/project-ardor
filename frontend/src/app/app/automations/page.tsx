@@ -196,7 +196,7 @@ export default function AutomationsPage() {
   const examples = [
     {
       title: t("Daily career review", "每日求职回顾"),
-      prompt: t("Review my calendar, interview status, application volume and learning progress every morning. Tell me the three most important things to do today. Save the advice to my calendar card.", "每天早上检查我的日历、面试状态、投递数量和学习进度，告诉我今天最该做的三件事。把建议保存到日历建议里。"),
+      prompt: t("Review my calendar, interview status, weekly greetings, actual resume sends and learning progress every morning. Keep greetings and resume sends separate. Tell me the three most important things to do today. Save the advice to my calendar card.", "每天早上检查我的日历、面试状态、本周打招呼数、实际简历投递数和学习进度，不要把打招呼和简历混在一起。告诉我今天最该做的三件事。把建议保存到日历建议里。"),
     },
     {
       title: t("Follow up on interviews", "跟进等结果的面试"),
@@ -204,7 +204,7 @@ export default function AutomationsPage() {
     },
     {
       title: t("Weekly application check", "每周投递检查"),
-      prompt: t("Review my application pace this week. Compare it with my interview status and tell me whether to increase, keep or reduce applications, and which company and role types fit my current stage. Save the advice to my application rhythm card.", "检查我本周的投递节奏，结合面试状态判断该加大、维持还是降低投递，并建议适合当前阶段的公司类型和岗位类型。把建议保存到投递节奏里。"),
+      prompt: t("Review my application pace this week using greetings and actual resume sends as separate numbers. Compare them with my interview status and tell me whether to increase, keep or reduce effort, and which company and role types fit my current stage. Unrecorded resume days are not zero. Save the advice to my application rhythm card.", "检查我本周的投递节奏，把打招呼数和实际简历投递数分开看，结合面试状态判断该加大、维持还是降低投入，并建议适合当前阶段的公司类型和岗位类型。未记录的简历投递天数不等于 0。把建议保存到投递节奏里。"),
     },
     {
       title: t("Learning follow-up", "学习计划跟进"),

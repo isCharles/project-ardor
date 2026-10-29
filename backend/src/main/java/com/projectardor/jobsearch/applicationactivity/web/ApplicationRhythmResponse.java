@@ -9,27 +9,29 @@ import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmV
 public record ApplicationRhythmResponse(
         LocalDate today,
         LocalDate weekStart,
-        int todayCount,
-        int weeklyCount,
-        int weeklyGoal,
+        Integer todayGreetingCount,
+        Integer todayResumeCount,
+        int weeklyGreetingCount,
+        int weeklyResumeCount,
+        int weeklyGreetingRecordedDays,
+        int weeklyResumeRecordedDays,
+        int weeklyResumeGoal,
+        Integer weeklyGreetingGoal,
         boolean reminderEnabled,
         LocalTime reminderTime,
         boolean weekdaysOnly,
         boolean reminderDue,
         List<DayCount> days,
         String advice) {
-    public record DayCount(LocalDate date, int count) {}
-
-    public ApplicationRhythmResponse(LocalDate today, LocalDate weekStart, int todayCount, int weeklyCount,
-            int weeklyGoal, boolean reminderEnabled, LocalTime reminderTime, boolean weekdaysOnly,
-            boolean reminderDue, List<DayCount> days) {
-        this(today, weekStart, todayCount, weeklyCount, weeklyGoal, reminderEnabled, reminderTime,
-                weekdaysOnly, reminderDue, days, null);
-    }
+    public record DayCount(LocalDate date, Integer greetingCount, Integer resumeCount) {}
 
     public static ApplicationRhythmResponse from(ApplicationRhythmView view) {
-        return new ApplicationRhythmResponse(view.today(), view.weekStart(), view.todayCount(), view.weeklyCount(),
-                view.weeklyGoal(), view.reminderEnabled(), view.reminderTime(), view.weekdaysOnly(), view.reminderDue(),
-                view.days().stream().map(day -> new DayCount(day.date(), day.count())).toList(), view.advice());
+        return new ApplicationRhythmResponse(view.today(), view.weekStart(), view.todayGreetingCount(),
+                view.todayResumeCount(), view.weeklyGreetingCount(), view.weeklyResumeCount(),
+                view.weeklyGreetingRecordedDays(), view.weeklyResumeRecordedDays(), view.weeklyResumeGoal(),
+                view.weeklyGreetingGoal(), view.reminderEnabled(), view.reminderTime(), view.weekdaysOnly(),
+                view.reminderDue(), view.days().stream()
+                        .map(day -> new DayCount(day.date(), day.greetingCount(), day.resumeCount())).toList(),
+                view.advice());
     }
 }

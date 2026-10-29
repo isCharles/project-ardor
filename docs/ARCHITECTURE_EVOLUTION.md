@@ -56,7 +56,7 @@
 | 某轮转写、笔记与逐题整理 | 面试记录 / Interview notes；可保留“面经”俗称 | InterviewRecord、InterviewQuestion |
 | AI 扮演面试官的练习 | 模拟面试 / Mock interview | MockInterviewSession |
 | 再答一道旧题、接受变式测试 | 重新作答 / Retry；变式复测 | QuestionPracticeAttempt |
-| 每日投递数量与提醒 | 投递 / Applications | ApplicationActivity 或现有计数概念 |
+| 每日打招呼与简历投递数量、提醒 | 投递 / Applications | ApplicationActivity；两个每日计数各自独立 |
 | 薄弱点与后续行动的汇总 | 补强进度 / Progress | ProgressQuery，非 Evidence 业务实体 |
 
 **Interview 优先、明确表示真实面试；Mock Interview 必须带 Mock。** `opportunity` 可以将来用于确实存在的“潜在岗位机会”，但不能继续作为真实面试不得已的替代词。不能将当前面试流程直接宣称为完整岗位机会漏斗。

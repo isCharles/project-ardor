@@ -10,7 +10,7 @@ public enum AgentApprovalMode {
     ASK, AUTO, FULL, CUSTOM;
 
     private static final Set<String> HIGH_IMPACT = Set.of(
-            "create_recurring_task", "update_recurring_task", "record_application_count", "set_application_rhythm");
+            "create_recurring_task", "update_recurring_task", "record_application_activity", "set_application_rhythm");
 
     public boolean permitsAutomatically(String tool) {
         var risk = ToolCatalog.describe(tool);

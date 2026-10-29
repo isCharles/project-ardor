@@ -15,7 +15,7 @@ class AgentApprovalModeTests {
         assertThat(AgentApprovalMode.AUTO.permitsAutomatically("create_calendar_task")).isTrue();
         assertThat(AgentApprovalMode.AUTO.permitsAutomatically("update_calendar_task")).isTrue();
         assertThat(AgentApprovalMode.AUTO.permitsAutomatically("update_learning_plan")).isTrue();
-        for (String tool : new String[]{"create_recurring_task", "update_recurring_task", "record_application_count",
+        for (String tool : new String[]{"create_recurring_task", "update_recurring_task", "record_application_activity",
                 "set_application_rhythm", "finish_interview", "cancel_interview", "create_automation", "update_automation"}) {
             assertThat(AgentApprovalMode.AUTO.permitsAutomatically(tool)).as(tool).isFalse();
             assertThat(AgentApprovalMode.FULL.permitsAutomatically(tool)).as(tool).isTrue();

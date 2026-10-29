@@ -38,7 +38,7 @@ public final class ToolCatalog {
 
         register(risks, ToolModule.APPLICATIONS, Capability.READ, "get_application_rhythm");
         register(risks, ToolModule.APPLICATIONS, Capability.UPDATE,
-                "record_application_count", "set_application_rhythm", "update_application_advice");
+                "record_application_activity", "set_application_rhythm", "update_application_advice");
 
         register(risks, ToolModule.CALENDAR, Capability.READ, "list_calendar_tasks", "list_recurring_tasks", "get_calendar_advice", "find_available_slots", "check_calendar_conflict");
         register(risks, ToolModule.CALENDAR, Capability.CREATE, "create_calendar_task", "create_recurring_task");
