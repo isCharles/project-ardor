@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,6 +34,7 @@ class LatexWorkspaceServiceTests {
         LatexProject project = LatexProject.create(userId, "我的简历", LatexWorkspaceService.DEFAULT_MAIN_FILE);
         project.advanceTo(currentRevision);
         when(projects.findByIdAndUserId(project.getId(), userId)).thenReturn(Optional.of(project));
+        when(projects.findByIdAndUserIdForUpdate(project.getId(), userId)).thenReturn(Optional.of(project));
         return project;
     }
 
@@ -166,6 +168,25 @@ class LatexWorkspaceServiceTests {
                 .containsExactly(project.getId());
 
         verify(projects).findByUserIdAndArchivedAtIsNotNullOrderByUpdatedAtDesc(userId);
+    }
+
+    @Test
+    void everyWorkspaceMutationTakesTheRowLock() {
+        UUID userId = UUID.randomUUID();
+        LatexProject project = ownedProject(userId, 2);
+        when(revisions.saveAndFlush(any())).thenAnswer(call -> call.getArgument(0));
+        var revision = LatexRevision.create(project.getId(), userId, 2, Map.of("main.tex", "x"),
+                LatexWorkspaceService.sha(Map.of("main.tex", "x")), null);
+        when(revisions.findByProjectIdAndUserIdAndRevisionNo(project.getId(), userId, 2)).thenReturn(Optional.of(revision));
+
+        service.save(userId, project.getId(), 2, Map.of("main.tex", "new"), null);
+        service.freeze(userId, project.getId(), 2);
+        service.rename(userId, project.getId(), "改名");
+        service.archive(userId, project.getId());
+        service.restore(userId, project.getId());
+
+        verify(projects, times(5)).findByIdAndUserIdForUpdate(project.getId(), userId);
+        verify(projects, never()).findByIdAndUserId(project.getId(), userId);
     }
 
     @Test

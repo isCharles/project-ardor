@@ -236,7 +236,7 @@ public class LatexWorkspaceService {
     /** A save is an append against an exact base revision; a stale base is a conflict, never a merge. */
     @Transactional
     public Snapshot save(UUID userId, UUID projectId, int baseRevision, Map<String, String> files, String message) {
-        LatexProject project = owned(userId, projectId);
+        LatexProject project = ownedForUpdate(userId, projectId);
         if (baseRevision != project.getCurrentRevision()) throw conflict();
         Map<String, String> clean = sanitize(files);
         int next = project.getCurrentRevision() + 1;
@@ -253,7 +253,7 @@ public class LatexWorkspaceService {
 
     @Transactional
     public ProjectView freeze(UUID userId, UUID projectId, int revisionNo) {
-        LatexProject project = owned(userId, projectId);
+        LatexProject project = ownedForUpdate(userId, projectId);
         revision(userId, projectId, revisionNo);
         project.freeze(revisionNo);
         return ProjectView.of(project);
@@ -262,9 +262,7 @@ public class LatexWorkspaceService {
     /** Archiving is idempotent and keeps every revision; archived projects are not addressable elsewhere. */
     @Transactional
     public void archive(UUID userId, UUID projectId) {
-        projects.findByIdAndUserId(projectId, userId)
-                .orElseThrow(() -> new ResourceNotFoundException("简历不存在"))
-                .archive();
+        locked(userId, projectId).archive();
     }
 
     @Transactional(readOnly = true)
@@ -275,15 +273,14 @@ public class LatexWorkspaceService {
 
     @Transactional
     public ProjectView restore(UUID userId, UUID projectId) {
-        LatexProject project = projects.findByIdAndUserId(projectId, userId)
-                .orElseThrow(() -> new ResourceNotFoundException("简历不存在"));
+        LatexProject project = locked(userId, projectId);
         project.restore();
         return ProjectView.of(project);
     }
 
     @Transactional
     public ProjectView rename(UUID userId, UUID projectId, String title) {
-        LatexProject project = owned(userId, projectId);
+        LatexProject project = ownedForUpdate(userId, projectId);
         project.rename(title(title));
         return ProjectView.of(project);
     }
@@ -301,6 +298,17 @@ public class LatexWorkspaceService {
                 .orElseThrow(() -> new ResourceNotFoundException("简历不存在"));
         if (project.isArchived()) throw new ResourceNotFoundException("简历不存在");
         return project;
+    }
+
+    private LatexProject ownedForUpdate(UUID userId, UUID projectId) {
+        LatexProject project = locked(userId, projectId);
+        if (project.isArchived()) throw new ResourceNotFoundException("简历不存在");
+        return project;
+    }
+
+    private LatexProject locked(UUID userId, UUID projectId) {
+        return projects.findByIdAndUserIdForUpdate(projectId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("简历不存在"));
     }
 
     private LatexRevision revision(UUID userId, UUID projectId, int revisionNo) {

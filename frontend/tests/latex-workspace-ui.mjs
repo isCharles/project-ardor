@@ -14,9 +14,17 @@ let frozenRevision = null;
 let projectTitle = "我的简历";
 let archived = false;
 const archivedProjects = [];
-const freezes = [], previews = [], uploads = [], streams = [], renames = [], archives = [], restores = [];
+const freezes = [], previews = [], uploads = [], streams = [], renames = [], archives = [], restores = [], modelSaves = [];
 let conversations = 0;
 const resumes = [];
+const modelSettings = {
+  PRIMARY: { visible: true, thinkingEffort: "AUTO" },
+  "FALLBACK:backup": { visible: true, thinkingEffort: "STANDARD" },
+};
+const modelCatalog = () => [
+  { id: "PRIMARY", label: "Primary", provider: "synthetic", available: true, nativeControl: false, settingsKey: "primary", ...modelSettings.PRIMARY },
+  { id: "FALLBACK:backup", label: "Backup", provider: "synthetic", available: true, nativeControl: false, settingsKey: "backup", ...modelSettings["FALLBACK:backup"] },
+];
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const project = () => ({ id: projectId, title: projectTitle, mainFile: "main.tex", currentRevision: 1, frozenRevision, updatedAt: new Date().toISOString() });
 const snapshot = () => ({ projectId, title: projectTitle, mainFile: "main.tex", revisionNo: 1, files: { "main.tex": "\\documentclass{article}\n\\begin{document}\n第一版\n\\end{document}\n" }, sha256: "x", frozenRevision });
@@ -94,6 +102,16 @@ try {
       resumes.push(item);
       return route.fulfill({ status: 201, json: item });
     }
+    if (method === "PUT" && path === "/api/agent/models/settings") {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      modelSaves.push(body);
+      for (const setting of body.settings ?? []) {
+        if (modelSettings[setting.modelChoice]) Object.assign(modelSettings[setting.modelChoice], {
+          visible: setting.visible, thinkingEffort: setting.thinkingEffort,
+        });
+      }
+      return route.fulfill({ json: modelCatalog() });
+    }
     if (method !== "GET") return route.fulfill({ json: {} });
     let body = [];
     if (path === "/api/auth/me") body = { id: "latex-owner", email: "latex@ardor.invalid", admin: false };
@@ -102,7 +120,7 @@ try {
     else if (path === "/api/profile") body = { displayName: "Synthetic owner", timezone: "Asia/Shanghai", targetRoles: [] };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
     else if (path.startsWith("/api/background-tasks/")) body = { activeCount: 0, items: [] };
-    else if (path === "/api/agent/models") body = [{ id: "PRIMARY", label: "Primary", provider: "synthetic", available: true, nativeControl: false, visible: true }];
+    else if (path === "/api/agent/models") body = modelCatalog();
     else if (path === "/api/latex/projects") body = archived ? [] : [project()];
     else if (path === "/api/latex/projects/archived") body = archivedProjects;
     else if (path === `/api/latex/projects/${projectId}`) body = snapshot();
@@ -159,6 +177,24 @@ try {
   assert.equal(conversations, 1, "one conversation is created and reused");
   await waitFor(async () => (await bodyText()).includes("已按你的要求调整。"), "the assistant reply");
   await waitFor(async () => (await bodyText()).includes("读取当前修订"), "the tool step chip");
+
+  // Saving model settings must re-sync the active selection and its effort:
+  // hiding the selected model cannot leave the old choice in the next request.
+  await modelButton.click();
+  await page.getByRole("button", { name: /^Manage models$|^管理模型$/ }).click();
+  const settings = page.getByRole("dialog", { name: /Manage models|管理模型/ });
+  await settings.waitFor();
+  await settings.getByRole("combobox", { name: "Thinking level: Primary" }).selectOption("STANDARD");
+  await settings.getByRole("switch", { name: "Visible in picker: Primary" }).click();
+  await settings.getByRole("button", { name: /^Save$|^保存$/ }).click();
+  await waitFor(() => modelSaves.length === 1, "the model settings save");
+  await settings.waitFor({ state: "detached", timeout: 5_000 });
+  await waitFor(async () => (await modelButton.innerText()).includes("Backup"), "the fallback model after hiding Primary");
+  await page.getByRole("textbox", { name: /Message Ardor|给 Ardor 的消息/ }).fill("再精简一点");
+  await page.getByRole("textbox", { name: /Message Ardor|给 Ardor 的消息/ }).press("Enter");
+  await waitFor(() => streams.length === 2, "the second Ardor stream request");
+  assert.equal(streams[1].modelChoice, "FALLBACK:backup", "a hidden model must not stay selected");
+  assert.equal(streams[1].reasoningDepth, "STANDARD", "the next turn uses the selected model's effort");
 
   // Freezing compiles the revision and files the PDF as a resume, so analysis can use it.
   await page.getByRole("button", { name: /^Freeze$|^定稿$/ }).click();

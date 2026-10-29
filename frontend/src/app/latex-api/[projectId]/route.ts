@@ -1,4 +1,4 @@
-import { compileLatex, LatexBusyError, LatexPreviewUnavailableError, renderPdfPages } from "@/lib/latex-compile";
+import { compileLatex, LatexBusyError, LatexPreviewBusyError, LatexPreviewUnavailableError, renderPdfPages } from "@/lib/latex-compile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +13,7 @@ type BackendSnapshot = {
 type CachedPreview = { pdf: Buffer; pages?: Buffer[]; at: number };
 
 const previewCache = new Map<string, CachedPreview>();
+const renderJobs = new Map<string, Promise<Buffer[]>>();
 const MAX_CACHE_ENTRIES = 8;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -98,7 +99,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   if ("response" in loaded) return loaded.response;
   const snapshot = loaded.snapshot;
   const key = `${projectId}:${snapshot.revisionNo ?? revision ?? "current"}`;
-  if (refresh !== null) previewCache.delete(key);
+  if (refresh !== null) {
+    previewCache.delete(key);
+    renderJobs.delete(key);
+  }
 
   let entry = cacheGet(key);
   if (!entry) {
@@ -121,11 +125,25 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   if (pageParam === null) return pdfResponse(entry.pdf, snapshot);
 
   if (!entry.pages) {
+    let job = renderJobs.get(key);
+    if (!job) {
+      // One render per cached PDF: a burst of page requests must not launch a
+      // Ghostscript process each, and a stale render must not replace a newer entry.
+      const pending = renderPdfPages(entry.pdf).then((pages) => {
+        entry.pages = pages;
+        entry.at = Date.now();
+        if (cacheGet(key) === entry) cachePut(key, entry);
+        return pages;
+      });
+      job = pending.finally(() => { renderJobs.delete(key); });
+      renderJobs.set(key, job);
+    }
     try {
-      entry.pages = await renderPdfPages(entry.pdf);
-      entry.at = Date.now();
-      cachePut(key, entry);
+      entry.pages = await job;
     } catch (error) {
+      if (error instanceof LatexPreviewBusyError) {
+        return Response.json({ message: error.message }, { status: 429, headers: { "Retry-After": "3" } });
+      }
       const message = error instanceof LatexPreviewUnavailableError
         ? error.message
         : error instanceof Error ? `预览渲染失败：${error.message.slice(0, 600)}` : "预览渲染失败";
