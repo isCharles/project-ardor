@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
+import { MarkdownContent } from "@/components/ardor/markdown-content";
 
 type DayCount = { date: string; greetingCount: number | null; resumeCount: number | null };
 type Rhythm = {
@@ -161,8 +162,8 @@ export default function ApplicationRhythmPage() {
       ? t("Today's greeting count is not recorded yet.", "今天的打招呼数还没记录。")
       : t("Today's resume send count is not recorded yet.", "今天的简历投递数还没记录。");
   const advicePrompt = encodeURIComponent(locale === "en"
-    ? "Review my current interview status (upcoming interviews, waiting for results, rejections), learning plans, weekly greetings and actual resume sends. Greetings and resume sends are separate; unrecorded resume days are not zero. Tell me whether I should increase, keep or reduce application pace, and which company/role types fit my current stage. Do not push me to apply when I have an upcoming interview; do not give generic encouragement. Save the advice to my application rhythm card."
-    : "结合我现在的面试状态（有没有即将到来的面试、是否在等结果、是否连续被拒）、学习计划、本周打招呼数和实际简历投递数，判断我现在应该加大、维持还是降低投递强度，并建议适合我当前阶段的公司类型和岗位类型。打招呼和简历投递是两回事，未记录的简历天数不等于 0。不要泛泛鼓励；如果我有即将到来的面试，不要催投递。把建议保存到我的投递节奏里。");
+    ? "Review my current interview status (upcoming interviews, waiting for results, rejections), learning plans, weekly greetings and actual resume sends. Greetings and resume sends are separate; unrecorded resume days are not zero. Tell me whether I should increase, keep or reduce application pace, and which company/role types fit my current stage. Do not push me to apply when I have an upcoming interview; do not give generic encouragement. Save the advice as brief Markdown: one-line verdict, then at most 3 one-line actions; no headings, tables or long paragraphs."
+    : "结合我现在的面试状态（有没有即将到来的面试、是否在等结果、是否连续被拒）、学习计划、本周打招呼数和实际简历投递数，判断我现在应该加大、维持还是降低投递强度，并建议适合我当前阶段的公司类型和岗位类型。打招呼和简历投递是两回事，未记录的简历天数不等于 0。不要泛泛鼓励；如果我有即将到来的面试，不要催投递。用简短的 Markdown 保存建议：第一行一句结论，下面最多 3 条行动，每条一句话；不要标题、表格或长段落。");
 
   return (
     <main className="ardor-workbench min-h-screen px-5 pb-16 pt-6 text-[#1d1d1f] md:px-10">
@@ -231,7 +232,7 @@ export default function ApplicationRhythmPage() {
         <section className="mt-6 rounded-[2rem] border border-violet-100 bg-gradient-to-br from-violet-50/80 via-white/80 to-rose-50/60 p-6 md:p-8">
           <div className="flex items-center gap-2"><Sparkles className="size-5 text-violet-600" /><h2 className="text-lg font-semibold">{t("Ardor's read", "Ardor 的建议")}</h2></div>
           {rhythm?.advice
-            ? <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-700">{rhythm.advice}</p>
+            ? <MarkdownContent className="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-700">{rhythm.advice}</MarkdownContent>
             : <p className="mt-4 text-sm text-stone-500">{t("No advice yet. Ask Ardor to review your interview status, greetings and resume sends; it will save the verdict here.", "还没有建议。点“让 Ardor 判断”，它会结合面试状态、打招呼和简历投递给出判断并保存到这里。")}</p>}
         </section>
         <p className="mt-8 flex items-center gap-1.5 text-xs text-stone-400"><Minus className="size-3" />{t("You can lower a goal or pause reminders anytime.", "面试忙的时候，目标可以随时调低或暂停提醒。")}</p>

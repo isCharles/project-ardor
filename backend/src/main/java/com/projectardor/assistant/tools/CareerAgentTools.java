@@ -500,9 +500,10 @@ public class CareerAgentTools {
         @Tool(name = "update_application_advice", value = """
                 把投递节奏建议写入求职页的“投递节奏”卡片。用户问“现在该不该继续投/投多少/投什么公司岗位”或让你判断投递强度时，必须先结合面试状态（即将面试、等结果、连续被拒）、学习计划和本周数据，再调用本工具保存，不能只在聊天里说。
                 本周打招呼数和实际简历投递数必须分开解读，不能相加或互相代替；未记录不等于 0，也不要按回复率推算历史简历投递数。
-                有即将到来的面试时不要催投递；等待结果时维持；连续被拒时提醒调整公司和岗位类型。传入空字符串可清除建议。
+                有即将到来的面试时不要催投递；等待结果时维持；连续被拒时提醒调整公司和岗位类型。
+                建议必须精简并用 Markdown 写入：第一行一句结论（加大/维持/降低 + 理由），下面最多 3 条以“- ”开头的行动建议，每条一句话；不要标题、表格、分隔线或长段落。传入空字符串可清除建议。
                 """)
-        public ApplicationRhythmView updateApplicationAdvice(@P("给用户的投递节奏建议；清空传空字符串") String advice) {
+        public ApplicationRhythmView updateApplicationAdvice(@P("给用户的投递节奏建议，简短 Markdown；清空传空字符串") String advice) {
             return applicationRhythmService.updateAdvice(userId, advice);
         }
 

@@ -204,7 +204,7 @@ export default function AutomationsPage() {
     },
     {
       title: t("Weekly application check", "每周投递检查"),
-      prompt: t("Review my application pace this week using greetings and actual resume sends as separate numbers. Compare them with my interview status and tell me whether to increase, keep or reduce effort, and which company and role types fit my current stage. Unrecorded resume days are not zero. Save the advice to my application rhythm card.", "检查我本周的投递节奏，把打招呼数和实际简历投递数分开看，结合面试状态判断该加大、维持还是降低投入，并建议适合当前阶段的公司类型和岗位类型。未记录的简历投递天数不等于 0。把建议保存到投递节奏里。"),
+      prompt: t("Review my application pace this week using greetings and actual resume sends as separate numbers. Compare them with my interview status and tell me whether to increase, keep or reduce effort, and which company and role types fit my current stage. Unrecorded resume days are not zero. Save the advice to my application rhythm card as brief Markdown: one-line verdict plus at most 3 one-line actions.", "检查我本周的投递节奏，把打招呼数和实际简历投递数分开看，结合面试状态判断该加大、维持还是降低投入，并建议适合当前阶段的公司类型和岗位类型。未记录的简历投递天数不等于 0。用简短的 Markdown 把建议保存到投递节奏：一句结论，加最多 3 条行动。"),
     },
     {
       title: t("Learning follow-up", "学习计划跟进"),
