@@ -68,13 +68,16 @@ try {
   await page.getByRole("combobox", { name: "Pick from interview pipeline", exact: true }).selectOption({ label: "Acme · Backend intern" });
   assert.equal(await page.getByLabel("Target role (optional)", { exact: true }).inputValue(), "Acme · Backend intern");
   assert.equal(await page.locator("textarea").first().inputValue(), "Build recommendation models");
-  await page.getByRole("combobox", { name: "Role family", exact: true }).selectOption("algorithm");
+  // A pasted JD decides the family, so the selector disappears and none is sent.
+  assert.equal(await page.getByRole("combobox", { name: "Role family", exact: true }).count(), 0,
+    "Role family must not be asked for once a JD is present");
+  await page.getByText("The family is inferred from the JD; no extra choice needed.", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
 
   await page.getByText("42", { exact: true }).waitFor({ timeout: 10000 });
   await page.getByRole("button", { name: "Export report", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Re-analyze", exact: true }).count(), 0, "Report must not offer a re-analyze action");
-  assert.deepEqual(submitted, { targetRole: "Acme · Backend intern", jobDescription: "Build recommendation models", roleFamily: "algorithm" });
+  assert.deepEqual(submitted, { targetRole: "Acme · Backend intern", jobDescription: "Build recommendation models", roleFamily: "" });
   await page.getByText("Must fix first", { exact: true }).waitFor();
   await page.getByText("目标算法岗，但项目全是后端 CRUD", { exact: true }).waitFor();
   await page.getByText("普通 211 本科，在当前算法岗市场不占优势；当务之急是补大厂实习。", { exact: true }).waitFor();
