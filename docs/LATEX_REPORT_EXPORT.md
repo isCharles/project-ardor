@@ -61,6 +61,24 @@ sources are excluded from Git and the Docker build context.
   against an explicitly synthetic authenticated backend fixture, not real accounts.
   The `report-export` CI job parses and renders the exported Chinese PDF and retains
   synthetic artifacts. It does not replace real-backend cross-user tests.
+## LaTeX resume workspace preview
+
+`GET /latex-api/{projectId}?revision={n}` compiles a stored workspace snapshot and
+returns the PDF inline. It reads the revision through the backend with the caller's
+session cookie, so ownership is enforced before any compiler starts. Both this route
+and the report export share `frontend/src/lib/latex-compile.ts`: one concurrency
+limiter, one timeout, one completeness check.
+
+Workspace documents are user-authored, so this route also passes `openin_any=p` and
+`openout_any=p` to Web2C engines (XeLaTeX), which rejects absolute and parent-relative
+file access from inside the document. Shell escape stays disabled. Tectonic ignores
+those environment variables; the CI smoke test asserts that an `\input{/etc/hostname}`
+document is refused instead of compiled.
+
+`scripts/report-export-smoke.mjs` now also requests a synthetic workspace revision,
+checks the PDF bytes and asserts the escape attempt returns 503; the workflow extracts
+its Chinese text with `pdftotext`.
+
 ## UI and CI contract
 
 - The report header action is labelled **Export report / 导出报告**; it must
@@ -72,6 +90,9 @@ sources are excluded from Git and the Docker build context.
   **Start analysis / 开始分析**. The report itself has no re-analyze action.
 - The browser UI regression does not invoke the LaTeX route; the separate
   `report-export` CI job exercises the actual container, TeX engine and PDF output.
+- The workspace page lives at `/app/latex` and is linked from the resumes header. It
+  previews only saved revisions; saving uses the revision number it started from and
+  surfaces a 409 as a conflict instead of overwriting.
 - Before changing the button label or report flow, update
   `frontend/tests/resume-scoring-ui.mjs` and run it with
   `ARDOR_UI_BROWSER_CHANNEL=msedge` locally if the bundled Chromium is absent.

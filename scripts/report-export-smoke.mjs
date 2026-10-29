@@ -4,6 +4,22 @@ import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const id = "20000000-0000-4000-8000-000000000001";
+const projectId = "20000000-0000-4000-8000-000000000002";
+const escapeProjectId = "20000000-0000-4000-8000-000000000003";
+const workspaceMain = String.raw`\documentclass[11pt]{article}
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\IfFontExistsTF{SimSun}{\setCJKmainfont[AutoFakeBold=2.5]{SimSun}}{\setCJKmainfont[AutoFakeBold=2.5]{Noto Serif CJK SC}}
+\begin{document}
+\section{合成 LaTeX 工作区}
+这段内容仅用于验收编译与预览路由，不包含真实个人信息。
+\end{document}
+`;
+const escapeMain = String.raw`\documentclass{article}
+\begin{document}
+\input{/etc/hostname}
+\end{document}
+`;
 const fixture = {
   overallScore: 82,
   summary: "**合成验收报告**：保留中文、反斜杠 C:\\CV 和特殊字符 50% & _。",
@@ -32,6 +48,12 @@ if (process.argv[2] === "fixture") {
     if (request.url === `/api/resumes/${id}/analysis` && owned) {
       response.end(JSON.stringify({ analysis: fixture })); return;
     }
+    if (request.url === `/api/latex/projects/${projectId}` && owned) {
+      response.end(JSON.stringify({ projectId, title: "合成 LaTeX 工作区", mainFile: "main.tex", revisionNo: 3, files: { "main.tex": workspaceMain } })); return;
+    }
+    if (request.url === `/api/latex/projects/${escapeProjectId}` && owned) {
+      response.end(JSON.stringify({ projectId: escapeProjectId, title: "越界读取用例", mainFile: "main.tex", revisionNo: 1, files: { "main.tex": escapeMain } })); return;
+    }
     response.writeHead(404).end(JSON.stringify({ message: "Not found" }));
   });
   server.listen(8080, "0.0.0.0", () => console.log("Synthetic report backend ready"));
@@ -58,11 +80,28 @@ if (process.argv[2] === "fixture") {
   assert.match(result.headers.get("content-type"), /application\/pdf/);
   assert.equal(result.headers.get("cache-control"), "no-store");
   assert.equal(result.headers.get("x-report-format"), "latex");
+  const preview = (resource) => fetch(`${base}/latex-api/${resource}`, {
+    headers: { Cookie: "report_fixture=owner" }, signal: AbortSignal.timeout(100_000),
+  });
+  assert.equal((await fetch(`${base}/latex-api/invalid-id`)).status, 400);
+  assert.equal((await fetch(`${base}/latex-api/${projectId}`)).status, 401);
+  const previewResult = await preview(projectId);
+  assert.equal(previewResult.status, 200, previewResult.status === 200 ? "" : await previewResult.text());
+  assert.match(previewResult.headers.get("content-type"), /application\/pdf/);
+  assert.equal(previewResult.headers.get("cache-control"), "no-store");
+  assert.match(previewResult.headers.get("content-disposition"), /^inline;/);
+  const workspacePdf = Buffer.from(await previewResult.arrayBuffer());
+  assert.equal(workspacePdf.subarray(0, 4).toString(), "%PDF");
+  assert.ok(workspacePdf.subarray(-1024).toString("latin1").trimEnd().endsWith("%%EOF"));
+  // The workspace document must not be able to read files outside its build
+  // directory, so an absolute \input is rejected instead of compiled.
+  assert.equal((await preview(escapeProjectId)).status, 503);
   const pdf = Buffer.from(await result.arrayBuffer());
   assert.equal(pdf.subarray(0, 4).toString(), "%PDF");
   assert.ok(pdf.subarray(-1024).toString("latin1").trimEnd().endsWith("%%EOF"));
   await mkdir(output, { recursive: true });
   await writeFile(path.join(output, "synthetic-report.pdf"), pdf);
+  await writeFile(path.join(output, "synthetic-latex-workspace.pdf"), workspacePdf);
   console.log(JSON.stringify({ status: "passed", bytes: pdf.length, output,
-    scope: "real frontend container and compiler; synthetic authenticated backend fixture" }));
+    scope: "real frontend container and compiler; synthetic authenticated backend fixture, report export and LaTeX workspace preview" }));
 }
