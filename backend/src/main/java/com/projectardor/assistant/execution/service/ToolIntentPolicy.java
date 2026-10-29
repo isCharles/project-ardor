@@ -43,7 +43,8 @@ public final class ToolIntentPolicy {
             case "update_latex_project", "replace_latex_main_file", "freeze_latex_version" ->
                     "简历|LaTeX|latex|排版|模板|resume";
             case "rename_latex_project" -> "简历|resume|résumé|标题|名字|名称|title|name";
-            case "record_application_count", "set_application_rhythm", "update_application_advice" -> "投递|投了|已投|申请|application|applied";
+            case "record_application_activity", "set_application_rhythm", "update_application_advice" ->
+                    "投递|投了|已投|申请|打招呼|招呼|简历|application|applied|greeting|resume";
             case "create_automation", "update_automation", "delete_automation" ->
                     "自动化|定时|定期|每天|每周|每月|每年|以后|今后|automation|cron|schedule|daily|weekly|monthly";
             case "update_calendar_advice", "delete_calendar_advice" ->
@@ -80,7 +81,7 @@ public final class ToolIntentPolicy {
                     "修改|调整|更新|改成|改为|重写|润色|排版|update|change|edit|rewrite|reword";
             case "freeze_latex_version" -> "定稿|冻结|正式版本|正式版|可以投递|freeze|finalize";
             case "rename_latex_project" -> "改名|改个名|重命名|改标题|换个名字|换名字|名字改成|名称改成|改成|改为|rename|title";
-            case "record_application_count" -> "记录|record|log";
+            case "record_application_activity" -> "记录|记|record|log";
             case "set_application_rhythm" -> "设置|调整|修改|设为|set|change|update";
             case "update_application_advice" -> "保存|更新|写入|记录|建议|判断|节奏|save|update|write|record|advice|pace";
             case "create_automation" -> "创建|新增|添加|设置|安排|建立|每天|每周|每月|定期|定时|以后|今后|create|add|set|schedule|every";
@@ -95,7 +96,7 @@ public final class ToolIntentPolicy {
         var actionPattern = Pattern.compile(imperative, Pattern.CASE_INSENSITIVE);
         return java.util.Arrays.stream(request.split("[。！？!?;；\\n，,]"))
                 .anyMatch(clause -> domainPattern.matcher(clause).find() && (actionPattern.matcher(clause).find()
-                    || tool.equals("record_application_count") && clause.matches("(?s).*(?:今天|昨天|today|yesterday).*(?:投了|已投|applied).*[0-9]+.*")));
+                    || tool.equals("record_application_activity") && clause.matches("(?s).*(?:今天|昨天|today|yesterday).*[0-9]+.*")));
     }
     private static boolean permitsDateCorrection(String request) {
         String prefix = "^\\s*(?:(?:请你?|麻烦|帮我|我希望你?|please|can you|could you|help me)\\s*)*";

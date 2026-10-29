@@ -73,7 +73,9 @@ class ToolIntentPolicyTests {
         assertThat(ToolIntentPolicy.permits("create_calendar_task", "请帮我添加明天的日程")).isTrue();
         assertThat(ToolIntentPolicy.permits("update_learning_plan", "帮我把学习时间改成明天")).isTrue();
         assertThat(ToolIntentPolicy.permits("create_calendar_task", "Please create a calendar task tomorrow")).isTrue();
-        assertThat(ToolIntentPolicy.permits("record_application_count", "今天投了20份")).isTrue();
+        assertThat(ToolIntentPolicy.permits("record_application_activity", "今天投了20份")).isTrue();
+        assertThat(ToolIntentPolicy.permits("record_application_activity", "今天打招呼89个，发了5份简历")).isTrue();
+        assertThat(ToolIntentPolicy.permits("record_application_activity", "今天打了89个招呼")).isTrue();
         assertThat(ToolIntentPolicy.permits("unknown_write", "创建所有东西")).isFalse();
     }
     @Test void actionAndModuleMustReferToTheSameClause() {

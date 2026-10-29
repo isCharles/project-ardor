@@ -23,6 +23,8 @@ import com.projectardor.assistant.tools.modules.ResumeAgentToolProvider;
 import com.projectardor.assistant.tools.modules.SchedulingAgentToolProvider;
 import com.projectardor.assistant.tools.modules.LearningAgentToolProvider;
 
+import com.projectardor.jobsearch.applicationactivity.service.ApplicationActivityRecordResult;
+import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmIntent;
 import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
 import com.projectardor.assistant.automation.service.AutomationService;
 import com.projectardor.scheduling.advice.service.CalendarAdviceService;
@@ -441,35 +443,63 @@ public class CareerAgentTools {
             return proposeSnapshot("all_memories", "当前长期记忆（" + ids.size() + " 条）", "只删除这次列出的记忆，之后新增的记忆不受影响", "/api/agent/memory/snapshot", ids);
         }
 
-        @Tool(name = "get_application_rhythm", value = "查看用户本周投递份数、目标、每天记录和提醒设置；询问投递进度时先用此工具")
+        @Tool(name = "get_application_rhythm", value = """
+                查看用户本周和今天的打招呼数、实际简历投递数（两者分开）、目标、每天记录和提醒设置。
+                null 表示未记录，不是 0；旧数据只有打招呼数，历史简历投递数未记录。
+                询问投递进度时先用此工具，不要用自己的估算补齐缺失项。
+                """)
         public ApplicationRhythmView getApplicationRhythm() {
             return applicationRhythmService.get(userId);
         }
 
-        @Tool(name = "record_application_count", value = "将某天的投递总数设为用户说出的准确数量。覆盖当天旧值，重试不会重复加数；不要把一次性投递数写入长期记忆")
-        public ApplicationRhythmView recordApplicationCount(
-                @P("当天总共投了多少份，0 到 500") int count,
+        @Tool(name = "record_application_activity", value = """
+                分别记录某天的打招呼总数和实际发送简历总数。只传用户明确提供的那一项，未提到的一项不要传。
+                收到回复不算简历投递。用户说的是约数（例如“约 5 份”）时，不要写简历投递数；
+                先记录能确定的打招呼数，并让用户确认精确值。覆盖当天旧值，重试不会重复加数。
+                不要把一次性的每日数量写入长期记忆。
+                """)
+        public ApplicationActivityRecordResult recordApplicationActivity(
+                @P(value = "当天打招呼总数，0 到 500；用户没提供就留空", required = false) Integer greetingCount,
+                @P(value = "当天实际发送简历总数，0 到 500；用户没提供或只是约数就留空", required = false) Integer resumeCount,
                 @P(value = "日期 YYYY-MM-DD；用户说今天时传空字符串", required = false) String date) {
             LocalDate day = date == null || date.isBlank()
                     ? applicationRhythmService.get(userId).today()
                     : parseLocalDate(date, "投递日期");
-            return applicationRhythmService.record(userId, day, count);
+            if (greetingCount == null && resumeCount == null) {
+                throw new IllegalArgumentException("请用户提供打招呼数或实际发送的简历数，不能凭估算写入");
+            }
+            if (resumeCount != null && ApplicationRhythmIntent.approximateResumeCount(trustedUserRequest)) {
+                if (greetingCount == null) {
+                    throw new IllegalArgumentException("“约 X 份”不是精确的简历投递数；请先向用户确认精确值，不要写入");
+                }
+                ApplicationRhythmView view = applicationRhythmService.record(userId, day, greetingCount, null);
+                return new ApplicationActivityRecordResult(view, true,
+                        "已记录打招呼 " + greetingCount + "；简历投递数是约数，尚未记录，请向用户确认精确值。");
+            }
+            return new ApplicationActivityRecordResult(
+                    applicationRhythmService.record(userId, day, greetingCount, resumeCount), false, null);
         }
 
-        @Tool(name = "set_application_rhythm", value = "设置每周投递目标和工作台内提醒。只有用户明确提出目标和提醒要求才修改；提醒时间按用户资料时区解释")
+        @Tool(name = "set_application_rhythm", value = """
+                设置每周简历投递目标和可选每周打招呼目标，以及工作台内提醒。
+                只有用户明确提出目标和提醒要求才修改；提醒时间按用户资料时区解释。
+                简历投递目标只衡量实际发送的简历数，不能用打招呼数代替。
+                """)
         public ApplicationRhythmView setApplicationRhythm(
-                @P("每周投递目标，0 到 500；0 表示关闭目标") int weeklyGoal,
+                @P("每周简历投递目标，0 到 500；0 表示关闭目标") int weeklyResumeGoal,
+                @P(value = "每周打招呼目标，0 到 500；不设或关闭传 0", required = false) Integer weeklyGreetingGoal,
                 @P("是否启用工作台内提醒") boolean reminderEnabled,
                 @P("本地提醒时间 HH:mm，例如 19:00") String reminderTime,
                 @P("是否仅工作日提醒") boolean weekdaysOnly) {
-            return applicationRhythmService.configure(userId, weeklyGoal, reminderEnabled,
-                    parseLocalTime(reminderTime), weekdaysOnly);
+            return applicationRhythmService.configure(userId, weeklyResumeGoal, weeklyGreetingGoal,
+                    reminderEnabled, parseLocalTime(reminderTime), weekdaysOnly);
         }
 
 
 
         @Tool(name = "update_application_advice", value = """
-                把投递节奏建议写入求职页的“投递节奏”卡片。用户问“现在该不该继续投/投多少/投什么公司岗位”或让你判断投递强度时，必须先结合面试状态（即将面试、等结果、连续被拒）、学习计划和本周投递量，再调用本工具保存，不能只在聊天里说。
+                把投递节奏建议写入求职页的“投递节奏”卡片。用户问“现在该不该继续投/投多少/投什么公司岗位”或让你判断投递强度时，必须先结合面试状态（即将面试、等结果、连续被拒）、学习计划和本周数据，再调用本工具保存，不能只在聊天里说。
+                本周打招呼数和实际简历投递数必须分开解读，不能相加或互相代替；未记录不等于 0，也不要按回复率推算历史简历投递数。
                 有即将到来的面试时不要催投递；等待结果时维持；连续被拒时提醒调整公司和岗位类型。传入空字符串可清除建议。
                 """)
         public ApplicationRhythmView updateApplicationAdvice(@P("给用户的投递节奏建议；清空传空字符串") String advice) {

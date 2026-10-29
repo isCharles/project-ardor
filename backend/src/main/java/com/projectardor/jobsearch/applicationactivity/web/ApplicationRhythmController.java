@@ -9,8 +9,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.projectardor.jobsearch.applicationactivity.service.ApplicationMetric;
 import com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmService;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 
@@ -34,8 +36,9 @@ public class ApplicationRhythmController {
     public ApplicationRhythmResponse settings(
             @AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody ApplicationRhythmSettingsRequest request) {
-        return ApplicationRhythmResponse.from(service.configure(principal.userId(), request.weeklyGoal(), request.reminderEnabled(),
-                request.reminderTime(), request.weekdaysOnly()));
+        return ApplicationRhythmResponse.from(service.configure(principal.userId(), request.weeklyResumeGoal(),
+                request.weeklyGreetingGoal(), request.reminderEnabled(), request.reminderTime(),
+                request.weekdaysOnly()));
     }
 
     @PutMapping("/days/{date}")
@@ -43,12 +46,15 @@ public class ApplicationRhythmController {
             @AuthenticationPrincipal ArdorPrincipal principal,
             @PathVariable LocalDate date,
             @Valid @RequestBody ApplicationCountRequest request) {
-        return ApplicationRhythmResponse.from(service.record(principal.userId(), date, request.count()));
+        return ApplicationRhythmResponse.from(service.record(principal.userId(), date,
+                request.greetingCount(), request.resumeCount()));
     }
 
     @PostMapping("/today/increment")
-    public ApplicationRhythmResponse increment(@AuthenticationPrincipal ArdorPrincipal principal) {
-        return ApplicationRhythmResponse.from(service.incrementToday(principal.userId()));
+    public ApplicationRhythmResponse increment(
+            @AuthenticationPrincipal ArdorPrincipal principal,
+            @RequestParam ApplicationMetric metric) {
+        return ApplicationRhythmResponse.from(service.incrementToday(principal.userId(), metric));
     }
 
     @PostMapping("/reminder/dismiss")

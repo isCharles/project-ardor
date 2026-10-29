@@ -12,7 +12,7 @@ public enum AgentFeature {
     RECAPS("面经", "Interview notes", "整理面试内容与薄弱点"),
     KNOWLEDGE("知识库", "Knowledge", "检索和维护知识资料"),
     CALENDAR("日程", "Calendar", "管理待办与日程"),
-    APPLICATIONS("投递", "Applications", "记录投递节奏与目标"),
+    APPLICATIONS("投递", "Applications", "记录打招呼、简历投递节奏与目标"),
     MEMORY("记忆", "Memory", "管理用户的长期记忆");
 
     private final String label;
@@ -34,7 +34,7 @@ public enum AgentFeature {
             case RECAPS -> "Organize interview notes and identify weak areas";
             case KNOWLEDGE -> "Search and manage learning material";
             case CALENDAR -> "Manage tasks and schedules";
-            case APPLICATIONS -> "Track application activity and goals";
+            case APPLICATIONS -> "Track greetings, resume sends and goals separately";
             case MEMORY -> "Manage your long-term memories";
         };
     }

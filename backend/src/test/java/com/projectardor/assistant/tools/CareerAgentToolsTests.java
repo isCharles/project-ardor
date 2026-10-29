@@ -11,6 +11,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -58,7 +60,7 @@ class CareerAgentToolsTests {
         when(memory.add(user, "Fixture", "fact", "USER_EXPLICIT", run)).thenReturn(item);
         when(memory.edit(user, item.id(), "Revised")).thenReturn(item);
         var counts = new com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmView(
-                null, null, 40, 40, 100, false, null, true, false, List.of());
+                null, null, 40, null, 40, 0, 1, 0, 100, null, false, null, true, false, List.of(), null);
         when(rhythm.get(user)).thenReturn(counts);
         var bound = tools.bind(user, "Fixture", run);
         assertThat(bound.listMemories()).containsExactly(item);
@@ -70,6 +72,46 @@ class CareerAgentToolsTests {
         verify(memory, never()).clear(any());
         assertThat(bound.pendingConfirmations()).singleElement().satisfies(proposal ->
                 assertThat(proposal.targetId()).isEqualTo(item.id()));
+    }
+
+    @Test
+    void applicationActivityRecordsGreetingsSeparatelyAndHoldsApproximateResumeCounts() {
+        var rhythm = mock(ApplicationRhythmService.class);
+        var tools = new CareerAgentTools(mock(ResumeService.class), mock(ResumeAnalysisQueueService.class),
+                mock(InterviewService.class), mock(ProfileService.class), mock(AgentMemoryService.class),
+                mock(CalendarTaskService.class), mock(TaskSeriesService.class), mock(InterviewRecapService.class),
+                mock(InterviewRecapQueueService.class), mock(TavilySearchService.class), mock(KnowledgeService.class),
+                mock(LearningPlanService.class), rhythm, mock(OpportunityService.class),
+                mock(com.projectardor.platform.jobs.aijobs.AiJobService.class),
+                mock(com.projectardor.learning.review.service.FlashcardService.class));
+        UUID user = UUID.randomUUID(), run = UUID.randomUUID();
+        LocalDate day = LocalDate.of(2026, 10, 29);
+        var view = new com.projectardor.jobsearch.applicationactivity.service.ApplicationRhythmView(
+                day, day, 89, null, 89, 0, 1, 0, 20, null, false, LocalTime.of(19, 0), true, false,
+                List.of(), null);
+        when(rhythm.record(user, day, 89, null)).thenReturn(view);
+        when(rhythm.record(user, day, 89, 5)).thenReturn(view);
+
+        var approximate = tools.bind(user, "今天打招呼 89 个、发了约 5 份简历", run)
+                .recordApplicationActivity(89, 5, "2026-10-29");
+        verify(rhythm).record(user, day, 89, null);
+        verify(rhythm, never()).record(user, day, 89, 5);
+        assertThat(approximate.confirmationRequired()).isTrue();
+        assertThat(approximate.message()).contains("确认");
+
+        assertThatThrownBy(() -> tools.bind(user, "今天发了约 5 份简历", run)
+                .recordApplicationActivity(null, 5, "2026-10-29"))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        var exact = tools.bind(user, "今天打招呼 89 个，发了 5 份简历", run)
+                .recordApplicationActivity(89, 5, "2026-10-29");
+        verify(rhythm).record(user, day, 89, 5);
+        assertThat(exact.confirmationRequired()).isFalse();
+
+        when(rhythm.configure(user, 20, 10, true, LocalTime.of(19, 0), true)).thenReturn(view);
+        tools.bind(user, "设置每周投递目标 20，打招呼目标 10", run)
+                .setApplicationRhythm(20, 10, true, "19:00", true);
+        verify(rhythm).configure(user, 20, 10, true, LocalTime.of(19, 0), true);
     }
 
     @Test
