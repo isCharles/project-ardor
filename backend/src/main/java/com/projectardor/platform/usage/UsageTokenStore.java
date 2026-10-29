@@ -9,6 +9,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** Durable ledger for actual provider token counts. One Agent request is idempotent. */
 @Repository
@@ -19,13 +22,18 @@ public class UsageTokenStore {
     private final MembershipService memberships;
     private final MembershipPlanService plans;
     private final UsagePackService packs;
+    private final TransactionTemplate transactions;
 
     public UsageTokenStore(JdbcTemplate jdbc, MembershipService memberships, MembershipPlanService plans,
-            UsagePackService packs) {
+            UsagePackService packs, PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
         this.memberships = memberships;
         this.plans = plans;
         this.packs = packs;
+        this.transactions = new TransactionTemplate(transactionManager);
+        // Hold the user lock across the pack split and the ledger insert, and let the answer finish
+        // even if accounting is unavailable.
+        this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     public void record(UUID userId, UsageFeature feature, UUID requestId, Integer inputTokens,
@@ -34,25 +42,36 @@ public class UsageTokenStore {
         long output = Math.max(0, outputTokens == null ? 0 : outputTokens);
         long total = input + output;
         if (total == 0) return;
-        long packTokens = 0;
-        try {
-            packTokens = packShare(userId, total, Instant.now());
-        } catch (RuntimeException failure) {
-            // Losing the pack split is better than losing the usage row; plan-only accounting stays correct.
-            log.warn("Pack token split unavailable: user={}, failure={}", userId, failure.getClass().getSimpleName());
-        }
-        try {
-            jdbc.update("""
-                    INSERT INTO usage_token_ledger(id, user_id, feature, request_id, input_tokens,
-                        output_tokens, total_tokens, pack_tokens, model)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT DO NOTHING
-                    """, UUID.randomUUID(), userId, feature.name(), requestId, input, output, total, packTokens,
-                    model == null ? null : model.substring(0, Math.min(160, model.length())));
-        } catch (RuntimeException failure) {
+        if (recordOnce(userId, feature, requestId, input, output, total, model, true)) return;
+        // Losing the pack split is better than losing the usage row; plan-only accounting stays correct.
+        log.warn("Pack token split unavailable; recording usage without pack attribution: user={}", userId);
+        if (!recordOnce(userId, feature, requestId, input, output, total, model, false)) {
             // Token accounting must never turn a successful answer into an error response.
-            log.warn("Token usage write dropped: user={}, feature={}, failure={}",
-                    userId, feature, failure.getClass().getSimpleName());
+            log.warn("Token usage write dropped: user={}, feature={}", userId, feature);
+        }
+    }
+
+    private boolean recordOnce(UUID userId, UsageFeature feature, UUID requestId, long input, long output,
+            long total, String model, boolean withPack) {
+        try {
+            transactions.executeWithoutResult(status -> {
+                // This is the cross-instance serialization point for pack spending: the balance read
+                // and the ledger insert commit together under the same user row lock.
+                jdbc.queryForList("SELECT id FROM users WHERE id = ? FOR UPDATE", UUID.class, userId);
+                long packTokens = withPack ? packShare(userId, total, Instant.now()) : 0;
+                jdbc.update("""
+                        INSERT INTO usage_token_ledger(id, user_id, feature, request_id, input_tokens,
+                            output_tokens, total_tokens, pack_tokens, model)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT DO NOTHING
+                        """, UUID.randomUUID(), userId, feature.name(), requestId, input, output, total, packTokens,
+                        model == null ? null : model.substring(0, Math.min(160, model.length())));
+            });
+            return true;
+        } catch (RuntimeException failure) {
+            log.warn("Token usage transaction failed: user={}, withPack={}, failure={}",
+                    userId, withPack, failure.getClass().getSimpleName());
+            return false;
         }
     }
 

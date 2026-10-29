@@ -70,6 +70,9 @@ import dev.langchain4j.agent.tool.Tool;
 public class CareerAgentTools {
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(CareerAgentTools.class);
+    /** Serializes structured external results so a plan verifier can inspect fields instead of Java toString. */
+    private static final tools.jackson.databind.ObjectMapper UNTRUSTED_JSON =
+            tools.jackson.databind.json.JsonMapper.builder().build();
 
     private final ResumeService resumeService;
     private List<AgentToolProvider> toolProviders;
@@ -769,7 +772,13 @@ public class CareerAgentTools {
         }
 
         private String untrustedContent(String source, Object payload) {
-            String text = String.valueOf(payload)
+            String serialized;
+            try {
+                serialized = payload instanceof String value ? value : UNTRUSTED_JSON.writeValueAsString(payload);
+            } catch (RuntimeException failure) {
+                serialized = String.valueOf(payload);
+            }
+            String text = serialized
                     .replaceAll("(?i)</?untrusted_external_content[^>]*>", "[已移除外部内容标记]");
             return """
                     <untrusted_external_content source="%s">
