@@ -23,6 +23,7 @@ import com.projectardor.materials.latex.domain.LatexProject;
 import com.projectardor.materials.latex.domain.LatexRevision;
 import com.projectardor.materials.latex.repository.LatexProjectRepository;
 import com.projectardor.materials.latex.repository.LatexRevisionRepository;
+import com.projectardor.materials.resume.repository.ResumeRepository;
 
 /**
  * Server-side LaTeX workspace (docs/LOCAL_RESUME_WORKSPACE.md phase 1). A project owns immutable
@@ -198,10 +199,13 @@ public class LatexWorkspaceService {
 
     private final LatexProjectRepository projects;
     private final LatexRevisionRepository revisions;
+    private final ResumeRepository resumes;
 
-    public LatexWorkspaceService(LatexProjectRepository projects, LatexRevisionRepository revisions) {
+    public LatexWorkspaceService(LatexProjectRepository projects, LatexRevisionRepository revisions,
+            ResumeRepository resumes) {
         this.projects = projects;
         this.revisions = revisions;
+        this.resumes = resumes;
     }
 
     @Transactional
@@ -253,9 +257,26 @@ public class LatexWorkspaceService {
 
     @Transactional
     public ProjectView freeze(UUID userId, UUID projectId, int revisionNo) {
+        return freeze(userId, projectId, revisionNo, null);
+    }
+
+    @Transactional
+    public ProjectView freeze(UUID userId, UUID projectId, int revisionNo, UUID resumeId) {
         LatexProject project = ownedForUpdate(userId, projectId);
         revision(userId, projectId, revisionNo);
+        requireOwnedResume(userId, resumeId);
         project.freeze(revisionNo);
+        if (resumeId != null) project.linkFrozenResume(revisionNo, resumeId);
+        return ProjectView.of(project);
+    }
+
+    /** Links the uploaded PDF to an already frozen revision; the association survives other devices. */
+    @Transactional
+    public ProjectView linkFrozenResume(UUID userId, UUID projectId, int revisionNo, UUID resumeId) {
+        if (resumeId == null) throw new IllegalArgumentException("缺少简历文件");
+        LatexProject project = ownedForUpdate(userId, projectId);
+        requireOwnedResume(userId, resumeId);
+        project.linkFrozenResume(revisionNo, resumeId);
         return ProjectView.of(project);
     }
 
@@ -316,6 +337,12 @@ public class LatexWorkspaceService {
                 .orElseThrow(() -> new ResourceNotFoundException("该修订不存在"));
     }
 
+    private void requireOwnedResume(UUID userId, UUID resumeId) {
+        if (resumeId != null && resumes.findByIdAndUserId(resumeId, userId).isEmpty()) {
+            throw new ResourceNotFoundException("简历文件不存在");
+        }
+    }
+
     private static ResponseStatusException conflict() {
         return new ResponseStatusException(HttpStatus.CONFLICT, "这份简历已被更新，请基于最新修订重新提交");
     }
@@ -369,10 +396,10 @@ public class LatexWorkspaceService {
     }
 
     public record ProjectView(UUID id, String title, String mainFile, int currentRevision,
-            Integer frozenRevision, Instant createdAt, Instant updatedAt) {
+            Integer frozenRevision, UUID frozenResumeId, Instant createdAt, Instant updatedAt) {
         static ProjectView of(LatexProject project) {
             return new ProjectView(project.getId(), project.getTitle(), project.getMainFile(),
-                    project.getCurrentRevision(), project.getFrozenRevision(),
+                    project.getCurrentRevision(), project.getFrozenRevision(), project.getFrozenResumeId(),
                     project.getCreatedAt(), project.getUpdatedAt());
         }
     }
@@ -385,11 +412,11 @@ public class LatexWorkspaceService {
     }
 
     public record Snapshot(UUID projectId, String title, String mainFile, int revisionNo,
-            Map<String, String> files, String sha256, Integer frozenRevision, Instant createdAt) {
+            Map<String, String> files, String sha256, Integer frozenRevision, UUID frozenResumeId, Instant createdAt) {
         static Snapshot of(LatexProject project, LatexRevision revision) {
             return new Snapshot(project.getId(), project.getTitle(), project.getMainFile(),
                     revision.getRevisionNo(), revision.getFiles(), revision.getSha256(),
-                    project.getFrozenRevision(), revision.getCreatedAt());
+                    project.getFrozenRevision(), project.getFrozenResumeId(), revision.getCreatedAt());
         }
     }
 }

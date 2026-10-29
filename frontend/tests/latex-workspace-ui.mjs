@@ -11,10 +11,11 @@ server.stdout.on("data", chunk => logs += chunk); server.stderr.on("data", chunk
 const projectId = "30000000-0000-4000-8000-000000000001";
 const conversationId = "30000000-0000-4000-8000-0000000000c1";
 let frozenRevision = null;
+let frozenResumeId = null;
 let projectTitle = "我的简历";
 let archived = false;
 const archivedProjects = [];
-const freezes = [], previews = [], uploads = [], streams = [], renames = [], archives = [], restores = [], modelSaves = [], deletions = [];
+const freezes = [], previews = [], uploads = [], streams = [], renames = [], archives = [], restores = [], modelSaves = [], deletions = [], links = [];
 let conversations = 0;
 const resumes = [];
 const modelSettings = {
@@ -26,8 +27,8 @@ const modelCatalog = () => [
   { id: "FALLBACK:backup", label: "Backup", provider: "synthetic", available: true, nativeControl: false, settingsKey: "backup", ...modelSettings["FALLBACK:backup"] },
 ];
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const project = () => ({ id: projectId, title: projectTitle, mainFile: "main.tex", currentRevision: 1, frozenRevision, updatedAt: new Date().toISOString() });
-const snapshot = () => ({ projectId, title: projectTitle, mainFile: "main.tex", revisionNo: 1, files: { "main.tex": "\\documentclass{article}\n\\begin{document}\n第一版\n\\end{document}\n" }, sha256: "x", frozenRevision });
+const project = () => ({ id: projectId, title: projectTitle, mainFile: "main.tex", currentRevision: 1, frozenRevision, frozenResumeId, updatedAt: new Date().toISOString() });
+const snapshot = () => ({ projectId, title: projectTitle, mainFile: "main.tex", revisionNo: 1, files: { "main.tex": "\\documentclass{article}\n\\begin{document}\n第一版\n\\end{document}\n" }, sha256: "x", frozenRevision, frozenResumeId });
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=", "base64");
 
 try {
@@ -97,7 +98,14 @@ try {
       const body = JSON.parse(route.request().postData() ?? "{}");
       freezes.push(body);
       frozenRevision = body.revisionNo;
-      return route.fulfill({ json: { ...project(), frozenRevision } });
+      frozenResumeId = null;
+      return route.fulfill({ json: { ...project(), frozenRevision, frozenResumeId } });
+    }
+    if (method === "POST" && path === `/api/latex/projects/${projectId}/frozen-resume`) {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      links.push(body);
+      frozenResumeId = body.resumeId;
+      return route.fulfill({ json: { ...project(), frozenResumeId } });
     }
     if (method === "POST" && path === "/api/resumes") {
       const buffer = route.request().postDataBuffer()?.toString("utf8") ?? "";
@@ -217,6 +225,9 @@ try {
   await waitFor(() => uploads.length === 1, "the frozen PDF upload");
   assert.match(uploads[0], /后端实习简历 v1\.pdf$/, "the uploaded resume is named after the frozen version");
   assert.equal(resumes.length, 2, "a same-named resume from another workspace is not adopted");
+  await waitFor(() => links.length === 1, "the frozen PDF link");
+  assert.equal(links[0].revisionNo, 1);
+  assert.equal(links[0].resumeId, "resume-1", "the server stores which upload belongs to this revision");
   await waitFor(async () => /已在简历分析|In Resume analysis/.test(await bodyText()), "the resume analysis link");
   await waitFor(async () => /定稿版本|Final version/i.test(await asideText()), "the frozen version label");
   assert.match(await asideText(), /v1\b/, "a frozen resume shows its version number");
@@ -226,6 +237,12 @@ try {
   await waitFor(async () => /已在简历分析|In Resume analysis/.test(await bodyText()), "the frozen resume on reload");
   await waitFor(async () => (await bodyText()).includes("把项目经历写得更具体"), "the saved conversation");
   assert.equal(uploads.length, 1, "a frozen version is only uploaded once");
+
+  // Another browser has no local mapping; the server association must still identify the PDF.
+  await page.evaluate(() => window.localStorage.clear());
+  await page.reload();
+  await waitFor(async () => /已在简历分析|In Resume analysis/.test(await bodyText()), "the server-linked frozen resume after storage loss");
+  assert.equal(uploads.length, 1, "storage loss does not upload the frozen PDF again");
 
   // Archiving removes the workspace from the list without deleting its revisions.
   page.on("dialog", dialog => dialog.accept());

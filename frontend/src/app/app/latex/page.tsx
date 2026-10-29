@@ -13,8 +13,8 @@ import { ReasoningControl, type ModelOption } from "@/components/ardor/reasoning
 import { ApiError, api, blobApi, streamApi } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
-type Project = { id: string; title: string; mainFile: string; currentRevision: number; frozenRevision: number | null; updatedAt: string };
-type Snapshot = { projectId: string; title: string; mainFile: string; revisionNo: number; files: Record<string, string>; sha256: string; frozenRevision: number | null };
+type Project = { id: string; title: string; mainFile: string; currentRevision: number; frozenRevision: number | null; frozenResumeId: string | null; updatedAt: string };
+type Snapshot = { projectId: string; title: string; mainFile: string; revisionNo: number; files: Record<string, string>; sha256: string; frozenRevision: number | null; frozenResumeId: string | null };
 type ResumeItem = { id: string; originalFilename: string };
 type AgentMessage = { id: string; role: "USER" | "ASSISTANT"; content: string; createdAt: string };
 type ToolStep = { key: string; label: string; done: boolean };
@@ -94,6 +94,7 @@ export default function LatexWorkspacePage() {
   const sendControl = useRef<AbortController | null>(null);
   const threadEnd = useRef<HTMLDivElement | null>(null);
   const openSeq = useRef(0);
+  const projectIdRef = useRef<string | null>(null);
 
   const loadProjects = useCallback(async (pick?: string) => {
     const list = await api<Project[]>("/api/latex/projects");
@@ -110,21 +111,40 @@ export default function LatexWorkspacePage() {
     return item;
   }, []);
 
+  const rememberLinkedResume = useCallback((linked: Project) => {
+    setProjects((current) => current.map((item) => item.id === linked.id
+      ? { ...item, frozenResumeId: linked.frozenResumeId } : item));
+  }, []);
+
+  const linkFrozenResume = useCallback(async (projectId: string, revisionNo: number, resumeId: string) => {
+    const linked = await api<Project>(`/api/latex/projects/${projectId}/frozen-resume`, {
+      method: "POST", body: JSON.stringify({ revisionNo, resumeId }),
+    });
+    rememberLinkedResume(linked);
+    return linked;
+  }, [rememberLinkedResume]);
+
   const ensureFrozenResume = useCallback(async (project: Project) => {
     if (project.frozenRevision == null) { setFrozenResume(null); return; }
     const resumes = await api<ResumeItem[]>("/api/resumes");
-    // Display filenames collide across workspaces that share a title and revision,
-    // so only the id returned by our own upload proves this PDF was synced.
+    // The server association is the only identity that survives another browser;
+    // a display filename collides across workspaces sharing a title and revision.
     const stored = readStoredFrozen(project.id);
-    if (stored && stored.revision === project.frozenRevision && resumes.some((item) => item.id === stored.resumeId)) {
-      setFrozenResume(stored.name);
+    const knownId = project.frozenResumeId
+      ?? (stored && stored.revision === project.frozenRevision ? stored.resumeId : null);
+    const existing = knownId ? resumes.find((item) => item.id === knownId) : undefined;
+    if (existing) {
+      setFrozenResume(existing.originalFilename);
+      storeFrozen(project.id, project.frozenRevision, existing.originalFilename, existing.id);
+      if (!project.frozenResumeId) await linkFrozenResume(project.id, project.frozenRevision, existing.id).catch(() => undefined);
       return;
     }
     const name = resumeFileName(project.title, project.frozenRevision);
     const blob = await blobApi(`/latex-api/${project.id}?revision=${project.frozenRevision}`);
     const uploaded = await uploadFrozen(name, blob);
     storeFrozen(project.id, project.frozenRevision, name, uploaded.id);
-  }, [uploadFrozen]);
+    await linkFrozenResume(project.id, project.frozenRevision, uploaded.id);
+  }, [linkFrozenResume, uploadFrozen]);
 
   const openProject = useCallback(async (project: Project) => {
     const id = project.id;
@@ -192,6 +212,8 @@ export default function LatexWorkspacePage() {
     }).catch(() => { if (active) setModelCatalogState("FAILED"); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => { projectIdRef.current = projectId; }, [projectId]);
 
   useEffect(() => { threadEnd.current?.scrollIntoView({ block: "end" }); }, [messages]);
 
@@ -329,6 +351,11 @@ export default function LatexWorkspacePage() {
         // title and revision, and that PDF is a different document.
         const uploaded = await uploadFrozen(name, blob);
         storeFrozen(project.id, project.frozenRevision, name, uploaded.id);
+        try {
+          await linkFrozenResume(project.id, project.frozenRevision, uploaded.id);
+        } catch {
+          setError(t("Frozen, but the PDF could not be copied to Resume analysis yet.", "已定稿，但 PDF 还没能同步到简历分析，请稍后重试。"));
+        }
       }
       setSnapshot((current) => current ? { ...current, frozenRevision: snapshot.revisionNo } : current);
       setNotice(t("Frozen. The PDF is now in Resume analysis.", "已定稿，这份简历已出现在简历分析里。"));
@@ -379,7 +406,7 @@ export default function LatexWorkspacePage() {
     setError("");
     setNotice("");
     setDraft("");
-    const sentSeq = openSeq.current;
+    const sentProjectId = snapshot.projectId;
     const requestId = crypto.randomUUID();
     requestRef.current = requestId;
     setActiveRunId(requestId);
@@ -401,7 +428,7 @@ export default function LatexWorkspacePage() {
         // The turn belongs to the resume that was open when it started; a switch
         // during streaming must not install its conversation on another resume.
         window.localStorage.setItem(conversationKey(snapshot.projectId), created.id);
-        if (openSeq.current === sentSeq) setConversationId(created.id);
+        if (projectIdRef.current === sentProjectId) setConversationId(created.id);
       }
       let streamFailure: string | null = null;
       await streamApi<StreamEvent>("/api/agent/messages/stream", {
@@ -451,9 +478,9 @@ export default function LatexWorkspacePage() {
       setActiveRunId(null);
       sendControl.current = null;
       requestRef.current = null;
-      // Switching resumes mid-turn opens the other snapshot; refreshing the
-      // finished turn's resume here would show its content under the wrong title.
-      if (openSeq.current === sentSeq) await refreshWorkspace();
+      // Refresh only the resume that actually received the turn, and only while it
+      // is still the selected one; switching away and back must not skip the update.
+      if (projectIdRef.current === sentProjectId) await refreshWorkspace();
     }
   }
 

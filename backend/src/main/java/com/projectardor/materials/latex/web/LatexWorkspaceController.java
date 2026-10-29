@@ -37,7 +37,9 @@ public class LatexWorkspaceController {
 
     public record SaveRequest(int baseRevision, Map<String, String> files, String message) {}
 
-    public record FreezeRequest(int revisionNo) {}
+    public record FreezeRequest(int revisionNo, UUID resumeId) {}
+
+    public record FrozenResumeRequest(int revisionNo, UUID resumeId) {}
 
     public record RenameRequest(String title) {}
 
@@ -81,7 +83,13 @@ public class LatexWorkspaceController {
     @PostMapping("/{projectId}/freeze")
     public ProjectView freeze(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID projectId,
             @RequestBody FreezeRequest request) {
-        return service.freeze(principal.userId(), projectId, request.revisionNo());
+        return service.freeze(principal.userId(), projectId, request.revisionNo(), request.resumeId());
+    }
+
+    @PostMapping("/{projectId}/frozen-resume")
+    public ProjectView linkFrozenResume(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable UUID projectId, @RequestBody FrozenResumeRequest request) {
+        return service.linkFrozenResume(principal.userId(), projectId, request.revisionNo(), request.resumeId());
     }
 
     @DeleteMapping("/{projectId}")

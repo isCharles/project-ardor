@@ -39,7 +39,7 @@ class LatexWorkspaceContextTests {
         UUID projectId = UUID.randomUUID();
         LatexWorkspaceService latex = mock(LatexWorkspaceService.class);
         when(latex.read(user, projectId, null)).thenReturn(new LatexWorkspaceService.Snapshot(
-                projectId, "我的简历", "main.tex", 3, Map.of("main.tex", "x"), "sha", 2, Instant.now()));
+                projectId, "我的简历", "main.tex", 3, Map.of("main.tex", "x"), "sha", 2, null, Instant.now()));
         CareerAgentTools tools = new CareerAgentTools(
                 mock(ResumeService.class), mock(ResumeAnalysisQueueService.class), mock(InterviewService.class),
                 mock(ProfileService.class), mock(AgentMemoryService.class), mock(CalendarTaskService.class),

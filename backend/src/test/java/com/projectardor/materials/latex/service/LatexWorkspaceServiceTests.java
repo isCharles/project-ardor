@@ -23,12 +23,20 @@ import com.projectardor.materials.latex.domain.LatexProject;
 import com.projectardor.materials.latex.domain.LatexRevision;
 import com.projectardor.materials.latex.repository.LatexProjectRepository;
 import com.projectardor.materials.latex.repository.LatexRevisionRepository;
+import com.projectardor.materials.resume.domain.Resume;
+import com.projectardor.materials.resume.repository.ResumeRepository;
 
 class LatexWorkspaceServiceTests {
 
     private final LatexProjectRepository projects = mock(LatexProjectRepository.class);
     private final LatexRevisionRepository revisions = mock(LatexRevisionRepository.class);
-    private final LatexWorkspaceService service = new LatexWorkspaceService(projects, revisions);
+    private final ResumeRepository resumes = mock(ResumeRepository.class);
+    private final LatexWorkspaceService service = new LatexWorkspaceService(projects, revisions, resumes);
+
+    private LatexRevision revision(LatexProject project, UUID userId, int number) {
+        return LatexRevision.create(project.getId(), userId, number, Map.of("main.tex", "x"),
+                LatexWorkspaceService.sha(Map.of("main.tex", "x")), null);
+    }
 
     private LatexProject ownedProject(UUID userId, int currentRevision) {
         LatexProject project = LatexProject.create(userId, "我的简历", LatexWorkspaceService.DEFAULT_MAIN_FILE);
@@ -100,6 +108,47 @@ class LatexWorkspaceServiceTests {
                 .thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.freeze(userId, project.getId(), 7))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void freezingLinksTheUploadedResumeAndANewVersionDropsIt() {
+        UUID userId = UUID.randomUUID();
+        LatexProject project = ownedProject(userId, 3);
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        when(resumes.findByIdAndUserId(first, userId)).thenReturn(Optional.of(mock(Resume.class)));
+        when(resumes.findByIdAndUserId(second, userId)).thenReturn(Optional.of(mock(Resume.class)));
+        when(revisions.findByProjectIdAndUserIdAndRevisionNo(project.getId(), userId, 2))
+                .thenReturn(Optional.of(revision(project, userId, 2)));
+        when(revisions.findByProjectIdAndUserIdAndRevisionNo(project.getId(), userId, 3))
+                .thenReturn(Optional.of(revision(project, userId, 3)));
+
+        assertThat(service.freeze(userId, project.getId(), 2, first).frozenResumeId()).isEqualTo(first);
+        assertThat(service.freeze(userId, project.getId(), 3).frozenResumeId())
+                .as("a new frozen version has no PDF until the new one is uploaded")
+                .isNull();
+        assertThat(service.linkFrozenResume(userId, project.getId(), 3, second).frozenResumeId()).isEqualTo(second);
+    }
+
+    @Test
+    void aFrozenResumeMustBelongToTheUserAndMatchTheFrozenRevision() {
+        UUID userId = UUID.randomUUID();
+        LatexProject project = ownedProject(userId, 3);
+        UUID owned = UUID.randomUUID();
+        UUID foreign = UUID.randomUUID();
+        when(resumes.findByIdAndUserId(owned, userId)).thenReturn(Optional.of(mock(Resume.class)));
+        when(resumes.findByIdAndUserId(foreign, userId)).thenReturn(Optional.empty());
+        when(revisions.findByProjectIdAndUserIdAndRevisionNo(project.getId(), userId, 2))
+                .thenReturn(Optional.of(revision(project, userId, 2)));
+
+        assertThatThrownBy(() -> service.freeze(userId, project.getId(), 2, foreign))
+                .isInstanceOf(ResourceNotFoundException.class);
+        project.freeze(2);
+        assertThatThrownBy(() -> service.linkFrozenResume(userId, project.getId(), 1, owned))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.linkFrozenResume(userId, project.getId(), 2, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(service.linkFrozenResume(userId, project.getId(), 2, owned).frozenResumeId()).isEqualTo(owned);
     }
 
     @Test
