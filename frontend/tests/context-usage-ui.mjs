@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 // Synthetic progress and persisted message fixtures only; never calls a model or a real account.
 const origin = "http://127.0.0.1:3120";
 const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", "3120"], { stdio: "pipe" });
-let logs = "", browser, usage = null, running = false;
+let logs = "", browser, usage = null, conversationContext = null, running = false;
 server.stdout.on("data", chunk => logs += chunk); server.stderr.on("data", chunk => logs += chunk);
 try {
   let ready = false;
@@ -26,11 +26,11 @@ try {
     else if (path === "/api/profile/sidebar") body = { userId: "context-owner", hrefs: ["/app"], configured: true, revision: 0 };
     else if (path === "/api/profile") body = { displayName: "Synthetic owner", timezone: "Asia/Shanghai", targetRoles: [] };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
-    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [{ id: "context-answer", role: "ASSISTANT", content: "Synthetic answer", runId: "context-run", createdAt: conversation.createdAt, runTrace: JSON.stringify({ elapsedMs: 10, status: "COMPLETED", steps: [], contextUsage: running ? null : usage }) }] };
+    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [{ id: "context-answer", role: "ASSISTANT", content: "Synthetic answer", runId: "context-run", createdAt: conversation.createdAt, runTrace: JSON.stringify({ elapsedMs: 10, status: "COMPLETED", steps: [], contextUsage: running ? null : usage, conversationContextUsage: running ? null : conversationContext }) }] };
     else if (path === "/api/agent/runs/latest") {
       if (!running) return route.fulfill({ status: 204 });
       body = { id: "context-run", conversationId: conversation.id, message: "Synthetic request", status: "RUNNING", label: "Working", createdAt: conversation.createdAt };
-    } else if (path.endsWith("/context-run/progress")) body = { phase: "WAITING", label: "Preparing", thinkingOutput: "", answerPartial: "北京晴 4~16℃，投递 30~40 份。~~旧安排~~", steps: [], contextUsage: usage };
+    } else if (path.endsWith("/context-run/progress")) body = { phase: "WAITING", label: "Preparing", thinkingOutput: "", answerPartial: "北京晴 4~16℃，投递 30~40 份。~~旧安排~~", steps: [], contextUsage: usage, conversationContextUsage: conversationContext };
     else if (path === "/api/agent/permissions") body = { mode: "CUSTOM", globalLevel: 1, modules: [] };
     else if (path === "/api/agent/models") body = [
       { id: "PRIMARY", label: "synthetic-model", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
@@ -73,6 +73,17 @@ try {
   await page.getByTitle("synthetic-model", { exact: true }).click();
   await page.getByRole("button", { name: "Model and thinking depth", exact: true }).click();
   await page.locator('[data-context-state="READY"]').waitFor();
+  // The ring reads the first provider request of the turn, not the tool-heavy last request.
+  usage = { state: "READY", model: "synthetic-model", estimatedTokens: 62000, compressionBudgetTokens: 139428,
+    modelWindowTokens: 200000, summaryVersion: 2, compactedMessages: 8, authoritative: true, conversationAnchor: false };
+  conversationContext = { ...usage, estimatedTokens: 18000, conversationAnchor: true };
+  await page.reload();
+  await page.locator('[data-context-state="READY"]').waitFor();
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
+    "The ring must use the conversation anchor, not the transient tool-round peak");
+  await indicator.hover();
+  await tooltip.getByText("9% full", { exact: true }).waitFor();
+  conversationContext = null;
   running = true;
   usage = { ...usage, state: "COMPACTING", estimatedTokens: null };
   await page.reload();
@@ -88,6 +99,16 @@ try {
   await page.locator('[data-context-state="COMPACTION_FAILED"]').waitFor();
   await indicator.focus();
   await tooltip.getByText("History summary failed; every message was kept", { exact: true }).waitFor();
+  // Reopening a running turn must recover the anchor from progress, not fall back to an older turn.
+  usage = { ...usage, state: "READY", estimatedTokens: 62000, authoritative: true, conversationAnchor: false };
+  conversationContext = { ...usage, estimatedTokens: 18000, conversationAnchor: true };
+  await page.reload();
+  await page.locator('[data-context-state="READY"]').waitFor();
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
+    "Progress recovery must expose the current conversation anchor");
+  await indicator.hover();
+  await tooltip.getByText("9% full", { exact: true }).waitFor();
+  conversationContext = null;
   await page.setViewportSize({ width: 390, height: 844 });
   await indicator.click();
   await tooltip.waitFor();
@@ -121,7 +142,78 @@ try {
   await page.reload();
   assert.match(await notice.innerText(), /could not be summarized \(COMPACTION_MODEL_UNAVAILABLE\)[\s\S]*kept every message verbatim/,
     "A degraded compaction is visible instead of silent");
-  console.log("Context usage UI: legacy unknown, persisted estimate, honest unknown window, live compaction/failure, in-transcript notice and narrow viewport passed.");
+  // A held live stream: READY must end the preparation spinner without donating its local
+  // estimate to the ring, and tool rounds must not move the anchor recorded this turn.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  running = false;
+  usage = { state: "READY", model: "synthetic-model", estimatedTokens: 62000, compressionBudgetTokens: 139428,
+    modelWindowTokens: 200000, summaryVersion: 2, compactedMessages: 8, authoritative: true, conversationAnchor: false };
+  conversationContext = { ...usage, estimatedTokens: 18000, conversationAnchor: true };
+  await page.reload();
+  await page.locator('[data-context-state="READY"]').waitFor();
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09);
+  await page.evaluate(() => {
+    const original = window.fetch.bind(window);
+    const encoder = new TextEncoder();
+    const context = (state, tokens, extra = {}) => ({ state, model: "synthetic-model", estimatedTokens: tokens,
+      compressionBudgetTokens: 139428, modelWindowTokens: 200000, summaryVersion: 2, compactedMessages: 8, ...extra });
+    window.__contextStream = [
+      { event: { type: "context", contextUsage: context("PREPARING", 18100) }, hold: true },
+      { event: { type: "context", contextUsage: context("COMPACTING", null) }, hold: true },
+      { event: { type: "context", contextUsage: context("READY", 30000, { compaction: { outcome: "COMPACTED", spanId: null,
+        windowTokens: 200000, softThresholdTokens: 139428, projectedInputTokens: 154000, estimatedInputTokensAfter: 30000,
+        summarizedMessages: 2, firstMessageOrdinal: 1, summaryVersionBefore: 2, summaryVersionAfter: 3, errorCode: null } }) }, hold: true },
+      { event: { type: "context", contextUsage: context("READY", 18000, { authoritative: true, conversationAnchor: true }) }, hold: true },
+      { event: { type: "context", contextUsage: context("READY", 62000, { authoritative: true, conversationAnchor: false }) }, hold: true },
+      { event: { type: "delta", content: "Synthetic live answer" } },
+      { event: { type: "done", conversationId: "context-chat", messageId: "live-answer", content: "Synthetic live answer", elapsedMs: 10 } },
+    ];
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!url.includes("/api/agent/messages/stream")) return original(input, init);
+      return new Response(new ReadableStream({
+        async start(controller) {
+          window.__contextStreamHolds = 0;
+          for (const item of window.__contextStream) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(item.event)}\n\n`));
+            if (item.hold) {
+              window.__contextStreamHolds++;
+              await new Promise((resolve) => { window.__releaseContextStream = resolve; });
+            }
+          }
+          controller.close();
+        },
+      }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    };
+  });
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).fill("Synthetic live request");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const release = async (holds) => {
+    await page.waitForFunction((expected) => window.__contextStreamHolds >= expected, holds, { timeout: 5000 });
+    await page.evaluate(() => window.__releaseContextStream());
+  };
+  await page.locator('[data-context-state="PREPARING"]').waitFor();
+  assert.equal(await indicator.locator("svg[data-context-fill]").count(), 0, "Preparation shows a spinner, not a percentage");
+  await release(1);
+  await page.locator('[data-context-state="COMPACTING"]').waitFor();
+  await indicator.hover();
+  await tooltip.getByText("Summarizing earlier messages", { exact: true }).waitFor();
+  await release(2);
+  await page.locator('[data-context-state="READY"]').waitFor();
+  assert.equal(await indicator.locator("svg[data-context-fill]").count(), 1, "READY ends the preparation spinner");
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
+    "READY's local estimate is not adopted while the turn has no provider anchor yet");
+  await page.locator("[data-compaction-notice]").getByText(/154K → 30K/).waitFor();
+  await release(3);
+  await release(4);
+  await page.waitForTimeout(300);
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
+    "The anchor and the following tool round keep the ring at the conversation anchor");
+  await release(5);
+  await page.getByRole("button", { name: "Send", exact: true }).waitFor();
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
+    "After completion the persisted anchor still drives the ring");
+  console.log("Context usage UI: legacy unknown, persisted estimate, honest unknown window, live preparation/compaction/READY transitions, stable anchor, in-transcript notice and narrow viewport passed.");
 } finally {
   await browser?.close(); server.kill();
   if (server.exitCode === null) await new Promise(resolve => server.once("close", resolve));

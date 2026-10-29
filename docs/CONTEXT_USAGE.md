@@ -35,6 +35,10 @@ tokenizer 精度仍待验收。一次摘要只覆盖实际输入的旧消息，�
 上下文窗口、已用百分比、约用量/容量。未知容量不画虚假进度，压缩中显示旋转状态。
 提示框保持在视口内，支持 Escape/外部点击关闭。切换模型后不套用上一模型的占比。
 
+环只读本轮首个模型请求的供应商 input tokens（`conversationAnchor`），因此一次工具循环内不会
+被工具结果或本地估算拉高再落下；工具轮次的峰值仍保留在轨迹的 `contextUsage` 中。新会话在首个
+供应商回报前显示未知，不显示本地估算百分比。
+
 ## 数值口径
 
 - `estimatedTokens`：初始组装后，由独立于 trace 开关的 `AgentRequestContextListener` 在每次实际
@@ -43,7 +47,9 @@ tokenizer 精度仍待验收。一次摘要只覆盖实际输入的旧消息，�
   按 SDK 的结构化对象文本估算，不能承诺等同供应商的序列化/tokenizer。
   收到供应商本次请求的有效 input Token 后用该值校准；不累计历史调用、输出 Token 或缓存命中率。
   同一工具循环中每次调用都会更新，迟到的上一调用和结束后的回调不能覆盖新结果。
-  草稿未发送前不预测其用量；显示的是最近一次请求输入，不含输出预留。
+  草稿未发送前不预测其用量；`contextUsage` 保存最近一次请求输入，不含输出预留。
+  `authoritative` 表示该值来自供应商回报，`conversationAnchor` 表示本轮首个供应商回报；
+  输入框的环只读 anchor，工具轮次仍更新 `contextUsage` 供轨迹核对。
 - `compressionBudgetTokens`：未知窗口使用应用压缩软目标，默认 200000；已知窗口按实际容量、输出预留和安全余量计算。它不是模型上下文窗口。
 - `modelWindowTokens`：`ModelContextCapacity` 只用明确配置或核实过的精确模型/官方 endpoint 组合。
   当前内置 `api.deepseek.com` 的 `deepseek-v4-flash`，容量 1048576；依据
@@ -63,10 +69,12 @@ tokenizer 精度仍待验收。一次摘要只覆盖实际输入的旧消息，�
 ## 状态、刷新和兼容
 
 流式入口先发 PREPARING，实际需要调用摘要模型时发 COMPACTING；摘要失败则发 COMPACTION_FAILED，
-保留原消息，最终快照仍标记失败；完成组装发 READY。失败不冒充成功，也不改变现有模型、授权或
+保留原消息，最终快照仍标记失败；完成组装发 READY。READY 只结束准备/压缩状态并带上压缩结果，
+输入框的环不采用 READY 的本地估算，仍等待供应商 anchor。失败不冒充成功，也不改变现有模型、授权或
 压缩触发条件。没有将隐藏推理文本用于填充状态提示。
 
-同一份结构化数据通过 `context` SSE 事件、owner-scoped progress snapshot 和助手消息的 runTrace 保存。
+同一份结构化数据通过 `context` SSE 事件、owner-scoped progress snapshot 和助手消息的 runTrace 保存；
+runTrace 同时保留 `conversationContextUsage`（环的稳定值）与 `contextUsage`（最近一次请求，含工具轮次）。
 运行中刷新从进度恢复，完成后从持久化消息读取；旧记录没有此字段时显示未知。
 沿用已有的快照 revision 栅栏、user/run 联合归属及取消/截止时间检查；结束后迟到的状态不能覆盖结果。
 只保存数值、模型标识及状态，不新增 prompt、简历正文、密钥或完整工具载荷。
@@ -91,17 +99,20 @@ JSON 验证新版读取；没有改动 Jackson 的全局解析规则。
 ## 验证入口
 
 - `AgentRequestContextListenerTests`：分别验证工具 schema、工具返回增量、单次供应商用量校准、
-  下一次短请求用量降低、上一调用迟到响应及停止后回调栅栏。
+  下一次短请求用量降低、上一调用迟到响应及停止后回调栅栏；并验证只有本轮首个供应商回报带
+  `authoritative` + `conversationAnchor`，后续工具轮次不再带 anchor。
 - `ModelContextCapacityTests`：精确官方组合、中转未知、配置覆盖及非法配置。
 - `AgentContextCompactorTests`：压缩开始和失败状态，以及失败后历史保留。
 - `AgentContextBuilderTests`：估算与 trace 属性一致，未知窗口、摘要版本及失败标记。
-- `AgentStreamProgressTests` / `AgentContextProgressPostgresTests`：新旧 JSON、重启、双用户隔离、旧快照及迟到事件。
+- `AgentStreamProgressTests` / `AgentContextProgressPostgresTests`：新旧 JSON、重启、双用户隔离、旧快照及迟到事件；
+  并验证 anchor 与最近一次工具轮次用量分开保存。
 - `CareerAgentRuntimeIntegrationTests`：统一执行入口的事件、消息存档、取消和截止时间。
 - `agent-runtime-acceptance.mjs`：真实 HTTP 的 SSE、trace、进度、重新加载消息及其他用户 404；使用合成模型。
 - `semantic-recall-acceptance.mjs`：真实 HTTP 跑满 100 轮，第 1 轮植入的事实经历多次摘要重写后仍出现在后续模型请求中
   （且不以原始消息残留的方式出现），原始消息未被删除、请求估算有界；随后取消一轮已被模型接收的请求，验证取消状态如实进入历史、
   被取消的指令仍进入下一轮请求，并通过分页的对话 trace 核对全部轮次与可计时的 span；使用会忠实转写暗号的合成模型。
-- `context-usage-ui.mjs`：旧记录未知、持久化估算、实时压缩/失败、窄屏边界和页面溢出，使用合成 API。
+- `context-usage-ui.mjs`：旧记录未知、持久化估算、实时压缩/失败、准备完成后清除旋转状态且环不采用
+  READY 估算、工具轮次不移动环、窄屏边界和页面溢出，使用合成 API。
 
 合成百轮验收证明的是**压缩链路不丢事实**，不是供应商摘要的语义质量：合成摘要按测试约定转写暗号，
 真实模型是否保留同样信息仍需真实供应商抽样。所有供应商 tokenizer 精度及完整模型窗口目录亦不由这些测试证明。

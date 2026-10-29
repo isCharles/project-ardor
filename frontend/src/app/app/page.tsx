@@ -44,7 +44,7 @@ type AgentMemory = { content: string; updatedAt: string | null };
 type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null; pinned: boolean };
 type RetryFailure = { label: string; detail: string };
 type AgentStreamEvent = ToolMeasurement & { type: "context" | "status" | "phase" | "phase_end" | "thinking" | "delta" | "intermediate" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string; contextUsage?: ContextUsage | null };
-type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number; contextUsage?: ContextUsage | null };
+type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number; contextUsage?: ContextUsage | null; conversationContextUsage?: ContextUsage | null };
 type AgentRun = { id: string; conversationId: string; message: string; status: "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED"; label: string; errorCode: string | null; errorMessage: string | null; retryable: boolean; createdAt: string; updatedAt: string };
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
    button, and pressing it is an ordinary authenticated DELETE from here — the
@@ -84,8 +84,13 @@ function formatElapsed(milliseconds: number) {
 
 function savedRunTrace(raw?: string | null) {
   if (!raw) return null;
-  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<ToolMeasurement & { label: string; elapsedMs: number; status: string }>; proposals?: AgentConfirmation[]; thinkingOutput?: string; firstOutputMs?: number; contextUsage?: ContextUsage }; }
+  try { return JSON.parse(raw) as { elapsedMs: number; status: string; steps: Array<ToolMeasurement & { label: string; elapsedMs: number; status: string }>; proposals?: AgentConfirmation[]; thinkingOutput?: string; firstOutputMs?: number; contextUsage?: ContextUsage; conversationContextUsage?: ContextUsage }; }
   catch { return null; }
+}
+
+/** Compaction state is still useful live; token estimates are not. */
+function liveContextState(usage?: ContextUsage | null) {
+  return usage && ["PREPARING", "COMPACTING", "COMPACTION_FAILED"].includes(usage.state) ? usage : null;
 }
 
 function confirmationKey(value: AgentConfirmation) {
@@ -292,6 +297,7 @@ export default function AgentHomePage() {
   const [runThinking, setRunThinking] = useState("");
   const [streamProgress, setStreamProgress] = useState<StreamProgress | null>(null);
   const [liveContext, setLiveContext] = useState<{ conversationId: string; usage: ContextUsage } | null>(null);
+  const [liveAnchor, setLiveAnchor] = useState<{ conversationId: string; usage: ContextUsage } | null>(null);
   const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const [runElapsed, setRunElapsed] = useState(0);
   const [leavingEmptyState, setLeavingEmptyState] = useState(false);
@@ -590,6 +596,7 @@ export default function AgentHomePage() {
     }
     setState(result);
     setLiveContext(null);
+    setLiveAnchor(null);
     // A committed response owns its process record. Discard the transient copy.
     setRunSteps([]); setRunThinking(""); setStreamProgress(null); setRetryFailures([]); setRunElapsed(0);
     const outgoing = readOutgoing(reasoningAccount.current, result.conversationId);
@@ -1044,6 +1051,9 @@ export default function AgentHomePage() {
             if (event.type !== "error") setStreamAccepted(true);
             if (event.type === "context" && event.contextUsage) {
               setLiveContext({ conversationId: activeConversationId!, usage: event.contextUsage });
+              if (event.contextUsage.authoritative && event.contextUsage.conversationAnchor) {
+                setLiveAnchor({ conversationId: activeConversationId!, usage: event.contextUsage });
+              }
             } else if (event.type === "thinking" && event.content) {
               setStreamPhase("THINKING");
               setRunThinking((current) => (current + event.content).slice(0, 32_000));
@@ -1190,7 +1200,7 @@ export default function AgentHomePage() {
         setError(""); notifyStopped(requestId);
         if (conversationId) await load(conversationId);
       } else setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
-    } finally { if (activeSend.current === sendControl) activeSend.current = null; setApprovalRunId(null); setActiveRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
+    } finally { if (activeSend.current === sendControl) activeSend.current = null; setLiveContext(null); setApprovalRunId(null); setActiveRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
   }
 
   function stopRunOnce(requestId: string): Promise<void> {
@@ -1489,7 +1499,7 @@ export default function AgentHomePage() {
       </div>
       <div data-composer-actions className="flex min-w-0 items-center justify-end gap-1">
         <ContextUsageIndicator selectedModel={modelOptions.find(item => item.id === modelChoice)?.label}
-          usage={liveContext?.conversationId === state?.conversationId ? liveContext?.usage : streamProgress?.contextUsage ?? messages.slice().reverse().map(item => savedRunTrace(item.runTrace)?.contextUsage).find(Boolean)} />
+          usage={liveContextState(liveContext?.usage) ?? liveContextState(streamProgress?.contextUsage) ?? (liveAnchor && liveAnchor.conversationId === state?.conversationId ? liveAnchor.usage : streamProgress?.conversationContextUsage ?? messages.slice().reverse().map(item => { const trace = savedRunTrace(item.runTrace); return trace?.conversationContextUsage ?? trace?.contextUsage; }).find(Boolean))} />
         {reasoningPicker()}
         <ChatVoiceButton disabled={!state?.llmConfigured} onTranscript={(text) => { setDraft((current) => current.trim() ? `${current.trim()} ${text}` : text); setError(""); }} onError={setError} />
         {isRunning && !draft.trim() && chatImages.length === 0 ? <Button type="button" aria-label={t("Stop", "停止")} disabled={cancelPending} onClick={() => void cancelExecution()} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800 disabled:opacity-50"><Square className="size-3 fill-current" /></Button> : <Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || (!draft.trim() && chatImages.length === 0) || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured || modelCatalogState !== "READY"} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button>}

@@ -27,6 +27,8 @@ class AgentRequestContextListenerTests {
         var first = request(ChatRequest.builder().messages(UserMessage.from("question")).build());
         listener.onRequest(first);
         long plain = values.getLast().estimatedTokens();
+        assertThat(values.getLast().authoritative()).isFalse();
+        assertThat(values.getLast().conversationAnchor()).isFalse();
         var schemaOnly = request(ChatRequest.builder().messages(UserMessage.from("question"))
                 .toolSpecifications(ToolSpecification.builder().name("read").description("Reads owned resources").build()).build());
         listener.onRequest(schemaOnly);
@@ -42,15 +44,23 @@ class AgentRequestContextListenerTests {
         assertThat(values).hasSize(count); // Late result from the previous call is fenced.
         listener.onResponse(response(second, 501));
         assertThat(values.getLast().estimatedTokens()).isEqualTo(501);
+        assertThat(values.getLast().authoritative()).isTrue();
+        assertThat(values.getLast().conversationAnchor()).isTrue();
         var third = request(ChatRequest.builder().messages(UserMessage.from("short summary")).build());
         listener.onRequest(third);
         assertThat(values.getLast().estimatedTokens()).isLessThan(501);
+        assertThat(values.getLast().authoritative()).isFalse();
+        assertThat(values.getLast().conversationAnchor()).isFalse();
         assertThat(values.getLast().summaryVersion()).isEqualTo(2);
         // The notice stays attached while later per-request usage replaces the token figure.
         assertThat(values.getLast().compaction()).isEqualTo(compaction);
+        listener.onResponse(response(third, 800));
+        assertThat(values.getLast().estimatedTokens()).isEqualTo(800);
+        assertThat(values.getLast().authoritative()).isTrue();
+        assertThat(values.getLast().conversationAnchor()).isFalse();
         count = values.size();
         active.set(false);
-        listener.onResponse(response(third, 800));
+        listener.onResponse(response(third, 900));
         listener.onRequest(first);
         assertThat(values).hasSize(count);
     }

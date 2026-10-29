@@ -881,7 +881,8 @@ public class CareerAgentService {
                 .map(AgentStreamEvent.AgentConfirmation::from).toList();
         try { return objectMapper.writeValueAsString(new RunTrace(elapsedMs, "COMPLETED", steps, proposals,
                 progress == null ? null : progress.thinkingOutput(), progress == null ? null : progress.firstOutputMs(),
-                progress == null ? null : progress.contextUsage())); }
+                progress == null ? null : progress.contextUsage(),
+                progress == null ? null : progress.conversationContextUsage())); }
         catch (tools.jackson.core.JacksonException exception) {
             log.warn("Could not serialize agent run trace: {}", exception.getMessage());
             return null;
@@ -889,7 +890,13 @@ public class CareerAgentService {
     }
 
     private record RunTrace(long elapsedMs, String status, List<RunStep> steps,
-            List<AgentStreamEvent.AgentConfirmation> proposals, String thinkingOutput, Long firstOutputMs, AgentContextUsage contextUsage) {
+            List<AgentStreamEvent.AgentConfirmation> proposals, String thinkingOutput, Long firstOutputMs,
+            AgentContextUsage contextUsage, AgentContextUsage conversationContextUsage) {
+        RunTrace(long elapsedMs, String status, List<RunStep> steps,
+                List<AgentStreamEvent.AgentConfirmation> proposals, String thinkingOutput, Long firstOutputMs,
+                AgentContextUsage contextUsage) {
+            this(elapsedMs, status, steps, proposals, thinkingOutput, firstOutputMs, contextUsage, null);
+        }
         RunTrace(long elapsedMs, String status, List<RunStep> steps,
                 List<AgentStreamEvent.AgentConfirmation> proposals, String thinkingOutput, Long firstOutputMs) {
             this(elapsedMs, status, steps, proposals, thinkingOutput, firstOutputMs, null);
