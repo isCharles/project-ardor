@@ -22,7 +22,8 @@ class ApplicationRhythmIntentTests {
                 "今天打了 89 个招呼",
                 "确认一下，简历就是 5 份",
                 "I sent exactly 5 resumes today",
-                "约一下面试时间"}) {
+                "约一下面试时间",
+                "约一下简历修改时间"}) {
             assertThat(ApplicationRhythmIntent.approximateResumeCount(request)).as(request).isFalse();
         }
     }

@@ -1,12 +1,14 @@
 package com.projectardor.jobsearch.applicationactivity.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
@@ -115,6 +117,15 @@ class ApplicationRhythmPostgresTests {
                         assertThat(day.greetingCount()).isEqualTo(3);
                         assertThat(day.resumeCount()).isNull();
                     });
+
+            assertThatThrownBy(() -> service.record(user, TODAY, null, null))
+                    .as("an empty edit cannot erase both totals").isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> service.record(user, TODAY, 501, null))
+                    .isInstanceOf(IllegalArgumentException.class);
+            service.configure(user, 20, 30, true, LocalTime.of(19, 0), true);
+            var configured = service.get(user);
+            assertThat(configured.weeklyResumeGoal()).isEqualTo(20);
+            assertThat(configured.weeklyGreetingGoal()).isEqualTo(30);
         });
     }
 
