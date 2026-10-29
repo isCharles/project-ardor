@@ -44,7 +44,7 @@ type AgentMemory = { content: string; updatedAt: string | null };
 type AgentMemoryItem = { id: string; content: string; kind: string; sourceKind: string; confidence: number; valid: boolean; validUntil?: string | null; pinned: boolean };
 type RetryFailure = { label: string; detail: string };
 type AgentStreamEvent = ToolMeasurement & { type: "context" | "status" | "phase" | "phase_end" | "thinking" | "delta" | "intermediate" | "tool_start" | "tool_end" | "confirm" | "done" | "error"; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; conversationId: string | null; messageId: string | null; retryable: boolean | null; errorCode: string | null; confirmation: AgentConfirmation | null; toolStatus?: string; contextUsage?: ContextUsage | null };
-type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number; contextUsage?: ContextUsage | null };
+type StreamProgress = { phase: string; label: string; thinkingOutput: string; answerPartial: string; firstThinkingMs: number | null; firstOutputMs: number | null; silentSeconds: number; truncated: boolean; steps?: (ToolMeasurement & { label: string; elapsedMs: number; status: string })[]; elapsedMs?: number; contextUsage?: ContextUsage | null; conversationContextUsage?: ContextUsage | null };
 type AgentRun = { id: string; conversationId: string; message: string; status: "RUNNING" | "COMPLETED" | "FAILED" | "INTERRUPTED"; label: string; errorCode: string | null; errorMessage: string | null; retryable: boolean; createdAt: string; updatedAt: string };
 /* A deletion Ardor has proposed. Nothing is gone until the user presses the
    button, and pressing it is an ordinary authenticated DELETE from here — the
@@ -1047,7 +1047,8 @@ export default function AgentHomePage() {
               void stopRunOnce(requestId).catch((reason) => setError(reason instanceof Error ? reason.message : t("Could not confirm stop request", "暂时无法确认停止请求")));
             }
             if (event.type !== "error") setStreamAccepted(true);
-            if (event.type === "context" && event.contextUsage?.authoritative && event.contextUsage.conversationAnchor) {
+            if (event.type === "context" && event.contextUsage
+              && ((event.contextUsage.authoritative && event.contextUsage.conversationAnchor) || liveContextState(event.contextUsage))) {
               setLiveContext({ conversationId: activeConversationId!, usage: event.contextUsage });
             } else if (event.type === "thinking" && event.content) {
               setStreamPhase("THINKING");
@@ -1195,7 +1196,7 @@ export default function AgentHomePage() {
         setError(""); notifyStopped(requestId);
         if (conversationId) await load(conversationId);
       } else setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
-    } finally { if (activeSend.current === sendControl) activeSend.current = null; setApprovalRunId(null); setActiveRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
+    } finally { if (activeSend.current === sendControl) activeSend.current = null; setLiveContext((current) => current && current.usage.state !== "READY" ? null : current); setApprovalRunId(null); setActiveRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
   }
 
   function stopRunOnce(requestId: string): Promise<void> {
@@ -1494,7 +1495,7 @@ export default function AgentHomePage() {
       </div>
       <div data-composer-actions className="flex min-w-0 items-center justify-end gap-1">
         <ContextUsageIndicator selectedModel={modelOptions.find(item => item.id === modelChoice)?.label}
-          usage={liveContextState(streamProgress?.contextUsage) ?? (liveContext?.conversationId === state?.conversationId ? liveContext?.usage : messages.slice().reverse().map(item => { const trace = savedRunTrace(item.runTrace); return trace?.conversationContextUsage ?? trace?.contextUsage; }).find(Boolean))} />
+          usage={liveContextState(streamProgress?.contextUsage) ?? (liveContext?.conversationId === state?.conversationId ? liveContext?.usage : streamProgress?.conversationContextUsage ?? messages.slice().reverse().map(item => { const trace = savedRunTrace(item.runTrace); return trace?.conversationContextUsage ?? trace?.contextUsage; }).find(Boolean))} />
         {reasoningPicker()}
         <ChatVoiceButton disabled={!state?.llmConfigured} onTranscript={(text) => { setDraft((current) => current.trim() ? `${current.trim()} ${text}` : text); setError(""); }} onError={setError} />
         {isRunning && !draft.trim() && chatImages.length === 0 ? <Button type="button" aria-label={t("Stop", "停止")} disabled={cancelPending} onClick={() => void cancelExecution()} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800 disabled:opacity-50"><Square className="size-3 fill-current" /></Button> : <Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || (!draft.trim() && chatImages.length === 0) || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured || modelCatalogState !== "READY"} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button>}

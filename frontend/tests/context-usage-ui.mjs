@@ -26,11 +26,11 @@ try {
     else if (path === "/api/profile/sidebar") body = { userId: "context-owner", hrefs: ["/app"], configured: true, revision: 0 };
     else if (path === "/api/profile") body = { displayName: "Synthetic owner", timezone: "Asia/Shanghai", targetRoles: [] };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
-    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [{ id: "context-answer", role: "ASSISTANT", content: "Synthetic answer", runId: "context-run", createdAt: conversation.createdAt, runTrace: JSON.stringify({ elapsedMs: 10, status: "COMPLETED", steps: [], contextUsage: running ? null : usage, conversationContextUsage: conversationContext }) }] };
+    else if (path === "/api/agent") body = { conversationId: conversation.id, llmConfigured: true, memory: { content: "" }, conversations: [conversation], archivedConversations: [], messages: [{ id: "context-answer", role: "ASSISTANT", content: "Synthetic answer", runId: "context-run", createdAt: conversation.createdAt, runTrace: JSON.stringify({ elapsedMs: 10, status: "COMPLETED", steps: [], contextUsage: running ? null : usage, conversationContextUsage: running ? null : conversationContext }) }] };
     else if (path === "/api/agent/runs/latest") {
       if (!running) return route.fulfill({ status: 204 });
       body = { id: "context-run", conversationId: conversation.id, message: "Synthetic request", status: "RUNNING", label: "Working", createdAt: conversation.createdAt };
-    } else if (path.endsWith("/context-run/progress")) body = { phase: "WAITING", label: "Preparing", thinkingOutput: "", answerPartial: "北京晴 4~16℃，投递 30~40 份。~~旧安排~~", steps: [], contextUsage: usage };
+    } else if (path.endsWith("/context-run/progress")) body = { phase: "WAITING", label: "Preparing", thinkingOutput: "", answerPartial: "北京晴 4~16℃，投递 30~40 份。~~旧安排~~", steps: [], contextUsage: usage, conversationContextUsage: conversationContext };
     else if (path === "/api/agent/permissions") body = { mode: "CUSTOM", globalLevel: 1, modules: [] };
     else if (path === "/api/agent/models") body = [
       { id: "PRIMARY", label: "synthetic-model", provider: "OPENAI_COMPATIBLE", available: true, nativeControl: true },
@@ -99,6 +99,16 @@ try {
   await page.locator('[data-context-state="COMPACTION_FAILED"]').waitFor();
   await indicator.focus();
   await tooltip.getByText("History summary failed; every message was kept", { exact: true }).waitFor();
+  // Reopening a running turn must recover the anchor from progress, not fall back to an older turn.
+  usage = { ...usage, state: "READY", estimatedTokens: 62000, authoritative: true, conversationAnchor: false };
+  conversationContext = { ...usage, estimatedTokens: 18000, conversationAnchor: true };
+  await page.reload();
+  await page.locator('[data-context-state="READY"]').waitFor();
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
+    "Progress recovery must expose the current conversation anchor");
+  await indicator.hover();
+  await tooltip.getByText("9% full", { exact: true }).waitFor();
+  conversationContext = null;
   await page.setViewportSize({ width: 390, height: 844 });
   await indicator.click();
   await tooltip.waitFor();
