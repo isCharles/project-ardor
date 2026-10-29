@@ -101,7 +101,12 @@ public class ResumeService {
             } catch (IllegalArgumentException exception) {
                 resume.markFailed();
             }
-            return resumeRepository.saveAndFlush(resume);
+            Resume saved = resumeRepository.saveAndFlush(resume);
+            if (!resumeRepository.existsByUserIdAndPrimaryResumeTrue(userId)) {
+                saved.markPrimary(true);
+                return resumeRepository.saveAndFlush(saved);
+            }
+            return saved;
         } catch (RuntimeException exception) {
             storage.delete(storageKey);
             throw exception;
@@ -117,8 +122,39 @@ public class ResumeService {
     public List<ResumeView> listViews(UUID userId) {
         // Preserve the existing newest-first repository order, including its tie behavior.
         Map<UUID, ResumeAnalysis> latest = new LinkedHashMap<>();
-        for (var analysis : listAnalyses(userId)) latest.putIfAbsent(analysis.getResumeId(), analysis);
-        return list(userId).stream().map(resume -> ResumeView.from(resume, latest.get(resume.getId()))).toList();
+        Map<UUID, ResumeAnalysis> byId = new LinkedHashMap<>();
+        for (var analysis : listAnalyses(userId)) {
+            latest.putIfAbsent(analysis.getResumeId(), analysis);
+            byId.put(analysis.getId(), analysis);
+        }
+        return list(userId).stream().map(resume -> {
+            var pinned = resume.getDisplayAnalysisId() == null ? null : byId.get(resume.getDisplayAnalysisId());
+            return ResumeView.from(resume, pinned != null ? pinned : latest.get(resume.getId()));
+        }).toList();
+    }
+
+    /** One primary resume per user; the previous one is demoted, never deleted. */
+    @Transactional
+    public void setPrimary(UUID userId, UUID resumeId) {
+        Resume resume = get(userId, resumeId);
+        resumeRepository.clearPrimary(userId);
+        resume.markPrimary(true);
+        resumeRepository.saveAndFlush(resume);
+    }
+
+    /** Pins which stored report opens for this resume; null returns to "newest report". */
+    @Transactional
+    public void showAnalysis(UUID userId, UUID resumeId, UUID analysisId) {
+        Resume resume = get(userId, resumeId);
+        if (analysisId != null) {
+            ResumeAnalysis analysis = analysisRepository.findByIdAndUserId(analysisId, userId)
+                    .filter(candidate -> candidate.getResumeId().equals(resumeId))
+                    .orElseThrow(() -> new ResourceNotFoundException("找不到该分析报告"));
+            resume.showAnalysis(analysis.getId());
+        } else {
+            resume.showAnalysis(null);
+        }
+        resumeRepository.saveAndFlush(resume);
     }
 
     @Transactional(readOnly = true)

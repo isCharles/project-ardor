@@ -74,6 +74,21 @@ public class ResumeController {
 
     public record AnalysisRequest(String targetRole, String jobDescription, String roleFamily) {}
 
+    @PostMapping("/{resumeId}/primary")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void markPrimary(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID resumeId) {
+        resumeService.setPrimary(principal.userId(), resumeId);
+    }
+
+    public record DisplayAnalysisRequest(UUID analysisId) {}
+
+    @PostMapping("/{resumeId}/display-analysis")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void displayAnalysis(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID resumeId,
+            @RequestBody(required = false) DisplayAnalysisRequest request) {
+        resumeService.showAnalysis(principal.userId(), resumeId, request == null ? null : request.analysisId());
+    }
+
     @GetMapping("/{resumeId}/analysis/status")
     public ResumeAnalysisTaskResponse analysisStatus(
             @AuthenticationPrincipal ArdorPrincipal principal,

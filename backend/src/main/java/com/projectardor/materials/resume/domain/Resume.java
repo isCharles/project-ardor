@@ -48,6 +48,12 @@ public class Resume {
     @Column(name = "parse_status", nullable = false, length = 32)
     private ResumeParseStatus parseStatus;
 
+    @Column(name = "primary_resume", nullable = false)
+    private boolean primaryResume;
+
+    @Column(name = "display_analysis_id")
+    private UUID displayAnalysisId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -91,6 +97,15 @@ public class Resume {
         this.parseStatus = ResumeParseStatus.PARSED;
     }
 
+    public void markPrimary(boolean primary) {
+        this.primaryResume = primary;
+    }
+
+    /** Null means "show the newest report"; a value pins that report across reloads. */
+    public void showAnalysis(UUID analysisId) {
+        this.displayAnalysisId = analysisId;
+    }
+
     public void markFailed() {
         this.parsedText = null;
         this.parseStatus = ResumeParseStatus.FAILED;
@@ -118,4 +133,6 @@ public class Resume {
     public String getParsedText() { return parsedText; }
     public ResumeParseStatus getParseStatus() { return parseStatus; }
     public Instant getCreatedAt() { return createdAt; }
+    public boolean isPrimary() { return primaryResume; }
+    public UUID getDisplayAnalysisId() { return displayAnalysisId; }
 }
