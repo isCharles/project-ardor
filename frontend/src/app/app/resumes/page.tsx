@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, ArrowUpRight, FileText, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, Download, Eye, FileText, Plus, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
@@ -229,6 +229,7 @@ export default function ResumesPage() {
   function chooseFile(event: ChangeEvent<HTMLInputElement>) { setFileName(event.target.files?.[0]?.name ?? ""); }
   function openResume(resume: ResumeItem) { setSelectedId(resume.id); setPickedId(null); setAnalysis(null); setError(""); setNotice(""); }
   function viewOriginalResume() { setPreviewOpen(true); }
+  function previewResume(resume: ResumeItem) { openResume(resume); setPreviewOpen(true); }
   async function deleteResume() {
     if (!deleteTarget || deleting) return;
     setDeleting(true);
@@ -259,12 +260,13 @@ export default function ResumesPage() {
         onClick={() => { if (selected) void showReport(selected, item.id); else setPickedId(item.id); }}
         className={`rounded-full px-3 py-1 text-[11px] tabular-nums transition ${analysis?.id === item.id ? "bg-[#1d1d1f] text-white" : "bg-white text-stone-600 hover:bg-stone-100"}`}>{item.label}</button>)}
     </div>;
+    const previewPanel = previewOpen && <ResumePreviewPanel resumeId={selected.id} filename={selected.originalFilename} width={previewWidth} onWidthChange={setPreviewWidth} onClose={() => setPreviewOpen(false)} />;
     if (report) return <main className="ardor-workbench min-h-screen text-[#1d1d1f]">
       <div style={{ paddingRight: previewOpen ? previewWidth : 0 }}>
         {evaluationBar}
         <ResumeReportV3 report={report} resumeId={selected.id} analysisId={analysis?.id} onBack={() => { setSelectedId(null); setPickedId(null); setAnalysis(null); }} onViewResume={viewOriginalResume} onReanalyze={pending ? undefined : () => setReanalyzeOpen(true)} />
       </div>
-      {previewOpen && <ResumePreviewPanel resumeId={selected.id} filename={selected.originalFilename} width={previewWidth} onWidthChange={setPreviewWidth} onClose={() => setPreviewOpen(false)} />}
+      {previewPanel}
       {dialog}
     </main>;
     return <main className="ardor-workbench min-h-screen text-[#1d1d1f]"><div className="mx-auto max-w-3xl px-5 pb-24 pt-6 md:px-10">
@@ -272,6 +274,10 @@ export default function ResumesPage() {
       <header className="pb-8 pt-8">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">RESUME REPORT</p>
         <h1 className="mt-2 flex items-center gap-3 truncate text-3xl font-semibold tracking-tight">{selected.originalFilename}{selected.primary && <span className="shrink-0 rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-700">{t("Primary", "主简历")}</span>}</h1>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button onClick={viewOriginalResume} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm text-stone-600 hover:bg-stone-50"><Eye className="size-4" />{t("View original", "查看原简历")}</button>
+          <a href={`/api/resumes/${selected.id}/file`} download={selected.originalFilename} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm text-stone-600 hover:bg-stone-50"><Download className="size-4" />{t("Download original", "下载原文件")}</a>
+        </div>
       </header>
       {(error || notice) && <div className={`mb-6 rounded-2xl px-5 py-4 text-sm ${error ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{error || notice}</div>}
       {selected.analysisError && <p role="status" className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">{selected.analysisError}</p>}
@@ -287,6 +293,7 @@ export default function ResumesPage() {
         <p className="mt-3 text-sm text-stone-500">{pending ? t("Ardor is analyzing this resume in the background.", "Ardor 正在后台分析这份简历。") : t("Score · capability radar · prioritised issues", "评分 · 能力雷达 · 分档问题")}</p>
         {pending ? <div className="mt-6 h-1.5 max-w-sm overflow-hidden rounded-full bg-stone-100"><div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-violet-500 to-blue-500" /></div> : <button onClick={() => setReanalyzeOpen(true)} className="mt-6 rounded-full bg-[#1d1d1f] px-6 py-3 text-sm font-medium text-white hover:bg-black">{t("Analyze", "开始分析")}</button>}
       </section> : null}
+      {previewPanel}
       {dialog}
     </div></main>;
   }
@@ -372,7 +379,11 @@ export default function ResumesPage() {
           ) : <div className="flex flex-col gap-5 pr-8 md:flex-row md:items-start">{content}</div>) : content}
         </button>
         {primary && <span aria-hidden="true" className="pointer-events-none absolute right-5 top-5 text-violet-500"><ArrowUpRight className="size-5" /></span>}
-        <button type="button" onClick={() => { setDeleteTarget(resume); setDeleteError(""); }} aria-label={t("Delete resume", "删除简历")} title={t("Delete resume", "删除简历")} className="absolute bottom-5 right-5 grid size-8 place-items-center rounded-full text-stone-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100"><Trash2 className="size-4" /></button>
+        <div className="absolute bottom-5 right-5 flex items-center gap-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+          <button type="button" onClick={() => previewResume(resume)} aria-label={t("Preview resume", "查看简历")} title={t("Preview resume", "查看简历")} className="grid size-8 place-items-center rounded-full text-stone-400 hover:bg-violet-50 hover:text-violet-700"><Eye className="size-4" /></button>
+          <a href={`/api/resumes/${resume.id}/file`} download={resume.originalFilename} aria-label={t("Download original", "下载原文件")} title={t("Download original", "下载原文件")} className="grid size-8 place-items-center rounded-full text-stone-400 hover:bg-violet-50 hover:text-violet-700"><Download className="size-4" /></a>
+          <button type="button" onClick={() => { setDeleteTarget(resume); setDeleteError(""); }} aria-label={t("Delete resume", "删除简历")} title={t("Delete resume", "删除简历")} className="grid size-8 place-items-center rounded-full text-stone-300 hover:bg-red-50 hover:text-red-600"><Trash2 className="size-4" /></button>
+        </div>
       </div>
     );
   };
@@ -410,6 +421,8 @@ export default function ResumesPage() {
                       : <span className={`hidden shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium sm:inline ${status.className}`}>{status.label}</span>}
                     <ArrowRight className="size-4 shrink-0 text-stone-300" />
                   </button>
+                  <button type="button" onClick={() => previewResume(resume)} aria-label={t("Preview resume", "查看简历")} title={t("Preview resume", "查看简历")} className="grid size-8 shrink-0 place-items-center rounded-full text-stone-400 opacity-0 transition hover:bg-violet-50 hover:text-violet-700 focus-visible:opacity-100 group-hover:opacity-100"><Eye className="size-4" /></button>
+                  <a href={`/api/resumes/${resume.id}/file`} download={resume.originalFilename} aria-label={t("Download original", "下载原文件")} title={t("Download original", "下载原文件")} className="grid size-8 shrink-0 place-items-center rounded-full text-stone-400 opacity-0 transition hover:bg-violet-50 hover:text-violet-700 focus-visible:opacity-100 group-hover:opacity-100"><Download className="size-4" /></a>
                   <button type="button" onClick={() => void markPrimary(resume)} aria-label={t("Set as primary resume", "设为主简历")} title={t("Set as primary resume", "设为主简历")} className="shrink-0 rounded-full px-2.5 py-1 text-[11px] text-stone-400 opacity-0 transition hover:bg-violet-50 hover:text-violet-700 focus-visible:opacity-100 group-hover:opacity-100">{t("Set primary", "设为主简历")}</button>
                   <button type="button" onClick={() => { setDeleteTarget(resume); setDeleteError(""); }} aria-label={t("Delete resume", "删除简历")} title={t("Delete resume", "删除简历")} className="grid size-8 shrink-0 place-items-center rounded-full text-stone-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100"><Trash2 className="size-4" /></button>
                 </div>;

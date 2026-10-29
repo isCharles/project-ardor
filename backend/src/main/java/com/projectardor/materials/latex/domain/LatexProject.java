@@ -20,6 +20,7 @@ public class LatexProject {
     @Column(name = "frozen_revision") private Integer frozenRevision;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
+    @Column(name = "archived_at") private Instant archivedAt;
 
     protected LatexProject() {}
 
@@ -54,6 +55,16 @@ public class LatexProject {
         this.updatedAt = Instant.now();
     }
 
+    public boolean isArchived() {
+        return archivedAt != null;
+    }
+
+    public void archive() {
+        if (archivedAt != null) return;
+        archivedAt = Instant.now();
+        updatedAt = archivedAt;
+    }
+
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public String getTitle() { return title; }
@@ -62,4 +73,5 @@ public class LatexProject {
     public Integer getFrozenRevision() { return frozenRevision; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getArchivedAt() { return archivedAt; }
 }

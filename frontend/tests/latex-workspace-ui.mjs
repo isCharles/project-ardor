@@ -12,7 +12,8 @@ const projectId = "30000000-0000-4000-8000-000000000001";
 const conversationId = "30000000-0000-4000-8000-0000000000c1";
 let frozenRevision = null;
 let projectTitle = "我的简历";
-const freezes = [], previews = [], uploads = [], streams = [], renames = [];
+let archived = false;
+const freezes = [], previews = [], uploads = [], streams = [], renames = [], archives = [];
 let conversations = 0;
 const resumes = [];
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -60,6 +61,11 @@ try {
       ];
       return route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("") });
     }
+    if (method === "DELETE" && path === `/api/latex/projects/${projectId}`) {
+      archives.push(path);
+      archived = true;
+      return route.fulfill({ status: 204, body: "" });
+    }
     if (method === "PATCH" && path === `/api/latex/projects/${projectId}`) {
       const body = JSON.parse(route.request().postData() ?? "{}");
       renames.push(body);
@@ -89,7 +95,7 @@ try {
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
     else if (path.startsWith("/api/background-tasks/")) body = { activeCount: 0, items: [] };
     else if (path === "/api/agent/models") body = [{ id: "PRIMARY", label: "Primary", provider: "synthetic", available: true, nativeControl: false, visible: true }];
-    else if (path === "/api/latex/projects") body = [project()];
+    else if (path === "/api/latex/projects") body = archived ? [] : [project()];
     else if (path === `/api/latex/projects/${projectId}`) body = snapshot();
     else if (path === "/api/resumes") body = resumes;
     else if (path === "/api/agent") body = { conversationId: url.searchParams.get("conversationId") ? conversationId : null, llmConfigured: true, displayName: "Synthetic owner", conversations: [], archivedConversations: [], memory: { content: "", updatedAt: null }, messages: streams.length ? [{ id: "user-1", role: "USER", content: streams[0].message, createdAt: new Date().toISOString() }, { id: "assistant-1", role: "ASSISTANT", content: "已按你的要求调整。", createdAt: new Date().toISOString() }] : [] };
@@ -160,6 +166,14 @@ try {
   await waitFor(async () => /已在简历分析|In Resume analysis/.test(await bodyText()), "the frozen resume on reload");
   await waitFor(async () => (await bodyText()).includes("把项目经历写得更具体"), "the saved conversation");
   assert.equal(uploads.length, 1, "a frozen version is only uploaded once");
+
+  // Archiving removes the workspace from the list without deleting its revisions.
+  page.on("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: /Archive resume|归档简历/ }).click();
+  await waitFor(() => archives.length === 1, "the archive request");
+  assert.equal(archives[0], `/api/latex/projects/${projectId}`);
+  await waitFor(async () => /No resume yet|还没有简历/.test(await bodyText()), "the empty workspace state");
+  assert.equal(await page.getByRole("combobox", { name: /Switch resume|切换简历/ }).count(), 0, "an archived workspace leaves the switch list");
 
   assert.deepEqual(consoleErrors, []);
   console.log("Resume workspace UI: Ardor chat, current-version preview, freeze-to-analysis upload and reload dedupe passed.");

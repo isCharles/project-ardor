@@ -11,5 +11,5 @@ import com.projectardor.materials.latex.domain.LatexProject;
 public interface LatexProjectRepository extends JpaRepository<LatexProject, UUID> {
     Optional<LatexProject> findByIdAndUserId(UUID id, UUID userId);
 
-    List<LatexProject> findByUserIdOrderByUpdatedAtDesc(UUID userId);
+    List<LatexProject> findByUserIdAndArchivedAtIsNullOrderByUpdatedAtDesc(UUID userId);
 }

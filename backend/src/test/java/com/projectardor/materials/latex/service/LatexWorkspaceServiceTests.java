@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -125,6 +126,29 @@ class LatexWorkspaceServiceTests {
         assertThat(template.get("resume.cls")).doesNotContain("\\vspace{-0.5em}\\rule");
         assertThat(template.get(LatexWorkspaceService.DEFAULT_MAIN_FILE))
                 .contains("示例姓名", "you@example.com", "138-0000-0000", "\\section{荣誉与奖项}");
+    }
+
+    @Test
+    void archivingHidesTheWorkspaceAndIsIdempotent() {
+        UUID userId = UUID.randomUUID();
+        LatexProject project = ownedProject(userId, 2);
+
+        service.archive(userId, project.getId());
+        service.archive(userId, project.getId());
+
+        assertThat(project.isArchived()).isTrue();
+        assertThatThrownBy(() -> service.read(userId, project.getId(), null))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void listOnlyAsksForActiveWorkspaces() {
+        UUID userId = UUID.randomUUID();
+        when(projects.findByUserIdAndArchivedAtIsNullOrderByUpdatedAtDesc(userId)).thenReturn(List.of());
+
+        assertThat(service.list(userId)).isEmpty();
+
+        verify(projects).findByUserIdAndArchivedAtIsNullOrderByUpdatedAtDesc(userId);
     }
 
     @Test
