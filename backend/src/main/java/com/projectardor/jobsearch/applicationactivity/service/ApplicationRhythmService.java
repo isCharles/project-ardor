@@ -220,7 +220,7 @@ public class ApplicationRhythmService {
     private void validateDate(UUID userId, LocalDate date) {
         LocalDate today = LocalDate.now(clock.withZone(zone(userId)));
         if (date == null || date.isAfter(today) || date.isBefore(today.minusDays(90))) {
-            throw new IllegalArgumentException("只能记录今天及过去 90 天内的投递数");
+            throw new IllegalArgumentException("只能记录今天及过去 90 天内的数据");
         }
     }
 
