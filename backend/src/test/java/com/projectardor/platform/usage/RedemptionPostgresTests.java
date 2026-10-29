@@ -47,6 +47,8 @@ class RedemptionPostgresTests {
         jdbc.update("INSERT INTO usage_policies VALUES (50)");
         new ResourceDatabasePopulator(new ClassPathResource(
                 "db/migration/V61__add_plans_token_usage_and_redemption_codes.sql")).execute(source);
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/migration/V88__add_token_resource_packs.sql")).execute(source);
         var memberships = new MembershipService(jdbc);
         redemptions = new RedemptionService(jdbc, memberships, new MembershipPlanService(jdbc));
         transaction = new TransactionTemplate(new DataSourceTransactionManager(source));
@@ -62,6 +64,25 @@ class RedemptionPostgresTests {
         assertThat(jdbc.queryForObject("SELECT plus_monthly_limit FROM usage_policies", Integer.class)).isEqualTo(50);
         assertThat(jdbc.queryForObject("SELECT pro_monthly_limit FROM usage_policies", Integer.class)).isEqualTo(200);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM membership_plans", Integer.class)).isEqualTo(3);
+    }
+
+    @Test void aPackCodeCreditsItsTokensOncePerUser() {
+        var packs = new UsagePackService(jdbc);
+        var generated = packs.generate("PACK_1M", 2, null, "synthetic");
+        assertThat(generated.code()).startsWith("PACK-");
+        var redeemed = packs.redeem(user, generated.code());
+        assertThat(redeemed.tokens()).isEqualTo(1_000_000);
+        assertThat(redeemed.balance()).isEqualTo(1_000_000);
+        assertThat(packs.balance(user)).isEqualTo(1_000_000);
+
+        assertThatThrownBy(() -> packs.redeem(user, generated.code()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("已经兑换过");
+
+        UUID second = UUID.randomUUID();
+        jdbc.update("INSERT INTO users(id) VALUES (?)", second);
+        assertThat(packs.redeem(second, generated.code()).balance()).isEqualTo(1_000_000);
+        assertThat(jdbc.queryForObject("SELECT used_count FROM usage_token_pack_codes", Integer.class)).isEqualTo(2);
     }
 
     @Test void twoDifferentCodesForOneUserExtendInsteadOfOverwritingExpiry() throws Exception {

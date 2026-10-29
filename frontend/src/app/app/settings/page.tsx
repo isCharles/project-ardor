@@ -53,7 +53,8 @@ type LlmModelListResponse = { models: string[] };
 type HealthServiceType = "PRIMARY_LLM" | "WEB_SEARCH" | AuxiliaryServiceType;
 type HealthResult = { kind: "pending" | "success" | "error"; message: string };
 type Plan = { code: "FREE" | "PLUS" | "PRO"; nameZh: string; nameEn: string; priceCents: number; currency: string; billingInterval: string; tokenLimit: number; paymentEnabled: boolean };
-type UsageSnapshot = { tier: "FREE" | "PLUS" | "PRO"; plan: Plan | null; planExpiresAt?: string | null; resetsAt: string; features: Array<{ feature: string; used: number; limit: number; weeklyUsed?: number; weeklyLimit?: number }>; tokens: { used: number; limit: number }; plans: Plan[] };
+type TokenPack = { code: string; nameZh: string; nameEn: string; tokenAmount: number; priceCents: number; currency: string };
+type UsageSnapshot = { tier: "FREE" | "PLUS" | "PRO"; plan: Plan | null; planExpiresAt?: string | null; resetsAt: string; features: Array<{ feature: string; used: number; limit: number; weeklyUsed?: number; weeklyLimit?: number }>; tokens: { used: number; limit: number; packBalance?: number }; plans: Plan[]; packs?: TokenPack[] };
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -130,17 +131,25 @@ export default function SettingsPage() {
     setUsage(await api<UsageSnapshot>("/api/usage"));
   }
 
-  async function redeemPlan(event: FormEvent<HTMLFormElement>) {
+  async function redeem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!redeemCode.trim()) return;
+    const code = redeemCode.trim();
+    if (!code) return;
     setRedeeming(true);
     setRedeemFeedback({ kind: "pending", message: t("Redeeming…", "正在兑换…") });
     try {
-      const result = await api<{ tier: "PLUS" | "PRO"; nameZh: string; nameEn: string }>("/api/usage/redeem", {
-        method: "POST", body: JSON.stringify({ code: redeemCode.trim() }),
-      });
+      if (/^PACK/i.test(code.replace(/[^A-Za-z0-9]/g, ""))) {
+        const result = await api<{ nameZh: string; nameEn: string; tokens: number; balance: number }>("/api/usage/pack-codes/redeem", {
+          method: "POST", body: JSON.stringify({ code }),
+        });
+        setRedeemFeedback({ kind: "success", message: t(`${formatTokens(result.tokens)} pack tokens added`, `已到账 ${formatTokens(result.tokens)} Token 资源包`) });
+      } else {
+        const result = await api<{ tier: "PLUS" | "PRO"; nameZh: string; nameEn: string }>("/api/usage/redeem", {
+          method: "POST", body: JSON.stringify({ code }),
+        });
+        setRedeemFeedback({ kind: "success", message: t(`Upgraded to ${result.nameEn}`, `已升级到 ${result.nameZh}`) });
+      }
       setRedeemCode("");
-      setRedeemFeedback({ kind: "success", message: t(`Upgraded to ${result.nameEn}`, `已升级到 ${result.nameZh}`) });
       await refreshUsage();
     } catch (reason) {
       setRedeemFeedback({ kind: "error", message: reason instanceof Error ? reason.message : t("Could not redeem this code", "兑换失败") });
@@ -479,10 +488,12 @@ export default function SettingsPage() {
             <div className="flex items-baseline justify-between gap-3"><span className="text-xs font-medium text-violet-900">{t("Monthly tokens", "本月 Token")}</span><span className="text-xs tabular-nums text-violet-700">{formatTokens(usage.tokens.used)} / {usage.tokens.limit > 0 ? formatTokens(usage.tokens.limit) : t("Unlimited", "不限")}</span></div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/80"><div className="h-full rounded-full bg-violet-600 transition-[width]" style={{ width: usage.tokens.limit > 0 ? `${Math.min(100, Math.round(usage.tokens.used / usage.tokens.limit * 100))}%` : "0%" }} /></div>
             <p className="mt-2 text-[11px] text-violet-700/80">{t("Recorded from actual model usage; resets monthly.", "按模型实际返回的 Token 记录；每月重置。")}</p>
+            {(usage.tokens.packBalance ?? 0) > 0 && <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-violet-100 pt-3"><span className="text-xs font-medium text-violet-900">{t("Pack balance", "资源包余额")}</span><span className="text-xs tabular-nums text-violet-700">{formatTokens(usage.tokens.packBalance ?? 0)} Token</span></div>}
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{usage.features.filter((item) => ["AGENT_CHAT", "RESUME_ANALYSIS", "INTERVIEW_CREATE", "INTERVIEW_RECAP"].includes(item.feature)).map((item) => { const weeklyUsed = item.weeklyUsed ?? 0, weeklyLimit = item.weeklyLimit ?? 0; const weeklyBinds = weeklyLimit > 0 && weeklyLimit - weeklyUsed < item.limit - item.used; return <div key={item.feature} data-usage-feature={item.feature} className="rounded-2xl bg-white/70 p-4"><p className="text-xs text-muted-foreground">{locale === "en" ? englishUsageLabels[item.feature] ?? item.feature : usageFeatureLabels[item.feature] ?? item.feature}</p><p className="mt-2 text-lg font-semibold tabular-nums">{weeklyBinds ? `${weeklyUsed} / ${weeklyLimit}` : `${item.used} / ${item.limit}`}</p><p className="mt-1 text-[11px] text-muted-foreground">{weeklyBinds ? t("resets weekly", "每周重置") : t("resets monthly", "每月重置")}</p></div>; })}</div>
           <div className="mt-7"><h3 className="text-sm font-semibold">{t("Plans", "套餐")}</h3><div className="mt-3 grid gap-3 md:grid-cols-3">{usage.plans.map((plan) => <div key={plan.code} data-plan-code={plan.code} className={`rounded-2xl border p-4 ${plan.code === usage.tier ? "border-violet-300 bg-violet-50/50" : "border-stone-200/70 bg-white/60"}`}><div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold">{locale === "en" ? plan.nameEn : plan.nameZh}</span>{plan.code === usage.tier && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] text-violet-700">{t("Current", "当前")}</span>}</div><p className="mt-2 text-lg font-semibold tabular-nums">{plan.priceCents === 0 ? t("Free", "免费") : `¥${(plan.priceCents / 100).toFixed(0)}`}<span className="ml-1 text-[11px] font-normal text-muted-foreground">{plan.priceCents === 0 ? "" : t("/ month", "/ 月")}</span></p><p className="mt-1 text-xs text-muted-foreground">{plan.tokenLimit > 0 ? `${formatTokens(plan.tokenLimit)} Token` : t("Unlimited tokens", "不限 Token")}</p>{plan.code !== "FREE" && <Button type="button" variant="outline" disabled className="mt-3 w-full text-xs">{plan.code === usage.tier ? t("Current plan", "当前套餐") : t("Payment unavailable", "支付通道暂未开放")}</Button>}</div>)}</div></div>
-          <form onSubmit={redeemPlan} className="mt-6 rounded-2xl bg-stone-950/[0.03] p-4"><label htmlFor="redeem-code" className="text-sm font-medium">{t("Redeem a plan code", "使用兑换码升级")}</label><div className="mt-2 flex flex-col gap-2 sm:flex-row"><input id="redeem-code" className="field font-mono sm:flex-1" value={redeemCode} onChange={(event) => setRedeemCode(event.target.value.toUpperCase())} placeholder="ARDOR-XXXX-XXXX" maxLength={80} autoComplete="off" /><Button disabled={redeeming || !redeemCode.trim()} className="sm:w-auto">{redeeming ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Gift className="mr-2 size-4" />}{redeeming ? t("Redeeming…", "兑换中…") : t("Redeem", "兑换")}</Button></div><p className="mt-2 text-[11px] text-muted-foreground">{t("Codes are issued by an administrator.", "兑换码由管理员发放。")}</p>{redeemFeedback && <p role={redeemFeedback.kind === "error" ? "alert" : "status"} className={`mt-2 text-xs ${redeemFeedback.kind === "error" ? "text-red-600" : redeemFeedback.kind === "success" ? "text-emerald-700" : "text-stone-500"}`}>{redeemFeedback.message}</p>}</form>
+          {Array.isArray(usage.packs) && usage.packs.length > 0 && <div className="mt-7"><h3 className="text-sm font-semibold">{t("Token packs", "Token 资源包")}</h3><p className="mt-1 text-xs text-muted-foreground">{t("Used automatically once monthly plan tokens run out; packs do not expire.", "本月套餐 Token 用完后自动使用，资源包不会过期。")}</p><div className="mt-3 grid gap-3 md:grid-cols-3">{usage.packs.map((pack) => <div key={pack.code} data-pack-code={pack.code} className="rounded-2xl border border-stone-200/70 bg-white/60 p-4"><span className="text-sm font-semibold">{locale === "en" ? pack.nameEn : pack.nameZh}</span><p className="mt-2 text-lg font-semibold tabular-nums">¥{(pack.priceCents / 100).toFixed(0)}</p><p className="mt-1 text-xs text-muted-foreground">{formatTokens(pack.tokenAmount)} Token</p></div>)}</div></div>}
+          <form onSubmit={redeem} className="mt-6 rounded-2xl bg-stone-950/[0.03] p-4"><label htmlFor="redeem-code" className="text-sm font-medium">{t("Redeem a code", "使用兑换码")}</label><div className="mt-2 flex flex-col gap-2 sm:flex-row"><input id="redeem-code" className="field font-mono sm:flex-1" value={redeemCode} onChange={(event) => setRedeemCode(event.target.value.toUpperCase())} placeholder="ARDOR-XXXX-XXXX / PACK-XXXX-XXXX" maxLength={80} autoComplete="off" /><Button disabled={redeeming || !redeemCode.trim()} className="sm:w-auto">{redeeming ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Gift className="mr-2 size-4" />}{redeeming ? t("Redeeming…", "兑换中…") : t("Redeem", "兑换")}</Button></div><p className="mt-2 text-[11px] text-muted-foreground">{t("Codes are issued by an administrator. ARDOR codes change the plan; PACK codes add tokens.", "兑换码由管理员发放；ARDOR 码调整套餐，PACK 码增加 Token。")}</p>{redeemFeedback && <p role={redeemFeedback.kind === "error" ? "alert" : "status"} className={`mt-2 text-xs ${redeemFeedback.kind === "error" ? "text-red-600" : redeemFeedback.kind === "success" ? "text-emerald-700" : "text-stone-500"}`}>{redeemFeedback.message}</p>}</form>
           <p aria-label={t("Plan validity", "套餐有效期")} className="mt-4 text-xs text-muted-foreground">{usage.tier === "FREE" ? t("Free plan", "免费版") : usage.planExpiresAt === null ? t("No expiry", "长期有效") : usage.planExpiresAt && Number.isFinite(Date.parse(usage.planExpiresAt)) ? `${t("Expires", "到期时间")} · ${new Date(usage.planExpiresAt).toLocaleString(locale === "en" ? "en-US" : "zh-CN")}` : t("Expiry unavailable", "有效期未提供")}</p>
         </section>}
         {(!usage?.tokens || !Array.isArray(usage.plans)) && <p className="text-sm text-stone-500">{t("Usage information is currently unavailable.", "暂时无法取得使用额度。")}</p>}

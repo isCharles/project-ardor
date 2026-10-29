@@ -1,12 +1,8 @@
 package com.projectardor.platform.usage;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -20,9 +16,6 @@ import com.projectardor.common.web.ResourceNotFoundException;
 /** Administrator-issued upgrade codes; the only upgrade path until a payment provider exists. */
 @Service
 public class RedemptionService {
-
-    private static final char[] ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final JdbcTemplate jdbc;
     private final MembershipService memberships;
@@ -39,15 +32,15 @@ public class RedemptionService {
         MembershipTier tier = paidTier(planTier);
         if (durationDays <= 0 || durationDays > 3650) throw new IllegalArgumentException("有效期需在 1 到 3650 天之间");
         if (maxUses <= 0 || maxUses > 10000) throw new IllegalArgumentException("可使用次数需在 1 到 10000 之间");
-        String code = newCode();
+        String code = RedemptionCodeFormat.newCode("ARDOR");
         UUID id = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO redemption_codes(id, code_hash, code_hint, plan_tier, duration_days, max_uses,
                     expires_at, note)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, id, hash(code), hint(code), tier.name(), durationDays, maxUses,
-                expiresAt == null ? null : Timestamp.from(expiresAt), trim(note));
-        return new GeneratedCode(id, code, hint(code), tier.name(), durationDays, maxUses, 0,
+                """, id, RedemptionCodeFormat.hash(code), RedemptionCodeFormat.hint(code), tier.name(), durationDays, maxUses,
+                expiresAt == null ? null : Timestamp.from(expiresAt), RedemptionCodeFormat.trimNote(note));
+        return new GeneratedCode(id, code, RedemptionCodeFormat.hint(code), tier.name(), durationDays, maxUses, 0,
                 expiresAt, Instant.now());
     }
 
@@ -57,13 +50,13 @@ public class RedemptionService {
                 FROM redemption_codes ORDER BY created_at DESC
                 """, (row, index) -> new CodeView(row.getObject("id", UUID.class), row.getString("code_hint"),
                 row.getString("plan_tier"), row.getInt("duration_days"), row.getInt("max_uses"),
-                row.getInt("used_count"), instant(row.getTimestamp("expires_at")),
+                row.getInt("used_count"), RedemptionCodeFormat.instant(row.getTimestamp("expires_at")),
                 row.getString("note"), row.getTimestamp("created_at").toInstant()));
     }
 
     @Transactional
     public Redeemed redeem(UUID userId, String rawCode) {
-        String code = normalize(rawCode);
+        String code = RedemptionCodeFormat.normalize(rawCode);
         if (code.length() < 8) throw new IllegalArgumentException("兑换码格式不正确");
         // Different codes must not concurrently overwrite the same user's paid expiry.
         // Lock the stable user row first: a new account may have no membership row yet.
@@ -74,7 +67,7 @@ public class RedemptionService {
                 SELECT * FROM redemption_codes WHERE code_hash = ? FOR UPDATE
                 """, (row, index) -> new CodeRow(row.getObject("id", UUID.class), row.getString("plan_tier"),
                 row.getInt("duration_days"), row.getInt("max_uses"), row.getInt("used_count"),
-                instant(row.getTimestamp("expires_at"))), hash(code));
+                RedemptionCodeFormat.instant(row.getTimestamp("expires_at"))), RedemptionCodeFormat.hash(code));
         if (rows.isEmpty()) throw new ResourceNotFoundException("兑换码不存在或已失效");
         CodeRow row = rows.getFirst();
         Instant now = Instant.now();
@@ -114,41 +107,6 @@ public class RedemptionService {
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("兑换码只能配置 Plus 或 Pro 套餐");
         }
-    }
-
-    private static String newCode() {
-        StringBuilder value = new StringBuilder("ARDOR-");
-        for (int group = 0; group < 2; group++) {
-            if (group > 0) value.append('-');
-            for (int index = 0; index < 4; index++) value.append(ALPHABET[RANDOM.nextInt(ALPHABET.length)]);
-        }
-        return value.toString();
-    }
-
-    private static String normalize(String raw) {
-        return raw == null ? "" : raw.strip().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "");
-    }
-
-    private static String hash(String code) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(normalize(code).getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception exception) {
-            throw new IllegalStateException("无法生成兑换码摘要", exception);
-        }
-    }
-
-    private static String hint(String code) {
-        return "••••" + code.substring(code.length() - 4);
-    }
-
-    private static String trim(String value) {
-        if (value == null) return null;
-        return value.length() <= 200 ? value.strip() : value.strip().substring(0, 200);
-    }
-
-    private static Instant instant(Timestamp value) {
-        return value == null ? null : value.toInstant();
     }
 
     private record CodeRow(UUID id, String planTier, int durationDays, int maxUses, int usedCount,

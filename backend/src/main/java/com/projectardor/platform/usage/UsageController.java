@@ -29,14 +29,16 @@ public class UsageController {
     private final MembershipService memberships;
     private final MembershipPlanService plans;
     private final RedemptionService redemptions;
+    private final UsagePackService packs;
 
     public UsageController(QuotaService quotas, UsagePolicyRepository policies, MembershipService memberships,
-            MembershipPlanService plans, RedemptionService redemptions) {
+            MembershipPlanService plans, RedemptionService redemptions, UsagePackService packs) {
         this.quotas = quotas;
         this.policies = policies;
         this.memberships = memberships;
         this.plans = plans;
         this.redemptions = redemptions;
+        this.packs = packs;
     }
 
     @GetMapping("/api/usage")
@@ -53,6 +55,12 @@ public class UsageController {
     public RedemptionService.Redeemed redeem(@AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody RedeemRequest request) {
         return redemptions.redeem(principal.userId(), request.code());
+    }
+
+    @PostMapping("/api/usage/pack-codes/redeem")
+    public UsagePackService.Redeemed redeemPack(@AuthenticationPrincipal ArdorPrincipal principal,
+            @Valid @RequestBody RedeemRequest request) {
+        return packs.redeem(principal.userId(), request.code());
     }
 
     @GetMapping("/api/admin/usage-policies")
@@ -98,6 +106,21 @@ public class UsageController {
                 request.expiresAt(), request.note());
     }
 
+    @GetMapping("/api/admin/usage-packs")
+    public List<UsagePackService.Pack> packs() {
+        return packs.list();
+    }
+
+    @GetMapping("/api/admin/usage-pack-codes")
+    public List<UsagePackService.CodeView> packCodes() {
+        return packs.listCodes();
+    }
+
+    @PostMapping("/api/admin/usage-pack-codes")
+    public UsagePackService.GeneratedCode generatePackCode(@Valid @RequestBody GeneratePackCodeRequest request) {
+        return packs.generate(request.packCode(), request.maxUses(), request.expiresAt(), request.note());
+    }
+
     public record RedeemRequest(@NotBlank @Size(max = 80) String code) {}
 
     public record PolicyUpdate(@Min(0) int freeMonthlyLimit, @Min(0) int plusMonthlyLimit,
@@ -112,4 +135,7 @@ public class UsageController {
 
     public record GenerateCodeRequest(@NotBlank String planTier, @Min(1) @Max(3650) int durationDays,
             @Min(1) @Max(10000) int maxUses, Instant expiresAt, @Size(max = 200) String note) {}
+
+    public record GeneratePackCodeRequest(@NotBlank String packCode, @Min(1) @Max(10000) int maxUses,
+            Instant expiresAt, @Size(max = 200) String note) {}
 }

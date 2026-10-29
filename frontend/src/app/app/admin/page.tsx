@@ -16,6 +16,8 @@ type User = { id: string; email: string; status: "ACTIVE" | "DISABLED"; role: "U
 type UsagePolicy = { feature: string; freeMonthlyLimit: number; plusMonthlyLimit: number; proMonthlyLimit: number; userMinuteLimit: number; globalMinuteLimit: number; updatedAt: string };
 type Plan = { code: "FREE" | "PLUS" | "PRO"; nameZh: string; nameEn: string; priceCents: number; currency: string; billingInterval: string; tokenMonthlyLimit: number; paymentEnabled: boolean };
 type RedemptionCode = { id: string; codeHint: string; planTier: "PLUS" | "PRO"; durationDays: number; maxUses: number; usedCount: number; expiresAt: string | null; note: string | null; createdAt: string };
+type TokenPack = { code: string; nameZh: string; nameEn: string; tokenAmount: number; priceCents: number; currency: string };
+type PackCode = { id: string; codeHint: string; packCode: string; maxUses: number; usedCount: number; expiresAt: string | null; note: string | null; createdAt: string };
 type Overview = { counts: Record<string, number>; databaseAvailable: boolean; apiConfigs: ApiConfig[] };
 type Feedback = { kind: "pending" | "success" | "error"; message: string };
 
@@ -49,22 +51,33 @@ export default function AdminPage() {
   const [codes, setCodes] = useState<RedemptionCode[]>([]);
   const [generatedCode, setGeneratedCode] = useState("");
   const [codeBusy, setCodeBusy] = useState(false);
+  const [packs, setPacks] = useState<TokenPack[]>([]);
+  const [packCodes, setPackCodes] = useState<PackCode[]>([]);
+  const [generatedPackCode, setGeneratedPackCode] = useState("");
+  const [packCodeBusy, setPackCodeBusy] = useState(false);
   const [feedback, setFeedback] = useState<Partial<Record<ServiceType, Feedback>>>({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const packLabel = (code: string) => {
+    const pack = packs.find((item) => item.code === code);
+    return pack ? (locale === "en" ? pack.nameEn : pack.nameZh) : code;
+  };
 
   async function load() {
     try {
-      const [current, nextOverview, nextUsers, nextPolicies, nextPlans, nextCodes] = await Promise.all([
+      const [current, nextOverview, nextUsers, nextPolicies, nextPlans, nextCodes, nextPacks, nextPackCodes] = await Promise.all([
         api<{ admin: boolean }>("/api/auth/me"),
         api<Overview>("/api/admin/overview"),
         api<User[]>("/api/admin/users"),
         api<UsagePolicy[]>("/api/admin/usage-policies"),
         api<Plan[]>("/api/admin/plans"),
         api<RedemptionCode[]>("/api/admin/redemption-codes"),
+        api<TokenPack[]>("/api/admin/usage-packs"),
+        api<PackCode[]>("/api/admin/usage-pack-codes"),
       ]);
       if (!current.admin) return router.replace("/app");
       setOverview(nextOverview); setUsers(nextUsers); setPolicies(nextPolicies); setPlans(nextPlans); setCodes(nextCodes);
+      setPacks(nextPacks); setPackCodes(nextPackCodes);
     } catch (reason) {
       if (reason instanceof ApiError && (reason.status === 401 || reason.status === 403)) return router.replace("/app");
       setError(reason instanceof Error ? reason.message : t("Could not load the admin dashboard", "无法加载管理面板"));
@@ -167,6 +180,24 @@ export default function AdminPage() {
     finally { setCodeBusy(false); }
   }
 
+  async function generatePackCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setPackCodeBusy(true); setError(""); setGeneratedPackCode("");
+    try {
+      const expiry = String(data.get("expiresAt") ?? "").trim();
+      const created = await api<{ code: string }>("/api/admin/usage-pack-codes", { method: "POST", body: JSON.stringify({
+        packCode: data.get("packCode"), maxUses: Number(data.get("maxUses")),
+        expiresAt: expiry ? new Date(`${expiry}T23:59:59Z`).toISOString() : null, note: data.get("note"),
+      }) });
+      setGeneratedPackCode(created.code);
+      setPackCodes(await api<PackCode[]>("/api/admin/usage-pack-codes"));
+      form.reset();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not generate code", "兑换码生成失败")); }
+    finally { setPackCodeBusy(false); }
+  }
+
   async function removeConfig(type: ServiceType, label: string) {    if (!window.confirm(t(`Remove the system ${label} service? Users without a personal configuration will lose access.`, `移除系统${label}？未设置个人配置的用户将无法使用这项能力。`))) return;
     setBusy(`${type}:delete`);
     try {
@@ -243,6 +274,20 @@ export default function AdminPage() {
           </form>
           <div className="rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-panel)] p-2">
             {codes.length === 0 ? <p className="p-4 text-sm text-[var(--ardor-ink-3)]">{t("No codes generated yet.", "还没有生成兑换码。")}</p> : codes.map((code) => <div key={code.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--ardor-rule)] px-3 py-3 text-xs last:border-0"><div><p className="font-mono font-medium">{code.codeHint}</p><p className="mt-1 text-[var(--ardor-ink-3)]">{code.planTier} · {code.durationDays} {t("days", "天")} · {code.usedCount}/{code.maxUses} {t("used", "已用")}{code.expiresAt ? ` · ${new Date(code.expiresAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN")}` : ""}</p></div><span className={`rounded-full px-2 py-1 ${code.usedCount >= code.maxUses ? "bg-stone-100 text-stone-500" : "bg-emerald-50 text-emerald-700"}`}>{code.usedCount >= code.maxUses ? t("Used up", "已用完") : t("Active", "可用")}</span></div>)}
+          </div>
+        </div>
+      </section>
+
+      <section id="packs" className="mt-12 scroll-mt-8">
+        <div className="mb-5"><h2 className="text-xl font-semibold">{t("Token pack codes", "资源包兑换码")}</h2><p className="mt-1 text-sm text-[var(--ardor-ink-3)]">{t("Codes add pack tokens after the monthly plan budget runs out. The full code is shown only once.", "套餐 Token 用完后自动使用资源包；完整兑换码只在生成时显示一次。")}</p></div>
+        <div className="grid gap-4 lg:grid-cols-[1fr_1.25fr]">
+          <form onSubmit={(event) => void generatePackCode(event)} className="rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-panel)] p-5">
+            <div className="grid grid-cols-2 gap-3 text-xs text-[var(--ardor-ink-3)]"><label className="col-span-2 space-y-2"><span>{t("Pack", "资源包")}</span><select name="packCode" className="h-10 w-full rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-sm text-[var(--ardor-ink)]">{packs.map((pack) => <option key={pack.code} value={pack.code}>{locale === "en" ? pack.nameEn : pack.nameZh} · {new Intl.NumberFormat(locale === "en" ? "en-US" : "zh-CN").format(pack.tokenAmount)} Token</option>)}</select></label><label className="space-y-2"><span>{t("Max uses", "最多兑换人数")}</span><input name="maxUses" type="number" min={1} defaultValue={1} required className="h-10 w-full rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-sm text-[var(--ardor-ink)]" /></label><label className="space-y-2"><span>{t("Code expires", "兑换码截止日")}</span><input name="expiresAt" type="date" className="h-10 w-full rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-sm text-[var(--ardor-ink)]" /></label><label className="col-span-2 space-y-2"><span>{t("Note", "备注")}</span><input name="note" maxLength={200} className="h-10 w-full rounded-xl border border-[var(--ardor-rule)] bg-transparent px-3 text-sm text-[var(--ardor-ink)]" placeholder={t("Optional", "选填")} /></label></div>
+            <Button className="mt-4" disabled={packCodeBusy || packs.length === 0}>{packCodeBusy ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <KeyRound className="mr-2 size-4" />}{t("Generate code", "生成兑换码")}</Button>
+            {generatedPackCode && <div className="mt-4 rounded-2xl bg-emerald-50 p-3"><p className="text-xs text-emerald-800">{t("Copy this code now; it will not be shown again.", "请立即复制，之后不再显示完整兑换码。")}</p><p className="mt-2 break-all font-mono text-lg font-semibold text-emerald-900">{generatedPackCode}</p></div>}
+          </form>
+          <div className="rounded-3xl border border-[var(--ardor-rule)] bg-[var(--ardor-panel)] p-2">
+            {packCodes.length === 0 ? <p className="p-4 text-sm text-[var(--ardor-ink-3)]">{t("No pack codes generated yet.", "还没有生成资源包兑换码。")}</p> : packCodes.map((code) => <div key={code.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--ardor-rule)] px-3 py-3 text-xs last:border-0"><div><p className="font-mono font-medium">{code.codeHint}</p><p className="mt-1 text-[var(--ardor-ink-3)]">{packLabel(code.packCode)} · {code.usedCount}/{code.maxUses} {t("used", "已用")}{code.expiresAt ? ` · ${new Date(code.expiresAt).toLocaleDateString(locale === "en" ? "en-US" : "zh-CN")}` : ""}</p></div><span className={`rounded-full px-2 py-1 ${code.usedCount >= code.maxUses ? "bg-stone-100 text-stone-500" : "bg-emerald-50 text-emerald-700"}`}>{code.usedCount >= code.maxUses ? t("Used up", "已用完") : t("Active", "可用")}</span></div>)}
           </div>
         </div>
       </section>

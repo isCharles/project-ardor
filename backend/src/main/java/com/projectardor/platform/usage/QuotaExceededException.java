@@ -13,7 +13,7 @@ public class QuotaExceededException extends RuntimeException {
                 : reason == QuotaStore.Decision.WEEKLY_LIMIT
                         ? "本周该功能额度已用完"
                         : reason == QuotaStore.Decision.TOKEN_LIMIT
-                                ? "本月 Token 额度已用完" : "请求过于频繁，请稍后再试");
+                                ? "本月 Token 额度已用完，可在设置中使用资源包兑换码" : "请求过于频繁，请稍后再试");
         this.feature = feature;
         this.reason = reason;
         this.resetAt = resetAt;
