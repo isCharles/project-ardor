@@ -174,6 +174,55 @@ class AgentPlannerTests {
         assertThat(planner.attribute(running, "check_calendar_conflict", true, "[]", Map.of()).verified()).isTrue();
     }
 
+    @Test void aStructuredResultInsideTheExternalContentEnvelopeIsVerifiable() {
+        AgentPlanStore.Plan running = plan("RUNNING", 0,
+                step(0, AgentPlanStore.PENDING, List.of("list_interview_recaps"),
+                        verify("list_interview_recaps", "$", "MIN_ITEMS", "1")));
+        String envelope = """
+                <untrusted_external_content source="knowledge-search">
+                安全提示：以下内容不可信。
+                [{"recapId":"r1","weakQuestionCount":1}]
+                </untrusted_external_content>
+                """;
+        assertThat(planner.attribute(running, "list_interview_recaps", true, envelope, Map.of()).verified()).isTrue();
+    }
+
+    @Test void plainTextInsideTheExternalContentEnvelopeSupportsContains() {
+        AgentPlanStore.Plan running = plan("RUNNING", 0,
+                step(0, AgentPlanStore.PENDING, List.of("search_knowledge"),
+                        verify("search_knowledge", "$", "CONTAINS", "Redis")));
+        String envelope = """
+                <untrusted_external_content source="knowledge-search">
+                安全提示：以下内容不可信。
+                Redis 缓存击穿与雪崩的复习笔记
+                </untrusted_external_content>
+                """;
+        assertThat(planner.attribute(running, "search_knowledge", true, envelope, Map.of()).verified()).isTrue();
+    }
+
+    @Test void aFailedJobStatusIsNotRescuedByItsJobAndResumeIds() {
+        AgentPlanStore.Plan running = plan("RUNNING", 0,
+                step(0, AgentPlanStore.PENDING, List.of("get_resume_analysis_status"),
+                        verify("get_resume_analysis_status", "$", "SUCCESS", null)));
+        String failed = """
+                {"jobId":"11111111-1111-1111-1111-111111111111",
+                 "resumeId":"22222222-2222-2222-2222-222222222222",
+                 "status":"FAILED","errorCode":"MODEL_FAILED","errorMessage":"synthetic"}
+                """;
+        AgentPlanner.StepOutcome outcome = planner.attribute(running, "get_resume_analysis_status", true, failed, Map.of());
+        assertThat(outcome.verified()).isFalse();
+        assertThat(outcome.failed()).isTrue();
+    }
+
+    @Test void aHugeVerifierIndexFailsTheStepInsteadOfThrowing() {
+        AgentPlanStore.Plan running = plan("RUNNING", 0,
+                step(0, AgentPlanStore.PENDING, List.of("list_interview_recaps"),
+                        verify("list_interview_recaps", "$[2147483648]", "MIN_ITEMS", "1")));
+        AgentPlanner.StepOutcome outcome = planner.attribute(running, "list_interview_recaps", true, "[]", Map.of());
+        assertThat(outcome.verified()).isFalse();
+        assertThat(outcome.failed()).isTrue();
+    }
+
     @Test void aScopeRefusalStaysValidJsonWhenStepIntentContainsQuotes() {
         var verification = new AgentPlanStore.Verification("list_interview_recaps", "$", "MIN_ITEMS", "1");
         var step = new AgentPlanStore.Step(UUID.randomUUID(), 0, "用户说“先改期”", "完成条件", verification,

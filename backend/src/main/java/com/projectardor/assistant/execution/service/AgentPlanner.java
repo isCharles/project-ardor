@@ -258,11 +258,14 @@ public class AgentPlanner {
         if (raw == null) {
             return new VerificationResult(false, null, "缺少核验工具 " + verification.tool() + " 的结果");
         }
+        String payload = unwrapUntrusted(raw);
         JsonNode root;
         try {
-            root = objectMapper.readTree(raw);
+            root = objectMapper.readTree(payload);
         } catch (RuntimeException failure) {
-            return new VerificationResult(false, null, "核验工具返回的不是可解析的 JSON");
+            // External search/knowledge tools may return text inside the untrusted envelope; CONTAINS
+            // and EQUALS can still inspect that text without pretending it is structured JSON.
+            root = objectMapper.getNodeFactory().stringNode(payload);
         }
         JsonNode node = at(root, verification.path());
         boolean passed = switch (verification.op()) {
@@ -314,16 +317,47 @@ public class AgentPlanner {
 
     private static boolean success(JsonNode node) {
         if (node == null || !node.isObject()) return false;
-        JsonNode error = node.get("error");
-        if (error != null && !error.isNull() && !error.asText().isBlank()) return false;
-        JsonNode success = node.get("success");
-        if (success != null && success.isBoolean()) return success.asBoolean();
-        JsonNode status = node.get("status");
-        if (status != null && status.isTextual()
-                && SUCCESS_STATUSES.contains(status.asText().toUpperCase(Locale.ROOT))) {
-            return true;
+        if (hasFailureText(node, "error") || hasFailureText(node, "errorCode")
+                || hasFailureText(node, "errorMessage")) {
+            return false;
         }
+        JsonNode success = node.get("success");
+        if (success != null && success.isBoolean() && !success.asBoolean()) return false;
+        JsonNode status = node.get("status");
+        if (status != null && !status.isNull()) {
+            // An explicit status must be a success status; FAILED/QUEUED/RUNNING must never fall
+            // through to the ID fallback just because the job also carries a jobId/resumeId.
+            return status.isTextual()
+                    && SUCCESS_STATUSES.contains(status.asText().toUpperCase(Locale.ROOT));
+        }
+        if (success != null && success.isBoolean()) return true;
         return hasId(node);
+    }
+
+    private static boolean hasFailureText(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) return false;
+        return value.isObject() || value.isArray() ? value.size() > 0 : !value.asText().isBlank();
+    }
+
+    /**
+     * Removes the prompt-injection safety envelope added by external tools. The payload may be JSON
+     * (structured tools) or plain text (search/knowledge adapters); the caller decides how to read it.
+     */
+    private static String unwrapUntrusted(String raw) {
+        String value = raw.strip();
+        String open = "<untrusted_external_content";
+        String close = "</untrusted_external_content>";
+        if (!value.startsWith(open)) return raw;
+        int openEnd = value.indexOf('>');
+        int closeStart = value.lastIndexOf(close);
+        if (openEnd < 0 || closeStart <= openEnd) return raw;
+        String inner = value.substring(openEnd + 1, closeStart).strip();
+        if (inner.startsWith("安全提示：")) {
+            int newline = inner.indexOf('\n');
+            if (newline >= 0) inner = inner.substring(newline + 1).strip();
+        }
+        return inner;
     }
 
     /** Supports $, $.field, $[0] and $.items[0].field for verifiers; anything else is unresolved. */
@@ -345,7 +379,14 @@ public class AgentPlanner {
                 if (end < 0) return null;
                 String number = value.substring(index + 1, end).strip();
                 if (!number.matches("\\d+")) return null;
-                current = current.get(Integer.parseInt(number));
+                long parsed;
+                try {
+                    parsed = Long.parseLong(number);
+                } catch (NumberFormatException failure) {
+                    return null;
+                }
+                if (parsed > Integer.MAX_VALUE) return null;
+                current = current.get((int) parsed);
                 index = end + 1;
             } else {
                 return null;
