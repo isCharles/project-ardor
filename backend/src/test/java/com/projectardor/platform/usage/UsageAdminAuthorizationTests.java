@@ -64,6 +64,18 @@ class UsageAdminAuthorizationTests {
     }
 
     @Test
+    void regularUserCannotListPackCodes() throws Exception {
+        mvc.perform(get("/api/admin/usage-pack-codes").with(user(principal(UserRole.USER))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanReachPackCatalog() throws Exception {
+        mvc.perform(get("/api/admin/usage-packs").with(user(principal(UserRole.ADMIN))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void adminCanReachPolicyEndpoint() throws Exception {
         mvc.perform(get("/api/admin/usage-policies").with(user(principal(UserRole.ADMIN))))
                 .andExpect(status().isOk());
@@ -84,7 +96,8 @@ class UsageAdminAuthorizationTests {
                     org.mockito.Mockito.mock(UsagePolicyRepository.class),
                     org.mockito.Mockito.mock(MembershipService.class),
                     org.mockito.Mockito.mock(MembershipPlanService.class),
-                    org.mockito.Mockito.mock(RedemptionService.class));
+                    org.mockito.Mockito.mock(RedemptionService.class),
+                    org.mockito.Mockito.mock(UsagePackService.class));
         }
 
         @Bean

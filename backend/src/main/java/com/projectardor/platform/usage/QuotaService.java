@@ -18,26 +18,33 @@ public class QuotaService {
     private final QuotaStore store;
     private final MembershipPlanService plans;
     private final UsageTokenStore tokenStore;
+    private final UsagePackService packs;
     private final Clock clock;
 
     @Autowired
     public QuotaService(UsagePolicyRepository policies, MembershipService memberships, QuotaStore store,
-            MembershipPlanService plans, UsageTokenStore tokenStore) {
-        this(policies, memberships, store, plans, tokenStore, Clock.systemUTC());
+            MembershipPlanService plans, UsageTokenStore tokenStore, UsagePackService packs) {
+        this(policies, memberships, store, plans, tokenStore, packs, Clock.systemUTC());
     }
 
     /** Compatibility for tests that predate plan-aware quotas. */
     QuotaService(UsagePolicyRepository policies, MembershipService memberships, QuotaStore store, Clock clock) {
-        this(policies, memberships, store, null, null, clock);
+        this(policies, memberships, store, null, null, null, clock);
     }
 
     QuotaService(UsagePolicyRepository policies, MembershipService memberships, QuotaStore store,
             MembershipPlanService plans, UsageTokenStore tokenStore, Clock clock) {
+        this(policies, memberships, store, plans, tokenStore, null, clock);
+    }
+
+    QuotaService(UsagePolicyRepository policies, MembershipService memberships, QuotaStore store,
+            MembershipPlanService plans, UsageTokenStore tokenStore, UsagePackService packs, Clock clock) {
         this.policies = policies;
         this.memberships = memberships;
         this.store = store;
         this.plans = plans;
         this.tokenStore = tokenStore;
+        this.packs = packs;
         this.clock = clock;
     }
 
@@ -48,7 +55,7 @@ public class QuotaService {
         if (plans != null && tokenStore != null) {
             long limit = plans.tokenLimit(tier);
             long used = tokenStore.usedThisMonth(userId, now);
-            if (limit > 0 && used >= limit) {
+            if (limit > 0 && used >= limit && (packs == null || packs.balance(userId) <= 0)) {
                 throw new QuotaExceededException(feature, QuotaStore.Decision.TOKEN_LIMIT, nextMonth(now));
             }
         }
@@ -72,17 +79,25 @@ public class QuotaService {
                 .toList();
         long tokenLimit = plans == null ? 0 : plans.tokenLimit(tier);
         long tokenUsed = tokenStore == null ? 0 : tokenStore.usedThisMonth(userId, now);
+        long packBalance = packs == null ? 0 : packs.balance(userId);
+        List<PackView> availablePacks = packs == null ? List.of()
+                : packs.list().stream().map(QuotaService::packView).toList();
         PlanView current = plans == null ? null : planView(plans.get(tier));
         List<PlanView> available = plans == null ? List.of()
                 : plans.list().stream().map(QuotaService::planView).toList();
         return new UsageSnapshot(tier, current, nextMonth(now), features,
-                new TokenUsage(tokenUsed, tokenLimit), available,
+                new TokenUsage(tokenUsed, tokenLimit, packBalance), available, availablePacks,
                 tier.paid() ? memberships.expiry(userId) : null);
     }
 
     private static PlanView planView(MembershipPlanService.Plan plan) {
         return new PlanView(plan.code().name(), plan.nameZh(), plan.nameEn(), plan.priceCents(),
                 plan.currency(), plan.billingInterval(), plan.tokenMonthlyLimit(), plan.paymentEnabled());
+    }
+
+    private static PackView packView(UsagePackService.Pack pack) {
+        return new PackView(pack.code(), pack.nameZh(), pack.nameEn(), pack.tokenAmount(), pack.priceCents(),
+                pack.currency());
     }
 
     private Instant nextMonth(Instant now) {
@@ -99,9 +114,11 @@ public class QuotaService {
     }
 
     public record FeatureUsage(UsageFeature feature, int used, int limit, int weeklyUsed, int weeklyLimit) {}
-    public record TokenUsage(long used, long limit) {}
+    public record TokenUsage(long used, long limit, long packBalance) {}
     public record PlanView(String code, String nameZh, String nameEn, int priceCents, String currency,
             String billingInterval, long tokenLimit, boolean paymentEnabled) {}
+    public record PackView(String code, String nameZh, String nameEn, long tokenAmount, int priceCents,
+            String currency) {}
     public record UsageSnapshot(MembershipTier tier, PlanView plan, Instant resetsAt, List<FeatureUsage> features,
-            TokenUsage tokens, List<PlanView> plans, Instant planExpiresAt) {}
+            TokenUsage tokens, List<PlanView> plans, List<PackView> packs, Instant planExpiresAt) {}
 }

@@ -134,4 +134,74 @@ class QuotaServiceTests {
                 org.mockito.ArgumentMatchers.any());
     }
 
+    @Test
+    void anExhaustedPlanIsAllowedWhilePackTokensRemain() {
+        var plans = mock(MembershipPlanService.class);
+        var tokens = mock(UsageTokenStore.class);
+        var packs = mock(UsagePackService.class);
+        var budgetService = new QuotaService(policies, memberships, store, plans, tokens, packs,
+                Clock.fixed(now, ZoneOffset.UTC));
+        UUID user = UUID.randomUUID();
+        UsagePolicy policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 500, 2000, 2, 25, 100, 8, 120, now);
+        when(policies.get(UsageFeature.AGENT_CHAT)).thenReturn(policy);
+        when(memberships.tier(user)).thenReturn(MembershipTier.PLUS);
+        when(plans.tokenLimit(MembershipTier.PLUS)).thenReturn(100L);
+        when(tokens.usedThisMonth(user, now)).thenReturn(100L);
+        when(packs.balance(user)).thenReturn(1_000L);
+        when(store.consume(user, policy, MembershipTier.PLUS, null, now)).thenReturn(QuotaStore.Decision.ALLOWED);
+
+        budgetService.consume(user, UsageFeature.AGENT_CHAT, null);
+
+        verify(store).consume(user, policy, MembershipTier.PLUS, null, now);
+    }
+
+    @Test
+    void anExhaustedPlanWithoutPackTokensStillBlocks() {
+        var plans = mock(MembershipPlanService.class);
+        var tokens = mock(UsageTokenStore.class);
+        var packs = mock(UsagePackService.class);
+        var budgetService = new QuotaService(policies, memberships, store, plans, tokens, packs,
+                Clock.fixed(now, ZoneOffset.UTC));
+        UUID user = UUID.randomUUID();
+        UsagePolicy policy = new UsagePolicy(UsageFeature.AGENT_CHAT, 5, 500, 500, 2000, 2, 25, 100, 8, 120, now);
+        when(policies.get(UsageFeature.AGENT_CHAT)).thenReturn(policy);
+        when(memberships.tier(user)).thenReturn(MembershipTier.PLUS);
+        when(plans.tokenLimit(MembershipTier.PLUS)).thenReturn(100L);
+        when(tokens.usedThisMonth(user, now)).thenReturn(100L);
+        when(packs.balance(user)).thenReturn(0L);
+
+        assertThatThrownBy(() -> budgetService.consume(user, UsageFeature.AGENT_CHAT, null))
+                .isInstanceOfSatisfying(QuotaExceededException.class,
+                        exception -> assertThat(exception.reason()).isEqualTo(QuotaStore.Decision.TOKEN_LIMIT));
+        verify(store, never()).consume(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void snapshotReportsPackBalanceAndCatalog() {
+        var plans = mock(MembershipPlanService.class);
+        var tokens = mock(UsageTokenStore.class);
+        var packs = mock(UsagePackService.class);
+        var budgetService = new QuotaService(policies, memberships, store, plans, tokens, packs,
+                Clock.fixed(now, ZoneOffset.UTC));
+        UUID user = UUID.randomUUID();
+        when(memberships.tier(user)).thenReturn(MembershipTier.PLUS);
+        when(policies.list()).thenReturn(List.of());
+        when(plans.get(MembershipTier.PLUS)).thenReturn(new MembershipPlanService.Plan(MembershipTier.PLUS,
+                "Plus", "Plus", 3900, "CNY", "MONTHLY", 2_000_000, false, 1, now));
+        when(plans.tokenLimit(MembershipTier.PLUS)).thenReturn(2_000_000L);
+        when(plans.list()).thenReturn(List.of());
+        when(tokens.usedThisMonth(user, now)).thenReturn(10L);
+        when(packs.balance(user)).thenReturn(700L);
+        when(packs.list()).thenReturn(List.of(
+                new UsagePackService.Pack("PACK_1M", "轻量资源包", "Light pack", 1_000_000, 900, "CNY")));
+
+        var snapshot = budgetService.snapshot(user);
+
+        assertThat(snapshot.tokens()).isEqualTo(new QuotaService.TokenUsage(10, 2_000_000, 700));
+        assertThat(snapshot.packs()).containsExactly(
+                new QuotaService.PackView("PACK_1M", "轻量资源包", "Light pack", 1_000_000, 900, "CNY"));
+    }
+
 }
