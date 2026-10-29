@@ -35,6 +35,7 @@ export default function ApplicationRhythmPage() {
   const { locale, t } = useLocale();
   const weekdays = locale === "en" ? ["M", "T", "W", "T", "F", "S", "S"] : ["一", "二", "三", "四", "五", "六", "日"];
   const [rhythm, setRhythm] = useState<Rhythm | null>(null);
+  const [metricView, setMetricView] = useState<Metric>("resume");
   const [selectedDate, setSelectedDate] = useState("");
   const [greetingDraft, setGreetingDraft] = useState("");
   const [resumeDraft, setResumeDraft] = useState("");
@@ -139,14 +140,19 @@ export default function ApplicationRhythmPage() {
   }
 
   const selectedDay = rhythm?.days.find((day) => day.date === selectedDate);
-  const resumeProgress = rhythm?.weeklyResumeGoal ? Math.min(100, Math.round(rhythm.weeklyResumeCount / rhythm.weeklyResumeGoal * 100)) : 0;
-  const greetingProgress = rhythm?.weeklyGreetingGoal ? Math.min(100, Math.round(rhythm.weeklyGreetingCount / rhythm.weeklyGreetingGoal * 100)) : 0;
-  const maxDay = Math.max(1, ...(rhythm?.days.flatMap((day) => [day.greetingCount ?? 0, day.resumeCount ?? 0]) ?? []));
+  const showingGreeting = metricView === "greeting";
+  const selectedWeeklyCount = (showingGreeting ? rhythm?.weeklyGreetingCount : rhythm?.weeklyResumeCount) ?? 0;
+  const selectedTodayCount = showingGreeting ? rhythm?.todayGreetingCount : rhythm?.todayResumeCount;
+  const selectedGoal = (showingGreeting ? rhythm?.weeklyGreetingGoal : rhythm?.weeklyResumeGoal) ?? 0;
+  const selectedProgress = selectedGoal ? Math.min(100, Math.round(selectedWeeklyCount / selectedGoal * 100)) : 0;
+  const selectedRecordedDays = (showingGreeting ? rhythm?.weeklyGreetingRecordedDays : rhythm?.weeklyResumeRecordedDays) ?? 0;
+  const chartMax = Math.max(1, ...(rhythm?.days.map((day) => (showingGreeting ? day.greetingCount : day.resumeCount) ?? 0) ?? []));
   const elapsedDays = rhythm?.days.filter((day) => day.date <= rhythm.today).length ?? 0;
-  const missingGreetingDays = Math.max(0, elapsedDays - (rhythm?.weeklyGreetingRecordedDays ?? 0));
-  const missingResumeDays = Math.max(0, elapsedDays - (rhythm?.weeklyResumeRecordedDays ?? 0));
+  const selectedMissingDays = Math.max(0, elapsedDays - selectedRecordedDays);
+  const selectedMetricLabel = showingGreeting ? t("Greetings", "打招呼") : t("Resume sends", "简历投递");
+  const selectedUnit = showingGreeting ? t("outreach", "次") : t("sent", "份");
   const showCount = (value: number | null | undefined) => value == null ? t("Not recorded", "未记录") : String(value);
-  const barHeight = (value: number | null | undefined) => `${value ? Math.max(11, value / maxDay * 100) : 2}%`;
+  const barHeight = (value: number | null | undefined) => `${value ? Math.max(11, value / chartMax * 100) : 2}%`;
   const greetingMissingToday = rhythm != null && rhythm.todayGreetingCount == null;
   const resumeMissingToday = rhythm != null && rhythm.todayResumeCount == null;
   const reminderText = greetingMissingToday && resumeMissingToday
@@ -173,35 +179,35 @@ export default function ApplicationRhythmPage() {
         {rhythm?.reminderDue && <div className="mb-5 flex items-center gap-3 rounded-3xl border border-violet-100 bg-white/85 px-5 py-4 text-sm shadow-sm"><Bell className="size-5 shrink-0 text-violet-500" /><span className="flex-1">{reminderText}</span><button onClick={() => void dismiss()} aria-label={t("Dismiss today's reminder", "今天不再提醒")} className="rounded-full p-2 text-stone-400 hover:bg-stone-100"><X className="size-4" /></button></div>}
         <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
           <section className="rounded-[2rem] border border-white/80 bg-white/80 p-6 shadow-[0_18px_70px_rgba(58,44,94,0.08)] backdrop-blur-xl md:p-8">
-            <div className="flex items-start justify-between gap-3">
-              <div className="grid flex-1 gap-6 sm:grid-cols-2">
-                <div>
-                  <p className="flex items-center gap-2 text-sm text-stone-500"><MessageCircle className="size-4 text-violet-500" />{t("Greetings this week", "本周打招呼")}</p>
-                  <p className="mt-2 text-5xl font-semibold tabular-nums tracking-[-0.06em]">{rhythm?.weeklyGreetingCount ?? "—"}<span className="ml-2 text-lg font-normal text-stone-400">{t("outreach", "次")}</span></p>
-                  <p className="mt-2 text-xs text-stone-400">{t("Today", "今天")} {showCount(rhythm?.todayGreetingCount)}</p>
-                  {rhythm?.weeklyGreetingGoal ? <p className="mt-3 text-xs text-violet-600">{t(`Greeting goal ${rhythm.weeklyGreetingGoal} · ${greetingProgress}%`, `打招呼目标 ${rhythm.weeklyGreetingGoal} 次 · 已完成 ${greetingProgress}%`)}</p> : null}
-                </div>
-                <div>
-                  <p className="flex items-center gap-2 text-sm text-stone-500"><Send className="size-4 text-rose-500" />{t("Resumes sent this week", "本周简历投递")}</p>
-                  <p className="mt-2 text-5xl font-semibold tabular-nums tracking-[-0.06em]">{rhythm?.weeklyResumeCount ?? "—"}<span className="ml-2 text-lg font-normal text-stone-400">{t("sent", "份")}</span></p>
-                  <p className="mt-2 text-xs text-stone-400">{t("Today", "今天")} {showCount(rhythm?.todayResumeCount)}</p>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-gradient-to-r from-rose-400 to-violet-500 transition-[width]" style={{ width: `${resumeProgress}%` }} /></div>
-                  <p className="mt-2 text-xs text-stone-400">{rhythm?.weeklyResumeGoal ? t(`Resume goal ${rhythm.weeklyResumeGoal} · ${resumeProgress}%`, `简历目标 ${rhythm.weeklyResumeGoal} 份 · 已完成 ${resumeProgress}%`) : t("No weekly resume goal yet", "还没有设置简历目标")}</p>
-                </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div role="tablist" aria-label={t("Metric to show", "切换查看的指标")} className="inline-flex rounded-full bg-stone-100 p-1">
+                <button type="button" role="tab" aria-selected={!showingGreeting} onClick={() => setMetricView("resume")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition ${!showingGreeting ? "bg-rose-500 text-white shadow-sm" : "text-stone-500 hover:text-stone-800"}`}><Send className="size-3.5" />{t("Resume sends", "简历投递")}</button>
+                <button type="button" role="tab" aria-selected={showingGreeting} onClick={() => setMetricView("greeting")} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition ${showingGreeting ? "bg-violet-600 text-white shadow-sm" : "text-stone-500 hover:text-stone-800"}`}><MessageCircle className="size-3.5" />{t("Greetings", "打招呼")}</button>
               </div>
               <button onClick={() => setSettingsOpen((open) => !open)} className="shrink-0 rounded-full border border-stone-200 bg-white px-4 py-2 text-xs text-stone-600 hover:border-violet-200 hover:text-violet-600">{settingsOpen ? t("Hide settings", "收起设置") : t("Goals & reminders", "目标与提醒")}</button>
             </div>
-            <div className="mt-8 flex items-center gap-4 text-xs text-stone-400"><span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-violet-400" />{t("Greetings", "打招呼")}</span><span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-rose-400" />{t("Resume sends", "简历投递")}</span></div>
-            <div className="mt-3 grid grid-cols-7 gap-2" aria-label={t("Greetings and resumes by day this week", "本周每日打招呼和简历投递")}>
-              {rhythm?.days.map((day, index) => <button key={day.date} type="button" disabled={day.date > rhythm.today} onClick={() => selectDay(day)} className={`flex min-w-0 flex-col items-center rounded-2xl px-1 py-3 transition ${selectedDate === day.date ? "bg-violet-100/80 text-violet-800" : "hover:bg-stone-50"} disabled:cursor-default disabled:opacity-35`}><span className="text-xs text-stone-500">{weekdays[index]}</span><span className="mt-3 flex h-20 w-full items-end justify-center gap-1"><span className="w-2.5 rounded-full bg-violet-400 transition-[height]" style={{ height: barHeight(day.greetingCount) }} /><span className="w-2.5 rounded-full bg-rose-400 transition-[height]" style={{ height: barHeight(day.resumeCount) }} /></span><span className="mt-2 flex gap-1.5 text-[11px] font-medium tabular-nums"><span className="text-violet-600">{day.greetingCount ?? "—"}</span><span className="text-rose-500">{day.resumeCount ?? "—"}</span></span></button>)}
+            <div className="mt-7">
+              <p className="flex items-center gap-2 text-sm text-stone-500">{showingGreeting ? <MessageCircle className="size-4 text-violet-500" /> : <Send className="size-4 text-rose-500" />}{t("This week", "本周")} · {selectedMetricLabel}</p>
+              <p className="mt-2 text-6xl font-semibold tabular-nums tracking-[-0.07em]">{rhythm ? selectedWeeklyCount : "—"}<span className="ml-2 text-xl font-normal text-stone-400">{selectedUnit}</span></p>
+              <p className="mt-2 text-xs text-stone-400">{t("Today", "今天")} {showCount(selectedTodayCount)}</p>
+              <div className="mt-5 h-2 overflow-hidden rounded-full bg-stone-100"><div className={`h-full rounded-full transition-[width] ${showingGreeting ? "bg-violet-500" : "bg-gradient-to-r from-rose-400 to-violet-500"}`} style={{ width: `${selectedProgress}%` }} /></div>
+              <p className="mt-2 text-xs text-stone-400">{selectedGoal ? t(`Goal ${selectedGoal} ${showingGreeting ? "greetings" : "resumes"} · ${selectedProgress}%`, `目标 ${selectedGoal} ${selectedUnit} · 已完成 ${selectedProgress}%`) : t("No weekly goal for this metric yet", "这个指标还没有设置每周目标")}</p>
+            </div>
+            <div className="mt-8 flex items-center justify-between text-xs text-stone-400"><span>{t("Daily total this week", "本周每日总数")}</span><span>{selectedMetricLabel}</span></div>
+            <div className="mt-3 grid grid-cols-7 gap-2" aria-label={t("Daily totals by day this week", "本周每日总数")}>
+              {rhythm?.days.map((day, index) => {
+                const value = showingGreeting ? day.greetingCount : day.resumeCount;
+                return <button key={day.date} type="button" disabled={day.date > rhythm.today} onClick={() => selectDay(day)} className={`flex min-w-0 flex-col items-center rounded-2xl px-1 py-3 transition ${selectedDate === day.date ? (showingGreeting ? "bg-violet-100/80 text-violet-800" : "bg-rose-50 text-rose-700") : "hover:bg-stone-50"} disabled:cursor-default disabled:opacity-35`}>
+                  <span className="text-xs text-stone-500">{weekdays[index]}</span>
+                  <span className="mt-3 flex h-20 w-full items-end justify-center"><span className={`w-3 rounded-full transition-[height] ${showingGreeting ? "bg-violet-400" : "bg-rose-400"}`} style={{ height: barHeight(value) }} /></span>
+                  <span className={`mt-2 text-sm font-medium tabular-nums ${showingGreeting ? "text-violet-600" : "text-rose-500"}`}>{value ?? "—"}</span>
+                </button>;
+              })}
             </div>
             <div className="mt-4 space-y-1 text-xs leading-5 text-stone-400">
-              {missingResumeDays > 0 && <p>{missingResumeDays === 1
-                ? t("1 day this week has no recorded resume count; unrecorded is not zero.", "本周有 1 天未记录简历投递数；未记录不按 0 计算。")
-                : t(`${missingResumeDays} days this week have no recorded resume count; unrecorded is not zero.`, `本周有 ${missingResumeDays} 天未记录简历投递数；未记录不按 0 计算。`)}</p>}
-              {missingGreetingDays > 0 && <p>{missingGreetingDays === 1
-                ? t("1 day this week has no recorded greeting count.", "本周有 1 天未记录打招呼数。")
-                : t(`${missingGreetingDays} days this week have no recorded greeting count.`, `本周有 ${missingGreetingDays} 天未记录打招呼数。`)}</p>}
+              {selectedMissingDays > 0 && <p>{selectedMissingDays === 1
+                ? (showingGreeting ? t("1 day this week has no recorded greeting count.", "本周有 1 天未记录打招呼数。") : t("1 day this week has no recorded resume count; unrecorded is not zero.", "本周有 1 天未记录简历投递数；未记录不按 0 计算。"))
+                : (showingGreeting ? t(`${selectedMissingDays} days this week have no recorded greeting count.`, `本周有 ${selectedMissingDays} 天未记录打招呼数。`) : t(`${selectedMissingDays} days this week have no recorded resume count; unrecorded is not zero.`, `本周有 ${selectedMissingDays} 天未记录简历投递数；未记录不按 0 计算。`))}</p>}
               <p>{t("Legacy note: earlier numbers were greetings. Old resume counts stay unrecorded; they are not inferred from replies.", "旧记录说明：此前页面上的数字是打招呼数。历史简历投递数标为未记录，不填 0，也不按回复率推算。")}</p>
               {rhythm?.weeklyGreetingGoal != null && rhythm.weeklyResumeGoal === 0 && <p>{t("The old weekly goal is kept as a greeting goal; set a resume goal separately.", "旧版每周目标已按原口径归为打招呼目标；简历目标尚未设置。")}</p>}
             </div>
