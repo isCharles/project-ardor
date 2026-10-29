@@ -120,7 +120,8 @@ public final class PlanningAgentTools implements AgentToolBundle {
             本工具只登记计划，不会修改任何业务数据。每个步骤必须给出：\
             intent、给人看的 doneWhen、以及可机器核验的 verify；verify.tool 必须是本步骤 tools 之一，\
             并按该次调用的真实返回选择条件：MIN_ITEMS/MAX_ITEMS（数组条数）、AT_LEAST（数字）、\
-            EQUALS/CONTAINS（值）、HAS_ID（返回记录 ID）、SUCCESS（成功状态）。\
+            EQUALS/CONTAINS（值）、HAS_ID（返回记录 ID）、SUCCESS（成功状态或带 ID 的资源快照）。\
+            外部网页结果用 path $.results；知识检索返回数组用 $；外部文本用 CONTAINS。\
             tools 只能填写已登记的工具名，effect 按该步骤是否会改数据填 READ 或 WRITE。\
             计划被接受后严格按当前步骤执行，后续步骤的写入会被拒绝；当前步骤失败后才能重新调用本工具提交修订计划。\
             系统只依据 verify 检查真实工具结果，不要用 doneWhen 或对话文本代替执行，也不要替用户声称完成。""")
