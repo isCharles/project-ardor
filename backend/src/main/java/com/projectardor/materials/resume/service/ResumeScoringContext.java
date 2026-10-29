@@ -26,13 +26,18 @@ public final class ResumeScoringContext {
     }
 
     public static Map<String, Object> freeze(String role, String description) {
-        return freeze(role, description, ResumeScoringFamilies.DEFAULT_ID);
+        // No family argument means "read it from the JD", not "force general".
+        return freeze(role, description, null);
     }
 
     public static Map<String, Object> freeze(String role, String description, String roleFamily) {
         role = clean(role, 240);
         description = clean(description, 8_000);
-        var family = ResumeScoringFamilies.resolve(roleFamily);
+        // With a JD the family follows the text; an explicit family still wins
+        // for callers that support choosing one without a JD.
+        var family = ResumeScoringFamilies.isKnown(roleFamily)
+                ? ResumeScoringFamilies.resolve(roleFamily)
+                : ResumeScoringFamilies.resolve(ResumeScoringFamilies.infer(description));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("targetRole", role);
         result.put("jobDescription", description);

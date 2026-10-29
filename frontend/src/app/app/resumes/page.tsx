@@ -17,7 +17,7 @@ type ResumeItem = {
   id: string; originalFilename: string; sizeBytes: number;
   parseStatus: "PENDING" | "PARSED" | "FAILED"; createdAt: string; analysisId: string | null;
   analysisStatus: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | null; analysisError: string | null;
-  overallScore?: number | null;
+  overallScore?: number | null; primary?: boolean; displayAnalysisId?: string | null;
 };
 type Analysis = { id: string; resumeId: string; analysis: Record<string, unknown>; modelName: string; createdAt?: string };
 type AnalysisTask = { jobId: string | null; status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED"; analysisId: string | null };
@@ -187,7 +187,10 @@ export default function ResumesPage() {
   }, [pendingJobId, openResumeId]);
 
   useEffect(() => {
-    const current = [...resumes].sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""))[0];
+    // The primary resume is the one the workbench headlines; newest upload only
+    // wins when the user has not chosen a primary yet.
+    const ordered = [...resumes].sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""));
+    const current = resumes.find((resume) => resume.primary) ?? ordered[0];
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!current?.analysisId) { setCurrentReport(null); return; }
     let active = true;
@@ -253,7 +256,7 @@ export default function ResumesPage() {
     // Several job descriptions, several reports: the bar switches between the ones this resume holds.
     const evaluationBar = evaluations.length > 1 && <div className="mb-6 flex flex-wrap items-center gap-2" data-resume-evaluations>
       {evaluations.map((item) => <button key={item.id} type="button" data-evaluation={item.label} data-evaluation-active={analysis?.id === item.id}
-        onClick={() => { setError(""); setPickedId(item.id); }}
+        onClick={() => { if (selected) void showReport(selected, item.id); else setPickedId(item.id); }}
         className={`rounded-full px-3 py-1 text-[11px] tabular-nums transition ${analysis?.id === item.id ? "bg-[#1d1d1f] text-white" : "bg-white text-stone-600 hover:bg-stone-100"}`}>{item.label}</button>)}
     </div>;
     if (report) return <main className="ardor-workbench min-h-screen text-[#1d1d1f]">
@@ -268,7 +271,7 @@ export default function ResumesPage() {
       <button onClick={() => { setSelectedId(null); setPickedId(null); setAnalysis(null); setError(""); }} className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-stone-500 transition hover:bg-white hover:text-stone-900"><ArrowLeft className="size-4" />{t("All resumes", "所有简历")}</button>
       <header className="pb-8 pt-8">
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">RESUME REPORT</p>
-        <h1 className="mt-2 truncate text-3xl font-semibold tracking-tight">{selected.originalFilename}</h1>
+        <h1 className="mt-2 flex items-center gap-3 truncate text-3xl font-semibold tracking-tight">{selected.originalFilename}{selected.primary && <span className="shrink-0 rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-700">{t("Primary", "主简历")}</span>}</h1>
       </header>
       {(error || notice) && <div className={`mb-6 rounded-2xl px-5 py-4 text-sm ${error ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{error || notice}</div>}
       {selected.analysisError && <p role="status" className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">{selected.analysisError}</p>}
@@ -287,7 +290,24 @@ export default function ResumesPage() {
       {dialog}
     </div></main>;
   }
-  const sortedResumes = [...resumes].sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""));
+  const sortedResumes = [...resumes].sort((left, right) => Number(!!right.primary) - Number(!!left.primary)
+    || (right.createdAt ?? "").localeCompare(left.createdAt ?? ""));
+  async function markPrimary(resume: ResumeItem) {
+    setError("");
+    try {
+      await api<void>(`/api/resumes/${resume.id}/primary`, { method: "POST" });
+      await load();
+      setNotice(t(`“${resume.originalFilename}” is now the primary resume.`, `已把「${resume.originalFilename}」设为主简历。`));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not set the primary resume", "无法设为主简历")); }
+  }
+  async function showReport(resume: ResumeItem, analysisId: string) {
+    setError("");
+    setPickedId(analysisId);
+    try {
+      await api<void>(`/api/resumes/${resume.id}/display-analysis`, { method: "POST", body: JSON.stringify({ analysisId }) });
+      await load();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not remember this report", "无法记住这份报告")); }
+  }
   const resumeDate = (value: string) => new Intl.DateTimeFormat(locale === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "short", day: "numeric" }).format(new Date(value));
   const resumeCard = (resume: ResumeItem, primary: boolean) => {
     const status = statusMeta(resume, t);
@@ -297,6 +317,7 @@ export default function ResumesPage() {
         <div className="flex items-start justify-between gap-3">
           <h3 className={primary ? "line-clamp-2 text-2xl font-semibold leading-8 tracking-tight" : "line-clamp-2 text-lg font-semibold leading-6 tracking-tight"}>{resume.originalFilename}</h3>
           <div className="flex shrink-0 items-center gap-2">
+            {resume.primary && <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-700">{t("Primary", "主简历")}</span>}
             {!(primary && currentReport) && (typeof resume.overallScore === "number"
               ? <span className="rounded-full bg-[#1d1d1f] px-3 py-1 text-[11px] font-semibold tabular-nums text-white">{resume.overallScore}</span>
               : <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${status.className}`}>{status.label}</span>)}
@@ -369,7 +390,7 @@ export default function ResumesPage() {
       <section className="rounded-[2.5rem] bg-white px-6 py-20 text-center shadow-[0_20px_80px_rgba(0,0,0,0.05)]"><span className="mx-auto grid size-16 place-items-center rounded-2xl bg-stone-100 text-stone-500"><FileText className="size-7" /></span><h2 className="mt-6 text-2xl font-semibold">{t("No resumes yet", "还没有简历")}</h2><button onClick={() => setShowUpload(true)} className="mt-7 rounded-full bg-[#1d1d1f] px-6 py-3 text-sm font-medium text-white">{t("Upload", "上传")}</button></section>
     ) : (
       <section>
-        <h2 className="mb-4 text-2xl font-semibold">{t("Current resume", "当前简历")}</h2>
+        <h2 className="mb-4 text-2xl font-semibold">{t("Primary resume", "主简历")}</h2>
         {resumeCard(sortedResumes[0], true)}
         {sortedResumes.length > 1 && (
           <div className="mt-10">
@@ -389,6 +410,7 @@ export default function ResumesPage() {
                       : <span className={`hidden shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium sm:inline ${status.className}`}>{status.label}</span>}
                     <ArrowRight className="size-4 shrink-0 text-stone-300" />
                   </button>
+                  <button type="button" onClick={() => void markPrimary(resume)} aria-label={t("Set as primary resume", "设为主简历")} title={t("Set as primary resume", "设为主简历")} className="shrink-0 rounded-full px-2.5 py-1 text-[11px] text-stone-400 opacity-0 transition hover:bg-violet-50 hover:text-violet-700 focus-visible:opacity-100 group-hover:opacity-100">{t("Set primary", "设为主简历")}</button>
                   <button type="button" onClick={() => { setDeleteTarget(resume); setDeleteError(""); }} aria-label={t("Delete resume", "删除简历")} title={t("Delete resume", "删除简历")} className="grid size-8 shrink-0 place-items-center rounded-full text-stone-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100"><Trash2 className="size-4" /></button>
                 </div>;
               })}
@@ -432,8 +454,8 @@ function ReanalyzeDialog({ defaultFamily = "general", busy, onClose, onSubmit }:
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section role="dialog" aria-modal="true" className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-[2rem] border border-stone-200 bg-[#fcfcf9] p-6 shadow-2xl md:p-8">
       <h2 className="text-xl font-semibold">{t("Analyze with a target", "按目标重新评估")}</h2>
-      <p className="mt-2 text-sm text-stone-500">{t("Pick the role family, then paste the job description. The JD makes role-fit evidence specific.", "先选目标大类，再粘贴岗位 JD；有 JD 才能判断针对性的岗位匹配。")}</p>
-      <form onSubmit={(event) => { event.preventDefault(); onSubmit(role, jd, family); }} className="mt-5 space-y-3">
+      <p className="mt-2 text-sm text-stone-500">{t("With a JD the family is read from the JD. Without one, pick a family; leaving both empty means the general default.", "有 JD 就按 JD 判断目标大类；没有 JD 再自己选大类，两者都不填则按默认通用标准。")}</p>
+      <form onSubmit={(event) => { event.preventDefault(); onSubmit(role, jd, general ? family : ""); }} className="mt-5 space-y-3">
         {interviews.length > 0 && <label className="block text-sm">{t("Pick from interview pipeline", "从面试流程选择")}
           <select value={pickedInterview} onChange={(event) => pickInterview(event.target.value)} className="field mt-2">
             <option value="">{t("Manual entry", "手动填写")}</option>
@@ -441,13 +463,13 @@ function ReanalyzeDialog({ defaultFamily = "general", busy, onClose, onSubmit }:
           </select>
         </label>}
         {pickedInterview && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800 ring-1 ring-emerald-100">{t("Company, role and JD were filled from the selected interview.", "已从所选面试带入公司、岗位和 JD。")}</p>}
-        <label className="block text-sm">{t("Role family", "目标大类")}
+        <label className="block text-sm">{t("Target role (optional)", "目标岗位（可选）")}<input value={role} onChange={(event) => setRole(event.target.value)} maxLength={240} className="field mt-2" /></label>
+        <label className="block text-sm">{t("Job description", "岗位要求 JD")}<textarea value={jd} onChange={(event) => setJd(event.target.value)} maxLength={8000} rows={5} className="field mt-2 resize-y" placeholder={t("Paste the JD here for targeted scoring", "粘贴 JD，才能按目标岗位评分")} /></label>
+        {general ? <label className="block text-sm">{t("Role family", "目标大类")}
           <select value={family} onChange={(event) => setFamily(event.target.value)} className="field mt-2">
             {SCORING_FAMILIES.map(item => <option key={item.id} value={item.id}>{t(item.en, item.zh)}</option>)}
           </select>
-        </label>
-        <label className="block text-sm">{t("Target role (optional)", "目标岗位（可选）")}<input value={role} onChange={(event) => setRole(event.target.value)} maxLength={240} className="field mt-2" /></label>
-        <label className="block text-sm">{t("Job description", "岗位要求 JD")}<textarea value={jd} onChange={(event) => setJd(event.target.value)} maxLength={8000} rows={5} className="field mt-2 resize-y" placeholder={t("Paste the JD here for targeted scoring", "粘贴 JD，才能按目标岗位评分")} /></label>
+        </label> : <p className="rounded-xl bg-violet-50 px-3 py-2.5 text-xs leading-5 text-violet-900 ring-1 ring-violet-100">{t("The family is inferred from the JD; no extra choice needed.", "目标大类将按 JD 自动判断，不需要再选。")}</p>}
         {general && <p className="rounded-xl bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900 ring-1 ring-amber-200">{t(`No JD: this will be a general assessment under ${familyLabel(family, t)}, and may not be role-specific.`, `未提供 JD：将按「${familyLabel(family, t)}」做通用评估，可能不具岗位针对性。`)}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="rounded-full px-4 py-2 text-sm text-stone-500 hover:bg-stone-100">{t("Cancel", "取消")}</button>

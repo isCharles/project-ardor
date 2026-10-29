@@ -303,7 +303,7 @@ class ModularAgentToolsTests {
         var service = mock(ResumeService.class); var queue = mock(ResumeAnalysisQueueService.class);
         UUID resume = UUID.randomUUID(), analysis = UUID.randomUUID();
         var view = new ResumeView(resume, "Owned fixture.pdf", "application/pdf", 100, "hash",
-                com.projectardor.materials.resume.domain.ResumeParseStatus.PARSED, null, analysis, 82);
+                com.projectardor.materials.resume.domain.ResumeParseStatus.PARSED, null, analysis, 82, true, null);
         var task = new ResumeAnalysisQueueService.TaskResult(null, resume,
                 com.projectardor.materials.resume.domain.ResumeAnalysisJobStatus.COMPLETED, analysis, 0, null, null);
         when(service.listViews(owner)).thenReturn(List.of(view));
@@ -334,7 +334,7 @@ class ModularAgentToolsTests {
         var service = mock(ResumeService.class); var queue = mock(ResumeAnalysisQueueService.class);
         UUID resume = UUID.randomUUID(), missing = UUID.randomUUID();
         var view = new ResumeView(resume, "Owned fixture.pdf", "application/pdf", 100, "hash",
-                com.projectardor.materials.resume.domain.ResumeParseStatus.PARSED, Instant.now(), null, null);
+                com.projectardor.materials.resume.domain.ResumeParseStatus.PARSED, Instant.now(), null, null, false, null);
         when(service.detail(owner, resume)).thenReturn(view);
         when(service.detail(owner, missing)).thenThrow(new ResourceNotFoundException("简历不存在"));
         var firstTask = new ResumeAnalysisQueueService.TaskResult(UUID.randomUUID(), resume,
@@ -386,7 +386,7 @@ class ModularAgentToolsTests {
                 org.springframework.test.util.ReflectionTestUtils.getField(host, "learningPlanService");
         UUID resumeId = UUID.randomUUID(), planId = UUID.randomUUID(), missing = UUID.randomUUID();
         when(resumes.detail(owner, resumeId)).thenReturn(new ResumeView(resumeId, "Owned fixture.pdf", "application/pdf", 100, "hash",
-                com.projectardor.materials.resume.domain.ResumeParseStatus.PARSED, null, null, null));
+                com.projectardor.materials.resume.domain.ResumeParseStatus.PARSED, null, null, null, false, null));
         var plan = mock(com.projectardor.learning.plan.service.LearningPlanView.class);
         when(plan.id()).thenReturn(planId); when(plan.concept()).thenReturn("Owned topic");
         when(learning.detail(owner, planId)).thenReturn(plan);

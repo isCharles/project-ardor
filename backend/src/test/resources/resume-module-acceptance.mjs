@@ -32,10 +32,12 @@ async function upload(client, filename) {
 }
 const first = await upload(owner, "Owner resume fixture.pdf"), second = await upload(owner, "Owner second fixture.pdf");
 const theirs = await upload(foreign, "Foreign resume fixture.pdf");
-const fields = ["id", "originalFilename", "contentType", "sizeBytes", "checksumSha256", "parseStatus", "createdAt", "analysisId", "analysisStatus", "analysisError", "overallScore"].sort();
+const fields = ["id", "originalFilename", "contentType", "sizeBytes", "checksumSha256", "parseStatus", "createdAt", "analysisId", "analysisStatus", "analysisError", "overallScore", "primary", "displayAnalysisId"].sort();
 assert.deepEqual(Object.keys(first).sort(), fields);
 assert.equal(first.parseStatus, "PARSED"); assert.ok(first.createdAt);
 assert.equal(first.analysisId, null); assert.equal(first.analysisStatus, null);
+assert.equal(first.primary, true, "the first upload becomes the primary resume");
+assert.equal(first.displayAnalysisId, null);
 await owner.request(`/api/resumes/${first.id}/analysis`, { method: "POST", expected: 202 });
 let status;
 for (let attempt = 0; attempt < 100; attempt++) {
@@ -54,9 +56,19 @@ for (const path of [`/api/resumes/${first.id}/analysis?analysisId=${report.id}`,
   await foreign.request(path, { expected: 404 });
 }
 await foreign.request(`/api/resumes/${first.id}`, { method: "DELETE", expected: 404 });
+await owner.request(`/api/resumes/${first.id}/display-analysis`, { method: "POST", expected: 204, body: { analysisId: report.id } });
+await foreign.request(`/api/resumes/${first.id}/display-analysis`, { method: "POST", expected: 404, body: { analysisId: report.id } });
+await owner.request(`/api/resumes/${second.id}/primary`, { method: "POST", expected: 204 });
+await foreign.request(`/api/resumes/${first.id}/primary`, { method: "POST", expected: 404 });
 const ownList = await owner.request("/api/resumes");
 assert.equal(ownList.find(item => item.id === first.id).analysisId, report.id);
-assert.ok(ownList.every(item => Object.keys(item).sort().join() === fields.join()));
+assert.equal(ownList.find(item => item.id === first.id).displayAnalysisId, report.id, "the chosen report is remembered");
+assert.equal(ownList.find(item => item.id === first.id).primary, false, "only one resume is primary");
+assert.equal(ownList.find(item => item.id === second.id).primary, true, "the promoted resume is primary");
+await owner.request(`/api/resumes/${first.id}/display-analysis`, { method: "POST", expected: 204, body: {} });
+const cleared = await owner.request("/api/resumes");
+assert.equal(cleared.find(item => item.id === first.id).displayAnalysisId, null);
+assert.ok(cleared.every(item => Object.keys(item).sort().join() === fields.join()));
 assert.ok(!ownList.some(item => item.id === theirs.id));
 async function turn(message) {
   const conversation = await owner.request("/api/agent/conversations", { method: "POST", expected: 201 });

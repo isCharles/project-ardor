@@ -97,9 +97,29 @@ class ResumeLibraryViewTests {
         verifyNoInteractions(storage, extractor, model);
     }
 
+    @Test void primaryAndDisplaySelectionAreAuthorizedAndPersisted() {
+        var resume = resume("owned.pdf");
+        when(resumes.findByIdAndUserId(resume.getId(), owner)).thenReturn(Optional.of(resume));
+        service.setPrimary(owner, resume.getId());
+        verify(resumes).clearPrimary(owner);
+        assertThat(resume.isPrimary()).isTrue();
+
+        var analysis = ResumeAnalysis.create(owner, resume.getId(), Map.of(), "fixture");
+        when(analyses.findByIdAndUserId(analysis.getId(), owner)).thenReturn(Optional.of(analysis));
+        service.showAnalysis(owner, resume.getId(), analysis.getId());
+        assertThat(resume.getDisplayAnalysisId()).isEqualTo(analysis.getId());
+        service.showAnalysis(owner, resume.getId(), null);
+        assertThat(resume.getDisplayAnalysisId()).isNull();
+        assertThatThrownBy(() -> service.showAnalysis(owner, resume.getId(), UUID.randomUUID()))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.setPrimary(foreign, resume.getId()))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
     @Test void uploadSnapshotComesAfterExistingFlushAndDoesNotExposeSourceOrStorage() {
         when(storage.save(any(), eq(".pdf"))).thenReturn("PRIVATE_STORAGE_KEY");
         when(extractor.extract(any(), eq(".pdf"))).thenReturn("PRIVATE_SOURCE_TEXT");
+        when(resumes.existsByUserIdAndPrimaryResumeTrue(owner)).thenReturn(true);
         when(resumes.saveAndFlush(any())).thenAnswer(call -> {
             Resume resume = call.getArgument(0);
             ReflectionTestUtils.invokeMethod(resume, resume.getCreatedAt() == null ? "onCreate" : "onUpdate");
@@ -115,12 +135,14 @@ class ResumeLibraryViewTests {
         verifyNoInteractions(analyses, model);
     }
 
-    @Test void httpKeepsElevenMetadataFieldsAndSixReportFieldsIncludingNull() {
+    @Test void httpKeepsResumeMetadataFieldsAndSixReportFieldsIncludingNull() {
         var resume = resume("owned.pdf");
         var view = ResumeView.from(resume, ResumeAnalysis.create(owner, resume.getId(), Map.of("overallScore", -2), null));
         var task = new ResumeAnalysisQueueService.TaskResult(UUID.randomUUID(), resume.getId(), ResumeAnalysisJobStatus.FAILED, null, 2, "SYNTHETIC", "failed");
         JsonNode wire = json.valueToTree(ResumeResponse.from(view, task));
-        assertThat(wire.propertyNames()).containsExactly("id", "originalFilename", "contentType", "sizeBytes", "checksumSha256", "parseStatus", "createdAt", "analysisId", "analysisStatus", "analysisError", "overallScore");
+        assertThat(wire.propertyNames()).containsExactly("id", "originalFilename", "contentType", "sizeBytes", "checksumSha256", "parseStatus", "createdAt", "analysisId", "analysisStatus", "analysisError", "overallScore", "primary", "displayAnalysisId");
+        assertThat(wire.path("primary").asBoolean()).isFalse();
+        assertThat(wire.path("displayAnalysisId").isNull()).isTrue();
         assertThat(wire.path("overallScore").asInt()).isZero();
         assertThat(wire.path("analysisStatus").asText()).isEqualTo("FAILED");
         assertThat(wire.path("analysisError").asText()).isEqualTo("failed");

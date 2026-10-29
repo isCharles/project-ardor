@@ -110,6 +110,8 @@ jobs:
         run: node tests/context-usage-ui.mjs
       - name: One resume against several job descriptions UI regression (mock APIs)
         run: node tests/resume-multi-jd-ui.mjs
+      - name: Primary resume and displayed report UI regression (mock APIs)
+        run: node tests/resume-primary-ui.mjs
       - name: Compact chat layout UI regression (mock APIs)
         run: node tests/compact-chat-ui.mjs
       - name: Learning feedback and status groups UI regression (mock APIs)

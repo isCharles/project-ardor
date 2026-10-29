@@ -18,7 +18,9 @@ public record ResumeResponse(
         UUID analysisId,
         String analysisStatus,
         String analysisError,
-        Integer overallScore) {
+        Integer overallScore,
+        boolean primary,
+        UUID displayAnalysisId) {
 
     public static ResumeResponse from(
             ResumeView resume, TaskResult task) {
@@ -28,6 +30,6 @@ public record ResumeResponse(
                 resume.createdAt(), resume.analysisId(),
                 task == null ? null : task.status().name(),
                 task == null ? null : task.errorMessage(),
-                resume.overallScore());
+                resume.overallScore(), resume.primary(), resume.displayAnalysisId());
     }
 }

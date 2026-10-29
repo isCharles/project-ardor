@@ -35,8 +35,13 @@ public class ResumeScoringStore {
         var existing = analyses.findByResumeIdAndUserIdAndEvaluationKey(resumeId, userId, key);
         if (existing.isPresent()) return existing.get();
         var winner = analyses.findFirstByUserIdAndEvaluationKeyOrderByCreatedAtAsc(userId, key);
-        return analyses.saveAndFlush(ResumeAnalysis.scored(userId, resumeId,
+        var saved = analyses.saveAndFlush(ResumeAnalysis.scored(userId, resumeId,
                 winner.map(ResumeAnalysis::getAnalysis).orElse(candidate),
                 winner.map(ResumeAnalysis::getModelName).orElse(model), key, ResumeScoringContext.PROMPT_VERSION));
+        // A newly finished report becomes the one shown; an explicit pin only
+        // applies to reports that already existed when the user chose it.
+        jdbc.update("UPDATE resumes SET display_analysis_id = NULL WHERE id = ? AND user_id = ? AND display_analysis_id IS NOT NULL",
+                resumeId, userId);
+        return saved;
     }
 }

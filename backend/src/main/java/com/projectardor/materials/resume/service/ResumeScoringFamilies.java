@@ -1,6 +1,7 @@
 package com.projectardor.materials.resume.service;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -57,6 +58,34 @@ public final class ResumeScoringFamilies {
                             "technicalDepth", "团队/项目管理方法、组织设计和跨团队协作",
                             "outcomes", "团队规模、交付结果、人员成长和业务影响",
                             "roleFit", "目标管理范围（团队规模、职能、复杂度和汇报线）的证据")));
+
+    /**
+     * A pasted JD already says what the job is, so the caller should not ask the
+     * user for a family in that case. Specific families are checked before the
+     * broad engineering bucket ("数据开发" is data, not generic engineering).
+     */
+    private static final List<Map.Entry<String, List<String>>> INFERENCE = List.of(
+            Map.entry("algorithm", List.of("算法", "机器学习", "深度学习", "大模型", "模型训练", "模型推理",
+                    "llm", "nlp", "自然语言", "计算机视觉", "推荐系统", "搜索排序", "pytorch", "tensorflow", "cuda", "强化学习")),
+            Map.entry("data", List.of("数据分析", "数据开发", "数据仓库", "数仓", "数据科学", "数据平台",
+                    "etl", "sql", "ab 实验", "a/b", "指标体系", "tableau", "数据治理", "大数据")),
+            Map.entry("product", List.of("产品经理", "产品设计", "需求分析", "用户研究", "交互设计", "原型", "prd")),
+            Map.entry("sales", List.of("销售", "客户经理", "商务", "渠道", "营收", "回款", "大客户")),
+            Map.entry("management", List.of("技术经理", "团队管理", "项目管理", "交付经理", "总监", "pmo", "团队负责人")),
+            Map.entry("engineering", List.of("工程师", "开发", "后端", "前端", "服务端", "客户端", "java",
+                    "golang", "python", "spring", "react", "vue", "node", "微服务", "架构", "devops", "sre",
+                    "测试", "android", "ios", "全栈", "运维", "c++", "rust")));
+
+    public static String infer(String description) {
+        // Only the JD decides: a bare role name is not enough evidence, and the
+        // caller still selects a family when it has no JD at all.
+        String text = (description == null ? "" : description).toLowerCase(Locale.ROOT);
+        if (text.isBlank()) return DEFAULT_ID;
+        for (var rule : INFERENCE) {
+            if (rule.getValue().stream().anyMatch(text::contains)) return rule.getKey();
+        }
+        return DEFAULT_ID;
+    }
 
     private ResumeScoringFamilies() {}
 

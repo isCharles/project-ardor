@@ -31,6 +31,14 @@ class ResumeScoringContextTests {
         assertEquals("algorithm", ResumeScoringContext.freeze("Java", "JD", "algorithm").get("roleFamily"));
         assertEquals("general", ResumeScoringContext.freeze("Java", "", "unknown-family").get("roleFamily"));
     }
+    @Test void roleFamilyFollowsTheJobDescriptionWhenNoFamilyWasChosen() {
+        assertEquals("engineering", ResumeScoringContext.freeze("可灵 Agent 开发", "负责后端服务开发，熟悉 Java 与 Spring Boot").get("roleFamily"));
+        assertEquals("algorithm", ResumeScoringContext.freeze("", "负责大模型推理与推荐系统算法优化").get("roleFamily"));
+        assertEquals("data", ResumeScoringContext.freeze("", "数据开发岗位，要求 SQL、指标体系与 AB 实验").get("roleFamily"));
+        assertEquals("general", ResumeScoringContext.freeze("", "").get("roleFamily"));
+        assertEquals("general", ResumeScoringContext.freeze("Java 后端", "").get("roleFamily"), "A role name without a JD never invents a family");
+        assertEquals("engineering", ResumeScoringContext.freeze("", "JD", "engineering").get("roleFamily"), "An explicit family is still honoured");
+    }
     @Test void includesFullTextEvenWhenEvaluationIsTruncated() {
         String prefix = "a".repeat(ResumeScoringContext.TEXT_LIMIT);
         var context = ResumeScoringContext.freeze("", "");
