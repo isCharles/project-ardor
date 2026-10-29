@@ -7,6 +7,11 @@
   animation: ardor-title-pan var(--title-duration) ease-in-out 0.8s infinite alternate;
 }
 @keyframes ardor-title-pan { 0%, 10% { transform: translateX(0); } 90%, 100% { transform: translateX(var(--title-shift)); } }
+@media (min-width: 1024px) {
+  /* Match the width to the available height so an A4 page fills the preview panel. */
+  .latex-preview-aside { width: clamp(420px, calc((100vh - 178px) * 0.7071 + 36px), 680px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-conversation-item]:is(:hover, :focus-within) .ardor-conversation-title[data-overflow="true"] > span { animation: none; }
 }
@@ -23,6 +28,11 @@
 .ardor-depth-range:active::-webkit-slider-thumb { transform: scale(1.08); }
 .ardor-depth-popover { animation: ardor-depth-enter 160ms ease-out; transform-origin: bottom left; }
 @keyframes ardor-depth-enter { from { opacity: 0; transform: translateY(5px) scale(.97); } to { opacity: 1; transform: none; } }
+@media (min-width: 1024px) {
+  /* Match the width to the available height so an A4 page fills the preview panel. */
+  .latex-preview-aside { width: clamp(420px, calc((100vh - 178px) * 0.7071 + 36px), 680px); }
+}
+
 @media (prefers-reduced-motion: reduce) { .ardor-depth-popover { animation: none; } .ardor-depth-range::-webkit-slider-thumb { transition: none; } }
 @import "../styles/tokens.css";
 
@@ -361,6 +371,11 @@ time,
 .ardor-fade { animation: ardor-fade var(--ardor-base) var(--ardor-ease) both; }
 .ardor-ember { animation: ardor-ember 1.4s var(--ardor-ease) infinite; }
 
+@media (min-width: 1024px) {
+  /* Match the width to the available height so an A4 page fills the preview panel. */
+  .latex-preview-aside { width: clamp(420px, calc((100vh - 178px) * 0.7071 + 36px), 680px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -601,6 +616,11 @@ time,
 .ardor-markdown th, .ardor-markdown td { border: 1px solid #d6d3d1; padding: 0.45rem 0.65rem; text-align: left; }
 .ardor-markdown th { background: #f5f5f4; font-weight: 600; }
 .ardor-markdown hr { margin: 1rem 0; border-color: #e7e5e4; }
+
+@media (min-width: 1024px) {
+  /* Match the width to the available height so an A4 page fills the preview panel. */
+  .latex-preview-aside { width: clamp(420px, calc((100vh - 178px) * 0.7071 + 36px), 680px); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .ardor-empty-enter, .ardor-empty-exit, .ardor-chat-enter, .ardor-composer-enter { animation: none; }
