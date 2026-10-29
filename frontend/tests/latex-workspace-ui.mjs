@@ -11,10 +11,11 @@ server.stdout.on("data", chunk => logs += chunk); server.stderr.on("data", chunk
 const projectId = "30000000-0000-4000-8000-000000000001";
 const conversationId = "30000000-0000-4000-8000-0000000000c1";
 let frozenRevision = null;
+let frozenResumeId = null;
 let projectTitle = "我的简历";
 let archived = false;
 const archivedProjects = [];
-const freezes = [], previews = [], uploads = [], streams = [], renames = [], archives = [], restores = [], modelSaves = [];
+const freezes = [], previews = [], uploads = [], streams = [], renames = [], archives = [], restores = [], modelSaves = [], deletions = [], links = [];
 let conversations = 0;
 const resumes = [];
 const modelSettings = {
@@ -26,8 +27,8 @@ const modelCatalog = () => [
   { id: "FALLBACK:backup", label: "Backup", provider: "synthetic", available: true, nativeControl: false, settingsKey: "backup", ...modelSettings["FALLBACK:backup"] },
 ];
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const project = () => ({ id: projectId, title: projectTitle, mainFile: "main.tex", currentRevision: 1, frozenRevision, updatedAt: new Date().toISOString() });
-const snapshot = () => ({ projectId, title: projectTitle, mainFile: "main.tex", revisionNo: 1, files: { "main.tex": "\\documentclass{article}\n\\begin{document}\n第一版\n\\end{document}\n" }, sha256: "x", frozenRevision });
+const project = () => ({ id: projectId, title: projectTitle, mainFile: "main.tex", currentRevision: 1, frozenRevision, frozenResumeId, updatedAt: new Date().toISOString() });
+const snapshot = () => ({ projectId, title: projectTitle, mainFile: "main.tex", revisionNo: 1, files: { "main.tex": "\\documentclass{article}\n\\begin{document}\n第一版\n\\end{document}\n" }, sha256: "x", frozenRevision, frozenResumeId });
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=", "base64");
 
 try {
@@ -66,6 +67,7 @@ try {
         { type: "tool_start", toolName: "read_latex_project", label: "读取当前修订" },
         { type: "tool_end", toolName: "read_latex_project", label: "读取当前修订", elapsedMs: 12 },
         { type: "delta", content: "已按你的要求调整。" },
+        { type: "confirm", confirmation: { kind: "resume", targetId: "resume-target", label: "旧简历.pdf", detail: "将永久删除这份简历。", endpoint: "/api/resumes/resume-target" } },
         { type: "done", messageId: "assistant-1", conversationId, content: "已按你的要求调整。" },
       ];
       return route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("") });
@@ -74,6 +76,10 @@ try {
       archives.push(path);
       archived = true;
       archivedProjects.push(project());
+      return route.fulfill({ status: 204, body: "" });
+    }
+    if (method === "DELETE" && path === "/api/resumes/resume-target") {
+      deletions.push(path);
       return route.fulfill({ status: 204, body: "" });
     }
     if (method === "POST" && path === `/api/latex/projects/${projectId}/restore`) {
@@ -92,7 +98,14 @@ try {
       const body = JSON.parse(route.request().postData() ?? "{}");
       freezes.push(body);
       frozenRevision = body.revisionNo;
-      return route.fulfill({ json: { ...project(), frozenRevision } });
+      frozenResumeId = null;
+      return route.fulfill({ json: { ...project(), frozenRevision, frozenResumeId } });
+    }
+    if (method === "POST" && path === `/api/latex/projects/${projectId}/frozen-resume`) {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      links.push(body);
+      frozenResumeId = body.resumeId;
+      return route.fulfill({ json: { ...project(), frozenResumeId } });
     }
     if (method === "POST" && path === "/api/resumes") {
       const buffer = route.request().postDataBuffer()?.toString("utf8") ?? "";
@@ -179,6 +192,7 @@ try {
   await waitFor(async () => (await bodyText()).includes("读取当前修订"), "the tool step chip");
 
   // Saving model settings must re-sync the active selection and its effort:
+
   // hiding the selected model cannot leave the old choice in the next request.
   await modelButton.click();
   await page.getByRole("button", { name: /^Manage models$|^管理模型$/ }).click();
@@ -195,13 +209,25 @@ try {
   await waitFor(() => streams.length === 2, "the second Ardor stream request");
   assert.equal(streams[1].modelChoice, "FALLBACK:backup", "a hidden model must not stay selected");
   assert.equal(streams[1].reasoningDepth, "STANDARD", "the next turn uses the selected model's effort");
+  // A business confirmation must offer the real, authorized delete action.
+  await waitFor(async () => (await bodyText()).includes("旧简历.pdf"), "the confirmation proposal");
+  await page.getByRole("button", { name: /^确认删除$|^Confirm deletion$/ }).click();
+  await waitFor(() => deletions.length === 1, "the confirmed deletion request");
+  assert.equal(deletions[0], "/api/resumes/resume-target", "the button calls the proposed endpoint");
+  await waitFor(async () => /已删除「旧简历\.pdf」|Deleted “旧简历\.pdf”/.test(await bodyText()), "the deletion result");
 
   // Freezing compiles the revision and files the PDF as a resume, so analysis can use it.
+  // A same-named PDF from another workspace must not be mistaken for this revision.
+  resumes.push({ id: "resume-foreign", originalFilename: "后端实习简历 v1.pdf", primary: false, displayAnalysisId: null });
   await page.getByRole("button", { name: /^Freeze$|^定稿$/ }).click();
   await waitFor(() => freezes.length === 1, "the freeze request");
   assert.equal(freezes[0].revisionNo, 1);
   await waitFor(() => uploads.length === 1, "the frozen PDF upload");
   assert.match(uploads[0], /后端实习简历 v1\.pdf$/, "the uploaded resume is named after the frozen version");
+  assert.equal(resumes.length, 2, "a same-named resume from another workspace is not adopted");
+  await waitFor(() => links.length === 1, "the frozen PDF link");
+  assert.equal(links[0].revisionNo, 1);
+  assert.equal(links[0].resumeId, "resume-1", "the server stores which upload belongs to this revision");
   await waitFor(async () => /已在简历分析|In Resume analysis/.test(await bodyText()), "the resume analysis link");
   await waitFor(async () => /定稿版本|Final version/i.test(await asideText()), "the frozen version label");
   assert.match(await asideText(), /v1\b/, "a frozen resume shows its version number");
@@ -211,6 +237,12 @@ try {
   await waitFor(async () => /已在简历分析|In Resume analysis/.test(await bodyText()), "the frozen resume on reload");
   await waitFor(async () => (await bodyText()).includes("把项目经历写得更具体"), "the saved conversation");
   assert.equal(uploads.length, 1, "a frozen version is only uploaded once");
+
+  // Another browser has no local mapping; the server association must still identify the PDF.
+  await page.evaluate(() => window.localStorage.clear());
+  await page.reload();
+  await waitFor(async () => /已在简历分析|In Resume analysis/.test(await bodyText()), "the server-linked frozen resume after storage loss");
+  assert.equal(uploads.length, 1, "storage loss does not upload the frozen PDF again");
 
   // Archiving removes the workspace from the list without deleting its revisions.
   page.on("dialog", dialog => dialog.accept());

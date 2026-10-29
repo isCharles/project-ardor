@@ -67,8 +67,10 @@ public final class ResumeScoringFamilies {
     private static final List<Map.Entry<String, List<String>>> INFERENCE = List.of(
             Map.entry("algorithm", List.of("算法", "机器学习", "深度学习", "大模型", "模型训练", "模型推理",
                     "llm", "nlp", "自然语言", "计算机视觉", "推荐系统", "搜索排序", "pytorch", "tensorflow", "cuda", "强化学习")),
-            Map.entry("data", List.of("数据分析", "数据开发", "数据仓库", "数仓", "数据科学", "数据平台",
-                    "etl", "sql", "ab 实验", "a/b", "指标体系", "tableau", "数据治理", "大数据")),
+            // Data must come from the role itself. Shared technologies such as SQL,
+            // MySQL or PostgreSQL appear in ordinary backend JDs and cannot classify one.
+            Map.entry("data", List.of("数据分析", "数据开发", "数据工程", "数据仓库", "数仓", "数据科学", "数据平台",
+                    "数据挖掘", "etl", "ab 实验", "a/b", "指标体系", "tableau", "数据治理", "大数据")),
             Map.entry("product", List.of("产品经理", "产品设计", "需求分析", "用户研究", "交互设计", "原型", "prd")),
             Map.entry("sales", List.of("销售", "客户经理", "商务", "渠道", "营收", "回款", "大客户")),
             Map.entry("management", List.of("技术经理", "团队管理", "项目管理", "交付经理", "总监", "pmo", "团队负责人")),

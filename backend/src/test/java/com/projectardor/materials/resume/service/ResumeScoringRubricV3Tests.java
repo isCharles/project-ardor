@@ -91,4 +91,10 @@ class ResumeScoringRubricV3Tests {
         assertTrue(ResumeScoringFamilies.prompt(ResumeScoringFamilies.byId("algorithm")).contains("算法"));
         assertTrue(ResumeScoringFamilies.prompt(ResumeScoringFamilies.byId("sales")).contains("配额/营收"));
     }
+
+    @Test void sharedDatabaseKeywordsDoNotTurnBackendRolesIntoDataRoles() {
+        assertEquals("engineering", ResumeScoringFamilies.infer("Java 后端工程师，负责 Spring Boot 服务开发，熟悉 MySQL、Redis"));
+        assertEquals("data", ResumeScoringFamilies.infer("数据分析师，熟悉 SQL、AB 实验与指标体系"));
+        assertEquals("data", ResumeScoringFamilies.infer("数据开发工程师，建设数仓与 ETL 管道"));
+    }
 }

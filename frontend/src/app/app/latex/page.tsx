@@ -4,6 +4,7 @@ import { Archive, ArchiveRestore, ArrowUp, ArrowUpRight, FileText, Lock, Pencil,
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppDialog } from "@/components/ui/app-dialog";
+import { DeletionPermissions } from "@/components/ardor/deletion-permissions";
 import { MarkdownContent } from "@/components/ardor/markdown-content";
 import { ModelSettingsDialog, type ModelSettingsUpdate } from "@/components/ardor/model-settings-dialog";
 import { OperationPermissions } from "@/components/ardor/operation-permissions";
@@ -12,39 +13,49 @@ import { ReasoningControl, type ModelOption } from "@/components/ardor/reasoning
 import { ApiError, api, blobApi, streamApi } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
-type Project = { id: string; title: string; mainFile: string; currentRevision: number; frozenRevision: number | null; updatedAt: string };
-type Snapshot = { projectId: string; title: string; mainFile: string; revisionNo: number; files: Record<string, string>; sha256: string; frozenRevision: number | null };
+type Project = { id: string; title: string; mainFile: string; currentRevision: number; frozenRevision: number | null; frozenResumeId: string | null; updatedAt: string };
+type Snapshot = { projectId: string; title: string; mainFile: string; revisionNo: number; files: Record<string, string>; sha256: string; frozenRevision: number | null; frozenResumeId: string | null };
 type ResumeItem = { id: string; originalFilename: string };
 type AgentMessage = { id: string; role: "USER" | "ASSISTANT"; content: string; createdAt: string };
 type ToolStep = { key: string; label: string; done: boolean };
 type ChatItem = AgentMessage & { tools?: ToolStep[]; pending?: boolean };
-type StreamEvent = { type: string; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; messageId: string | null; conversationId: string | null };
+type Confirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; targetIds?: string[] | null };
+type PendingConfirmation = Confirmation & { state: "PENDING" | "DELETING" | "FAILED"; error?: string };
+type StreamEvent = { type: string; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; messageId: string | null; conversationId: string | null; confirmation?: Confirmation | null };
 type AgentState = { messages: AgentMessage[] };
 
 const conversationKey = (projectId: string) => `ardor.latex.conversation.${projectId}`;
 const frozenKey = (projectId: string) => `ardor.latex.frozen.${projectId}`;
+const confirmationKey = (item: Confirmation) => `${item.kind}:${item.endpoint}`;
 
 function resumeFileName(title: string, revision: number) {
   const safe = title.replace(/[\\/:*?"<>|]+/g, "-").trim().slice(0, 80) || "resume";
   return `${safe} v${revision}.pdf`;
 }
 
-function readStoredFrozen(projectId: string): { revision: number; name: string } | null {
+type StoredFrozen = { revision: number; resumeId: string; name: string };
+const frozenMemory = new Map<string, StoredFrozen>();
+
+function readStoredFrozen(projectId: string): StoredFrozen | null {
+  const memory = frozenMemory.get(projectId);
+  if (memory) return memory;
   try {
     const raw = window.localStorage.getItem(frozenKey(projectId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { revision?: unknown; name?: unknown };
-    return typeof parsed.revision === "number" && typeof parsed.name === "string"
-      ? { revision: parsed.revision, name: parsed.name }
+    const parsed = JSON.parse(raw) as { revision?: unknown; resumeId?: unknown; name?: unknown };
+    return typeof parsed.revision === "number" && typeof parsed.resumeId === "string" && typeof parsed.name === "string"
+      ? { revision: parsed.revision, resumeId: parsed.resumeId, name: parsed.name }
       : null;
   } catch {
     return null;
   }
 }
 
-function storeFrozen(projectId: string, revision: number, name: string) {
-  try { window.localStorage.setItem(frozenKey(projectId), JSON.stringify({ revision, name })); }
-  catch { /* storage is best-effort; the resume list is still checked */ }
+function storeFrozen(projectId: string, revision: number, name: string, resumeId: string) {
+  const stored = { revision, resumeId, name };
+  frozenMemory.set(projectId, stored);
+  try { window.localStorage.setItem(frozenKey(projectId), JSON.stringify(stored)); }
+  catch { /* the in-memory association still prevents duplicates this session */ }
 }
 
 export default function LatexWorkspacePage() {
@@ -71,6 +82,7 @@ export default function LatexWorkspacePage() {
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const modelAccount = useRef<string | null>(null);
   const [frozenResume, setFrozenResume] = useState<string | null>(null);
+  const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const [messages, setMessages] = useState<ChatItem[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -82,6 +94,7 @@ export default function LatexWorkspacePage() {
   const sendControl = useRef<AbortController | null>(null);
   const threadEnd = useRef<HTMLDivElement | null>(null);
   const openSeq = useRef(0);
+  const projectIdRef = useRef<string | null>(null);
 
   const loadProjects = useCallback(async (pick?: string) => {
     const list = await api<Project[]>("/api/latex/projects");
@@ -93,31 +106,45 @@ export default function LatexWorkspacePage() {
   const uploadFrozen = useCallback(async (name: string, blob: Blob) => {
     const body = new FormData();
     body.append("file", new File([blob], name, { type: "application/pdf" }));
-    await api<ResumeItem>("/api/resumes", { method: "POST", body });
+    const item = await api<ResumeItem>("/api/resumes", { method: "POST", body });
     setFrozenResume(name);
+    return item;
   }, []);
+
+  const rememberLinkedResume = useCallback((linked: Project) => {
+    setProjects((current) => current.map((item) => item.id === linked.id
+      ? { ...item, frozenResumeId: linked.frozenResumeId } : item));
+  }, []);
+
+  const linkFrozenResume = useCallback(async (projectId: string, revisionNo: number, resumeId: string) => {
+    const linked = await api<Project>(`/api/latex/projects/${projectId}/frozen-resume`, {
+      method: "POST", body: JSON.stringify({ revisionNo, resumeId }),
+    });
+    rememberLinkedResume(linked);
+    return linked;
+  }, [rememberLinkedResume]);
 
   const ensureFrozenResume = useCallback(async (project: Project) => {
     if (project.frozenRevision == null) { setFrozenResume(null); return; }
     const resumes = await api<ResumeItem[]>("/api/resumes");
-    // The uploaded resume is keyed by the title it had when frozen; a later rename
-    // must not create a second copy of the same frozen revision.
+    // The server association is the only identity that survives another browser;
+    // a display filename collides across workspaces sharing a title and revision.
     const stored = readStoredFrozen(project.id);
-    if (stored && stored.revision === project.frozenRevision
-        && resumes.some((item) => item.originalFilename === stored.name)) {
-      setFrozenResume(stored.name);
+    const knownId = project.frozenResumeId
+      ?? (stored && stored.revision === project.frozenRevision ? stored.resumeId : null);
+    const existing = knownId ? resumes.find((item) => item.id === knownId) : undefined;
+    if (existing) {
+      setFrozenResume(existing.originalFilename);
+      storeFrozen(project.id, project.frozenRevision, existing.originalFilename, existing.id);
+      if (!project.frozenResumeId) await linkFrozenResume(project.id, project.frozenRevision, existing.id).catch(() => undefined);
       return;
     }
     const name = resumeFileName(project.title, project.frozenRevision);
-    if (resumes.some((item) => item.originalFilename === name)) {
-      setFrozenResume(name);
-      storeFrozen(project.id, project.frozenRevision, name);
-      return;
-    }
     const blob = await blobApi(`/latex-api/${project.id}?revision=${project.frozenRevision}`);
-    await uploadFrozen(name, blob);
-    storeFrozen(project.id, project.frozenRevision, name);
-  }, [uploadFrozen]);
+    const uploaded = await uploadFrozen(name, blob);
+    storeFrozen(project.id, project.frozenRevision, name, uploaded.id);
+    await linkFrozenResume(project.id, project.frozenRevision, uploaded.id);
+  }, [linkFrozenResume, uploadFrozen]);
 
   const openProject = useCallback(async (project: Project) => {
     const id = project.id;
@@ -185,6 +212,8 @@ export default function LatexWorkspacePage() {
     }).catch(() => { if (active) setModelCatalogState("FAILED"); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => { projectIdRef.current = projectId; }, [projectId]);
 
   useEffect(() => { threadEnd.current?.scrollIntoView({ block: "end" }); }, [messages]);
 
@@ -318,10 +347,15 @@ export default function LatexWorkspacePage() {
       const project = list.find((item) => item.id === snapshot.projectId);
       if (project && project.frozenRevision != null) {
         const name = resumeFileName(project.title, project.frozenRevision);
-        const resumes = await api<ResumeItem[]>("/api/resumes");
-        if (resumes.some((item) => item.originalFilename === name)) setFrozenResume(name);
-        else await uploadFrozen(name, blob);
-        storeFrozen(project.id, project.frozenRevision, name);
+        // Never dedupe by filename: another workspace may have frozen the same
+        // title and revision, and that PDF is a different document.
+        const uploaded = await uploadFrozen(name, blob);
+        storeFrozen(project.id, project.frozenRevision, name, uploaded.id);
+        try {
+          await linkFrozenResume(project.id, project.frozenRevision, uploaded.id);
+        } catch {
+          setError(t("Frozen, but the PDF could not be copied to Resume analysis yet.", "已定稿，但 PDF 还没能同步到简历分析，请稍后重试。"));
+        }
       }
       setSnapshot((current) => current ? { ...current, frozenRevision: snapshot.revisionNo } : current);
       setNotice(t("Frozen. The PDF is now in Resume analysis.", "已定稿，这份简历已出现在简历分析里。"));
@@ -337,6 +371,21 @@ export default function LatexWorkspacePage() {
     sendControl.current?.abort();
     if (!requestId) return;
     await api<void>(`/api/agent/runs/${encodeURIComponent(requestId)}/cancel`, { method: "POST" }).catch(() => undefined);
+  }
+
+  /* Business confirmations arrive after the run; the button calls the same
+     authenticated endpoint the corresponding page would call. */
+  async function confirmDeletion(pending: PendingConfirmation) {
+    setConfirmations((current) => current.map((item) => confirmationKey(item) === confirmationKey(pending)
+      ? { ...item, state: "DELETING", error: undefined } : item));
+    try {
+      await api<void>(pending.endpoint, { method: "DELETE", ...(pending.targetIds ? { body: JSON.stringify({ ids: pending.targetIds }) } : {}) });
+      setConfirmations((current) => current.filter((item) => confirmationKey(item) !== confirmationKey(pending)));
+      setNotice(t(`Deleted “${pending.label}”.`, `已删除「${pending.label}」。`));
+    } catch (cause) {
+      setConfirmations((current) => current.map((item) => confirmationKey(item) === confirmationKey(pending)
+        ? { ...item, state: "FAILED", error: cause instanceof Error ? cause.message : t("Deletion failed", "删除失败") } : item));
+    }
   }
 
   async function syncFrozen(projectId: string) {
@@ -357,6 +406,7 @@ export default function LatexWorkspacePage() {
     setError("");
     setNotice("");
     setDraft("");
+    const sentProjectId = snapshot.projectId;
     const requestId = crypto.randomUUID();
     requestRef.current = requestId;
     setActiveRunId(requestId);
@@ -375,8 +425,10 @@ export default function LatexWorkspacePage() {
       if (!activeConversation) {
         const created = await api<{ id: string }>("/api/agent/conversations", { method: "POST" });
         activeConversation = created.id;
-        setConversationId(created.id);
+        // The turn belongs to the resume that was open when it started; a switch
+        // during streaming must not install its conversation on another resume.
         window.localStorage.setItem(conversationKey(snapshot.projectId), created.id);
+        if (projectIdRef.current === sentProjectId) setConversationId(created.id);
       }
       let streamFailure: string | null = null;
       await streamApi<StreamEvent>("/api/agent/messages/stream", {
@@ -401,6 +453,11 @@ export default function LatexWorkspacePage() {
             if (index >= 0) tools[index] = { ...tools[index], label: event.label ?? tools[index].label, done: true };
             return { ...item, tools };
           });
+        } else if (event.type === "confirm" && event.confirmation && event.confirmation.kind !== "learning_plan") {
+          const proposal = event.confirmation;
+          setConfirmations((current) => current.some((item) => confirmationKey(item) === confirmationKey(proposal))
+            ? current
+            : [...current, { ...proposal, state: "PENDING" }]);
         } else if (event.type === "error") {
           streamFailure = event.content ?? t("Ardor could not answer", "Ardor 暂时无法回复");
         } else if (event.type === "done") {
@@ -421,7 +478,9 @@ export default function LatexWorkspacePage() {
       setActiveRunId(null);
       sendControl.current = null;
       requestRef.current = null;
-      await refreshWorkspace();
+      // Refresh only the resume that actually received the turn, and only while it
+      // is still the selected one; switching away and back must not skip the update.
+      if (projectIdRef.current === sentProjectId) await refreshWorkspace();
     }
   }
 
@@ -522,6 +581,12 @@ export default function LatexWorkspacePage() {
           </div>)}
           <div ref={threadEnd} />
         </div>
+
+        {confirmations.length > 0 && <div className="border-t border-stone-100 px-3 pt-3">
+          <DeletionPermissions items={confirmations}
+            onKeep={(pending) => setConfirmations((current) => current.filter((item) => confirmationKey(item) !== confirmationKey(pending)))}
+            onDelete={(pending) => void confirmDeletion(pending)} />
+        </div>}
 
         <form onSubmit={(event) => { event.preventDefault(); void send(draft); }} className="border-t border-stone-100 p-3">
           {activeRunId && <OperationPermissions runId={activeRunId} onConfirming={() => undefined} onConfirmed={() => undefined} onFailed={() => undefined} />}
