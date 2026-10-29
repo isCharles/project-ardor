@@ -35,10 +35,10 @@ export function ApplicationRhythmInline() {
 
   const shown = (value: number | null | undefined) => value == null ? t("Not recorded", "未记录") : String(value);
   const resumeGoal = rhythm?.weeklyResumeGoal ? ` / ${rhythm.weeklyResumeGoal}` : "";
-  const weekGreetings = rhythm?.weeklyGreetingCount ?? 0;
-  const weekResumes = rhythm?.weeklyResumeCount ?? 0;
-  const todayGreetings = shown(rhythm?.todayGreetingCount);
-  const todayResumes = shown(rhythm?.todayResumeCount);
+  const weekGreetings = rhythm ? String(rhythm.weeklyGreetingCount) : "—";
+  const weekResumes = rhythm ? String(rhythm.weeklyResumeCount) : "—";
+  const todayGreetings = rhythm ? shown(rhythm.todayGreetingCount) : "—";
+  const todayResumes = rhythm ? shown(rhythm.todayResumeCount) : "—";
 
   return <Link href="/app/applications" className="group mx-auto mt-8 block max-w-6xl rounded-[2rem] border border-white/80 bg-white/70 p-5 shadow-[0_12px_40px_rgba(49,39,70,0.05)] transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_18px_50px_rgba(49,39,70,0.08)] md:p-6">
     <div className="flex flex-wrap items-center justify-between gap-4">
