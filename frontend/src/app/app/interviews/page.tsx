@@ -9,9 +9,11 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { VoiceAnswerRecorder } from "@/components/interview/voice-answer-recorder";
+import { VoiceInterviewCreator, type VoiceInterviewDraft } from "@/components/interview/voice-interview-creator";
 import { ApiError, api } from "@/lib/api";
 import { agentCreationHref } from "@/lib/agent-features";
 import { useLocale } from "@/lib/locale";
+import { primeAudioPlayback } from "@/lib/pcm-playback";
 import { type AiJob, jobPending, useAiJob } from "@/lib/ai-jobs";
 import { AiJobStatus } from "@/components/ardor/ai-job-status";
 
@@ -62,6 +64,8 @@ export default function InterviewsPage() {
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [answerText, setAnswerText] = useState("");
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
+  const [voiceDraft, setVoiceDraft] = useState<VoiceInterviewDraft | null>(null);
+  const [autoListenQuestionId, setAutoListenQuestionId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const assessment = useAiJob("INTERVIEW_EVALUATE", activeSession?.id ?? null, !!activeSession);
@@ -128,16 +132,33 @@ export default function InterviewsPage() {
   async function createInterview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    setBusy(true); setError(""); setEvaluation(null);
+    setError(""); setEvaluation(null);
+    const modality = String(data.get("modality") ?? "TEXT");
+    const draft: VoiceInterviewDraft = {
+      resumeAnalysisId: (data.get("resumeAnalysisId") as string) || null,
+      targetCompany: String(data.get("targetCompany") ?? ""),
+      targetRole: String(data.get("targetRole") ?? ""),
+      questionCount: Number(data.get("questionCount")),
+    };
+    if (modality === "VOICE") {
+      // Unlock playback inside the submit gesture so the first question can start later.
+      primeAudioPlayback();
+      setProgress(null);
+      setActiveSession(null);
+      setAutoListenQuestionId(null);
+      setVoiceDraft(draft);
+      return;
+    }
+    setBusy(true);
     try {
       const session = await api<Session>("/api/interviews", {
         method: "POST",
         body: JSON.stringify({
-          resumeAnalysisId: data.get("resumeAnalysisId") || null,
-          modality: data.get("modality"),
-          targetCompany: data.get("targetCompany"),
-          targetRole: data.get("targetRole"),
-          questionCount: Number(data.get("questionCount")),
+          resumeAnalysisId: draft.resumeAnalysisId,
+          modality,
+          targetCompany: draft.targetCompany,
+          targetRole: draft.targetRole,
+          questionCount: draft.questionCount,
         }),
       });
       setActiveSession(session);
@@ -149,8 +170,28 @@ export default function InterviewsPage() {
     } finally { setBusy(false); }
   }
 
+  async function openCreatedVoiceInterview(sessionId: string) {
+    setVoiceDraft(null);
+    setBusy(true); setError("");
+    try {
+      const [session, next] = await Promise.all([
+        api<Session>(`/api/interviews/${sessionId}`),
+        api<Progress>(`/api/interviews/${sessionId}/next-question`),
+      ]);
+      setActiveSession(session);
+      setAnswerText("");
+      setProgress(next);
+      setAutoListenQuestionId(next.nextQuestion?.id ?? null);
+      await loadLists();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("Could not open interview", "无法打开面试"));
+    } finally { setBusy(false); }
+  }
+
   async function openSession(session: Session) {
     setBusy(true); setError(""); setEvaluation(null);
+    setVoiceDraft(null);
+    setAutoListenQuestionId(null);
     setActiveSession(session);
     setAnswerText("");
     try {
@@ -243,7 +284,7 @@ export default function InterviewsPage() {
               <label className="block text-sm font-medium">{t("Target company", "目标公司")}<input className="field mt-2" name="targetCompany" maxLength={160} placeholder={t("e.g. ByteDance (optional)", "例如：字节跳动（可选）")} /></label>
               <label className="block text-sm font-medium">{t("Target role", "目标岗位")}<input className="field mt-2" name="targetRole" maxLength={160} required placeholder={t("e.g. Java backend engineer", "例如：Java 后端工程师")} /></label>
               <label className="block text-sm font-medium">{t("Questions", "题目数量")}<select className="field mt-2" name="questionCount" defaultValue="5">{[3,4,5,6,7,8,9,10].map((count) => <option key={count}>{count}</option>)}</select></label>
-              <Button disabled={busy}>{busy ? t("Preparing questions…", "生成题目中…") : t("Create and start", "创建并开始")}</Button>
+              <Button disabled={busy || !!voiceDraft}>{busy ? t("Preparing questions…", "生成题目中…") : t("Create and start", "创建并开始")}</Button>
             </form>
             </details>
           </section>
@@ -252,14 +293,20 @@ export default function InterviewsPage() {
             <h2 className="text-xl font-semibold">{t("Past mock interviews", "模拟面试历史")}</h2>
             <div className="mt-5 space-y-3">
               {sessions.length === 0 && <p className="text-sm text-muted-foreground">{t("No interviews yet.", "还没有模拟面试。")}</p>}
-              {sessions.map((session) => <div key={session.id} className="flex items-stretch gap-2"><button className="min-w-0 flex-1 rounded-2xl border p-4 text-left transition hover:bg-muted" onClick={() => openSession(session)} disabled={busy}><span className="block truncate font-medium">{session.targetCompany ? `${session.targetCompany} · ` : ""}{session.targetRole}</span><span className="mt-1 block text-xs text-muted-foreground">{session.modality === "VOICE" ? t("Voice", "语音") : t("Text", "文字")} · {session.status === "COMPLETED" ? t("Completed", "已完成") : session.status === "CANCELLED" ? t("Cancelled", "已取消") : t("In progress", "进行中")}</span></button><button aria-label={t(`Delete ${session.targetRole}`, `删除 ${session.targetRole}`)} title={t("Delete permanently", "永久删除")} className="rounded-2xl border px-3 text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" onClick={() => void deleteInterview(session)} disabled={busy}><Trash2 className="size-4" /></button></div>)}
+              {sessions.map((session) => <div key={session.id} className="flex items-stretch gap-2"><button className="min-w-0 flex-1 rounded-2xl border p-4 text-left transition hover:bg-muted" onClick={() => openSession(session)} disabled={busy || !!voiceDraft}><span className="block truncate font-medium">{session.targetCompany ? `${session.targetCompany} · ` : ""}{session.targetRole}</span><span className="mt-1 block text-xs text-muted-foreground">{session.modality === "VOICE" ? t("Voice", "语音") : t("Text", "文字")} · {session.status === "COMPLETED" ? t("Completed", "已完成") : session.status === "CANCELLED" ? t("Cancelled", "已取消") : t("In progress", "进行中")}</span></button><button aria-label={t(`Delete ${session.targetRole}`, `删除 ${session.targetRole}`)} title={t("Delete permanently", "永久删除")} className="rounded-2xl border px-3 text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" onClick={() => void deleteInterview(session)} disabled={busy || !!voiceDraft}><Trash2 className="size-4" /></button></div>)}
             </div>
           </section>
         </div>
 
         <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
           <div className="flex items-center gap-3"><MessageSquareText className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("Mock interview session", "模拟面试区")}</h2></div>
-          {!progress && !evaluation && <p className="mt-4 text-sm text-muted-foreground">{t("Start a new mock interview or continue one from history.", "创建一场模拟面试，或从模拟面试历史继续。")}</p>}
+          {voiceDraft && <VoiceInterviewCreator
+            payload={voiceDraft}
+            onReady={(sessionId) => void openCreatedVoiceInterview(sessionId)}
+            onCancel={() => { setVoiceDraft(null); setBusy(false); }}
+            onError={setError}
+          />}
+          {!progress && !evaluation && !voiceDraft && <p className="mt-4 text-sm text-muted-foreground">{t("Start a new mock interview or continue one from history.", "创建一场模拟面试，或从模拟面试历史继续。")}</p>}
           {progress?.nextQuestion && <div className="mt-7">
             <p className="text-sm font-medium text-primary">{t(`Question ${progress.nextQuestion.sequenceNumber}`, `第 ${progress.nextQuestion.sequenceNumber} 题`)} · {questionTypeLabels[progress.nextQuestion.questionType] ?? progress.nextQuestion.questionType}</p>
             {progress.nextQuestion.leetcode ? <>
@@ -270,7 +317,7 @@ export default function InterviewsPage() {
             </> : <h3 className="mt-3 text-2xl font-semibold leading-9">{progress.nextQuestion.questionText}</h3>}
             <p className="mt-3 text-sm text-muted-foreground">{t(`Answered ${progress.answeredCount} / ${progress.totalQuestions}`, `已回答 ${progress.answeredCount} / ${progress.totalQuestions}`)}</p>
             <form className="mt-6 space-y-4" onSubmit={submitAnswer}>
-              {activeSession?.modality === "VOICE" && <VoiceAnswerRecorder key={progress.nextQuestion.id} sessionId={progress.sessionId} questionId={progress.nextQuestion.id} disabled={busy} onTranscript={setAnswerText} onError={setError} />}
+              {activeSession?.modality === "VOICE" && <VoiceAnswerRecorder key={progress.nextQuestion.id} sessionId={progress.sessionId} questionId={progress.nextQuestion.id} disabled={busy} autoStart={autoListenQuestionId === progress.nextQuestion.id} onTranscript={setAnswerText} onError={setError} />}
               <textarea className={`field resize-y ${progress.nextQuestion.questionType === "CODING" ? "min-h-72 font-mono text-[13px] leading-6" : "min-h-44"}`} name="answerText" maxLength={20000} required value={answerText} onChange={(event) => setAnswerText(event.target.value)} placeholder={activeSession?.modality === "VOICE" ? t("Your transcript appears here. Edit it before submitting.", "转写结果会出现在这里，可修改后提交。") : progress.nextQuestion.questionType === "CODING" ? t("Explain your approach and complexity, then write code.", "先说明思路与复杂度，再写出代码。") : t("Answer as you would in an interview: explain your approach, trade-offs and results.", "像真实面试一样作答，建议说明思路、取舍和结果。")} />
               <Button disabled={busy}><Send className="mr-2 size-4" />{busy ? t("Submitting…", "提交中…") : t("Submit and continue", "提交并进入下一题")}</Button>
             </form>

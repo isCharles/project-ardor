@@ -76,7 +76,7 @@ public class DashScopeRealtimeSpeechGateway {
             AuxiliaryRuntimeConfig config,
             String text,
             Consumer<RealtimeSpeechEvent> events) {
-        UpstreamSession session = openTtsStream(config, events);
+        RealtimeSession session = openTtsStream(config, events);
         if (text != null && !text.isBlank()) {
             session.appendText(text);
             session.commitText();
@@ -222,7 +222,12 @@ public class DashScopeRealtimeSpeechGateway {
 
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-            closed.set(true);
+            boolean alreadyClosed = closed.getAndSet(true);
+            // A finish can be acknowledged by closing the socket instead of a session.finished frame.
+            if (!alreadyClosed && protocol == Protocol.TTS) {
+                if (inputFinished) events.accept(RealtimeSpeechEvent.signal("tts_done"));
+                else emitError("语音合成连接已断开");
+            }
             return null;
         }
 
@@ -328,7 +333,12 @@ public class DashScopeRealtimeSpeechGateway {
                     events.accept(RealtimeSpeechEvent.signal("tts_response_done"));
                 }
                 case "error" -> emitError(providerMessage(message));
-                case "session.finished" -> cancel();
+                case "session.finished" -> {
+                    // The service has flushed every committed segment: this is the only definitive
+                    // end-of-audio signal the browser gets, so send it before closing the socket.
+                    events.accept(RealtimeSpeechEvent.signal("tts_done"));
+                    cancel();
+                }
                 default -> { }
             }
         }

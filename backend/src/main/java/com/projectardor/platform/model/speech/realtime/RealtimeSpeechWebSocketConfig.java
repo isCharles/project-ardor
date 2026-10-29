@@ -17,7 +17,7 @@ public class RealtimeSpeechWebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(handler, "/ws/interviews/*/voice")
+        registry.addHandler(handler, "/ws/interviews/*/voice", "/ws/interviews/voice/new")
                 .setAllowedOrigins("http://localhost:3000", "http://127.0.0.1:3000");
     }
 }

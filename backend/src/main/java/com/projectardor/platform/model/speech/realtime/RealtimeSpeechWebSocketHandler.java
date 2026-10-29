@@ -3,9 +3,18 @@ package com.projectardor.platform.model.speech.realtime;
 import java.io.IOException;
 import java.net.URI;
 import java.security.Principal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -22,7 +31,9 @@ import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.platform.model.integrations.domain.AuxiliaryServiceType;
 import com.projectardor.platform.model.integrations.service.AuxiliaryApiConfigService;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewModality;
+import com.projectardor.learning.practice.mockinterview.domain.InterviewSession;
 import com.projectardor.learning.practice.mockinterview.service.InterviewService;
+import com.projectardor.learning.practice.mockinterview.service.QuestionTextStreamScanner.Fragment;
 import com.projectardor.platform.model.speech.realtime.DashScopeRealtimeSpeechGateway.RealtimeSession;
 import com.projectardor.platform.usage.QuotaExceededException;
 import com.projectardor.platform.usage.QuotaService;
@@ -35,6 +46,7 @@ import tools.jackson.databind.ObjectMapper;
 public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
 
     private static final Pattern PATH = Pattern.compile("/ws/interviews/([0-9a-fA-F-]{36})/voice/?");
+    private static final Pattern CREATE_PATH = Pattern.compile("/ws/interviews/voice/new/?");
     private static final int MAX_AUDIO_MESSAGE = 96_000;
     private static final long MAX_AUDIO_SESSION_CHARACTERS = 13_000_000;
 
@@ -61,19 +73,22 @@ public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         ArdorPrincipal principal = principal(session.getPrincipal());
-        UUID interviewId = interviewId(session.getUri());
-        if (principal == null || interviewId == null) {
+        boolean creating = isCreatePath(session.getUri());
+        UUID interviewId = creating ? null : interviewId(session.getUri());
+        if (principal == null || (!creating && interviewId == null)) {
             session.close(CloseStatus.POLICY_VIOLATION.withReason("请先登录"));
             return;
         }
-        var interview = interviewService.get(principal.userId(), interviewId);
-        if (interview.getModality() != InterviewModality.VOICE) {
-            session.close(CloseStatus.NOT_ACCEPTABLE.withReason("当前面试不是语音面试"));
-            return;
+        if (!creating) {
+            var interview = interviewService.get(principal.userId(), interviewId);
+            if (interview.getModality() != InterviewModality.VOICE) {
+                session.close(CloseStatus.NOT_ACCEPTABLE.withReason("当前面试不是语音面试"));
+                return;
+            }
         }
         LiveSession live = new LiveSession(
                 new ConcurrentWebSocketSessionDecorator(session, 10_000, 2 * 1024 * 1024),
-                principal.userId(), interviewId);
+                principal.userId(), interviewId, creating);
         liveSessions.put(session.getId(), live);
         live.send(RealtimeSpeechEvent.signal("ready"));
     }
@@ -87,7 +102,13 @@ public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
         }
         try {
             JsonNode payload = objectMapper.readTree(message.getPayload());
-            switch (payload.path("type").asText()) {
+            String type = payload.path("type").asText();
+            if (live.creating && !"create_interview".equals(type) && !"interrupt_tts".equals(type)) {
+                live.send(RealtimeSpeechEvent.error("题目准备中，请稍候"));
+                return;
+            }
+            switch (type) {
+                case "create_interview" -> live.createInterview(payload);
                 case "start_asr" -> live.startAsr();
                 case "audio" -> live.appendAudio(payload.path("audio").asText());
                 case "finish_asr" -> live.finishAsr();
@@ -144,18 +165,37 @@ public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    private boolean isCreatePath(URI uri) {
+        return uri != null && CREATE_PATH.matcher(uri.getPath()).matches();
+    }
+
     private final class LiveSession implements AutoCloseable {
         private final WebSocketSession browser;
         private final UUID userId;
         private final UUID interviewId;
+        private final boolean creating;
         private final AtomicReference<RealtimeSession> asr = new AtomicReference<>();
         private final AtomicReference<RealtimeSession> tts = new AtomicReference<>();
+        private final AtomicReference<String> ttsTurn = new AtomicReference<>();
+        private final AtomicInteger ttsIndex = new AtomicInteger();
+        private final AtomicBoolean generating = new AtomicBoolean();
+        private final AtomicBoolean stopGeneration = new AtomicBoolean();
+        private final ExecutorService generationWork;
         private long audioCharacters;
 
-        private LiveSession(WebSocketSession browser, UUID userId, UUID interviewId) {
+        private LiveSession(WebSocketSession browser, UUID userId, UUID interviewId, boolean creating) {
             this.browser = browser;
             this.userId = userId;
             this.interviewId = interviewId;
+            this.creating = creating;
+            this.generationWork = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(4),
+                    runnable -> {
+                        Thread thread = new Thread(runnable, "voice-interview-" + browser.getId());
+                        thread.setDaemon(true);
+                        return thread;
+                    },
+                    new ThreadPoolExecutor.AbortPolicy());
         }
 
         private void startAsr() {
@@ -188,22 +228,99 @@ public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
             if (active != null) active.finish();
         }
 
+        /**
+         * Creates the interview on this connection and speaks its first question while the model is
+         * still writing the rest. The document is saved only when generation completes; an interrupted
+         * stream leaves no half interview behind.
+         */
+        private void createInterview(JsonNode payload) {
+            if (!creating) throw new IllegalStateException("当前连接不能创建面试");
+            if (!generating.compareAndSet(false, true)) {
+                send(RealtimeSpeechEvent.error("面试题正在生成，请稍候"));
+                return;
+            }
+            String turn = UUID.randomUUID().toString();
+            try {
+                UUID resumeAnalysisId = optionalUuid(payload, "resumeAnalysisId");
+                String company = optionalText(payload, "targetCompany");
+                String role = requiredText(payload, "targetRole");
+                int count = intValue(payload, "questionCount", 5);
+                var config = configService.runtimeConfig(userId, AuxiliaryServiceType.TTS)
+                        .orElseThrow(() -> new IllegalStateException("管理员尚未配置语音合成服务"));
+                quotas.consume(userId, UsageFeature.INTERVIEW_CREATE, null);
+                quotas.consume(userId, UsageFeature.VOICE_TTS, null);
+                close(tts.getAndSet(null));
+                stopGeneration.set(false);
+                ttsTurn.set(turn);
+                ttsIndex.set(0);
+                tts.set(gateway.openTtsStream(config, event -> onTtsEvent(event, turn)));
+                send(RealtimeSpeechEvent.signal("tts_connecting").withTurn(turn));
+                send(RealtimeSpeechEvent.signal("questions_generating"));
+                generationWork.execute(() -> generateQuestions(resumeAnalysisId, company, role, count, turn));
+            } catch (RejectedExecutionException rejected) {
+                generating.set(false);
+                send(RealtimeSpeechEvent.error("实时语音请求过多，请稍后再试"));
+            } catch (RuntimeException failure) {
+                generating.set(false);
+                throw failure;
+            }
+        }
+
+        private void generateQuestions(UUID resumeAnalysisId, String company, String role, int count, String turn) {
+            SpeechTextSegmenter segmenter = SpeechTextSegmenter.create(System::currentTimeMillis);
+            try {
+                InterviewSession session = interviewService.createStreaming(userId, resumeAnalysisId,
+                        InterviewModality.VOICE, company, role, count, null,
+                        fragment -> speakFirstQuestion(fragment, segmenter), stopGeneration::get);
+                send(RealtimeSpeechEvent.text("interview_created", session.getId().toString()).withTurn(turn));
+            } catch (RuntimeException failure) {
+                if (stopGeneration.get()) {
+                    send(RealtimeSpeechEvent.signal("questions_cancelled").withTurn(turn));
+                } else {
+                    send(RealtimeSpeechEvent.error(messageOf(failure)));
+                }
+                cancelTts(turn);
+            } finally {
+                generating.set(false);
+            }
+        }
+
+        /** Only the first question is read during generation; the rest are spoken when reached. */
+        private void speakFirstQuestion(Fragment fragment, SpeechTextSegmenter segmenter) {
+            if (stopGeneration.get() || fragment.questionIndex() != 0) return;
+            RealtimeSession active = tts.get();
+            if (active == null) return;
+            List<String> segments = new ArrayList<>(segmenter.accept(fragment.text()));
+            if (fragment.completed()) segments.addAll(segmenter.finish());
+            for (String segment : segments) {
+                active.appendText(segment);
+                active.commitText();
+            }
+            if (fragment.completed()) active.finishText();
+        }
+
         private void speakQuestion(UUID questionId) {
             String question = interviewService.getQuestion(userId, interviewId, questionId).getQuestionText();
             var config = configService.runtimeConfig(userId, AuxiliaryServiceType.TTS)
                     .orElseThrow(() -> new IllegalStateException("管理员尚未配置语音合成服务"));
             quotas.consume(userId, UsageFeature.VOICE_TTS, null);
+            String turn = UUID.randomUUID().toString();
             close(tts.getAndSet(null));
-            tts.set(gateway.openTts(config, question, this::onTtsEvent));
-            send(RealtimeSpeechEvent.signal("tts_connecting"));
+            ttsTurn.set(turn);
+            ttsIndex.set(0);
+            send(RealtimeSpeechEvent.signal("tts_connecting").withTurn(turn));
+            tts.set(gateway.openTts(config, question, event -> onTtsEvent(event, turn)));
         }
 
         private void interruptTts() {
-            RealtimeSession active = tts.getAndSet(null);
-            if (active != null) {
-                active.cancel();
-                send(RealtimeSpeechEvent.signal("tts_interrupted"));
-            }
+            stopGeneration.set(true);
+            String turn = ttsTurn.getAndSet(null);
+            close(tts.getAndSet(null));
+            if (turn != null) send(RealtimeSpeechEvent.signal("tts_interrupted").withTurn(turn));
+        }
+
+        private void cancelTts(String turn) {
+            if (turn.equals(ttsTurn.getAndSet(null))) close(tts.getAndSet(null));
         }
 
         private void onAsrEvent(RealtimeSpeechEvent event) {
@@ -214,11 +331,39 @@ public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
             send(event);
         }
 
-        private void onTtsEvent(RealtimeSpeechEvent event) {
+        private void onTtsEvent(RealtimeSpeechEvent event, String turn) {
+            if (!turn.equals(ttsTurn.get())) return;
             if (event.type().equals("tts_done") || event.type().equals("error")) {
+                ttsTurn.compareAndSet(turn, null);
                 close(tts.getAndSet(null));
             }
-            send(event);
+            send(event.withTurn(turn, ttsIndex.incrementAndGet()));
+        }
+
+        private UUID optionalUuid(JsonNode payload, String field) {
+            String value = payload.path(field).asText("");
+            return value.isBlank() ? null : requiredUuid(payload, field);
+        }
+
+        private String optionalText(JsonNode payload, String field) {
+            String value = payload.path(field).asText("");
+            return value.isBlank() ? null : value.strip();
+        }
+
+        private String requiredText(JsonNode payload, String field) {
+            String value = optionalText(payload, field);
+            if (value == null) throw new IllegalArgumentException(field + " 不能为空");
+            return value;
+        }
+
+        private int intValue(JsonNode payload, String field, int fallback) {
+            JsonNode value = payload.path(field);
+            return value.isNumber() ? value.asInt() : fallback;
+        }
+
+        private String messageOf(RuntimeException failure) {
+            String message = failure.getMessage();
+            return message == null || message.isBlank() ? "生成面试题失败" : message;
         }
 
         private void send(RealtimeSpeechEvent event) {
@@ -232,6 +377,8 @@ public class RealtimeSpeechWebSocketHandler extends TextWebSocketHandler {
 
         @Override
         public void close() {
+            stopGeneration.set(true);
+            generationWork.shutdownNow();
             close(asr.getAndSet(null));
             close(tts.getAndSet(null));
         }

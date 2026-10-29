@@ -5,36 +5,42 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/locale";
+import { PcmPlayer } from "@/lib/pcm-playback";
+import { realtimeUrl } from "@/lib/realtime-url";
 
 type Props = {
   sessionId: string;
   questionId: string;
   disabled: boolean;
+  autoStart?: boolean;
   onTranscript: (text: string) => void;
   onError: (message: string) => void;
 };
 
 type VoiceState = "idle" | "connecting" | "speaking" | "listening" | "processing";
-type RealtimeEvent = { type: string; text?: string | null; audio?: string | null; detail?: string | null };
+type RealtimeEvent = {
+  type: string;
+  text?: string | null;
+  audio?: string | null;
+  detail?: string | null;
+  turn?: string | null;
+};
 
 const INPUT_SAMPLE_RATE = 16_000;
-const OUTPUT_SAMPLE_RATE = 24_000;
 const MAX_RECORDING_MS = 5 * 60 * 1000;
 const LOCAL_VAD_THRESHOLD = 0.035;
 
-export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscript, onError }: Props) {
+export function VoiceAnswerRecorder({ sessionId, questionId, disabled, autoStart, onTranscript, onError }: Props) {
   const { t } = useLocale();
   const tRef = useRef(t);
-  tRef.current = t;
   const tr = (english: string, chinese: string) => tRef.current(english, chinese);
   const socketRef = useRef<WebSocket | null>(null);
   const socketPromiseRef = useRef<Promise<WebSocket> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const captureContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const playbackContextRef = useRef<AudioContext | null>(null);
-  const playbackSourcesRef = useRef(new Set<AudioBufferSourceNode>());
-  const nextPlaybackAtRef = useRef(0);
+  const playbackRef = useRef<PcmPlayer | null>(null);
+  const ttsTurnRef = useRef<string | null>(null);
   const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateRef = useRef<VoiceState>("idle");
   const speechFramesRef = useRef(0);
@@ -60,20 +66,14 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
   };
 
   useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
+  useEffect(() => {
     if (state !== "listening" && state !== "speaking") return;
     const timer = window.setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1_000);
     return () => window.clearInterval(timer);
   }, [state]);
-
-  useEffect(() => () => {
-    mountedRef.current = false;
-    stopCapture();
-    clearPlayback();
-    socketRef.current?.close(1000, "page left");
-    socketRef.current = null;
-    void playbackContextRef.current?.close();
-    playbackContextRef.current = null;
-  }, []);
 
   function updateState(next: VoiceState) {
     stateRef.current = next;
@@ -86,7 +86,7 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
     updateState("connecting");
     setStatus("connecting");
     socketPromiseRef.current = new Promise<WebSocket>((resolve, reject) => {
-      const socket = new WebSocket(realtimeUrl(sessionId));
+      const socket = new WebSocket(realtimeUrl(`/ws/interviews/${sessionId}/voice`));
       const timeout = window.setTimeout(() => {
         socket.close();
         reject(new Error(tr("Live voice connection timed out", "实时语音连接超时")));
@@ -125,28 +125,43 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
   }
 
   function handleServerEvent(event: RealtimeEvent) {
+    const currentTurn = ttsTurnRef.current;
+    const matchesTurn = !event.turn || event.turn === currentTurn;
     switch (event.type) {
       case "ready": setStatus("ready"); break;
       case "asr_connecting": setStatus("asrConnecting"); break;
       case "asr_ready":
         setStatus(stateRef.current === "speaking" ? "speaking" : "listening");
         break;
-      case "tts_connecting": setStatus("ttsConnecting"); break;
+      case "tts_connecting":
+        if (event.turn) ttsTurnRef.current = event.turn;
+        clearPlayback();
+        setStatus("ttsConnecting");
+        break;
       case "tts_started":
+        if (!matchesTurn) break;
         updateState("speaking");
         setStatus("speaking");
         break;
       case "audio_delta":
-        if (event.audio && !interruptedRef.current) playPcm(event.audio);
+        if (event.audio && matchesTurn && !interruptedRef.current) playPcm(event.audio);
         break;
       case "tts_done":
-        if (stateRef.current === "speaking") updateState("listening");
-        setStatus("listeningAuto");
+        if (!matchesTurn) break;
+        ttsTurnRef.current = null;
+        if (stateRef.current === "speaking") {
+          updateState("listening");
+          setStatus("listeningAuto");
+        }
         break;
       case "tts_interrupted":
+        if (!matchesTurn) break;
+        ttsTurnRef.current = null;
         clearPlayback();
-        updateState("listening");
-        setStatus("interrupted");
+        if (stateRef.current !== "processing" && stateRef.current !== "idle") {
+          updateState("listening");
+          setStatus("interrupted");
+        }
         break;
       case "speech_started":
         interruptQuestion();
@@ -286,38 +301,43 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
   }
 
   async function ensurePlaybackContext() {
-    if (!playbackContextRef.current || playbackContextRef.current.state === "closed") {
-      playbackContextRef.current = new AudioContext({ sampleRate: OUTPUT_SAMPLE_RATE });
-    }
-    await playbackContextRef.current.resume();
-    return playbackContextRef.current;
+    const player = playbackRef.current ?? (playbackRef.current = new PcmPlayer());
+    await player.resume();
   }
 
   function playPcm(base64: string) {
-    void ensurePlaybackContext().then((context) => {
-      const bytes = base64ToBytes(base64);
-      const samples = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
-      const buffer = context.createBuffer(1, samples.length, OUTPUT_SAMPLE_RATE);
-      const channel = buffer.getChannelData(0);
-      for (let index = 0; index < samples.length; index += 1) channel[index] = samples[index] / 32_768;
-      const source = context.createBufferSource();
-      source.buffer = buffer;
-      source.connect(context.destination);
-      source.onended = () => playbackSourcesRef.current.delete(source);
-      playbackSourcesRef.current.add(source);
-      const startsAt = Math.max(context.currentTime + 0.02, nextPlaybackAtRef.current);
-      source.start(startsAt);
-      nextPlaybackAtRef.current = startsAt + buffer.duration;
-    }).catch(() => onError(tr("Question audio could not play. Please read the question instead.", "题目语音播放失败，请直接阅读题目")));
+    const player = playbackRef.current ?? (playbackRef.current = new PcmPlayer());
+    void player.play(base64)
+      .catch(() => onError(tr("Question audio could not play. Please read the question instead.", "题目语音播放失败，请直接阅读题目")));
   }
 
   function clearPlayback() {
-    for (const source of playbackSourcesRef.current) {
-      try { source.stop(); } catch { /* source already ended */ }
-    }
-    playbackSourcesRef.current.clear();
-    nextPlaybackAtRef.current = 0;
+    playbackRef.current?.clear();
   }
+
+  const startAnswerRef = useRef(startAnswer);
+
+  useEffect(() => {
+    startAnswerRef.current = startAnswer;
+  });
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+    stopCapture();
+    clearPlayback();
+    socketRef.current?.close(1000, "page left");
+    socketRef.current = null;
+    playbackRef.current?.close();
+    playbackRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!autoStart) return;
+    const timer = window.setTimeout(() => {
+      if (mountedRef.current && stateRef.current === "idle") void startAnswerRef.current(false);
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [autoStart]);
 
   const active = state === "speaking" || state === "listening";
   const locked = disabled || state === "connecting" || state === "processing";
@@ -345,14 +365,6 @@ export function VoiceAnswerRecorder({ sessionId, questionId, disabled, onTranscr
       </div>
     </div>
   );
-}
-
-function realtimeUrl(sessionId: string) {
-  const configured = process.env.NEXT_PUBLIC_ARDOR_WS_URL?.replace(/\/$/, "");
-  if (configured) return `${configured}/ws/interviews/${sessionId}/voice`;
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const port = window.location.port === "3000" ? ":8080" : window.location.port ? `:${window.location.port}` : "";
-  return `${protocol}//${window.location.hostname}${port}/ws/interviews/${sessionId}/voice`;
 }
 
 function downsampleToPcm16(input: Float32Array, inputRate: number, outputRate: number) {
@@ -384,13 +396,6 @@ function pcmToBase64(pcm: Int16Array) {
   let binary = "";
   for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
   return window.btoa(binary);
-}
-
-function base64ToBytes(value: string) {
-  const binary = window.atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
 }
 
 function formatTime(seconds: number) {
