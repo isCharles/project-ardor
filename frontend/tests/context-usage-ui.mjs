@@ -142,7 +142,78 @@ try {
   await page.reload();
   assert.match(await notice.innerText(), /could not be summarized \(COMPACTION_MODEL_UNAVAILABLE\)[\s\S]*kept every message verbatim/,
     "A degraded compaction is visible instead of silent");
-  console.log("Context usage UI: legacy unknown, persisted estimate, honest unknown window, live compaction/failure, in-transcript notice and narrow viewport passed.");
+  // A held live stream: READY must end the preparation spinner without donating its local
+  // estimate to the ring, and tool rounds must not move the anchor recorded this turn.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  running = false;
+  usage = { state: "READY", model: "synthetic-model", estimatedTokens: 62000, compressionBudgetTokens: 139428,
+    modelWindowTokens: 200000, summaryVersion: 2, compactedMessages: 8, authoritative: true, conversationAnchor: false };
+  conversationContext = { ...usage, estimatedTokens: 18000, conversationAnchor: true };
+  await page.reload();
+  await page.locator('[data-context-state="READY"]').waitFor();
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09);
+  await page.evaluate(() => {
+    const original = window.fetch.bind(window);
+    const encoder = new TextEncoder();
+    const context = (state, tokens, extra = {}) => ({ state, model: "synthetic-model", estimatedTokens: tokens,
+      compressionBudgetTokens: 139428, modelWindowTokens: 200000, summaryVersion: 2, compactedMessages: 8, ...extra });
+    window.__contextStream = [
+      { event: { type: "context", contextUsage: context("PREPARING", 18100) }, hold: true },
+      { event: { type: "context", contextUsage: context("COMPACTING", null) }, hold: true },
+      { event: { type: "context", contextUsage: context("READY", 30000, { compaction: { outcome: "COMPACTED", spanId: null,
+        windowTokens: 200000, softThresholdTokens: 139428, projectedInputTokens: 154000, estimatedInputTokensAfter: 30000,
+        summarizedMessages: 2, firstMessageOrdinal: 1, summaryVersionBefore: 2, summaryVersionAfter: 3, errorCode: null } }) }, hold: true },
+      { event: { type: "context", contextUsage: context("READY", 18000, { authoritative: true, conversationAnchor: true }) }, hold: true },
+      { event: { type: "context", contextUsage: context("READY", 62000, { authoritative: true, conversationAnchor: false }) }, hold: true },
+      { event: { type: "delta", content: "Synthetic live answer" } },
+      { event: { type: "done", conversationId: "context-chat", messageId: "live-answer", content: "Synthetic live answer", elapsedMs: 10 } },
+    ];
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!url.includes("/api/agent/messages/stream")) return original(input, init);
+      return new Response(new ReadableStream({
+        async start(controller) {
+          window.__contextStreamHolds = 0;
+          for (const item of window.__contextStream) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(item.event)}\n\n`));
+            if (item.hold) {
+              window.__contextStreamHolds++;
+              await new Promise((resolve) => { window.__releaseContextStream = resolve; });
+            }
+          }
+          controller.close();
+        },
+      }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    };
+  });
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).fill("Synthetic live request");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const release = async (holds) => {
+    await page.waitForFunction((expected) => window.__contextStreamHolds >= expected, holds, { timeout: 5000 });
+    await page.evaluate(() => window.__releaseContextStream());
+  };
+  await page.locator('[data-context-state="PREPARING"]').waitFor();
+  assert.equal(await indicator.locator("svg[data-context-fill]").count(), 0, "Preparation shows a spinner, not a percentage");
+  await release(1);
+  await page.locator('[data-context-state="COMPACTING"]').waitFor();
+  await indicator.hover();
+  await tooltip.getByText("Summarizing earlier messages", { exact: true }).waitFor();
+  await release(2);
+  await page.locator('[data-context-state="READY"]').waitFor();
+  assert.equal(await indicator.locator("svg[data-context-fill]").count(), 1, "READY ends the preparation spinner");
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
+    "READY's local estimate is not adopted while the turn has no provider anchor yet");
+  await page.locator("[data-compaction-notice]").getByText(/154K → 30K/).waitFor();
+  await release(3);
+  await release(4);
+  await page.waitForTimeout(300);
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
+    "The anchor and the following tool round keep the ring at the conversation anchor");
+  await release(5);
+  await page.getByRole("button", { name: "Send", exact: true }).waitFor();
+  assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
+    "After completion the persisted anchor still drives the ring");
+  console.log("Context usage UI: legacy unknown, persisted estimate, honest unknown window, live preparation/compaction/READY transitions, stable anchor, in-transcript notice and narrow viewport passed.");
 } finally {
   await browser?.close(); server.kill();
   if (server.exitCode === null) await new Promise(resolve => server.once("close", resolve));

@@ -297,6 +297,7 @@ export default function AgentHomePage() {
   const [runThinking, setRunThinking] = useState("");
   const [streamProgress, setStreamProgress] = useState<StreamProgress | null>(null);
   const [liveContext, setLiveContext] = useState<{ conversationId: string; usage: ContextUsage } | null>(null);
+  const [liveAnchor, setLiveAnchor] = useState<{ conversationId: string; usage: ContextUsage } | null>(null);
   const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const [runElapsed, setRunElapsed] = useState(0);
   const [leavingEmptyState, setLeavingEmptyState] = useState(false);
@@ -595,6 +596,7 @@ export default function AgentHomePage() {
     }
     setState(result);
     setLiveContext(null);
+    setLiveAnchor(null);
     // A committed response owns its process record. Discard the transient copy.
     setRunSteps([]); setRunThinking(""); setStreamProgress(null); setRetryFailures([]); setRunElapsed(0);
     const outgoing = readOutgoing(reasoningAccount.current, result.conversationId);
@@ -1047,9 +1049,11 @@ export default function AgentHomePage() {
               void stopRunOnce(requestId).catch((reason) => setError(reason instanceof Error ? reason.message : t("Could not confirm stop request", "暂时无法确认停止请求")));
             }
             if (event.type !== "error") setStreamAccepted(true);
-            if (event.type === "context" && event.contextUsage
-              && ((event.contextUsage.authoritative && event.contextUsage.conversationAnchor) || liveContextState(event.contextUsage))) {
+            if (event.type === "context" && event.contextUsage) {
               setLiveContext({ conversationId: activeConversationId!, usage: event.contextUsage });
+              if (event.contextUsage.authoritative && event.contextUsage.conversationAnchor) {
+                setLiveAnchor({ conversationId: activeConversationId!, usage: event.contextUsage });
+              }
             } else if (event.type === "thinking" && event.content) {
               setStreamPhase("THINKING");
               setRunThinking((current) => (current + event.content).slice(0, 32_000));
@@ -1196,7 +1200,7 @@ export default function AgentHomePage() {
         setError(""); notifyStopped(requestId);
         if (conversationId) await load(conversationId);
       } else setError(reason instanceof Error ? reason.message : "Agent 暂时无法回复");
-    } finally { if (activeSend.current === sendControl) activeSend.current = null; setLiveContext((current) => current && current.usage.state !== "READY" ? null : current); setApprovalRunId(null); setActiveRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
+    } finally { if (activeSend.current === sendControl) activeSend.current = null; setLiveContext(null); setApprovalRunId(null); setActiveRunId(null); setRetryAttempt(0); setLeavingEmptyState(false); setBusy(false); if (acceptedRun) setError(""); }
   }
 
   function stopRunOnce(requestId: string): Promise<void> {
@@ -1495,7 +1499,7 @@ export default function AgentHomePage() {
       </div>
       <div data-composer-actions className="flex min-w-0 items-center justify-end gap-1">
         <ContextUsageIndicator selectedModel={modelOptions.find(item => item.id === modelChoice)?.label}
-          usage={liveContextState(streamProgress?.contextUsage) ?? (liveContext?.conversationId === state?.conversationId ? liveContext?.usage : streamProgress?.conversationContextUsage ?? messages.slice().reverse().map(item => { const trace = savedRunTrace(item.runTrace); return trace?.conversationContextUsage ?? trace?.contextUsage; }).find(Boolean))} />
+          usage={liveContextState(liveContext?.usage) ?? liveContextState(streamProgress?.contextUsage) ?? (liveAnchor && liveAnchor.conversationId === state?.conversationId ? liveAnchor.usage : streamProgress?.conversationContextUsage ?? messages.slice().reverse().map(item => { const trace = savedRunTrace(item.runTrace); return trace?.conversationContextUsage ?? trace?.contextUsage; }).find(Boolean))} />
         {reasoningPicker()}
         <ChatVoiceButton disabled={!state?.llmConfigured} onTranscript={(text) => { setDraft((current) => current.trim() ? `${current.trim()} ${text}` : text); setError(""); }} onError={setError} />
         {isRunning && !draft.trim() && chatImages.length === 0 ? <Button type="button" aria-label={t("Stop", "停止")} disabled={cancelPending} onClick={() => void cancelExecution()} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800 disabled:opacity-50"><Square className="size-3 fill-current" /></Button> : <Button aria-label={t("Send", "发送")} disabled={(busy && !streamAccepted) || (!draft.trim() && chatImages.length === 0) || draft.length > MAX_MESSAGE_LENGTH || !state?.llmConfigured || modelCatalogState !== "READY"} className="size-9 rounded-full bg-stone-950 p-0 text-white hover:bg-stone-800"><ArrowUp className="size-4" /></Button>}
