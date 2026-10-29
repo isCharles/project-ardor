@@ -48,6 +48,7 @@ import com.projectardor.jobsearch.interview.service.InterviewProcessCommands;
 import com.projectardor.jobsearch.interview.service.InterviewProcessView;
 import com.projectardor.platform.identity.profile.service.ProfileView;
 import com.projectardor.platform.identity.profile.service.ProfileService;
+import com.projectardor.materials.latex.service.LatexWorkspaceService;
 import com.projectardor.materials.resume.service.ResumeView;
 import com.projectardor.materials.resume.service.ResumeAnalysisQueueService;
 import com.projectardor.materials.resume.service.ResumeService;
@@ -92,6 +93,7 @@ public class CareerAgentTools {
     private final com.projectardor.platform.jobs.aijobs.AiJobService aiJobs;
     private final com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit;
     private final MemoryEmbeddingService memoryRetrieval;
+    private final LatexWorkspaceService latexWorkspaceService;
 
     /** Compatibility constructor for existing call sites/tests; proposals then carry no audit row. */
     public CareerAgentTools(
@@ -112,7 +114,7 @@ public class CareerAgentTools {
         this(resumeService, resumeAnalysisQueueService, interviewService, profileService, memoryService,
                 calendarTaskService, taskSeriesService, interviewRecapService, interviewRecapQueueService,
                 tavilySearchService, knowledgeService, learningPlanService, applicationRhythmService,
-                null, null, opportunityService, aiJobs, null, flashcards, null);
+                null, null, opportunityService, aiJobs, null, flashcards, null, null);
     }
 
     /** Compatibility constructor for existing call sites/tests without automation or advice services. */
@@ -135,7 +137,7 @@ public class CareerAgentTools {
         this(resumeService, resumeAnalysisQueueService, interviewService, profileService, memoryService,
                 calendarTaskService, taskSeriesService, interviewRecapService, interviewRecapQueueService,
                 tavilySearchService, knowledgeService, learningPlanService, applicationRhythmService,
-                null, null, opportunityService, aiJobs, executionAudit, flashcards, null);
+                null, null, opportunityService, aiJobs, executionAudit, flashcards, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -158,7 +160,7 @@ public class CareerAgentTools {
             OpportunityService opportunityService,
             com.projectardor.platform.jobs.aijobs.AiJobService aiJobs,
             com.projectardor.assistant.execution.service.AgentExecutionAuditStore executionAudit,FlashcardService flashcards,
-            MemoryEmbeddingService memoryRetrieval) {
+            MemoryEmbeddingService memoryRetrieval, LatexWorkspaceService latexWorkspaceService) {
         this.resumeService = resumeService;
         this.interviewService = interviewService;
         this.profileService = profileService;
@@ -179,6 +181,7 @@ public class CareerAgentTools {
         this.aiJobs = aiJobs;
         this.executionAudit = executionAudit;
         this.memoryRetrieval = memoryRetrieval;
+        this.latexWorkspaceService = latexWorkspaceService;
         this.flashcards = java.util.Objects.requireNonNull(flashcards);
     }
 
@@ -217,6 +220,14 @@ public class CareerAgentTools {
                 yield "用户在界面中明确指定了学习计划：" + plan.concept() + "（学习计划 ID："
                         + plan.id() + "）。需要内容时调用 get_learning_plan。";
             }
+            case "LATEX" -> {
+                if (latexWorkspaceService == null) throw new IllegalArgumentException("不支持的资料类型");
+                LatexWorkspaceService.Snapshot project = latexWorkspaceService.read(userId, contextId, null);
+                yield "用户正在简历工作区《" + project.title() + "》里（工作区 ID：" + project.projectId()
+                        + "，当前第 " + project.revisionNo() + " 版）。需要修改时先调用 read_latex_project 读取当前修订，"
+                        + "再用 replace_latex_main_file 或 update_latex_project 基于该修订保存，不要用聊天正文代替文件修改。"
+                        + "只有用户明确要求定稿时才调用 freeze_latex_version。";
+            }
             default -> throw new IllegalArgumentException("不支持的资料类型");
         };
     }
@@ -229,6 +240,10 @@ public class CareerAgentTools {
             case "RECAP" -> interviewRecapService.detail(userId, contextId).title();
             case "KNOWLEDGE" -> knowledgeService.get(userId, contextId).title();
             case "LEARNING" -> learningPlanService.detail(userId, contextId).concept();
+            case "LATEX" -> {
+                if (latexWorkspaceService == null) throw new IllegalArgumentException("不支持的资料类型");
+                yield latexWorkspaceService.read(userId, contextId, null).title();
+            }
             default -> throw new IllegalArgumentException("不支持的资料类型");
         };
         return new AgentContextReference(type, contextId, label);

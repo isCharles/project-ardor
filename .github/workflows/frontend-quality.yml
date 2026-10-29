@@ -112,7 +112,7 @@ jobs:
         run: node tests/resume-multi-jd-ui.mjs
       - name: Primary resume and displayed report UI regression (mock APIs)
         run: node tests/resume-primary-ui.mjs
-      - name: LaTeX workspace revisions and preview UI regression (mock APIs)
+      - name: Resume workspace chat and frozen-resume UI regression (mock APIs)
         run: node tests/latex-workspace-ui.mjs
       - name: Compact chat layout UI regression (mock APIs)
         run: node tests/compact-chat-ui.mjs

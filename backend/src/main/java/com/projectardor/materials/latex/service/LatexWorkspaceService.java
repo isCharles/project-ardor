@@ -43,26 +43,68 @@ public class LatexWorkspaceService {
             Set.of(".tex", ".cls", ".sty", ".bib", ".txt", ".md", ".cfg");
 
     private static final String TEMPLATE = """
+            % 示例模板：以下内容均为虚构占位，替换成真实信息后再投递。
             \\documentclass[11pt]{article}
-            \\usepackage[a4paper,margin=25mm]{geometry}
+            \\usepackage[a4paper,left=0.7in,right=0.7in,top=0.5in,bottom=0.5in,nohead]{geometry}
             \\usepackage{fontspec}
             \\usepackage{xeCJK}
+            \\usepackage{titlesec}
+            \\usepackage{enumitem}
             \\usepackage[hidelinks]{hyperref}
+            \\setmainfont{texgyretermes-regular.otf}[BoldFont=texgyretermes-bold.otf,ItalicFont=texgyretermes-italic.otf,BoldItalicFont=texgyretermes-bolditalic.otf]
+            \\setCJKmainfont[AutoFakeBold=2]{Noto Serif CJK SC}
+            \\setCJKsansfont[AutoFakeBold=2]{Noto Sans CJK SC}
+            \\setCJKmonofont{Noto Sans Mono CJK SC}
             \\setlength{\\parindent}{0pt}
+            \\titleformat{\\section}{\\large\\bfseries}{}{0em}{}[\\vspace{-0.5em}\\rule{\\linewidth}{0.6pt}]
+            \\titlespacing*{\\section}{0pt}{2.2ex}{1ex}
+            \\setlist[itemize]{topsep=0.35ex, itemsep=0.2ex, leftmargin=1.6em}
+            \\newcommand{\\name}[1]{\\begin{center}{\\Huge #1}\\end{center}\\vspace{0.6ex}}
+            \\newcommand{\\contact}[1]{\\begin{center}\\small #1\\end{center}\\vspace{0.6ex}}
+            \\newcommand{\\entry}[2]{\\par\\noindent #1 \\hfill #2\\par\\vspace{0.4ex}}
             \\begin{document}
-            {\\LARGE 姓名}\\hfill 邮箱 · 电话 · 城市
+            \\pagenumbering{gobble}
+            \\name{示例姓名}
+            \\contact{138-0000-0000（微信）\\quad·\\quad example@ardor.invalid\\quad·\\quad 北京\\quad·\\quad github.com/example}
+            \\begin{center}\\small 求职方向：后端开发（可立即到岗）\\end{center}
+            \\vspace{1ex}
 
-            \\hrule
-            \\vspace{1em}
+            \\section{教育背景}
+            \\entry{\\textbf{示例大学}，计算机科学与技术，\\textit{2028 届硕士}}{2025.09 -- 2028.06}
+            \\begin{itemize}
+            \\item 示例：推免入学，研究方向为分布式系统与数据库
+            \\end{itemize}
+            \\entry{\\textbf{示例大学}，软件工程，\\textit{工学学士}}{2021.09 -- 2025.06}
+            \\begin{itemize}
+            \\item 示例：专业排名前 10\\%，通过 CET-6
+            \\end{itemize}
 
-            \\section*{教育背景}
-            学校 · 专业 · 时间
+            \\section{技术能力}
+            \\begin{itemize}
+            \\item \\textbf{编程语言：}Java、Python、SQL
+            \\item \\textbf{后端开发：}Spring Boot、PostgreSQL、Redis、消息队列
+            \\item \\textbf{Agent 开发：}LangChain4j、工具调用、RAG 与评测
+            \\item \\textbf{工程实践：}Docker、Linux、Git、CI
+            \\end{itemize}
 
-            \\section*{项目经历}
-            \\textbf{项目名} \\hfill 时间\\\\
-            一两句话说明项目目标、你的动作与结果。
+            \\section{项目经历}
+            \\entry{\\textbf{示例项目｜独立开发}}{2026.01 -- 2026.06}
+            技术栈：Java 21、Spring Boot、PostgreSQL
+            \\begin{itemize}
+            \\item 示例：负责从需求拆解到上线的完整流程，接口 P99 从 [X] ms 降到 [Y] ms
+            \\item 示例：为用户隔离与幂等设计数据库约束，异常重试不会产生重复数据
+            \\end{itemize}
 
-            \\section*{技能}
+            \\section{实习经历}
+            \\entry{\\textbf{示例科技｜后端开发实习生}}{2025.06 -- 2025.09}
+            \\begin{itemize}
+            \\item 示例：维护 [业务模块]，补充监控与告警，定位并修复 [问题]
+            \\end{itemize}
+
+            \\section{其他}
+            \\begin{itemize}
+            \\item 示例：在 [竞赛/论文/开源] 中获得 [结果]
+            \\end{itemize}
             \\end{document}
             """;
 
