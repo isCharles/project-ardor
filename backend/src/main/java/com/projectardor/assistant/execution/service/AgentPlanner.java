@@ -333,9 +333,9 @@ public class AgentPlanner {
         JsonNode success = node.get("success");
         if (success != null && success.isBoolean() && !success.asBoolean()) return false;
         JsonNode status = node.get("status");
-        boolean job = node.has("jobId") || node.has("attempts");
+        boolean job = node.has("jobId");
         if (job) {
-            // Job results carry jobId/attempts and use job lifecycle states. Only a completed job
+            // Job results carry jobId and use job lifecycle states. Only a completed job
             // status is a successful prerequisite; IDs alone must not rescue FAILED/QUEUED/RUNNING.
             return status != null && status.isTextual()
                     && SUCCESS_STATUSES.contains(status.asText().toUpperCase(Locale.ROOT));
