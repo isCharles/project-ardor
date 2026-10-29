@@ -278,7 +278,7 @@ class ModularAgentToolsTests {
         var records = (com.projectardor.jobsearch.record.service.InterviewRecapQueueService)
                 org.springframework.test.util.ReflectionTestUtils.getField(host, "interviewRecapQueueService");
         UUID resumeId = UUID.randomUUID(), jobId = UUID.randomUUID();
-        when(queue.status(owner, resumeId)).thenReturn(new com.projectardor.materials.resume.service.ResumeAnalysisQueueService.TaskResult(
+        when(queue.status(owner, resumeId, null)).thenReturn(new com.projectardor.materials.resume.service.ResumeAnalysisQueueService.TaskResult(
                 jobId, resumeId, com.projectardor.materials.resume.domain.ResumeAnalysisJobStatus.QUEUED, null, 0, null, null));
         when(records.list(owner)).thenReturn(List.of(new com.projectardor.jobsearch.record.service.InterviewRecapQueueService.TaskResult(
                 jobId, null, com.projectardor.jobsearch.record.domain.InterviewRecapJobStatus.RUNNING, 1, null, null, Instant.now(), null, true)));
@@ -292,8 +292,8 @@ class ModularAgentToolsTests {
         assertThat(recap.properties()).hasSize(10);
         assertThat(recap.path("draftUrl").asText()).isEqualTo("/app/recaps?minutes=" + jobId);
         assertThat(recap.has("finalMinutes")).isFalse();
-        verify(queue).status(owner, resumeId);
-        verify(queue, never()).request(any(), any());
+        verify(queue).status(owner, resumeId, null);
+        verify(queue, never()).request(any(), any(), any(), any(), any());
         verify(records).list(owner);
         verify(approvals, never()).await(any(), any(), any(), any());
     }
@@ -308,7 +308,7 @@ class ModularAgentToolsTests {
                 com.projectardor.materials.resume.domain.ResumeAnalysisJobStatus.COMPLETED, analysis, 0, null, null);
         when(service.listViews(owner)).thenReturn(List.of(view));
         when(queue.statusIfPresent(owner, resume)).thenReturn(java.util.Optional.of(task));
-        when(service.analysisForResume(owner, resume)).thenReturn(new ResumeAnalysisSnapshot(analysis, resume,
+        when(service.report(owner, resume, null)).thenReturn(new ResumeAnalysisSnapshot(analysis, resume,
                 Map.of("overallScore", 82), "fixture", "fixture", null));
         var provider = new ResumeAgentToolProvider(service, queue);
         var host = tools(); host.configureToolProviders(List.of(provider));
@@ -320,9 +320,9 @@ class ModularAgentToolsTests {
         var report = json.readTree(execute(executors, "get_resume_analysis", "{\"resumeId\":\"" + resume + "\"}"));
         assertThat(report.propertyNames()).containsExactly("analysisId", "resumeId", "analysis", "modelName");
         assertThat(report.path("analysisId").asText()).isEqualTo(analysis.toString());
-        verify(service).listViews(owner); verify(service).analysisForResume(owner, resume);
+        verify(service).listViews(owner); verify(service).report(owner, resume, null);
         verify(approvals, never()).await(any(), any(), any(), any());
-        verify(queue, never()).request(any(), any());
+        verify(queue, never()).request(any(), any(), any(), any(), any());
         assertThat(new com.projectardor.assistant.tools.AgentToolSchemaCatalog(List.of(provider)).schemas().keySet())
                 .contains("list_resumes", "analyze_resume", "get_resume_analysis_status", "get_resume_analysis", "delete_resume");
         assertThat(ToolSpecifications.toolSpecificationsFrom(provider.toolTypes().getFirst()).stream().map(ToolSpecification::name))
@@ -337,12 +337,15 @@ class ModularAgentToolsTests {
                 com.projectardor.materials.resume.domain.ResumeParseStatus.PARSED, Instant.now(), null, null);
         when(service.detail(owner, resume)).thenReturn(view);
         when(service.detail(owner, missing)).thenThrow(new ResourceNotFoundException("简历不存在"));
-        when(queue.request(owner, resume)).thenReturn(new ResumeAnalysisQueueService.TaskResult(UUID.randomUUID(), resume,
-                com.projectardor.materials.resume.domain.ResumeAnalysisJobStatus.QUEUED, null, 0, null, null));
+        var firstTask = new ResumeAnalysisQueueService.TaskResult(UUID.randomUUID(), resume,
+                com.projectardor.materials.resume.domain.ResumeAnalysisJobStatus.QUEUED, null, 0, null, null);
+        var secondTask = new ResumeAnalysisQueueService.TaskResult(UUID.randomUUID(), resume,
+                com.projectardor.materials.resume.domain.ResumeAnalysisJobStatus.QUEUED, null, 0, null, null);
+        when(queue.request(eq(owner), eq(resume), any(), any(), any())).thenReturn(firstTask, secondTask);
         var host = tools(); host.configureToolProviders(List.of(new ResumeAgentToolProvider(service, queue)));
         String args = "{\"resumeId\":\"" + resume + "\"}";
         assertThat(execute(wrapped(host.bind(owner, "只查看简历", run), null, null), "analyze_resume", args)).contains("PERMISSION_NOT_GRANTED");
-        verify(queue, never()).request(any(), any());
+        verify(queue, never()).request(any(), any(), any(), any(), any());
         verify(approvals).await(eq(owner), eq(run), eq("analyze_resume"), any());
         clearInvocations(approvals);
         when(permissions.autoApproves(owner, "analyze_resume")).thenReturn(true);
@@ -350,7 +353,11 @@ class ModularAgentToolsTests {
         var executors = wrapped(bound, null, null);
         assertThat(execute(executors, "analyze_resume", args)).contains("QUEUED");
         assertThat(execute(executors, "analyze_resume", args)).contains("DUPLICATE_WRITE_BLOCKED");
-        verify(queue).request(owner, resume);
+        verify(queue).request(eq(owner), eq(resume), any(), any(), any());
+        // A second job description is a different write, so the retry guard must not swallow it.
+        var jdArgs = "{\"resumeId\":\"" + resume + "\",\"targetRole\":\"数据分析\",\"jobDescription\":\"要求 SQL 与指标建模\",\"roleFamily\":\"engineering\"}";
+        assertThat(execute(executors, "analyze_resume", jdArgs)).contains("QUEUED");
+        verify(queue).request(owner, resume, "数据分析", "要求 SQL 与指标建模", "engineering");
         assertThat(execute(executors, "delete_resume", args)).contains("CONFIRMATION_REQUIRED");
         assertThat(bound.pendingConfirmations()).singleElement().satisfies(card -> {
             assertThat(card.targetId()).isEqualTo(resume);
@@ -366,7 +373,7 @@ class ModularAgentToolsTests {
                 .hasMessageContaining("简历 ID 格式不正确");
         var lease = new AgentStreamLease(); lease.fence();
         assertThat(execute(wrapped(bound, lease, null), "get_resume_analysis", args)).contains("RUN_STOPPED");
-        verify(service, never()).analysisForResume(any(), any());
+        verify(service, never()).report(any(), any(), any());
         verify(service, never()).delete(any(), any());
         verify(approvals, never()).await(any(), any(), any(), any());
     }
