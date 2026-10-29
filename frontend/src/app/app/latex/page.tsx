@@ -443,7 +443,18 @@ export default function LatexWorkspacePage() {
     if (!Array.isArray(items)) throw new Error(t("Could not reload the model catalog", "无法重新加载模型目录"));
     setModelOptions(items);
     setModelCatalogState("READY");
-  }, [t]);
+    // The saved settings replace the catalog; keep the active selection and effort on a model
+    // that is still usable instead of sending a hidden model with a stale depth next turn.
+    const current = items.find((item) => item.id === modelChoice);
+    const next = current && current.available && current.visible !== false
+      ? current
+      : items.find((item) => item.available && item.visible !== false);
+    if (next) {
+      setModelChoice(next.id);
+      setNativeReasoning(next.nativeControl);
+      setReasoningDepth(next.thinkingEffort ?? "AUTO");
+    }
+  }, [modelChoice, t]);
   const modelPicker = <ReasoningControl value={reasoningDepth} disabled={modelCatalogState !== "READY"}
     nativeControl={nativeReasoning} models={modelOptions} model={modelChoice}
     onManageModels={() => setModelSettingsOpen(true)}
