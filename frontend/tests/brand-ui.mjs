@@ -92,8 +92,8 @@ try {
   const asset = (path) => readFile(new URL(path, import.meta.url));
   assert.deepEqual(await asset("../src/app/icon.svg"), await asset("../../brand/ardor-mark-favicon.svg"),
     "the served icon.svg is the generated favicon cut, not a hand export");
-  assert.deepEqual(await asset("../../desktop/assets/icon.svg"), await asset("../../brand/ardor-app-light.svg"),
-    "the desktop window and installer icon.svg is the official light app icon");
+  assert.deepEqual(await asset("../../desktop/assets/icon.svg"), await asset("../../brand/ardor-mark-favicon.svg"),
+    "the desktop window, taskbar and installer icon.svg is the transparent official mark");
 
   await page.goto(`${origin}/app/resumes`);
   await page.getByText("brand-resume.pdf").first().waitFor();
