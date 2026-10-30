@@ -1,0 +1,138 @@
+<svg class="still" xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="ardor-title ardor-description">
+<title id="ardor-title">Ardor · 你的求职，一路向前。</title>
+<desc id="ardor-description">六张功能卡片从堆叠中展开再收回，白色背景上铺开蓝、粉、淡紫与雾蓝的环境色。功能包括简历分析、模拟面试、面试复盘、学习与复习、知识库与 AI 求职助手。开启减少动态效果时直接展示全部卡片。</desc>
+<defs>
+ <linearGradient id="ardor-accent" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0062f0"/><stop offset=".48" stop-color="#3f8cff"/><stop offset=".78" stop-color="#8f7bff"/><stop offset="1" stop-color="#e86bb8"/></linearGradient>
+ <radialGradient id="blue"><stop stop-color="#4aa3ff" stop-opacity=".66"/><stop offset=".5" stop-color="#9fc0ff" stop-opacity=".32"/><stop offset="1" stop-color="#cfe3ff" stop-opacity="0"/></radialGradient>
+ <radialGradient id="pink"><stop stop-color="#f07ac0" stop-opacity=".55"/><stop offset=".52" stop-color="#f7a8d6" stop-opacity=".28"/><stop offset="1" stop-color="#ffc9ec" stop-opacity="0"/></radialGradient>
+ <radialGradient id="violet"><stop stop-color="#8f7bff" stop-opacity=".5"/><stop offset=".48" stop-color="#b9a8ff" stop-opacity=".24"/><stop offset="1" stop-color="#e8d4ff" stop-opacity="0"/></radialGradient>
+ <radialGradient id="mist"><stop stop-color="#7fb2ff" stop-opacity=".4"/><stop offset="1" stop-color="#dbe9ff" stop-opacity="0"/></radialGradient>
+ <linearGradient id="mark-top" x1=".16" y1=".8" x2=".94" y2=".24"><stop stop-color="#4aa3ff"/><stop offset=".55" stop-color="#0b78ff"/><stop offset="1" stop-color="#0062f0"/></linearGradient>
+ <linearGradient id="mark-pink" x1="0" y1=".9" x2=".9" y2=".05"><stop stop-color="#4aa3ff"/><stop offset=".55" stop-color="#9fc0ff"/><stop offset=".77" stop-color="#f3c7ff"/><stop offset="1" stop-color="#ffc9ec"/></linearGradient>
+ <linearGradient id="mark-lilac" x1="0" y1=".15" x2=".95" y2=".9"><stop stop-color="#7fb2ff"/><stop offset=".5" stop-color="#c9d8ff"/><stop offset=".78" stop-color="#dfd0ff"/><stop offset="1" stop-color="#e8d4ff"/></linearGradient>
+ <linearGradient id="mark-left" x1=".1" y1=".2" x2=".76" y2=".88"><stop stop-color="#005df0"/><stop offset=".24" stop-color="#1f86ff"/><stop offset=".62" stop-color="#4ea8ff"/><stop offset="1" stop-color="#73b8ff"/></linearGradient>
+ <linearGradient id="card" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff" stop-opacity=".98"/><stop offset="1" stop-color="#f6f9ff" stop-opacity=".97"/></linearGradient>
+ <linearGradient id="card-edge" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#dbe6f7" stop-opacity=".85"/></linearGradient>
+ <filter id="card-shadow" x="-35%" y="-45%" width="180%" height="220%"><feDropShadow dx="0" dy="12" stdDeviation="13" flood-color="#1b3659" flood-opacity=".12"/><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#2a4a73" flood-opacity=".04"/></filter>
+ <clipPath id="canvas-clip"><rect width="1440" height="900" rx="32"/></clipPath>
+</defs>
+<style>
+text{font-family:'Segoe UI','Microsoft YaHei','PingFang SC',Arial,sans-serif}
+.module{animation-duration:12s;animation-iteration-count:infinite;animation-timing-function:cubic-bezier(.22,1,.32,1)}
+.title{font-size:23px;font-weight:650;fill:#1c2430;letter-spacing:-.5px}
+.detail{font-size:13px;fill:#556274}
+.halo{animation:ambient 12s ease-in-out infinite;transform-origin:1020px 470px}
+@keyframes ambient{0%,100%{opacity:.72;transform:scale(.92)}40%,72%{opacity:1;transform:scale(1.04)}}
+.module-resume{transform:translate(-18px,-18px) rotate(-9deg);animation-name:unfold-resume}
+ @keyframes unfold-resume{0%,15%{transform:translate(-18px,-18px) rotate(-9deg)}35%,70%{transform:translate(-158px,-192px) rotate(-2deg)}89%,100%{transform:translate(-18px,-18px) rotate(-9deg)}}
+ .still .module-resume{animation:none;transform:translate(-158px,-192px) rotate(-2deg)}
+ @media(prefers-reduced-motion:reduce){.module-resume{animation:none;transform:translate(-158px,-192px) rotate(-2deg)}}
+.module-interview{transform:translate(20px,-10px) rotate(8deg);animation-name:unfold-interview}
+ @keyframes unfold-interview{0%,15.65%{transform:translate(20px,-10px) rotate(8deg)}35.65%,70.4%{transform:translate(158px,-192px) rotate(2deg)}89.55%,100%{transform:translate(20px,-10px) rotate(8deg)}}
+ .still .module-interview{animation:none;transform:translate(158px,-192px) rotate(2deg)}
+ @media(prefers-reduced-motion:reduce){.module-interview{animation:none;transform:translate(158px,-192px) rotate(2deg)}}
+.module-recap{transform:translate(-9px,8px) rotate(-5deg);animation-name:unfold-recap}
+ @keyframes unfold-recap{0%,16.3%{transform:translate(-9px,8px) rotate(-5deg)}36.3%,70.8%{transform:translate(-158px,0px) rotate(-1deg)}90.1%,100%{transform:translate(-9px,8px) rotate(-5deg)}}
+ .still .module-recap{animation:none;transform:translate(-158px,0px) rotate(-1deg)}
+ @media(prefers-reduced-motion:reduce){.module-recap{animation:none;transform:translate(-158px,0px) rotate(-1deg)}}
+.module-learning{transform:translate(12px,19px) rotate(6deg);animation-name:unfold-learning}
+ @keyframes unfold-learning{0%,16.95%{transform:translate(12px,19px) rotate(6deg)}36.95%,71.2%{transform:translate(158px,0px) rotate(1deg)}90.65%,100%{transform:translate(12px,19px) rotate(6deg)}}
+ .still .module-learning{animation:none;transform:translate(158px,0px) rotate(1deg)}
+ @media(prefers-reduced-motion:reduce){.module-learning{animation:none;transform:translate(158px,0px) rotate(1deg)}}
+.module-knowledge{transform:translate(-17px,23px) rotate(-6deg);animation-name:unfold-knowledge}
+ @keyframes unfold-knowledge{0%,17.6%{transform:translate(-17px,23px) rotate(-6deg)}37.6%,71.6%{transform:translate(-158px,192px) rotate(-2deg)}91.2%,100%{transform:translate(-17px,23px) rotate(-6deg)}}
+ .still .module-knowledge{animation:none;transform:translate(-158px,192px) rotate(-2deg)}
+ @media(prefers-reduced-motion:reduce){.module-knowledge{animation:none;transform:translate(-158px,192px) rotate(-2deg)}}
+.module-agent{transform:translate(0px,0px) rotate(-3deg);animation-name:unfold-agent}
+ @keyframes unfold-agent{0%,18.25%{transform:translate(0px,0px) rotate(-3deg)}38.25%,72%{transform:translate(158px,192px) rotate(2deg)}91.75%,100%{transform:translate(0px,0px) rotate(-3deg)}}
+ .still .module-agent{animation:none;transform:translate(158px,192px) rotate(2deg)}
+ @media(prefers-reduced-motion:reduce){.module-agent{animation:none;transform:translate(158px,192px) rotate(2deg)}}
+@media(prefers-reduced-motion:reduce){.halo{animation:none}}
+.still .halo{animation:none}
+</style>
+<g clip-path="url(#canvas-clip)">
+ <rect width="1440" height="900" fill="#ffffff"/>
+ <g class="halo">
+  <ellipse cx="930" cy="350" rx="390" ry="370" fill="url(#blue)"/>
+  <ellipse cx="1150" cy="575" rx="360" ry="360" fill="url(#pink)"/>
+  <ellipse cx="875" cy="710" rx="350" ry="260" fill="url(#violet)"/>
+  <ellipse cx="1370" cy="180" rx="300" ry="260" fill="url(#mist)"/>
+  <ellipse cx="85" cy="905" rx="650" ry="290" fill="url(#blue)" opacity=".4"/>
+ </g>
+ <g transform="translate(80 70)">
+  <rect width="44" height="44" rx="14" fill="#f6f9ff" stroke="#dce8ff" stroke-width="1"/>
+  <svg x="6" y="6" width="32" height="32" viewBox="109.5 97 340 340">
+   <path d="M286 286 C225 274 174 247 173 192 C172 154 196 124 237 124 C280 122 308 157 305 204 C303 233 291 274 286 286Z" fill="url(#mark-top)"/>
+   <path d="M286 286 C306 228 346 188 384 193 C418 195 436 214 423 244 C406 284 353 314 286 286Z" fill="url(#mark-pink)"/>
+   <path d="M286 286 C339 297 381 321 394 354 C412 391 385 412 359 404 C311 395 289 352 286 286Z" fill="url(#mark-lilac)"/>
+   <path d="M286 286 C264 337 230 391 187 402 C150 412 123 389 133 352 C151 298 222 273 286 286Z" fill="url(#mark-left)"/>
+  </svg>
+  <text x="59" y="31" fill="#1c2430" font-size="24" font-weight="750" letter-spacing=".3">Ardor</text>
+ </g>
+ <g transform="translate(80 350)">
+  <text y="0" fill="#1c2430" font-size="78" font-weight="700" letter-spacing="-3">你的求职，</text>
+  <text y="92" fill="url(#ardor-accent)" font-size="78" font-weight="700" letter-spacing="-3">一路向前。</text>
+  <text y="168" fill="#556274" font-size="22">让热望，有回响。</text>
+ </g>
+ <g transform="translate(1020 470)"><g class="module module-resume" data-feature="resume">
+ <g transform="translate(-142 -88)">
+  <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#0b78ff" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#0b78ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h10l5 5v20H9zM19 5v6h5M13 17h7M13 22h7M13 27h4"/></g>
+  <text class="title" x="70" y="73">简历分析</text>
+  <text class="detail" x="23" y="108">看清经历里的优势。</text>
+  <text class="detail" x="23" y="129">让下一次投递更有把握。</text>
+ </g>
+</g>
+<g class="module module-interview" data-feature="interview">
+ <g transform="translate(-142 -88)">
+  <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#d9549f" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#d9549f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="4" width="10" height="18" rx="5"/><path d="M9 17v2a9 9 0 0 0 18 0v-2M18 28v5M13 33h10"/></g>
+  <text class="title" x="70" y="73">模拟面试</text>
+  <text class="detail" x="23" y="108">练项目、技术与编程题。</text>
+  <text class="detail" x="23" y="129">文字或实时语音作答。</text>
+ </g>
+</g>
+<g class="module module-recap" data-feature="recap">
+ <g transform="translate(-142 -88)">
+  <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#7a5ce8" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#7a5ce8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M27 11A12 12 0 1 0 30 22M27 5v7h-7M18 12v8l5 3"/></g>
+  <text class="title" x="70" y="73">面试复盘</text>
+  <text class="detail" x="23" y="108">逐题回看真实面试。</text>
+  <text class="detail" x="23" y="129">找到回答里的薄弱点。</text>
+ </g>
+</g>
+<g class="module module-learning" data-feature="learning">
+ <g transform="translate(-142 -88)">
+  <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#4b66e0" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#4b66e0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8c5-2 9-1 13 2 4-3 8-4 13-2v21c-5-2-9-1-13 2-4-3-8-4-13-2zM18 10v21M9 14h5M9 19h5M22 14h5M22 19h5"/></g>
+  <text class="title" x="70" y="73">学习与复习</text>
+  <text class="detail" x="23" y="108">课程、练习与记忆卡。</text>
+  <text class="detail" x="23" y="129">把学习计划排进日历。</text>
+ </g>
+</g>
+<g class="module module-knowledge" data-feature="knowledge">
+ <g transform="translate(-142 -88)">
+  <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#2f8fae" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#2f8fae" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h7v24H7zM17 7h6v24h-6zM26 9l6-1 4 22-6 1zM9 13h3M19 13h2"/></g>
+  <text class="title" x="70" y="73">知识库</text>
+  <text class="detail" x="23" y="108">让上传的资料成为上下文。</text>
+  <text class="detail" x="23" y="129">随时带回下一次对话。</text>
+ </g>
+</g>
+<g class="module module-agent" data-feature="agent">
+ <g transform="translate(-142 -88)">
+  <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#0062f0" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#0062f0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h23v17H17l-7 6v-6H7zM13 13h11M13 18h7"/><path d="m27 2 1.5 3.5L32 7l-3.5 1.5L27 12l-1.5-3.5L22 7l3.5-1.5z"/></g>
+  <text class="title" x="70" y="73">AI 求职助手</text>
+  <text class="detail" x="23" y="108">记得你的目标与进展。</text>
+  <text class="detail" x="23" y="129">把下一轮准备接上。</text>
+ </g>
+</g></g>
+</g>
+</svg>
