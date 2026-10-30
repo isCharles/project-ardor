@@ -61,7 +61,7 @@ function journeySteps(plan: LearningPlan, t: (en: string, zh: string) => string)
   return [
     { label: t("Scheduled", "已安排"), done: true },
     { label: t("Started", "已开始"), done: plan.status !== "SCHEDULED" },
-    { label: plan.attemptCount > 0 ? t(`${plan.attemptCount} attempts`, `练习 ${plan.attemptCount} 次`) : t("Practice", "练习"), done: plan.attemptCount > 0 },
+    { label: plan.attemptCount > 0 ? t(`${plan.attemptCount} ${plan.attemptCount === 1 ? "attempt" : "attempts"}`, `练习 ${plan.attemptCount} 次`) : t("Practice", "练习"), done: plan.attemptCount > 0 },
     { label: t("Mastered", "已掌握"), done: plan.status === "COMPLETED" },
   ];
 }

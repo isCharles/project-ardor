@@ -493,7 +493,7 @@ export default function LatexWorkspacePage() {
   const suggestions = [
     t("Make the project bullets more concrete and measurable.", "把项目经历写得更具体，补上量化结果"),
     t("Tighten the whole resume onto one page.", "压缩篇幅，保持在一页以内"),
-    t("Rewrite the summary for a backend internship.", "按后端实习岗位调整这份简历"),
+    t("Rewrite the summary for the target role.", "按目标岗位调整这份简历"),
   ];
   const saveModelSettings = useCallback(async (updates: ModelSettingsUpdate[]) => {
     const items = await api<ModelOption[]>("/api/agent/models/settings", {
