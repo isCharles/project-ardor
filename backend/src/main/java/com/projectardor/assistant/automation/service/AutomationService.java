@@ -34,29 +34,32 @@ public class AutomationService {
     }
 
     @Transactional
-    public AutomationView createView(UUID userId, String title, String prompt, String cronExpression, String timezone) {
-        var automation = create(userId, title, prompt, cronExpression, timezone);
+    public AutomationView createView(UUID userId, String title, String prompt, String cronExpression, String timezone,
+            Boolean deleteAfterRun) {
+        var automation = create(userId, title, prompt, cronExpression, timezone, deleteAfterRun);
         repository.flush();
         return AutomationView.from(automation);
     }
 
     @Transactional
     public AutomationView updateView(UUID userId, UUID id, String title, String prompt,
-            String cronExpression, String timezone, Boolean enabled) {
-        var automation = update(userId, id, title, prompt, cronExpression, timezone, enabled);
+            String cronExpression, String timezone, Boolean enabled, Boolean deleteAfterRun) {
+        var automation = update(userId, id, title, prompt, cronExpression, timezone, enabled, deleteAfterRun);
         // Match the old post-transaction HTTP mapping, including @PreUpdate timestamps.
         repository.flush();
         return AutomationView.from(automation);
     }
 
     @Transactional
-    public Automation create(UUID userId, String title, String prompt, String cronExpression, String timezone) {
+    public Automation create(UUID userId, String title, String prompt, String cronExpression, String timezone,
+            Boolean deleteAfterRun) {
         String cleanTitle = required(title, "自动化名称不能为空", 160);
         String cleanPrompt = required(prompt, "自动化要发送的消息不能为空", 20000);
         String cleanCron = required(cronExpression, "执行时间不能为空", 120);
         String zone = validTimezone(timezone);
         Instant next = nextRun(cleanCron, zone, Instant.now());
-        return repository.save(Automation.create(userId, cleanTitle, cleanPrompt, cleanCron, zone, next));
+        return repository.save(Automation.create(userId, cleanTitle, cleanPrompt, cleanCron, zone,
+                Boolean.TRUE.equals(deleteAfterRun), next));
     }
 
     @Transactional(readOnly = true)
@@ -72,7 +75,7 @@ public class AutomationService {
 
     @Transactional
     public Automation update(UUID userId, UUID id, String title, String prompt, String cronExpression,
-            String timezone, Boolean enabled) {
+            String timezone, Boolean enabled, Boolean deleteAfterRun) {
         Automation automation = get(userId, id);
         String nextTitle = title == null ? null : required(title, "自动化名称不能为空", 160);
         String nextPrompt = prompt == null ? null : required(prompt, "自动化要发送的消息不能为空", 20000);
@@ -86,7 +89,7 @@ public class AutomationService {
             String zone = nextZone == null ? automation.getTimezone() : nextZone;
             next = scheduleChanged ? nextRun(cron, zone, Instant.now()) : automation.getNextRunAt();
         }
-        automation.update(nextTitle, nextPrompt, nextCron, nextZone, enabled, next);
+        automation.update(nextTitle, nextPrompt, nextCron, nextZone, enabled, deleteAfterRun, next);
         return automation;
     }
 
@@ -103,13 +106,24 @@ public class AutomationService {
     /** Atomically takes ownership of one scheduled occurrence before invoking the model. */
     @Transactional
     public boolean claim(Automation automation, Instant now) {
-        Instant next = nextRun(automation.getCronExpression(), automation.getTimezone(), now);
+        // A one-time run is disarmed up front: if the process dies before finish(), a re-armed
+        // occurrence would run the task a second time and delete-on-success would never have happened.
+        Instant next = automation.isDeleteAfterRun() ? null
+                : nextRun(automation.getCronExpression(), automation.getTimezone(), now);
         return repository.claim(automation.getId(), automation.getUserId(), now, next) == 1;
     }
 
     @Transactional
     public void finish(UUID userId, UUID id, boolean success, String error) {
         Automation automation = get(userId, id);
+        if (automation.isDeleteAfterRun()) {
+            if (success) {
+                repository.delete(automation);
+            } else {
+                automation.markFailedAndPause(error);
+            }
+            return;
+        }
         Instant next = automation.isEnabled()
                 ? nextRun(automation.getCronExpression(), automation.getTimezone(), Instant.now())
                 : null;

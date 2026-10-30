@@ -175,7 +175,7 @@ class ModularAgentToolsTests {
         var service = mock(com.projectardor.assistant.automation.service.AutomationService.class);
         UUID id = UUID.randomUUID();
         var view = new com.projectardor.assistant.automation.service.AutomationView(id, "Owned automation", "Synthetic prompt",
-                "0 0 9 * * *", "Asia/Shanghai", true, Instant.now(), null, null, null, Instant.now(), Instant.now());
+                "0 0 9 * * *", "Asia/Shanghai", true, false, Instant.now(), null, null, null, Instant.now(), Instant.now());
         when(service.getView(owner, id)).thenReturn(view);
         var host = tools();
         var provider = new com.projectardor.assistant.tools.modules.AutomationAgentToolProvider(service);
@@ -206,14 +206,14 @@ class ModularAgentToolsTests {
                 .contains("PERMISSION_NOT_GRANTED");
         verifyNoInteractions(service);
         when(permissions.autoApproves(owner, "create_automation")).thenReturn(true);
-        when(service.createView(owner, "Daily", "Synthetic prompt", "0 0 9 * * *", null))
+        when(service.createView(owner, "Daily", "Synthetic prompt", "0 0 9 * * *", null, null))
                 .thenReturn(new com.projectardor.assistant.automation.service.AutomationView(UUID.randomUUID(), "Created", "Synthetic prompt",
-                        "0 0 9 * * *", "Asia/Shanghai", true, Instant.now(), null, null, null, Instant.now(), Instant.now()));
+                        "0 0 9 * * *", "Asia/Shanghai", true, false, Instant.now(), null, null, null, Instant.now(), Instant.now()));
         clearInvocations(approvals);
         var executors = wrapped(host.bind(owner, "每天创建自动化任务", run), null, null);
         assertThat(execute(executors, "create_automation", args)).contains("Created");
         assertThat(execute(executors, "create_automation", args)).contains("DUPLICATE_WRITE_BLOCKED");
-        verify(service, times(1)).createView(owner, "Daily", "Synthetic prompt", "0 0 9 * * *", null);
+        verify(service, times(1)).createView(owner, "Daily", "Synthetic prompt", "0 0 9 * * *", null, null);
         verify(approvals, never()).await(any(), any(), any(), any());
     }
 

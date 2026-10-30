@@ -16,6 +16,7 @@ type Automation = {
   cronExpression: string;
   timezone: string;
   enabled: boolean;
+  deleteAfterRun: boolean;
   nextRunAt: string | null;
   lastRunAt: string | null;
   lastStatus: string | null;
@@ -35,6 +36,7 @@ type FormState = {
   dayOfMonth: string;
   customCron: string;
   timezone: string;
+  deleteAfterRun: boolean;
 };
 
 const EXAMPLE_ICONS = [CalendarClock, Mail, TrendingUp, BrainCircuit];
@@ -115,6 +117,7 @@ export default function AutomationsPage() {
       dayOfMonth: "1",
       customCron: "0 0 9 * * *",
       timezone: "Asia/Shanghai",
+      deleteAfterRun: false,
     });
     setError("");
   }
@@ -131,6 +134,7 @@ export default function AutomationsPage() {
       dayOfMonth: parsed?.dayOfMonth ?? "1",
       customCron: item.cronExpression,
       timezone: item.timezone || "Asia/Shanghai",
+      deleteAfterRun: item.deleteAfterRun,
     });
     setError("");
   }
@@ -145,12 +149,12 @@ export default function AutomationsPage() {
       if (form.id) {
         await api<Automation>(`/api/automations/${form.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ title: form.title, prompt: form.prompt, cronExpression: cron, timezone: form.timezone }),
+          body: JSON.stringify({ title: form.title, prompt: form.prompt, cronExpression: cron, timezone: form.timezone, deleteAfterRun: form.deleteAfterRun }),
         });
       } else {
         await api<Automation>("/api/automations", {
           method: "POST",
-          body: JSON.stringify({ title: form.title, prompt: form.prompt, cronExpression: cron, timezone: form.timezone }),
+          body: JSON.stringify({ title: form.title, prompt: form.prompt, cronExpression: cron, timezone: form.timezone, deleteAfterRun: form.deleteAfterRun }),
         });
       }
       setForm(null);
@@ -168,6 +172,7 @@ export default function AutomationsPage() {
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("Could not run scheduled task", "无法运行自动化任务"));
+      await load();
     } finally { setRunning(false); }
   }
 
@@ -271,6 +276,10 @@ export default function AutomationsPage() {
         {form.frequency === "monthly" && <label className="block text-sm">{t("Day of month", "每月几号")}<input type="number" min="1" max="28" value={form.dayOfMonth} onChange={event => setForm({ ...form, dayOfMonth: event.target.value })} className="field mt-2" /></label>}
         {form.frequency === "custom" && <label className="block text-sm">{t("Cron expression", "Cron 表达式")}<input required value={form.customCron} onChange={event => setForm({ ...form, customCron: event.target.value })} className="field mt-2 font-mono" placeholder="0 0 9 * * *" /></label>}
         <label className="block text-sm">{t("Timezone", "时区")}<input required value={form.timezone} onChange={event => setForm({ ...form, timezone: event.target.value })} className="field mt-2" placeholder="Asia/Shanghai" /></label>
+        <label className="flex items-start gap-3 rounded-2xl border border-stone-200/70 bg-white/60 px-4 py-3 text-sm">
+          <input type="checkbox" checked={form.deleteAfterRun} onChange={event => setForm({ ...form, deleteAfterRun: event.target.checked })} className="mt-0.5 size-4 accent-violet-600" />
+          <span><span className="font-medium">{t("Run only once", "只运行一次")}</span><span className="mt-0.5 block text-xs leading-5 text-stone-500">{t("Delete after a successful run. On failure, pause and keep it for inspection.", "成功后自动删除；失败会暂停并保留任务，方便检查。")}</span></span>
+        </label>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={() => setForm(null)} className="rounded-full px-4 py-2 text-sm text-stone-500 hover:bg-stone-100">{t("Cancel", "取消")}</button>
           <button disabled={busy} className="rounded-full bg-[#1d1d1f] px-5 py-2 text-sm font-medium text-white disabled:opacity-40">{busy ? t("Saving…", "保存中…") : t("Save", "保存")}</button>
@@ -288,7 +297,7 @@ function AutomationDetail({ item, busy, running, locale, t, onRun, onToggle, onE
   const schedule = parsed ? `${frequencyLabel(parsed.frequency, locale)} · ${parsed.time}` : item.cronExpression;
   return <div className="rounded-[2rem] border border-white/80 bg-white/70 p-6 shadow-[0_18px_60px_rgba(49,39,70,0.06)] md:p-8">
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <div><p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("SCHEDULED TASK", "自动化任务")}</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">{item.title}</h2><p className="mt-2 text-sm text-stone-500">{schedule} · {item.timezone}</p></div>
+      <div><p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-600">{t("SCHEDULED TASK", "自动化任务")}</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">{item.title}</h2><p className="mt-2 text-sm text-stone-500">{schedule} · {item.timezone}{item.deleteAfterRun ? ` · ${t("One-time", "只运行一次")}` : ""}</p></div>
       <div className="flex items-center gap-2">
         <button type="button" disabled={busy} onClick={() => onToggle(!item.enabled)} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium ${item.enabled ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>{item.enabled ? <Check className="size-3.5" /> : <Clock3 className="size-3.5" />}{item.enabled ? t("Enabled", "已启用") : t("Paused", "已暂停")}</button>
         <button type="button" disabled={running || busy} onClick={onRun} className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-3 py-2 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-40"><Play className="size-3.5" />{running ? t("Running…", "运行中…") : t("Run now", "立即运行")}</button>
