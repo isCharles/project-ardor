@@ -10,6 +10,7 @@ const version = frontend.version;
 const dockerfile = readFileSync(new URL("../backend/Dockerfile", import.meta.url), "utf8");
 const dockerignore = readFileSync(new URL("../backend/.dockerignore", import.meta.url), "utf8");
 const goldenPath = readFileSync(new URL("../.github/workflows/golden-path-acceptance.yml", import.meta.url), "utf8");
+const interviewUpgrade = readFileSync(new URL("../backend/src/test/resources/interview-round-upgrade.sh", import.meta.url), "utf8");
 
 if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-rc\.[1-9]\d*)?$/.test(version ?? "")) {
   throw new Error(`Invalid product version: ${version ?? "missing"}`);
@@ -26,6 +27,7 @@ const sources = {
   "desktop/package-lock.json root package": desktopLock.packages?.[""]?.version,
   "backend/Dockerfile JAR": dockerfile.match(/COPY target\/ardor-backend-([^\s]+)\.jar \/app\/ardor\.jar/)?.[1],
   "backend/.dockerignore JAR": dockerignore.match(/!target\/ardor-backend-([^\s]+)\.jar/)?.[1],
+  "backend/src/test/resources/interview-round-upgrade.sh": interviewUpgrade.match(/ardor-backend-([^\s]+)\.jar/)?.[1],
 };
 
 for (const [source, actual] of Object.entries(sources)) {

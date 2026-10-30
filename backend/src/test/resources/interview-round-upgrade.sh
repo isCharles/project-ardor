@@ -27,7 +27,7 @@ stop_probe() {
 }
 trap stop_probe EXIT
 start_probe() {
-  java -jar backend/target/ardor-backend-0.7.0.jar --server.port=8081 \
+  java -jar backend/target/ardor-backend-0.8.0.jar --server.port=8081 \
     --spring.datasource.hikari.maximum-pool-size=2 "$@" >> "$RUNNER_TEMP/interview-round-upgrade.log" 2>&1 &
   probe_pid=$!
   for attempt in {1..90}; do

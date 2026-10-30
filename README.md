@@ -1,5 +1,8 @@
 <div align="center">
-  <img src="docs/assets/ardor-feature-cards.svg" alt="Project Ardor — build momentum for every next step" width="100%" />
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/ardor-feature-cards-static.svg" />
+    <img src="docs/assets/ardor-feature-cards.svg" alt="Project Ardor — build momentum for every next step" width="100%" />
+  </picture>
 
   <h1>Project Ardor</h1>
   <p><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
@@ -72,7 +75,7 @@ The work does not disappear when the chat ends. Your documents, conversations, i
 
 ## Get started
 
-**v0.7.0** is a self-hosted preview, not a public hosted service. Windows users can download the installer from [public desktop releases](https://github.com/isCharles/project-ardor/releases/latest). For local use, start the Ardor services with the [setup guide](docs/SETUP.md), then launch the desktop shortcut. The current installer is **unsigned**, so Windows may warn that the publisher is unknown. You can also use `http://localhost:3000` in a browser.
+**v0.8.0** is a self-hosted preview, not a public hosted service. Windows users can download the installer from [public desktop releases](https://github.com/isCharles/project-ardor/releases/latest). For local use, start the Ardor services with the [setup guide](docs/SETUP.md), then launch the desktop shortcut. The current installer is **unsigned**, so Windows may warn that the publisher is unknown. You can also use `http://localhost:3000` in a browser.
 
 Explore the [product scope](docs/PROJECT.md), [architecture](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), and [version policy](docs/VERSIONING.md). The [desktop guide](docs/DESKTOP.md) covers installation, server connections, and updates. Technical documentation is currently in Chinese.
 
