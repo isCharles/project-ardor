@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpDown, ChevronDown, EyeOff, FileSearch, FileText, GraduationCap, Layers, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowUpDown, ChevronDown, EyeOff, FileSearch, FileText, GraduationCap, Layers, Pencil, Plus, Sparkles, StickyNote, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, Fragment, useEffect, useState } from "react";
@@ -69,6 +69,16 @@ function statusLabel(status: string, en: boolean) {
 
 function latestRound(item: Opportunity): Round | null {
   return item.rounds.length === 0 ? null : item.rounds[item.rounds.length - 1];
+}
+
+const STAGE_LABEL: Record<string, [string, string]> = {
+  HR: ["HR", "HR"], TECHNICAL: ["Technical", "技术"], MANAGER: ["Manager", "主管"],
+  CROSS: ["Cross-functional", "交叉"], FINAL: ["Final", "终面"], OTHER: ["Other", "其他"],
+};
+
+function stageLabel(stage: string, en: boolean) {
+  const pair = STAGE_LABEL[stage] ?? [stage, stage];
+  return en ? pair[0] : pair[1];
 }
 
 export default function OpportunitiesPage() {
@@ -361,6 +371,12 @@ export default function OpportunitiesPage() {
                             <FileText className="size-3" />{t("Notes", "面经")}
                           </Link>
                         )}
+                        {item.rounds.some((entry) => entry.note?.trim()) && (
+                          <button type="button" onClick={() => setExpanded(item.id)}
+                            className="ml-6 mt-1 inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600 hover:bg-stone-200">
+                            <StickyNote className="size-3" />{t("Round notes", "轮次备注")}
+                          </button>
+                        )}
                       </td>
                       {!presentationMode && <><td className="px-4 py-3">
                         <select value={item.status} title={statusLabel(item.status, en)} aria-label={t("Result", "结果")} disabled={busy === item.id} onChange={(event) => void setStatus(item, event.target.value)}
@@ -423,6 +439,22 @@ export default function OpportunitiesPage() {
                                 <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-amber-600">{t("Courses", "课程")}</span>
                                 <span className="min-w-0 flex-1 truncate">{t(`${plansFor(item).length} related course${plansFor(item).length > 1 ? "s" : ""}`, `${plansFor(item).length} 门相关课程`)}</span>
                               </button>
+                            )}
+                            {item.rounds.some((entry) => entry.note?.trim()) && (
+                              <div className="rounded-2xl bg-white px-4 py-3 text-sm text-stone-700">
+                                <div className="flex items-center gap-3">
+                                  <StickyNote className="size-4 shrink-0 text-stone-500" />
+                                  <span className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t("Round notes", "轮次备注")}</span>
+                                </div>
+                                <div className="mt-2 space-y-2">
+                                  {item.rounds.filter((entry) => entry.note?.trim()).map((entry) => (
+                                    <div key={entry.id}>
+                                      <span className="text-[11px] font-medium text-stone-400">{t(`Round ${entry.roundNumber}`, `第 ${entry.roundNumber} 轮`)} · {stageLabel(entry.stage, en)}</span>
+                                      <p className="mt-0.5 whitespace-pre-wrap leading-6">{entry.note}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
                             )}
                             {(item.jdContent || item.inviteContent) && (
                               <button type="button"

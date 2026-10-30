@@ -27,7 +27,8 @@ try {
   const opportunities = [{ id: "process-one", company: "Fixture company", targetRole: "Backend intern", platform: "Fixture", status: "AWAITING_RESULT", currentRound: 1,
     jdContent: "Synthetic job description", inviteContent: "Synthetic interview invitation",
     createdAt: "2026-10-01T01:00:00Z", updatedAt: "2026-10-02T01:00:00Z",
-    rounds: [{ id: "round-one", roundNumber: 1, stage: "TECHNICAL", scheduledAt: "2026-10-20T01:00:00Z", occurredAt: null, durationMinutes: 60, note: null }] }];
+    rounds: [{ id: "round-one", roundNumber: 1, stage: "TECHNICAL", scheduledAt: "2026-10-20T01:00:00Z", occurredAt: null, durationMinutes: 60,
+      note: "改期需提前 1 天\n研发岗可能含代码考核且必须使用电脑" }] }];
   opportunities.push({ ...opportunities[0], id: "process-two", company: "Preparation employer", rounds: [] });
   let slowJob = false, jobPolls = 0;
   await context.route("**/api/**", async route => {
@@ -110,8 +111,12 @@ try {
     assert.deepEqual(await page.getByRole("combobox", { name: "Result", exact: true }).evaluateAll(items => items.map(item => item.value)), initialResults);
   }
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "Round notes", exact: true }).first().waitFor();
   await page.getByRole("row").filter({ has: page.getByRole("cell", { name: "Fixture company", exact: true }) })
     .getByRole("button", { name: "Backend intern", exact: true }).click();
+  assert.match(await page.getByText(/研发岗可能含代码考核/).innerText(),
+    /改期需提前 1 天\n研发岗可能含代码考核且必须使用电脑/, "Agent round notes stay readable with their line breaks");
+  await page.screenshot({ path: ".next/pipeline-round-notes.png", fullPage: true });
   const cardsLink = page.getByRole("link", { name: "Flashcards 2", exact: true });
   await cardsLink.waitFor();
   assert.equal(await page.getByRole("link",{name:/View learning progress from this interview/}).getAttribute("href"),
