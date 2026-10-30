@@ -52,13 +52,13 @@ const statusLabels: Record<string, [string, string]> = {
   SCHEDULED: ["Scheduled", "已约面"],
   AWAITING_RESULT: ["Awaiting result", "等通知"],
   NEXT_ROUND: ["Next round", "下一轮"],
-  REJECTED: ["Rejected", "被拒绝"],
+  REJECTED: ["Closed", "终止"],
 };
 const statusStyles: Record<string, string> = {
   SCHEDULED: "bg-violet-100 text-violet-700",
   AWAITING_RESULT: "bg-amber-100 text-amber-800",
   NEXT_ROUND: "bg-sky-100 text-sky-700",
-  REJECTED: "bg-rose-100 text-rose-700",
+  REJECTED: "bg-stone-100 text-stone-600",
 };
 const stageLabels: Record<string, [string, string]> = {
   HR: ["HR", "HR 面"],
@@ -112,18 +112,43 @@ function resumeTips(data: Record<string, unknown>): Tip[] {
   return legacy.slice(0, 2).map(text => ({ label: ["Suggestion", "优化点"], text }));
 }
 
+function roundInstant(round: Round): number {
+  const value = round.occurredAt ?? round.scheduledAt;
+  return value ? new Date(value).getTime() : Number.NaN;
+}
+
+function latestRound(rounds: Round[]): Round | null {
+  return rounds.reduce<Round | null>((best, round) => {
+    if (!best) return round;
+    const time = roundInstant(round);
+    const bestTime = roundInstant(best);
+    if (!Number.isNaN(time) && (Number.isNaN(bestTime) || time > bestTime)) return round;
+    if (Number.isNaN(time) && Number.isNaN(bestTime) && round.roundNumber > best.roundNumber) return round;
+    return best;
+  }, null);
+}
+
 function latestOpportunity(items: Opportunity[]): InterviewPreview | null {
   if (items.length === 0) return null;
-  const latest = [...items].sort((left, right) => (right.updatedAt ?? right.createdAt).localeCompare(left.updatedAt ?? left.createdAt))[0];
-  const round = latest.rounds.reduce<Round | null>((best, item) => (!best || item.roundNumber > best.roundNumber ? item : best), null);
+  // Editing an old record is not an interview event; rank by the newest round
+  // and fall back to the edit time only when no round carries a date.
+  const latest = [...items].map(item => ({ item, round: latestRound(item.rounds) })).sort((left, right) => {
+    const leftTime = left.round ? roundInstant(left.round) : Number.NaN;
+    const rightTime = right.round ? roundInstant(right.round) : Number.NaN;
+    const leftDated = !Number.isNaN(leftTime);
+    const rightDated = !Number.isNaN(rightTime);
+    if (leftDated !== rightDated) return leftDated ? -1 : 1;
+    if (leftDated && leftTime !== rightTime) return rightTime - leftTime;
+    return (right.item.updatedAt ?? right.item.createdAt).localeCompare(left.item.updatedAt ?? left.item.createdAt);
+  })[0];
   return {
-    id: latest.id,
-    company: latest.company,
-    role: latest.targetRole,
-    status: latest.status,
-    round: latest.currentRound,
-    stage: round?.stage ?? null,
-    at: round?.occurredAt ?? round?.scheduledAt ?? null,
+    id: latest.item.id,
+    company: latest.item.company,
+    role: latest.item.targetRole,
+    status: latest.item.status,
+    round: latest.round?.roundNumber ?? latest.item.currentRound,
+    stage: latest.round?.stage ?? null,
+    at: latest.round ? latest.round.occurredAt ?? latest.round.scheduledAt : null,
   };
 }
 

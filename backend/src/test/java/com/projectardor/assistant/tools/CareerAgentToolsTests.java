@@ -35,6 +35,7 @@ import com.projectardor.jobsearch.interview.service.OpportunityService;
 import com.projectardor.jobsearch.interview.service.InterviewProcessCommands;
 import com.projectardor.jobsearch.interview.service.InterviewProcessView;
 import com.projectardor.platform.identity.profile.service.ProfileService;
+import com.projectardor.platform.identity.profile.service.ProfileView;
 import com.projectardor.jobsearch.record.service.InterviewRecapQueueService;
 import com.projectardor.jobsearch.record.service.InterviewRecapService;
 import com.projectardor.materials.resume.service.ResumeAnalysisQueueService;
@@ -437,6 +438,52 @@ class CareerAgentToolsTests {
         verify(opportunities).updateRound(eq(userId), eq(opportunityId), eq(roundId), captor.capture());
         assertThat(captor.getValue().durationMinutes()).isNull();
         assertThat(captor.getValue().scheduledAt()).isEqualTo(Instant.parse("2026-10-20T02:00:00Z"));
+    }
+
+    @Test
+    void localInterviewTimesAreResolvedInTheProfileTimezone() {
+        OpportunityService opportunities = mock(OpportunityService.class);
+        ProfileService profiles = mock(ProfileService.class);
+        UUID userId = UUID.randomUUID(), opportunityId = UUID.randomUUID();
+        when(profiles.view(userId)).thenReturn(new ProfileView(null, null, List.of(), "Asia/Shanghai"));
+        InterviewProcessView response = new InterviewProcessView(
+                opportunityId, "字节跳动", "后端开发实习生", null, "SCHEDULED", null, null, 1,
+                List.of(), Instant.now(), Instant.now());
+        when(opportunities.create(eq(userId), any())).thenReturn(response);
+        CareerAgentTools tools = new CareerAgentTools(mock(ResumeService.class), mock(ResumeAnalysisQueueService.class),
+                mock(InterviewService.class), profiles, mock(AgentMemoryService.class), mock(CalendarTaskService.class),
+                mock(TaskSeriesService.class), mock(InterviewRecapService.class), mock(InterviewRecapQueueService.class),
+                mock(TavilySearchService.class), mock(KnowledgeService.class), mock(LearningPlanService.class),
+                mock(ApplicationRhythmService.class), opportunities,
+                mock(com.projectardor.platform.jobs.aijobs.AiJobService.class),
+                mock(com.projectardor.learning.review.service.FlashcardService.class));
+
+        tools.bind(userId, "字节那个面试约在 11 月 2 日下午 3 点")
+                .createJobOpportunity("字节跳动", "后端开发", "", "", "", "TECHNICAL", "2026-11-02T15:00", 60, "");
+
+        ArgumentCaptor<InterviewProcessCommands.Create> captor = ArgumentCaptor.forClass(InterviewProcessCommands.Create.class);
+        verify(opportunities).create(eq(userId), captor.capture());
+        assertThat(captor.getValue().scheduledAt()).isEqualTo(Instant.parse("2026-11-02T07:00:00Z"));
+    }
+
+    @Test
+    void explicitOffsetsStayAuthoritative() {
+        OpportunityService opportunities = mock(OpportunityService.class);
+        UUID userId = UUID.randomUUID(), opportunityId = UUID.randomUUID();
+        InterviewProcessView response = new InterviewProcessView(
+                opportunityId, "字节跳动", "后端开发实习生", null, "SCHEDULED", null, null, 1,
+                List.of(), Instant.now(), Instant.now());
+        when(opportunities.addRound(eq(userId), eq(opportunityId), any())).thenReturn(response);
+        CareerAgentTools tools = toolsFor(opportunities);
+
+        tools.bind(userId, "补录这轮面试")
+                .addJobOpportunityRound(opportunityId.toString(), null, "TECHNICAL",
+                        "2026-11-02T15:00:00+08:00", "2026-11-02T15:00:00Z", 45, "");
+
+        ArgumentCaptor<InterviewProcessCommands.Round> captor = ArgumentCaptor.forClass(InterviewProcessCommands.Round.class);
+        verify(opportunities).addRound(eq(userId), eq(opportunityId), captor.capture());
+        assertThat(captor.getValue().scheduledAt()).isEqualTo(Instant.parse("2026-11-02T07:00:00Z"));
+        assertThat(captor.getValue().occurredAt()).isEqualTo(Instant.parse("2026-11-02T15:00:00Z"));
     }
 
     @Test
