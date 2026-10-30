@@ -3,8 +3,10 @@ package com.projectardor.assistant.tools;
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -694,15 +696,15 @@ public class CareerAgentTools {
             return opportunityService.detail(userId, uuid(opportunityId, "面试流程 ID"));
         }
 
-        @Tool(name = "create_job_opportunity", value = "为当前用户创建一条真实面试流程记录。用户发来 HR 面试邀请、通知或 JD，或明确说收到面试时使用；公司名不明确时必须先追问，不要猜测。公司名用通用称呼：以中文名更常见的写中文（如“快手”“字节跳动”），以官方英文品牌更常见的写英文（如 Shopee、Rednote）；不要把中文名写成拼音。targetRole 填招聘标题或岗位原文。写入前会等待用户确认")
+        @Tool(name = "create_job_opportunity", value = "为当前用户创建一条真实面试流程记录。用户发来 HR 面试邀请、通知或 JD，或明确说收到面试时使用；公司名不明确时必须先追问，不要猜测。公司名用通用称呼：中国公司用中文名（如“快手”“字节跳动”“小红书”），海外公司用官方英文名（如 Shopee）；不要把中文名写成拼音或英文品牌。targetRole 填招聘标题或岗位原文。写入前会等待用户确认")
         public InterviewProcessView createJobOpportunity(
-                @P("公司名，必填；不明确时先追问；用常见中文名或官方英文品牌，不写拼音") String company,
+                @P("公司名，必填；不明确时先追问；中国公司用中文名，海外公司用官方英文名，不写拼音") String company,
                 @P("招聘标题或岗位原文，例如“后端开发实习生—国际商业化产品与技术”；未知传空字符串") String targetRole,
                 @P("面试平台或工具，例如 Feishu、Workatsea、acmcoder；未知传空字符串") String platform,
                 @P("岗位 JD 原文；未知传空字符串") String jdContent,
                 @P("用户粘贴的面试邀请或 HR 通知原文；未知传空字符串") String inviteContent,
                 @P("本轮环节 HR/TECHNICAL/MANAGER/CROSS/FINAL/OTHER；未知传空字符串") String stage,
-                @P("已确认的面试时间，带时区的 ISO-8601；没有明确时间传空字符串") String scheduledAt,
+                @P("已确认的面试时间，按邀请邮件的本地时间传 YYYY-MM-DDTHH:mm（如 2026-11-02T15:00），系统按用户时区解析；不要自行换算成 UTC；没有明确时间传空字符串") String scheduledAt,
                 @P("预计时长（分钟）；未知传 0") int durationMinutes,
                 @P("本轮备注；没有传空字符串") String note) {
             return opportunityService.create(userId, new InterviewProcessCommands.Create(
@@ -715,7 +717,7 @@ public class CareerAgentTools {
         @Tool(name = "update_job_opportunity", value = "修改当前用户面试流程的公司、岗位、平台、JD、约面邮件或状态。只有四个状态：SCHEDULED（已约面）、AWAITING_RESULT（面完等通知）、NEXT_ROUND（本轮通过、等下一轮）、REJECTED（终止）。面完说等通知用 AWAITING_RESULT，说进下一轮用 NEXT_ROUND，约好下一轮时间用 SCHEDULED，说挂了或没戏了用 REJECTED。状态随时可以改回任意一个，用户说记错了就直接改")
         public InterviewProcessView updateJobOpportunity(
                 @P("面试流程 UUID") String opportunityId,
-                @P("完整公司名（常见中文名或官方英文品牌，不写拼音）；不修改传空字符串") String company,
+                @P("完整公司名（中国公司用中文名，海外公司用官方英文名，不写拼音）；不修改传空字符串") String company,
                 @P("完整招聘标题或岗位名；不修改传空字符串") String targetRole,
                 @P("完整面试平台；不修改传空字符串") String platform,
                 @P("完整 JD；不修改传空字符串") String jdContent,
@@ -732,8 +734,8 @@ public class CareerAgentTools {
                 @P("面试流程 UUID") String opportunityId,
                 @P(value = "轮次编号，从 1 开始；不确定时省略或传 0，会自动取下一轮", required = false) Integer roundNumber,
                 @P("环节 HR/TECHNICAL/MANAGER/CROSS/FINAL/OTHER；未知传 OTHER") String stage,
-                @P("面试时间 ISO-8601；没有传空字符串") String scheduledAt,
-                @P("实际发生时间 ISO-8601；还没发生传空字符串") String occurredAt,
+                @P("面试时间，本地 YYYY-MM-DDTHH:mm（如 2026-11-02T15:00）；不要自行换算成 UTC；没有传空字符串") String scheduledAt,
+                @P("实际发生时间，同一格式；还没发生传空字符串") String occurredAt,
                 @P("时长（分钟）；未知传 0") int durationMinutes,
                 @P("备注；没有传空字符串") String note) {
             Integer requestedRound = roundNumber == null || roundNumber < 1 ? null : roundNumber;
@@ -748,8 +750,8 @@ public class CareerAgentTools {
                 @P("面试流程 UUID") String opportunityId,
                 @P("轮次 UUID") String roundId,
                 @P("环节 HR/TECHNICAL/MANAGER/CROSS/FINAL/OTHER；不修改传空字符串") String stage,
-                @P("面试时间 ISO-8601；不修改传空字符串") String scheduledAt,
-                @P("实际发生时间 ISO-8601；不修改传空字符串") String occurredAt,
+                @P("面试时间（本地 YYYY-MM-DDTHH:mm，不要自行换算成 UTC）；不修改传空字符串") String scheduledAt,
+                @P("实际发生时间（同一格式）；不修改传空字符串") String occurredAt,
                 @P("时长（分钟）；不修改传 -1") int durationMinutes,
                 @P("备注；不修改传 null") String note) {
             UUID opportunity = uuid(opportunityId, "面试流程 ID");
@@ -838,14 +840,26 @@ public class CareerAgentTools {
 
         private Instant nullableInstant(String value) {
             if (value == null || value.isBlank()) return null;
+            String text = value.strip().replaceFirst("^(\\d{4}-\\d{2}-\\d{2}) ", "$1T");
             try {
-                return OffsetDateTime.parse(value.strip()).toInstant();
+                return OffsetDateTime.parse(text).toInstant();
             } catch (RuntimeException ignored) {
+                // Local wall-clock times are what invites and users actually state;
+                // resolve them in the profile zone instead of making the model convert.
                 try {
-                    return Instant.parse(value.strip());
+                    return LocalDateTime.parse(text).atZone(profileZone()).toInstant();
                 } catch (RuntimeException exception) {
-                    throw new IllegalArgumentException("时间必须使用带时区的 ISO-8601 格式，例如 2026-09-10T14:00:00+08:00");
+                    throw new IllegalArgumentException(
+                            "时间必须使用本地 ISO-8601（如 2026-11-02T15:00）或带偏移的格式（如 2026-11-02T15:00+08:00）");
                 }
+            }
+        }
+
+        private ZoneId profileZone() {
+            try {
+                return ZoneId.of(profileService.view(userId).timezone());
+            } catch (RuntimeException exception) {
+                return ZoneId.of("Asia/Shanghai");
             }
         }
 
