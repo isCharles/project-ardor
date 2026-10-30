@@ -3,7 +3,7 @@
   "productName": "Project Ardor",
   "version": "0.8.0",
   "private": true,
-  "description": "Project Ardor Windows desktop client",
+  "description": "Ardor Windows desktop client",
   "main": "main.cjs",
   "author": "Project Ardor",
   "license": "UNLICENSED",

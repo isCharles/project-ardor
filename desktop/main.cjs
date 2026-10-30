@@ -158,7 +158,7 @@ function createWindow() {
   Menu.setApplicationMenu(null);
   window = new BrowserWindow({
     width: 1280, height: 820, minWidth: 860, minHeight: 600,
-    title: "Project Ardor", icon: path.join(__dirname, "assets", "icon.png"),
+    title: "Ardor", icon: path.join(__dirname, "assets", "icon.png"),
     backgroundColor: "#fffaf8",
     titleBarStyle: "hidden",
     titleBarOverlay: { color: "#faf9f6", symbolColor: "#57534e", height: 46 },
@@ -201,7 +201,7 @@ function registerIpc() {
   ipcMain.handle("desktop:show-menu", (event, name) => {
     assertTrusted(event);
     const template = menuTemplate(name, currentLocale(), (action) => window.webContents.send("desktop:window-action", action), () => {
-      void dialog.showMessageBox(window, { type: "info", title: "Project Ardor", message: `Project Ardor ${app.getVersion()}`, detail: currentLocale() === "zh-CN" ? "你的 AI 职业成长工作台" : "Your AI career workspace" });
+      void dialog.showMessageBox(window, { type: "info", title: "Ardor", message: `Ardor ${app.getVersion()}`, detail: currentLocale() === "zh-CN" ? "让热望，有回响。" : "AI for a more capable you" });
     });
     Menu.buildFromTemplate(template).popup({ window });
   });

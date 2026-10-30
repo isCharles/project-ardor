@@ -37,8 +37,8 @@ nsis:
   displayLanguageSelector: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Project Ardor
-  uninstallDisplayName: Project Ardor
+  shortcutName: Ardor
+  uninstallDisplayName: Ardor
 publish:
   provider: github
   owner: isCharles
