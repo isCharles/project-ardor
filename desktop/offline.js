@@ -14,7 +14,7 @@ let autoRetryRunning = false;
 
 const copy = {
   en: {
-    title: "Project Ardor · Connect to server",
+    title: "Ardor · Connect to server",
     headline: "Wait for your server.\nThen let's continue.",
     detail: "Ardor can't reach the server right now. Start your local service or enter the address of your hosted server.",
     label: "Server address",
@@ -32,7 +32,7 @@ const copy = {
     rootOnly: "Enter only the server's root address, without an account, path, or parameters.",
   },
   "zh-CN": {
-    title: "Project Ardor · 连接服务器",
+    title: "Ardor · 连接服务器",
     headline: "等服务器就绪，\n我们继续。",
     detail: "当前无法连接 Ardor。本机使用时请先启动服务；连接公网部署时，填入服务器地址即可。",
     label: "服务器地址",
