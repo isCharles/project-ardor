@@ -94,7 +94,7 @@ export default function OpportunitiesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
-  const [details, setDetails] = useState<{ item: Opportunity; recaps: RecapRef[] } | null>(null);
+  const [details, setDetails] = useState<{ item: Opportunity } | null>(null);
   const [planPicker, setPlanPicker] = useState<RelatedPlan[] | null>(null);
   const [editing, setEditing] = useState<Opportunity | null>(null);
   const newMenuRef = useDismiss<HTMLDivElement>(newMenuOpen, () => setNewMenuOpen(false));
@@ -161,11 +161,10 @@ export default function OpportunitiesPage() {
     });
   }
 
-  function otherContent(item: Opportunity, itemRecaps: RecapRef[]) {
+  function otherContent(item: Opportunity) {
     return [
       item.jdContent ? "JD" : null,
       item.inviteContent ? t("Invite email", "约面邮件") : null,
-      itemRecaps.length ? t("Interview notes", "面经") : null,
       item.rounds.some((entry) => entry.note?.trim()) ? t("Round notes", "轮次备注") : null,
     ].filter(Boolean).join(" · ");
   }
@@ -413,6 +412,14 @@ export default function OpportunitiesPage() {
                                 <span className="min-w-0 flex-1 truncate">{t("View learning progress from this interview", "查看这场面试的补强进度")}</span>
                               </Link>
                             )}
+                            {recapsFor(item).map((recap) => (
+                              <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`}
+                                className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-violet-50 px-4 py-2.5 text-sm text-violet-900 transition hover:bg-violet-100">
+                                <FileText className="size-4 shrink-0 text-violet-600" />
+                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-violet-600">{t("Notes", "面经")}</span>
+                                <span className="min-w-0 flex-1 truncate" title={recap.title}>{recap.title}</span>
+                              </Link>
+                            ))}
                             {cardsFor(item).length > 0 && (
                               <Link href="/app/cards"
                                 className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900 transition hover:bg-emerald-100">
@@ -429,17 +436,17 @@ export default function OpportunitiesPage() {
                                 <span className="min-w-0 flex-1 truncate">{t(`${plansFor(item).length} related course${plansFor(item).length > 1 ? "s" : ""}`, `${plansFor(item).length} 门相关课程`)}</span>
                               </button>
                             )}
-                            {otherContent(item, recapsFor(item)) && (
+                            {otherContent(item) && (
                               <button type="button"
-                                onClick={() => setDetails({ item, recaps: recapsFor(item) })}
+                                onClick={() => setDetails({ item })}
                                 className="flex w-full items-center gap-3 rounded-2xl bg-stone-100 px-4 py-2.5 text-left text-sm text-stone-800 transition hover:bg-stone-200">
                                 <FileSearch className="size-4 shrink-0 text-stone-500" />
                                 <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t("Other", "其他")}</span>
-                                <span className="min-w-0 flex-1 truncate">{otherContent(item, recapsFor(item))}</span>
+                                <span className="min-w-0 flex-1 truncate">{otherContent(item)}</span>
                               </button>
                             )}
                             {recapsFor(item).length === 0 && cardsFor(item).length === 0 && plansFor(item).length === 0
-                              && !otherContent(item, recapsFor(item)) && (
+                              && !otherContent(item) && (
                                 <p className="text-sm text-stone-400">{t("Nothing attached to this interview yet.", "这次面试还没有关联任何内容。")}</p>
                               )}
                           </div>
@@ -483,14 +490,6 @@ export default function OpportunitiesPage() {
                 <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-700">{details.item.inviteContent}</p>
               </section>
             )}
-            {details.recaps.map((recap) => (
-              <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`} onClick={() => setDetails(null)}
-                className="flex items-center gap-3 rounded-2xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm text-violet-900 transition hover:bg-violet-100">
-                <FileText className="size-4 shrink-0 text-violet-600" />
-                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-violet-600">{t("Interview notes", "面经")}</span>
-                <span className="min-w-0 flex-1 truncate" title={recap.title}>{recap.title}</span>
-              </Link>
-            ))}
             {details.item.rounds.filter((entry) => entry.note?.trim()).map((entry) => (
               <section key={entry.id} className="rounded-2xl border border-stone-200 bg-white p-4">
                 <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
