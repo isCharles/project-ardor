@@ -124,6 +124,8 @@ try {
     .getByRole("button", { name: "Backend intern", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: "Round notes", exact: true }).count(), 0, "Round notes no longer sit as a row chip");
   assert.equal(await page.getByRole("link", { name: "Notes", exact: true }).count(), 0, "Interview notes no longer sit as a row chip");
+  const recapRow = page.locator('table a[href="/app/recaps?selected=linked"]');
+  await recapRow.waitFor();
   const cardsLink = page.getByRole("link", { name: "Flashcards 2", exact: true });
   await cardsLink.waitFor();
   assert.equal(await page.getByRole("link",{name:/View learning progress from this interview/}).getAttribute("href"),
@@ -138,8 +140,8 @@ try {
   await otherDialog.getByText("Synthetic interview invitation", { exact: true }).waitFor();
   assert.match(await otherDialog.getByText(/研发岗可能含代码考核/).innerText(),
     /改期需提前 1 天\n研发岗可能含代码考核且必须使用电脑/, "Round notes keep their line breaks inside Other");
-  assert.equal(await otherDialog.getByRole("link", { name: /Interview notes/ }).getAttribute("href"),
-    "/app/recaps?selected=linked", "Interview notes stay reachable from Other");
+  assert.equal(await otherDialog.getByRole("link", { name: /Interview notes/ }).count(), 0,
+    "Interview notes keep their own row instead of moving into Other");
   await page.screenshot({ path: ".next/pipeline-other-dialog.png", fullPage: true });
   await otherDialog.getByRole("button", { name: "Close", exact: true }).click();
   await courseButton.click();
@@ -156,26 +158,27 @@ try {
     await page.setViewportSize({ width, height: 900 });
     const geometry = await page.locator("table").evaluate(table => {
       const rect = table.getBoundingClientRect();
+      const titles = [...table.querySelectorAll("a span[title]")];
       return { tableWidth: rect.width, containerWidth: table.parentElement.clientWidth,
         documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth,
         controlsFit: [...table.querySelectorAll("select")].every(select => {
           const cell = select.closest("td").getBoundingClientRect(), control = select.getBoundingClientRect();
           return control.left >= cell.left && control.right <= cell.right;
-        }) };
+        }),
+        titles: titles.map(span => ({ ellipsis: getComputedStyle(span).textOverflow, clipped: span.scrollWidth > span.clientWidth,
+          fits: span.getBoundingClientRect().right <= rect.right + 1 })) };
     });
     assert.ok(geometry.tableWidth <= Math.max(860, geometry.containerWidth) + 2, `Long association expanded table at ${width}px`);
     assert.ok(geometry.documentWidth <= geometry.viewportWidth + 1, `Long content expanded viewport at ${width}px`);
     assert.ok(geometry.controlsFit, `Result control overlaps another cell at ${width}px`);
+    assert.ok(geometry.titles.length >= 1 && geometry.titles.every(title => title.ellipsis === "ellipsis" && title.clipped && title.fits),
+      `Recap titles did not truncate at ${width}px`);
     await otherButton.click();
-    const recapGeometry = await otherDialog.locator('a[href="/app/recaps?selected=linked"] span[title]').evaluate(span => {
-      const dialog = span.closest("dialog").getBoundingClientRect();
-      return { ellipsis: getComputedStyle(span).textOverflow, clipped: span.scrollWidth > span.clientWidth,
-        fits: span.getBoundingClientRect().right <= dialog.right,
-        documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth };
-    });
-    assert.ok(recapGeometry.ellipsis === "ellipsis" && recapGeometry.clipped && recapGeometry.fits,
-      `Recap title did not truncate at ${width}px`);
-    assert.ok(recapGeometry.documentWidth <= recapGeometry.viewportWidth + 1, `Other dialog expanded viewport at ${width}px`);
+    const otherGeometry = await otherDialog.evaluate(dialog => ({
+      fits: dialog.getBoundingClientRect().right <= window.innerWidth + 1,
+      documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth }));
+    assert.ok(otherGeometry.fits && otherGeometry.documentWidth <= otherGeometry.viewportWidth + 1,
+      `Other dialog expanded viewport at ${width}px`);
     await otherDialog.getByRole("button", { name: "Close", exact: true }).click();
     await courseButton.click();
     const courseGeometry = await sourcePlan.locator("span[title]").evaluate(span => {
