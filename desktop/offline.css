@@ -6,7 +6,7 @@ body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding
 .language { display: flex; justify-content: flex-end; gap: 4px; margin: -20px -20px 22px 0; }
 .language button { border-radius: 999px; background: transparent; color: #817887; padding: 6px 10px; font-size: 11px; }
 .language button[aria-pressed="true"] { background: #f0eafe; color: #5f49b5; font-weight: 700; }
-.mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 16px; background: linear-gradient(135deg, #ff744d, #d45eb8 62%, #8174ed); color: #fff; font-size: 30px; }
+.mark { width: 48px; height: 48px; display: block; }
 .eyebrow { margin: 30px 0 12px; color: #817887; font-size: 11px; font-weight: 700; letter-spacing: .2em; }
 h1 { margin: 0; font-size: clamp(34px, 5vw, 48px); line-height: 1.16; letter-spacing: -.04em; }
 #headline { white-space: pre-line; }

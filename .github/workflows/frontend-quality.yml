@@ -5,6 +5,7 @@ on:
     paths:
       - "frontend/**"
       - "desktop/**"
+      - "brand/**"
       - "scripts/report-export-smoke.mjs"
       - "scripts/latex-report-contract.mjs"
       - ".github/workflows/frontend-quality.yml"
@@ -138,12 +139,16 @@ jobs:
         run: node tests/learning-context-ui.mjs
       - name: Interview pipeline UI regression (mock APIs)
         run: node tests/pipeline-ui.mjs
+      - name: Official brand mark and icon UI regression (mock APIs)
+        run: node tests/brand-ui.mjs
       - name: Upload pipeline UI screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: pipeline-ui-failure
-          path: frontend/.next/pipeline-*.png
+          path: |
+            frontend/.next/pipeline-*.png
+            frontend/.next/brand-*.png
           if-no-files-found: ignore
 
   desktop-window:

@@ -45,6 +45,18 @@ jobs:
           } else {
             "signed=true" >> $env:GITHUB_OUTPUT
           }
+      - name: Install desktop dependencies
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify committed brand icons match brand/ sources
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          npm run icons:check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build bilingual Windows installer
         working-directory: desktop
         shell: pwsh
@@ -53,8 +65,6 @@ jobs:
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
           SIGNED_BUILD: ${{ steps.signing.outputs.signed }}
         run: |
-          npm ci
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($env:SIGNED_BUILD -eq 'true') { npm run dist:win:signed } else { npm run dist:win }

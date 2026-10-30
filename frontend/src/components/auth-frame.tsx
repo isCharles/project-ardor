@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { ArdorMark } from "@/components/ardor/brand-mark";
 import { useLocale } from "@/lib/locale";
 import styles from "./auth-frame.module.css";
 
@@ -22,7 +23,7 @@ export function AuthFrame({
       <div className={styles.light} aria-hidden="true" />
       <header className={styles.header}>
         <Link href="/app" className={styles.brand} aria-label={t("Go to Ardor", "前往 Ardor")}>
-          <span className={styles.brandMark} aria-hidden="true">✦</span>
+          <ArdorMark className={styles.brandMark} />
           Ardor
         </Link>
       </header>

@@ -11,6 +11,7 @@
     "dev": "electron .",
     "test": "node --test tests/*.test.cjs",
     "icons": "node scripts/generate-icons.mjs",
+    "icons:check": "node scripts/generate-icons.mjs --check",
     "dist:win": "npm run icons && node scripts/build-windows.mjs",
     "dist:win:signed": "npm run icons && node scripts/build-windows.mjs --signed"
   },
