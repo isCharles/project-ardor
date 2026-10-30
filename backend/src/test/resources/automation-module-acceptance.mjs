@@ -19,12 +19,17 @@ class Client {
 const owner = new Client(), foreign = new Client();
 for (const client of [owner, foreign]) await client.request("/api/auth/register", { method: "POST", expected: 201,
   body: { email: `automation-${randomUUID()}@ardor.invalid`, password: `Synthetic-${randomUUID()}!` } });
-const create = (client, title) => client.request("/api/automations", { method: "POST", expected: 201,
-  body: { title, prompt: "Synthetic prompt", cronExpression: "0 0 9 1 1 *", timezone: "UTC" } });
+const create = (client, title, deleteAfterRun = false) => client.request("/api/automations", { method: "POST", expected: 201,
+  body: { title, prompt: "Synthetic prompt", cronExpression: "0 0 9 1 1 *", timezone: "UTC", deleteAfterRun } });
 const own = await create(owner, "Automation owner fixture");
 const theirs = await create(foreign, "Automation foreign fixture");
-const keys = ["id", "title", "prompt", "cronExpression", "timezone", "enabled", "nextRunAt", "lastRunAt", "lastStatus", "lastError", "createdAt", "updatedAt"].sort();
+const keys = ["id", "title", "prompt", "cronExpression", "timezone", "enabled", "deleteAfterRun", "nextRunAt", "lastRunAt", "lastStatus", "lastError", "createdAt", "updatedAt"].sort();
 assert.deepEqual(Object.keys(own).sort(), keys);
+assert.equal(own.deleteAfterRun, false);
+const oneShot = await create(owner, "Automation one-time fixture", true);
+assert.equal(oneShot.deleteAfterRun, true);
+assert.equal((await owner.request(`/api/automations/${oneShot.id}`, { method: "PATCH", body: { deleteAfterRun: false } })).deleteAfterRun, false);
+await owner.request(`/api/automations/${oneShot.id}`, { method: "DELETE", expected: 204 });
 for (const method of ["GET", "PATCH", "DELETE"]) await foreign.request(`/api/automations/${own.id}`, {
   method, expected: 404, ...(method === "PATCH" ? { body: { enabled: false } } : {}) });
 assert.equal((await owner.request(`/api/automations/${own.id}`)).enabled, true);

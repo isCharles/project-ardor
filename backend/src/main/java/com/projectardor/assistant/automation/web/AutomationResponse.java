@@ -12,6 +12,7 @@ public record AutomationResponse(
         String cronExpression,
         String timezone,
         boolean enabled,
+        boolean deleteAfterRun,
         Instant nextRunAt,
         Instant lastRunAt,
         String lastStatus,
@@ -21,7 +22,7 @@ public record AutomationResponse(
     public static AutomationResponse from(AutomationView automation) {
         return new AutomationResponse(automation.id(), automation.title(), automation.prompt(),
                 automation.cronExpression(), automation.timezone(), automation.enabled(),
-                automation.nextRunAt(), automation.lastRunAt(), automation.lastStatus(),
-                automation.lastError(), automation.createdAt(), automation.updatedAt());
+                automation.deleteAfterRun(), automation.nextRunAt(), automation.lastRunAt(),
+                automation.lastStatus(), automation.lastError(), automation.createdAt(), automation.updatedAt());
     }
 }

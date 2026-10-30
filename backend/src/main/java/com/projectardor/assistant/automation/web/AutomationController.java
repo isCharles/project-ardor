@@ -47,14 +47,14 @@ public class AutomationController {
     public AutomationResponse create(@AuthenticationPrincipal ArdorPrincipal principal,
             @Valid @RequestBody AutomationCreateRequest request) {
         return AutomationResponse.from(service.createView(principal.userId(), request.title(), request.prompt(),
-                request.cronExpression(), request.timezone()));
+                request.cronExpression(), request.timezone(), request.deleteAfterRun()));
     }
 
     @PatchMapping("/{id}")
     public AutomationResponse update(@AuthenticationPrincipal ArdorPrincipal principal, @PathVariable UUID id,
             @Valid @RequestBody AutomationUpdateRequest request) {
         return AutomationResponse.from(service.updateView(principal.userId(), id, request.title(), request.prompt(),
-                request.cronExpression(), request.timezone(), request.enabled()));
+                request.cronExpression(), request.timezone(), request.enabled(), request.deleteAfterRun()));
     }
 
     @PostMapping("/{id}/run")
