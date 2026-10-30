@@ -1,5 +1,8 @@
 <div align="center">
-  <img src="docs/assets/ardor-feature-cards.svg" alt="Project Ardor — build momentum for every next step" width="100%" />
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/ardor-feature-cards-static.svg" />
+    <img src="docs/assets/ardor-feature-cards.svg" alt="Project Ardor — build momentum for every next step" width="100%" />
+  </picture>
 
   <h1>Project Ardor</h1>
   <p><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
