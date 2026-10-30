@@ -1,10 +1,10 @@
 <div align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/ardor-feature-cards-static.svg" />
-    <img src="docs/assets/ardor-feature-cards.svg" alt="Project Ardor — build momentum for every next step" width="100%" />
+    <img src="docs/assets/ardor-feature-cards.svg" alt="Ardor — your career, in motion" width="100%" />
   </picture>
 
-  <h1>Project Ardor</h1>
+  <h1>Ardor</h1>
   <p><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
   <h3>Your career shouldn't restart with every new conversation.</h3>
   <p><strong>An AI career agent that remembers your goals, sees your progress, and helps you practice until you're ready.</strong></p>
@@ -81,6 +81,6 @@ Explore the [product scope](docs/PROJECT.md), [architecture](docs/ARCHITECTURE.m
 
 <div align="center">
   <br />
-  <strong>Project Ardor · Keep the fire going.</strong>
+  <strong>Ardor · AI for a more capable you</strong>
   <br /><br />
 </div>

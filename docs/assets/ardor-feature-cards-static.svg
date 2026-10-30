@@ -1,5 +1,5 @@
 <svg class="still" xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="ardor-title ardor-description">
-<title id="ardor-title">Project Ardor · Your career, in motion.</title>
+<title id="ardor-title">Ardor · Your career, in motion.</title>
 <desc id="ardor-description">Six feature cards unfold from a stack and return, against a white background with blue, pink, lilac and mist ambient color. Features include resume insights, mock interviews, interview recaps, learning and review, a knowledge base and an AI career agent. Reduced motion displays all cards without animation.</desc>
 <defs>
  <linearGradient id="ardor-accent" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0062f0"/><stop offset=".48" stop-color="#3f8cff"/><stop offset=".78" stop-color="#8f7bff"/><stop offset="1" stop-color="#e86bb8"/></linearGradient>
@@ -20,9 +20,7 @@
 text{font-family:'Segoe UI','Microsoft YaHei','PingFang SC',Arial,sans-serif}
 .module{animation-duration:12s;animation-iteration-count:infinite;animation-timing-function:cubic-bezier(.22,1,.32,1)}
 .title{font-size:23px;font-weight:650;fill:#1c2430;letter-spacing:-.5px}
-.eyebrow{font-size:8px;font-weight:650;letter-spacing:.7px;fill:#7b8798}
 .detail{font-size:13px;fill:#556274}
-.tag{font-size:10px;fill:#66758a}
 .halo{animation:ambient 12s ease-in-out infinite;transform-origin:1020px 470px}
 @keyframes ambient{0%,100%{opacity:.72;transform:scale(.92)}40%,72%{opacity:1;transform:scale(1.04)}}
 .module-resume{transform:translate(-18px,-18px) rotate(-9deg);animation-name:unfold-resume}
@@ -69,102 +67,72 @@ text{font-family:'Segoe UI','Microsoft YaHei','PingFang SC',Arial,sans-serif}
    <path d="M286 286 C339 297 381 321 394 354 C412 391 385 412 359 404 C311 395 289 352 286 286Z" fill="url(#mark-lilac)"/>
    <path d="M286 286 C264 337 230 391 187 402 C150 412 123 389 133 352 C151 298 222 273 286 286Z" fill="url(#mark-left)"/>
   </svg>
-  <text x="59" y="22" fill="#1c2430" font-size="17" font-weight="750" letter-spacing="2">PROJECT ARDOR</text>
-  <text x="60" y="41" fill="#7b8798" font-size="10" letter-spacing="2">AI CAREER AGENT</text>
+  <text x="59" y="31" fill="#1c2430" font-size="24" font-weight="750" letter-spacing=".3">Ardor</text>
  </g>
- <g transform="translate(80 310)">
-  <text y="0" fill="#6b7788" font-size="11" letter-spacing="2">ONE WORKSPACE. EVERY NEXT STEP.</text>
-  <text y="88" fill="#1c2430" font-size="78" font-weight="700" letter-spacing="-3">Your career,</text>
-  <text y="178" fill="url(#ardor-accent)" font-size="78" font-weight="700" letter-spacing="-3">in motion.</text>
-  <text y="230" fill="#556274" font-size="17">One conversation. A clearer path forward.</text>
-  <path d="M0 280H48" stroke="url(#ardor-accent)" stroke-width="3" stroke-linecap="round"/>
-  <text x="64" y="285" fill="#607086" font-size="13">Understand. Practice. Improve.</text>
+ <g transform="translate(80 350)">
+  <text y="0" fill="#1c2430" font-size="78" font-weight="700" letter-spacing="-3">Your career,</text>
+  <text y="92" fill="url(#ardor-accent)" font-size="78" font-weight="700" letter-spacing="-3">in motion.</text>
+  <text y="168" fill="#556274" font-size="22">AI for a more capable you</text>
  </g>
  <g transform="translate(1020 470)"><g class="module module-resume" data-feature="resume">
  <g transform="translate(-142 -88)">
   <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
-  <rect x="20" y="20" width="38" height="38" rx="12" fill="#0b78ff" fill-opacity=".09"/>
-  <g transform="translate(24 23) scale(.81)" fill="none" stroke="#0b78ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h10l5 5v20H9zM19 5v6h5M13 17h7M13 22h7M13 27h4"/></g>
-  <text class="eyebrow" x="70" y="33">UNDERSTAND YOUR STRENGTHS</text>
-  <text class="title" x="70" y="61">Résumé Insights</text>
-  <text class="detail" x="23" y="93">See what your experience says.</text>
-  <text class="detail" x="23" y="114">Make your next application stronger.</text>
-  <path d="M23 133H261" stroke="#e6eef9"/>
-  <circle cx="26" cy="151" r="3" fill="#0b78ff" opacity=".75"/>
-  <text class="tag" x="37" y="155">PDF / DOCX · Structured reports</text>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#0b78ff" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#0b78ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h10l5 5v20H9zM19 5v6h5M13 17h7M13 22h7M13 27h4"/></g>
+  <text class="title" x="70" y="73">Résumé Insights</text>
+  <text class="detail" x="23" y="108">See what your experience says.</text>
+  <text class="detail" x="23" y="129">Make your next application stronger.</text>
  </g>
 </g>
 <g class="module module-interview" data-feature="interview">
  <g transform="translate(-142 -88)">
   <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
-  <rect x="20" y="20" width="38" height="38" rx="12" fill="#d9549f" fill-opacity=".09"/>
-  <g transform="translate(24 23) scale(.81)" fill="none" stroke="#d9549f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="4" width="10" height="18" rx="5"/><path d="M9 17v2a9 9 0 0 0 18 0v-2M18 28v5M13 33h10"/></g>
-  <text class="eyebrow" x="70" y="33">PRACTICE THE REAL THING</text>
-  <text class="title" x="70" y="61">Mock Interviews</text>
-  <text class="detail" x="23" y="93">Projects, technical and coding rounds.</text>
-  <text class="detail" x="23" y="114">Practice by text or real-time voice.</text>
-  <path d="M23 133H261" stroke="#e6eef9"/>
-  <circle cx="26" cy="151" r="3" fill="#d9549f" opacity=".75"/>
-  <text class="tag" x="37" y="155">Text / Voice · Answer feedback</text>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#d9549f" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#d9549f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="4" width="10" height="18" rx="5"/><path d="M9 17v2a9 9 0 0 0 18 0v-2M18 28v5M13 33h10"/></g>
+  <text class="title" x="70" y="73">Mock Interviews</text>
+  <text class="detail" x="23" y="108">Projects, technical and coding rounds.</text>
+  <text class="detail" x="23" y="129">Practice by text or real-time voice.</text>
  </g>
 </g>
 <g class="module module-recap" data-feature="recap">
  <g transform="translate(-142 -88)">
   <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
-  <rect x="20" y="20" width="38" height="38" rx="12" fill="#7a5ce8" fill-opacity=".09"/>
-  <g transform="translate(24 23) scale(.81)" fill="none" stroke="#7a5ce8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M27 11A12 12 0 1 0 30 22M27 5v7h-7M18 12v8l5 3"/></g>
-  <text class="eyebrow" x="70" y="33">TURN EXPERIENCE INTO PROGRESS</text>
-  <text class="title" x="70" y="61">Interview Recaps</text>
-  <text class="detail" x="23" y="93">Revisit every question and answer.</text>
-  <text class="detail" x="23" y="114">Find the gaps. Prepare your next move.</text>
-  <path d="M23 133H261" stroke="#e6eef9"/>
-  <circle cx="26" cy="151" r="3" fill="#7a5ce8" opacity=".75"/>
-  <text class="tag" x="37" y="155">Question-by-question · Weak spots</text>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#7a5ce8" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#7a5ce8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M27 11A12 12 0 1 0 30 22M27 5v7h-7M18 12v8l5 3"/></g>
+  <text class="title" x="70" y="73">Interview Recaps</text>
+  <text class="detail" x="23" y="108">Revisit every question and answer.</text>
+  <text class="detail" x="23" y="129">Find the gaps. Prepare your next move.</text>
  </g>
 </g>
 <g class="module module-learning" data-feature="learning">
  <g transform="translate(-142 -88)">
   <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
-  <rect x="20" y="20" width="38" height="38" rx="12" fill="#4b66e0" fill-opacity=".09"/>
-  <g transform="translate(24 23) scale(.81)" fill="none" stroke="#4b66e0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8c5-2 9-1 13 2 4-3 8-4 13-2v21c-5-2-9-1-13 2-4-3-8-4-13-2zM18 10v21M9 14h5M9 19h5M22 14h5M22 19h5"/></g>
-  <text class="eyebrow" x="70" y="33">MAKE IT STICK</text>
-  <text class="title" x="70" y="61">Learn &amp; Review</text>
-  <text class="detail" x="23" y="93">Lessons, exercises and flashcards.</text>
-  <text class="detail" x="23" y="114">Put your learning plan on the calendar.</text>
-  <path d="M23 133H261" stroke="#e6eef9"/>
-  <circle cx="26" cy="151" r="3" fill="#4b66e0" opacity=".75"/>
-  <text class="tag" x="37" y="155">Learning · Flashcards · Calendar</text>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#4b66e0" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#4b66e0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8c5-2 9-1 13 2 4-3 8-4 13-2v21c-5-2-9-1-13 2-4-3-8-4-13-2zM18 10v21M9 14h5M9 19h5M22 14h5M22 19h5"/></g>
+  <text class="title" x="70" y="73">Learn &amp; Review</text>
+  <text class="detail" x="23" y="108">Lessons, exercises and flashcards.</text>
+  <text class="detail" x="23" y="129">Put your learning plan on the calendar.</text>
  </g>
 </g>
 <g class="module module-knowledge" data-feature="knowledge">
  <g transform="translate(-142 -88)">
   <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
-  <rect x="20" y="20" width="38" height="38" rx="12" fill="#2f8fae" fill-opacity=".09"/>
-  <g transform="translate(24 23) scale(.81)" fill="none" stroke="#2f8fae" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h7v24H7zM17 7h6v24h-6zM26 9l6-1 4 22-6 1zM9 13h3M19 13h2"/></g>
-  <text class="eyebrow" x="70" y="33">YOUR KNOWLEDGE, CONNECTED</text>
-  <text class="title" x="70" y="61">Knowledge Base</text>
-  <text class="detail" x="23" y="93">Turn your documents into context.</text>
-  <text class="detail" x="23" y="114">Bring what you know into the next chat.</text>
-  <path d="M23 133H261" stroke="#e6eef9"/>
-  <circle cx="26" cy="151" r="3" fill="#2f8fae" opacity=".75"/>
-  <text class="tag" x="37" y="155">Uploads · Retrieval · Web research</text>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#2f8fae" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#2f8fae" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h7v24H7zM17 7h6v24h-6zM26 9l6-1 4 22-6 1zM9 13h3M19 13h2"/></g>
+  <text class="title" x="70" y="73">Knowledge Base</text>
+  <text class="detail" x="23" y="108">Turn your documents into context.</text>
+  <text class="detail" x="23" y="129">Bring what you know into the next chat.</text>
  </g>
 </g>
 <g class="module module-agent" data-feature="agent">
  <g transform="translate(-142 -88)">
   <rect width="284" height="176" rx="18" fill="url(#card)" stroke="url(#card-edge)" stroke-width="1.5" filter="url(#card-shadow)"/>
-  <rect x="20" y="20" width="38" height="38" rx="12" fill="#0062f0" fill-opacity=".09"/>
-  <g transform="translate(24 23) scale(.81)" fill="none" stroke="#0062f0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h23v17H17l-7 6v-6H7zM13 13h11M13 18h7"/><path d="m27 2 1.5 3.5L32 7l-3.5 1.5L27 12l-1.5-3.5L22 7l3.5-1.5z"/></g>
-  <text class="eyebrow" x="70" y="33">YOUR CAREER COMPANION</text>
-  <text class="title" x="70" y="61">AI Career Agent</text>
-  <text class="detail" x="23" y="93">Remembers your goals and progress.</text>
-  <text class="detail" x="23" y="114">Keeps the next conversation moving.</text>
-  <path d="M23 133H261" stroke="#e6eef9"/>
-  <circle cx="26" cy="151" r="3" fill="#0062f0" opacity=".75"/>
-  <text class="tag" x="37" y="155">Multi-chat · Memory · Tools</text>
+  <rect x="20" y="32" width="38" height="38" rx="12" fill="#0062f0" fill-opacity=".09"/>
+  <g transform="translate(24 35) scale(.81)" fill="none" stroke="#0062f0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h23v17H17l-7 6v-6H7zM13 13h11M13 18h7"/><path d="m27 2 1.5 3.5L32 7l-3.5 1.5L27 12l-1.5-3.5L22 7l3.5-1.5z"/></g>
+  <text class="title" x="70" y="73">AI Career Agent</text>
+  <text class="detail" x="23" y="108">Remembers your goals and progress.</text>
+  <text class="detail" x="23" y="129">Keeps the next conversation moving.</text>
  </g>
 </g></g>
- <text x="80" y="832" fill="#6b7788" font-size="12">Keep the momentum going.</text>
- <path d="M1257 829h103m-7-5 7 5-7 5" fill="none" stroke="#9fb8dd" stroke-width="1.4" stroke-linecap="round"/>
 </g>
 </svg>

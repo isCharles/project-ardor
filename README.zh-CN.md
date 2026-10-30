@@ -1,10 +1,10 @@
 <div align="center">
   <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/ardor-feature-cards-static.svg" />
-    <img src="docs/assets/ardor-feature-cards.svg" alt="Project Ardor：让每一步准备，都成为下一步的底气" width="100%" />
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/ardor-feature-cards-zh-CN-static.svg" />
+    <img src="docs/assets/ardor-feature-cards-zh-CN.svg" alt="Ardor：你的求职，一路向前" width="100%" />
   </picture>
 
-  <h1>Project Ardor</h1>
+  <h1>Ardor</h1>
   <p><a href="README.md">English</a> · <strong>简体中文</strong></p>
   <h3>你的求职，不该从每一次新对话重新开始。</h3>
   <p><strong>一位记得你的目标、看得见你的进步、愿意陪你练到会的 AI Career Agent。</strong></p>
@@ -85,6 +85,6 @@ Ardor 可以从已有资料中找到上下文，帮你把准备拆成真正可�
 
 <div align="center">
   <br />
-  <strong>Project Ardor · Keep the fire going.</strong>
+  <strong>Ardor · 让热望，有回响。</strong>
   <br /><br />
 </div>
