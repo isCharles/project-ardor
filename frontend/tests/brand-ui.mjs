@@ -4,8 +4,8 @@ import { readFile } from "node:fs/promises";
 import { chromium } from "playwright";
 
 // Every brand entrance uses the supplied Ardor mark; no legacy flame or rule mark remains.
-const origin = "http://127.0.0.1:3132";
-const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", "3132"], { stdio: "pipe" });
+const origin = "http://127.0.0.1:3133";
+const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", "3133"], { stdio: "pipe" });
 let logs = "", browser;
 server.stdout.on("data", chunk => logs += chunk); server.stderr.on("data", chunk => logs += chunk);
 
