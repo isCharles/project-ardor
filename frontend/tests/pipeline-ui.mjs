@@ -111,19 +111,28 @@ try {
     assert.deepEqual(await page.getByRole("combobox", { name: "Result", exact: true }).evaluateAll(items => items.map(item => item.value)), initialResults);
   }
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole("button", { name: "Round notes", exact: true }).first().waitFor();
   await page.getByRole("row").filter({ has: page.getByRole("cell", { name: "Fixture company", exact: true }) })
     .getByRole("button", { name: "Backend intern", exact: true }).click();
-  assert.match(await page.getByText(/研发岗可能含代码考核/).innerText(),
-    /改期需提前 1 天\n研发岗可能含代码考核且必须使用电脑/, "Agent round notes stay readable with their line breaks");
-  await page.screenshot({ path: ".next/pipeline-round-notes.png", fullPage: true });
+  assert.equal(await page.getByRole("button", { name: "Round notes", exact: true }).count(), 0, "Round notes no longer sit as a row chip");
+  assert.equal(await page.getByRole("link", { name: "Notes", exact: true }).count(), 0, "Interview notes no longer sit as a row chip");
   const cardsLink = page.getByRole("link", { name: "Flashcards 2", exact: true });
   await cardsLink.waitFor();
   assert.equal(await page.getByRole("link",{name:/View learning progress from this interview/}).getAttribute("href"),
     "/app/learning/progress?sourceInterviewId=process-one","Interview progress is scoped by provenance, not preparation target");
   const courseButton = page.getByRole("button", { name: /4 related courses/ });
   assert.doesNotMatch(await courseButton.innerText(), /Choose/);
-  assert.doesNotMatch(await page.getByRole("button", { name: /JD, invite email/ }).innerText(), /Open/);
+  const otherButton = page.getByRole("button", { name: /^Other/ }).first();
+  assert.doesNotMatch(await otherButton.innerText(), /Open/);
+  await otherButton.click();
+  const otherDialog = page.getByRole("dialog", { name: "Other", exact: true });
+  await otherDialog.getByText("Synthetic job description", { exact: true }).waitFor();
+  await otherDialog.getByText("Synthetic interview invitation", { exact: true }).waitFor();
+  assert.match(await otherDialog.getByText(/研发岗可能含代码考核/).innerText(),
+    /改期需提前 1 天\n研发岗可能含代码考核且必须使用电脑/, "Round notes keep their line breaks inside Other");
+  assert.equal(await otherDialog.getByRole("link", { name: /Interview notes/ }).getAttribute("href"),
+    "/app/recaps?selected=linked", "Interview notes stay reachable from Other");
+  await page.screenshot({ path: ".next/pipeline-other-dialog.png", fullPage: true });
+  await otherDialog.getByRole("button", { name: "Close", exact: true }).click();
   await courseButton.click();
   const courseDialog = page.getByRole("dialog", { name: "Courses", exact: true });
   const sourcePlan=courseDialog.locator('a[href="/app/learning?id=plan-one"]');
@@ -138,20 +147,27 @@ try {
     await page.setViewportSize({ width, height: 900 });
     const geometry = await page.locator("table").evaluate(table => {
       const rect = table.getBoundingClientRect();
-      const titles = [...table.querySelectorAll("a span[title]")];
       return { tableWidth: rect.width, containerWidth: table.parentElement.clientWidth,
         documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth,
         controlsFit: [...table.querySelectorAll("select")].every(select => {
           const cell = select.closest("td").getBoundingClientRect(), control = select.getBoundingClientRect();
           return control.left >= cell.left && control.right <= cell.right;
-        }),
-        titles: titles.map(span => ({ ellipsis: getComputedStyle(span).textOverflow, clipped: span.scrollWidth > span.clientWidth,
-          fits: span.getBoundingClientRect().right <= rect.right + 1 })) };
+        }) };
     });
     assert.ok(geometry.tableWidth <= Math.max(860, geometry.containerWidth) + 2, `Long association expanded table at ${width}px`);
     assert.ok(geometry.documentWidth <= geometry.viewportWidth + 1, `Long content expanded viewport at ${width}px`);
     assert.ok(geometry.controlsFit, `Result control overlaps another cell at ${width}px`);
-    assert.ok(geometry.titles.length >= 1 && geometry.titles.every(title => title.ellipsis === "ellipsis" && title.clipped && title.fits), `Notes titles did not truncate at ${width}px`);
+    await otherButton.click();
+    const recapGeometry = await otherDialog.locator('a[href="/app/recaps?selected=linked"] span[title]').evaluate(span => {
+      const dialog = span.closest("dialog").getBoundingClientRect();
+      return { ellipsis: getComputedStyle(span).textOverflow, clipped: span.scrollWidth > span.clientWidth,
+        fits: span.getBoundingClientRect().right <= dialog.right,
+        documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth };
+    });
+    assert.ok(recapGeometry.ellipsis === "ellipsis" && recapGeometry.clipped && recapGeometry.fits,
+      `Recap title did not truncate at ${width}px`);
+    assert.ok(recapGeometry.documentWidth <= recapGeometry.viewportWidth + 1, `Other dialog expanded viewport at ${width}px`);
+    await otherDialog.getByRole("button", { name: "Close", exact: true }).click();
     await courseButton.click();
     const courseGeometry = await sourcePlan.locator("span[title]").evaluate(span => {
       const dialog = span.closest("dialog").getBoundingClientRect();

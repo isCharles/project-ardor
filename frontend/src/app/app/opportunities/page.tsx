@@ -94,7 +94,7 @@ export default function OpportunitiesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
-  const [preview, setPreview] = useState<{ title: string; body: string } | null>(null);
+  const [details, setDetails] = useState<{ item: Opportunity; recaps: RecapRef[] } | null>(null);
   const [planPicker, setPlanPicker] = useState<RelatedPlan[] | null>(null);
   const [editing, setEditing] = useState<Opportunity | null>(null);
   const newMenuRef = useDismiss<HTMLDivElement>(newMenuOpen, () => setNewMenuOpen(false));
@@ -159,6 +159,15 @@ export default function OpportunitiesPage() {
           && (recapIds.has(plan.sourceId) || questionIds.has(plan.sourceId));
       return fromHere ? [{ ...plan, relation: "SOURCE" as const }] : [];
     });
+  }
+
+  function otherContent(item: Opportunity, itemRecaps: RecapRef[]) {
+    return [
+      item.jdContent ? "JD" : null,
+      item.inviteContent ? t("Invite email", "约面邮件") : null,
+      itemRecaps.length ? t("Interview notes", "面经") : null,
+      item.rounds.some((entry) => entry.note?.trim()) ? t("Round notes", "轮次备注") : null,
+    ].filter(Boolean).join(" · ");
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -365,18 +374,6 @@ export default function OpportunitiesPage() {
                           <ChevronDown className={`mt-0.5 size-4 shrink-0 text-stone-400 transition ${open ? "rotate-180" : ""}`} />
                           <span className="line-clamp-2">{item.targetRole || t("Untitled role", "未填写岗位")}</span>
                         </button>
-                        {recapsFor(item).length > 0 && (
-                          <Link href={`/app/recaps?selected=${recapsFor(item)[0].id}`}
-                            className="ml-6 mt-1 inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100">
-                            <FileText className="size-3" />{t("Notes", "面经")}
-                          </Link>
-                        )}
-                        {item.rounds.some((entry) => entry.note?.trim()) && (
-                          <button type="button" onClick={() => setExpanded(item.id)}
-                            className="ml-6 mt-1 inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600 hover:bg-stone-200">
-                            <StickyNote className="size-3" />{t("Round notes", "轮次备注")}
-                          </button>
-                        )}
                       </td>
                       {!presentationMode && <><td className="px-4 py-3">
                         <select value={item.status} title={statusLabel(item.status, en)} aria-label={t("Result", "结果")} disabled={busy === item.id} onChange={(event) => void setStatus(item, event.target.value)}
@@ -416,14 +413,6 @@ export default function OpportunitiesPage() {
                                 <span className="min-w-0 flex-1 truncate">{t("View learning progress from this interview", "查看这场面试的补强进度")}</span>
                               </Link>
                             )}
-                            {recapsFor(item).map((recap) => (
-                              <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`}
-                                className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-violet-50 px-4 py-2.5 text-sm text-violet-900 transition hover:bg-violet-100">
-                                <FileText className="size-4 shrink-0 text-violet-600" />
-                                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-violet-600">{t("Notes", "面经")}</span>
-                                <span className="min-w-0 flex-1 truncate" title={recap.title}>{recap.title}</span>
-                              </Link>
-                            ))}
                             {cardsFor(item).length > 0 && (
                               <Link href="/app/cards"
                                 className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900 transition hover:bg-emerald-100">
@@ -440,39 +429,17 @@ export default function OpportunitiesPage() {
                                 <span className="min-w-0 flex-1 truncate">{t(`${plansFor(item).length} related course${plansFor(item).length > 1 ? "s" : ""}`, `${plansFor(item).length} 门相关课程`)}</span>
                               </button>
                             )}
-                            {item.rounds.some((entry) => entry.note?.trim()) && (
-                              <div className="rounded-2xl bg-white px-4 py-3 text-sm text-stone-700">
-                                <div className="flex items-center gap-3">
-                                  <StickyNote className="size-4 shrink-0 text-stone-500" />
-                                  <span className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t("Round notes", "轮次备注")}</span>
-                                </div>
-                                <div className="mt-2 space-y-2">
-                                  {item.rounds.filter((entry) => entry.note?.trim()).map((entry) => (
-                                    <div key={entry.id}>
-                                      <span className="text-[11px] font-medium text-stone-400">{t(`Round ${entry.roundNumber}`, `第 ${entry.roundNumber} 轮`)} · {stageLabel(entry.stage, en)}</span>
-                                      <p className="mt-0.5 whitespace-pre-wrap leading-6">{entry.note}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {(item.jdContent || item.inviteContent) && (
+                            {otherContent(item, recapsFor(item)) && (
                               <button type="button"
-                                onClick={() => setPreview({
-                                  title: t("Other", "其他"),
-                                  body: [
-                                    item.jdContent ? `${t("Job description", "JD")}\n${item.jdContent}` : "",
-                                    item.inviteContent ? `${t("Invite email", "约面邮件")}\n${item.inviteContent}` : "",
-                                  ].filter(Boolean).join("\n\n---\n\n"),
-                                })}
+                                onClick={() => setDetails({ item, recaps: recapsFor(item) })}
                                 className="flex w-full items-center gap-3 rounded-2xl bg-stone-100 px-4 py-2.5 text-left text-sm text-stone-800 transition hover:bg-stone-200">
                                 <FileSearch className="size-4 shrink-0 text-stone-500" />
                                 <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t("Other", "其他")}</span>
-                                <span className="min-w-0 flex-1">{t("JD, invite email", "JD、约面邮件")}</span>
+                                <span className="min-w-0 flex-1 truncate">{otherContent(item, recapsFor(item))}</span>
                               </button>
                             )}
                             {recapsFor(item).length === 0 && cardsFor(item).length === 0 && plansFor(item).length === 0
-                              && !item.jdContent && !item.inviteContent && (
+                              && !otherContent(item, recapsFor(item)) && (
                                 <p className="text-sm text-stone-400">{t("Nothing attached to this interview yet.", "这次面试还没有关联任何内容。")}</p>
                               )}
                           </div>
@@ -501,9 +468,38 @@ export default function OpportunitiesPage() {
           ); })}</div>
         </AppDialog>
       )}
-      {preview && (
-        <AppDialog title={preview.title} wide onClose={() => setPreview(null)}>
-          <pre className="max-h-[60dvh] overflow-auto whitespace-pre-wrap rounded-2xl bg-stone-50 p-4 text-sm leading-6 text-stone-700">{preview.body}</pre>
+      {details && (
+        <AppDialog title={t("Other", "其他")} wide onClose={() => setDetails(null)}>
+          <div className="max-h-[60dvh] space-y-3 overflow-y-auto">
+            {details.item.jdContent && (
+              <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">JD</h3>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-700">{details.item.jdContent}</p>
+              </section>
+            )}
+            {details.item.inviteContent && (
+              <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t("Invite email", "约面邮件")}</h3>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-700">{details.item.inviteContent}</p>
+              </section>
+            )}
+            {details.recaps.map((recap) => (
+              <Link key={recap.id} href={`/app/recaps?selected=${recap.id}`} onClick={() => setDetails(null)}
+                className="flex items-center gap-3 rounded-2xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm text-violet-900 transition hover:bg-violet-100">
+                <FileText className="size-4 shrink-0 text-violet-600" />
+                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-violet-600">{t("Interview notes", "面经")}</span>
+                <span className="min-w-0 flex-1 truncate" title={recap.title}>{recap.title}</span>
+              </Link>
+            ))}
+            {details.item.rounds.filter((entry) => entry.note?.trim()).map((entry) => (
+              <section key={entry.id} className="rounded-2xl border border-stone-200 bg-white p-4">
+                <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                  <StickyNote className="size-3.5" />{t(`Round ${entry.roundNumber}`, `第 ${entry.roundNumber} 轮`)} · {stageLabel(entry.stage, en)}
+                </h3>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-700">{entry.note}</p>
+              </section>
+            ))}
+          </div>
         </AppDialog>
       )}
       {editing && (
