@@ -23,4 +23,6 @@ npm run icons
 against these sources without writing anything. It runs in the Windows installer
 workflow before the release is built, and `frontend/tests/brand-ui.mjs` re-checks
 the committed SVGs on every frontend PR.
+Desktop and taskbar icons use the transparent `ardor-mark-favicon.svg` directly;
+the app tiles remain available for opaque surfaces such as the iOS touch icon.
 `desktop/assets/icon.png` and `icon.ico` are build outputs and stay gitignored.

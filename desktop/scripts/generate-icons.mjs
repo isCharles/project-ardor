@@ -13,12 +13,9 @@ const asset = (name) => fileURLToPath(new URL(`../assets/${name}`, import.meta.u
 const frontendApp = (name) => fileURLToPath(new URL(`../../frontend/src/app/${name}`, import.meta.url));
 const check = process.argv.includes("--check");
 
-const [mark, faviconMark, appLight, appDark, appSmall] = await Promise.all([
-  readFile(brand("ardor-mark.svg")),
+const [faviconMark, appLight] = await Promise.all([
   readFile(brand("ardor-mark-favicon.svg")),
   readFile(brand("ardor-app-light.svg")),
-  readFile(brand("ardor-app-dark.svg")),
-  readFile(brand("ardor-app-small.svg")),
 ]);
 
 async function raster(source, size) {
@@ -50,10 +47,12 @@ const webFavicon = await pngToIco(await Promise.all(webFaviconSizes.map((size) =
 assertSizes(webFavicon, webFaviconSizes, "favicon.ico");
 
 const desktopIco = await pngToIco(await Promise.all(desktopSizes.map((size) =>
-  raster(size <= 32 ? appSmall : appLight, size))));
+  raster(faviconMark, size))));
 assertSizes(desktopIco, desktopSizes, "icon.ico");
 
-const desktopPng = await raster(appLight, 512);
+const desktopPng = await raster(faviconMark, 512);
+const corner = await sharp(desktopPng).ensureAlpha().extract({ left: 0, top: 0, width: 1, height: 1 }).raw().toBuffer();
+if (corner[3] !== 0) throw new Error("desktop icon must keep a transparent background");
 const appleIcon = await sharp(appLight, { density: 144 })
   .resize(180, 180, { fit: "contain" })
   .flatten({ background: "#ffffff" })
@@ -61,7 +60,7 @@ const appleIcon = await sharp(appLight, { density: 144 })
   .toBuffer();
 
 const outputs = new Map([
-  [asset("icon.svg"), Buffer.from(appLight)],
+  [asset("icon.svg"), Buffer.from(faviconMark)],
   [asset("icon.png"), desktopPng],
   [asset("icon.ico"), desktopIco],
   [frontendApp("favicon.ico"), webFavicon],
@@ -98,7 +97,7 @@ const lightPreview = await contactSheet({
   muted: "#736c64",
   rule: "#ddd6cc",
   title: "Ardor · light surfaces",
-  subtitle: "Generated from brand/ardor-app-light.svg, brand/ardor-mark-favicon.svg and brand/ardor-app-small.svg.",
+  subtitle: "Generated from the transparent brand/ardor-mark-favicon.svg; the app tile is retained only for the iOS touch icon.",
   light: true,
 });
 const darkPreview = await contactSheet({
@@ -107,7 +106,7 @@ const darkPreview = await contactSheet({
   muted: "#93a0b6",
   rule: "#22304a",
   title: "Ardor · dark surfaces",
-  subtitle: "The dark app tile for dark surfaces; the light tile is shown on a taskbar strip.",
+  subtitle: "The same transparent mark on dark surfaces; the taskbar strip uses no tile background.",
   light: false,
 });
 await writeFile(brand("preview-light.png"), lightPreview);
@@ -130,21 +129,19 @@ async function contactSheet({ background, ink, muted, rule, title, subtitle, lig
   text(56, 94, 13, muted, subtitle);
   line(56, 118, width - 56, 118);
 
-  const heroApp = light ? appLight : appDark;
-  await image(await raster(heroApp, 128), 56, 148, 128);
-  text(56, 306, 13, muted, "App icon");
+  await image(await raster(faviconMark, 128), 56, 148, 128);
+  text(56, 306, 13, muted, "Desktop icon (transparent)");
   await image(await raster(faviconMark, 128), 232, 148, 128);
-  text(232, 306, 13, muted, "Mark (16–48 px optical cut)");
+  text(232, 306, 13, muted, "Web mark (16–48 px optical cut)");
   await image(await raster(faviconMark, 40), 420, 178, 40);
   text(468, 213, 42, ink, "Ardor", 650);
   text(420, 306, 13, muted, "Wordmark");
 
-  text(56, 366, 13, ink, light ? "App icon — actual size (16–32 use the small cut)" : "Dark app tile — actual size");
+  text(56, 366, 13, ink, light ? "App icon — transparent, actual size" : "Transparent mark — actual size on dark");
   const appSizes = [16, 24, 32, 48, 64, 128];
   for (const [index, size] of appSizes.entries()) {
     const x = 56 + index * 88;
-    const source = light && size <= 32 ? appSmall : heroApp;
-    await image(await raster(source, size), x, 520 - size, size);
+    await image(await raster(faviconMark, size), x, 520 - size, size);
     text(x + size / 2, 544, 11, muted, String(size), 400, "middle");
   }
 
@@ -166,10 +163,10 @@ async function contactSheet({ background, ink, muted, rule, title, subtitle, lig
   }
 
   if (!light) {
-    text(680, 618, 13, ink, "Light app tile on a dark taskbar (the shipped Windows cut)");
+    text(680, 618, 13, ink, "Transparent mark on a dark taskbar");
     parts.push(`<rect x="680" y="636" width="544" height="72" rx="16" fill="#182235"/>`);
     for (const [index, size] of [16, 24, 32, 48].entries()) {
-      await image(await raster(size <= 32 ? appSmall : appLight, size), 706 + index * 84, 672 - size / 2, size);
+      await image(await raster(faviconMark, size), 706 + index * 84, 672 - size / 2, size);
     }
   }
 
