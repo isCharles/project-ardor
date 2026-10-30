@@ -53,7 +53,7 @@ const STATUS_STYLE: Record<string, string> = {
   SCHEDULED: "bg-violet-100 text-violet-700",
   AWAITING_RESULT: "bg-amber-100 text-amber-800",
   NEXT_ROUND: "bg-sky-100 text-sky-700",
-  REJECTED: "bg-rose-100 text-rose-700",
+  REJECTED: "bg-stone-100 text-stone-600",
 };
 
 function statusLabel(status: string, en: boolean) {
@@ -61,7 +61,7 @@ function statusLabel(status: string, en: boolean) {
     SCHEDULED: ["Scheduled", "已约面"],
     AWAITING_RESULT: ["Awaiting result", "等通知"],
     NEXT_ROUND: ["Next round", "下一轮"],
-    REJECTED: ["Rejected", "被拒绝"],
+    REJECTED: ["Closed", "终止"],
   };
   const pair = labels[status] ?? [status, status];
   return en ? pair[0] : pair[1];

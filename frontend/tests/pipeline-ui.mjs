@@ -30,6 +30,10 @@ try {
     rounds: [{ id: "round-one", roundNumber: 1, stage: "TECHNICAL", scheduledAt: "2026-10-20T01:00:00Z", occurredAt: null, durationMinutes: 60,
       note: "改期需提前 1 天\n研发岗可能含代码考核且必须使用电脑" }] }];
   opportunities.push({ ...opportunities[0], id: "process-two", company: "Preparation employer", rounds: [] });
+  opportunities.push({ ...opportunities[0], id: "process-three", company: "Newest employer", targetRole: "Newest role",
+    status: "REJECTED", updatedAt: "2026-09-01T01:00:00Z",
+    rounds: [{ id: "round-new", roundNumber: 1, stage: "FINAL", scheduledAt: "2026-12-01T01:00:00Z",
+      occurredAt: null, durationMinutes: 45, note: null }] });
   let slowJob = false, jobPolls = 0;
   await context.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
@@ -64,6 +68,11 @@ try {
   await page.goto(`${origin}/app/job-search`);
   await page.getByRole("heading", { name: "Job search", exact: true }).waitFor();
   await page.locator('main a[href="/app/applications"]').waitFor();
+  // The home card follows the newest interview, not the most recently edited record.
+  await page.getByText("Newest employer", { exact: true }).waitFor();
+  assert.equal(await page.getByText("Closed", { exact: true }).count(), 1, "An ended interview reads as Closed");
+  assert.equal(await page.getByText("Rejected", { exact: true }).count(), 0);
+  await page.screenshot({ path: ".next/pipeline-home-card.png", fullPage: true });
   await page.goto(`${origin}/app/recaps`);
   await page.getByRole("link", { name: /Fixture alpha/ }).waitFor();
   for (const width of [1440, 900, 390]) {
