@@ -694,9 +694,9 @@ public class CareerAgentTools {
             return opportunityService.detail(userId, uuid(opportunityId, "面试流程 ID"));
         }
 
-        @Tool(name = "create_job_opportunity", value = "为当前用户创建一条真实面试流程记录。用户发来 HR 面试邀请、通知或 JD，或明确说收到面试时使用；公司名不明确时必须先追问，不要猜测。targetRole 填招聘标题或岗位原文。写入前会等待用户确认")
+        @Tool(name = "create_job_opportunity", value = "为当前用户创建一条真实面试流程记录。用户发来 HR 面试邀请、通知或 JD，或明确说收到面试时使用；公司名不明确时必须先追问，不要猜测。公司名用通用称呼：以中文名更常见的写中文（如“快手”“字节跳动”），以官方英文品牌更常见的写英文（如 Shopee、Rednote）；不要把中文名写成拼音。targetRole 填招聘标题或岗位原文。写入前会等待用户确认")
         public InterviewProcessView createJobOpportunity(
-                @P("公司名，必填；不明确时先追问") String company,
+                @P("公司名，必填；不明确时先追问；用常见中文名或官方英文品牌，不写拼音") String company,
                 @P("招聘标题或岗位原文，例如“后端开发实习生—国际商业化产品与技术”；未知传空字符串") String targetRole,
                 @P("面试平台或工具，例如 Feishu、Workatsea、acmcoder；未知传空字符串") String platform,
                 @P("岗位 JD 原文；未知传空字符串") String jdContent,
@@ -715,7 +715,7 @@ public class CareerAgentTools {
         @Tool(name = "update_job_opportunity", value = "修改当前用户面试流程的公司、岗位、平台、JD、约面邮件或状态。只有四个状态：SCHEDULED（已约面）、AWAITING_RESULT（面完等通知）、NEXT_ROUND（本轮通过、等下一轮）、REJECTED（被拒绝）。面完说等通知用 AWAITING_RESULT，说进下一轮用 NEXT_ROUND，约好下一轮时间用 SCHEDULED，说挂了或没戏了用 REJECTED。状态随时可以改回任意一个，用户说记错了就直接改")
         public InterviewProcessView updateJobOpportunity(
                 @P("面试流程 UUID") String opportunityId,
-                @P("完整公司名；不修改传空字符串") String company,
+                @P("完整公司名（常见中文名或官方英文品牌，不写拼音）；不修改传空字符串") String company,
                 @P("完整招聘标题或岗位名；不修改传空字符串") String targetRole,
                 @P("完整面试平台；不修改传空字符串") String platform,
                 @P("完整 JD；不修改传空字符串") String jdContent,
