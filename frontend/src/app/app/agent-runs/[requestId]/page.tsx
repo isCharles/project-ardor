@@ -517,7 +517,7 @@ function ConversationTraceView({ trace, schemas }: { trace: ConversationTrace; s
         <div className="border-b border-stone-200/70 px-4 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t("Conversation", "对话")}</p>
           <h2 className="mt-1 truncate text-sm font-semibold text-stone-800">{trace.title || t("Untitled chat", "未命名对话")}</h2>
-          <p className="mt-1 text-[10px] text-stone-400">{trace.runs.length} {t("turns", "轮")}</p>
+          <p className="mt-1 text-[10px] text-stone-400">{trace.runs.length} {trace.runs.length === 1 ? t("turn", "轮") : t("turns", "轮")}</p>
           <label className="mt-2 flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[11px] text-stone-500"><Search className="size-3" /><input aria-label={t("Search turns", "搜索轮次")} value={runFilter} onChange={(event) => setRunFilter(event.target.value)} placeholder={t("Search turns", "搜索轮次")} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-stone-400" /></label>
         </div>
         <div className="max-h-[68vh] overflow-y-auto p-2">

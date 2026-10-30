@@ -33,7 +33,7 @@ import type { AgentFeature } from "@/lib/agent-features";
 import { featureHref } from "@/lib/agent-features";
 import { useDismiss } from "@/components/ardor/overlay";
 import { ApiError, api, streamApi } from "@/lib/api";
-import { useLocale } from "@/lib/locale";
+import { useLocale, type Locale } from "@/lib/locale";
 import { useTypewriter } from "@/lib/use-typewriter";
 
 type SelectedContext = { type: "RESUME" | "RECAP" | "KNOWLEDGE" | "LEARNING" | "SERVICE"; id: string; label: string };
@@ -76,10 +76,10 @@ type AgentState = {
   memory: AgentMemory;
 };
 
-function formatElapsed(milliseconds: number) {
-  if (milliseconds <= 0) return "即时";
+function formatElapsed(milliseconds: number, locale: Locale) {
+  if (milliseconds <= 0) return locale === "en" ? "Instant" : "即时";
   if (milliseconds < 1000) return `${Math.max(1, Math.round(milliseconds))} ms`;
-  return `${(milliseconds / 1000).toFixed(1)} 秒`;
+  return `${(milliseconds / 1000).toFixed(1)}${locale === "en" ? "s" : " 秒"}`;
 }
 
 function savedRunTrace(raw?: string | null) {
@@ -1539,7 +1539,7 @@ export default function AgentHomePage() {
     ? streamProgress.steps.map((step, index) => ({ ...step, key: `recovered-${index}`, done: true })) : runSteps;
   const liveTrace = showLiveTrace ? <ExecutionTrace title={liveTitle}
     active={(busy || !!runningRun) && phase !== "OUTPUT"}
-    elapsed={formatElapsed(runElapsed)} thinking={runThinking} steps={displayedSteps}
+    elapsed={formatElapsed(runElapsed, locale)} thinking={runThinking} steps={displayedSteps}
     >
     {runningRun && <p>{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
     {retryFailures.map((failure, index) => <p key={index} className="text-amber-700">{failure.label} · {failure.detail}</p>)}
@@ -1666,7 +1666,7 @@ export default function AgentHomePage() {
                         </>}
                         {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <>
                           <CompactionNotice usage={trace.contextUsage} traceHref={message.runId ? `/app/agent-runs/${message.runId}` : undefined} />
-                          <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTrace>
+                          <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs, locale)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTrace>
                         </>; })()}
                         <div className="ardor-markdown"><ReactMarkdown remarkPlugins={markdownPlugins}>{message.content}</ReactMarkdown></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 block text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time>
                       </div>
