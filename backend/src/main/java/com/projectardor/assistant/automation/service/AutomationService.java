@@ -106,7 +106,10 @@ public class AutomationService {
     /** Atomically takes ownership of one scheduled occurrence before invoking the model. */
     @Transactional
     public boolean claim(Automation automation, Instant now) {
-        Instant next = nextRun(automation.getCronExpression(), automation.getTimezone(), now);
+        // A one-time run is disarmed up front: if the process dies before finish(), a re-armed
+        // occurrence would run the task a second time and delete-on-success would never have happened.
+        Instant next = automation.isDeleteAfterRun() ? null
+                : nextRun(automation.getCronExpression(), automation.getTimezone(), now);
         return repository.claim(automation.getId(), automation.getUserId(), now, next) == 1;
     }
 

@@ -108,6 +108,22 @@ class AutomationViewTests {
         verify(repository, never()).delete(any());
     }
 
+    @Test void oneTimeClaimDisarmsSoACrashCannotRunItTwice() {
+        var entity = entity(true);
+        when(repository.claim(entity.getId(), owner, Instant.parse("2030-01-01T01:00:00Z"), null)).thenReturn(1);
+        assertThat(service.claim(entity, Instant.parse("2030-01-01T01:00:00Z"))).isTrue();
+        verify(repository).claim(eq(entity.getId()), eq(owner),
+                eq(Instant.parse("2030-01-01T01:00:00Z")), isNull());
+    }
+
+    @Test void recurringClaimArmsTheFollowingOccurrence() {
+        var entity = entity();
+        when(repository.claim(eq(entity.getId()), eq(owner), any(Instant.class), any(Instant.class))).thenReturn(1);
+        assertThat(service.claim(entity, Instant.parse("2030-01-01T01:00:00Z"))).isTrue();
+        verify(repository).claim(entity.getId(), owner, Instant.parse("2030-01-01T01:00:00Z"),
+                Instant.parse("2030-01-02T01:00:00Z"));
+    }
+
     @Test void recurringRunStillSchedulesTheNextOccurrence() {
         var entity = entity();
         when(repository.findByIdAndUserId(entity.getId(), owner)).thenReturn(Optional.of(entity));
