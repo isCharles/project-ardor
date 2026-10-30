@@ -47,7 +47,7 @@
 }
 
 .workspaceBrand strong { font-size: 0.9rem; font-weight: 650; letter-spacing: -0.015em; }
-.brandMark { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: 0.7rem; color: white; background: linear-gradient(145deg, #ff6a45, #f04435); box-shadow: 0 8px 22px rgb(240 68 53 / 24%); }
+.brandMark { width: 1.75rem; height: 1.75rem; flex: none; filter: drop-shadow(0 5px 10px rgb(24 102 255 / 18%)); }
 .navItem { border: 1px solid transparent; }
 .navItem[aria-current="page"] { border-color: rgb(255 255 255 / 66%); }
 

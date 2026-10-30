@@ -1,12 +1,13 @@
 "use client";
 
 import {
-  BookOpenText, CalendarRange, FileText, Flame, GraduationCap, Layers, MessageSquare, PanelLeft, Settings, ShieldCheck, SquareStack, Target, X,
+  BookOpenText, CalendarRange, FileText, GraduationCap, Layers, MessageSquare, PanelLeft, Settings, ShieldCheck, SquareStack, Target, X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 
+import { ArdorMark } from "@/components/ardor/brand-mark";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
@@ -68,7 +69,7 @@ export function AppShell({
       >
         <div className={cn(styles.sidebarHeader, "flex h-16 shrink-0 items-center justify-between pl-4 pr-2")}>
           <Link href="/app" onClick={close} className={styles.workspaceBrand}>
-            <span className={styles.brandMark} aria-hidden><Flame className="size-4" /></span>
+            <ArdorMark className={styles.brandMark} />
             <strong>Project Ardor</strong>
           </Link>
           <button

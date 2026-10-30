@@ -1,5 +1,6 @@
 "use client";
 
+import { ArdorMark } from "@/components/ardor/brand-mark";
 import { ProfileAvatar } from "@/components/ardor/profile-avatar";
 
 import {
@@ -340,6 +341,10 @@ export function WorkspaceRail() {
 
   return (
     <aside className="relative z-30 flex h-full w-16 shrink-0 flex-col items-center border-r border-stone-200/70 bg-gradient-to-b from-white via-[#faf8ff] to-[#fff8f6] py-3" aria-label={t("Main navigation", "主导航")}>
+      <Link href="/app" aria-label={t("Ardor home", "Ardor 首页")} title="Ardor" onClick={() => { setTooltip(null); closeMore(); setAccountOpen(false); }}
+        className="mb-2 grid size-11 shrink-0 place-items-center rounded-2xl transition-colors hover:bg-white hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet-500">
+        <ArdorMark className="size-7" />
+      </Link>
       <nav className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto px-2" aria-label={t("Workspaces", "工作区")} onScroll={() => setTooltip(null)}>
         {primaryWorkspaces.map((item, index) => {
           const active = destinationActive(item.id, pathname);

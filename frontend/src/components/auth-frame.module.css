@@ -43,16 +43,10 @@
 }
 
 .brandMark {
-  display: grid;
   width: 1.9rem;
   height: 1.9rem;
-  place-items: center;
-  border-radius: 0.65rem;
-  background: #fb6c57;
-  color: white;
-  font-size: 1.1rem;
-  line-height: 1;
-  box-shadow: 0 8px 18px rgba(251, 108, 87, 0.23);
+  flex: none;
+  filter: drop-shadow(0 5px 10px rgba(24, 102, 255, 0.18));
 }
 
 .layout {
