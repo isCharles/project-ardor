@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
 
 import { ApiError, api } from "@/lib/api";
+import { useAcknowledgeModule } from "@/lib/background-tasks";
 import { useLocale, type Locale } from "@/lib/locale";
 
 type Preferences = { roles: string[]; locations: string[]; keywords: string[]; suggestedRoles: string[] };
@@ -32,6 +33,7 @@ type Posting = {
 type Summary = { inbox: number; saved: number; ignored: number; activeRunId: string | null };
 type StateFilter = "NEW" | "SAVED" | "IGNORED";
 
+const DISCOVERY_MODULE = "applications";
 const statusLabel: Record<string, [string, string]> = {
   QUEUED: ["Queued", "排队中"], RUNNING: ["Searching", "正在搜索"], COMPLETED: ["Completed", "已完成"],
   PARTIAL: ["Partially completed", "部分完成"], FAILED: ["Failed", "失败"], CANCELED: ["Canceled", "已取消"],
@@ -90,6 +92,7 @@ function JobDiscoveryContent() {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [inboxReady, setInboxReady] = useState(false);
   const [starting, setStarting] = useState(false);
   const [busyPosting, setBusyPosting] = useState("");
   const [confirmApplied, setConfirmApplied] = useState("");
@@ -106,9 +109,11 @@ function JobDiscoveryContent() {
       setItems(current => append ? [...current, ...page] : page);
       setHasMore(page.length === 20);
       setOffset(nextOffset);
+      return true;
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
       else setError(reason instanceof Error ? reason.message : t("Could not load the job inbox", "无法加载岗位收件箱"));
+      return false;
     }
   }, [router, t]);
 
@@ -131,7 +136,10 @@ function JobDiscoveryContent() {
           const current = await api<Run>(`/api/job-discovery/runs/${runId}`);
           if (active) setRun(current);
         }
-        if (active) await loadItems("NEW", "", 0, false);
+        if (active) {
+          const loaded = await loadItems("NEW", "", 0, false);
+          if (loaded && active) setInboxReady(true);
+        }
       } catch (reason) {
         if (!active) return;
         if (reason instanceof ApiError && reason.status === 401) router.replace("/login");
@@ -252,6 +260,8 @@ function JobDiscoveryContent() {
     setQuery(""); setAppliedQuery("");
     void loadItems(next, "", 0, false);
   }
+
+  useAcknowledgeModule(DISCOVERY_MODULE, inboxReady, `${run?.id ?? ""}:${run?.status ?? ""}`);
 
   const working = !!run && ["QUEUED", "RUNNING"].includes(run.status);
   const lastRunTerminal = !!run && ["COMPLETED", "PARTIAL", "FAILED", "CANCELED"].includes(run.status);

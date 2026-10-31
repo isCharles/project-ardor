@@ -45,6 +45,7 @@ const makeRun = (id, overrides = {}) => ({
 });
 
 const writes = [];
+const moduleReads = [];
 const runStarts = [];
 const appliedBodies = [];
 let appliedCalls = 0;
@@ -74,6 +75,18 @@ try {
     if (path === "/api/profile/sidebar") return route.fulfill({ json: { userId: "discovery-owner", hrefs: ["/app"], configured: true, revision: 0 } });
     if (path === "/api/profile") return route.fulfill({ json: { displayName: "Synthetic owner", timezone: "Asia/Shanghai", targetRoles: [] } });
     if (path === "/api/background-tasks/summary") return route.fulfill({ json: { activeCount: 0, unreadByModule: {} } });
+    if (path === "/api/background-tasks/modules/applications/read" && method === "POST") {
+      moduleReads.push("applications");
+      return route.fulfill({ status: 204 });
+    }
+    if (path === "/api/background-tasks" && method === "GET") {
+      return route.fulfill({ json: [{
+        id: "discovery-task", kind: "JOB_DISCOVERY", module: "applications", title: "Job discovery",
+        status: "COMPLETED", attempts: 1, createdAt: now, startedAt: now, finishedAt: now,
+        errorCode: null, resultPath: "/app/job-search/discovery?run=run-1", resourceId: "run-1",
+        completionToken: "token", unread: true, estimateMinSeconds: null, estimateMaxSeconds: null,
+      }] });
+    }
     if (path === "/api/resumes" || path === "/api/opportunities") return route.fulfill({ json: [] });
     if (path === "/api/job-discovery/preferences") return route.fulfill({ json: preferences });
     if (path === "/api/job-discovery/summary") return route.fulfill({ json: summary() });
@@ -158,9 +171,13 @@ try {
   });
 
   const page = await context.newPage();
+  const inboxAcknowledged = page.waitForResponse(response =>
+    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/background-tasks/modules/applications/read");
   await page.goto(`${origin}/app/job-search/discovery`);
   await page.getByRole("heading", { name: "Job inbox" }).waitFor();
   await page.getByText("No jobs in the inbox yet").waitFor();
+  await inboxAcknowledged;
+  assert.ok(moduleReads.length >= 1, "Opening the discovered inbox acknowledges its finished background tasks");
 
   // Criteria start from preferences; suggested roles are one click away.
   const roles = page.getByLabel("Target roles");
@@ -276,7 +293,12 @@ try {
   await Promise.all([page.waitForURL(/\/app\/job-search\/discovery$/), inboxCard.click()]);
   await page.getByRole("heading", { name: "Job inbox", level: 1 }).waitFor();
 
-  console.log("Job discovery UI: hub entry, preferences, partial failure, state moves, apply confirmation once, retry/cancel and zero results passed.");
+  // Background task rows use the product label rather than the raw job kind.
+  await page.goto(`${origin}/app/tasks`);
+  await page.getByRole("heading", { name: "Job discovery", exact: true }).waitFor();
+  assert.equal(await page.getByText("JOB_DISCOVERY", { exact: true }).count(), 0);
+
+  console.log("Job discovery UI: inbox notification acknowledgment, hub entry, preferences, partial failure, state moves, apply confirmation once, retry/cancel and zero results passed.");
 } finally {
   await browser?.close(); server.kill();
   if (server.exitCode === null) await new Promise(resolve => server.once("close", resolve));

@@ -11,7 +11,7 @@ const labels: Record<string, [string, string]> = {
   RESUME_ANALYSIS: ["Resume analysis", "简历分析"], RECAP_ORGANIZE: ["Interview notes", "面经整理"],
   KNOWLEDGE_INDEX: ["Knowledge indexing", "知识库向量化"], LEARNING_CREATE: ["Lesson preparation", "学习内容生成"],
   LEARNING_EVALUATE: ["Practice assessment", "学习评分"], REPLAY_EVALUATE: ["Interview replay", "面试回放"],
-  INTERVIEW_EVALUATE: ["Interview assessment", "模拟面试评价"],
+  INTERVIEW_EVALUATE: ["Interview assessment", "模拟面试评价"], JOB_DISCOVERY: ["Job discovery", "岗位发现"],
 };
 export default function BackgroundTasksPage() {
   const { t } = useLocale();
