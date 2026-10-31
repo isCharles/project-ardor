@@ -139,9 +139,11 @@ try {
     await page.waitForFunction(expected => window.__runStreamHolds >= expected, holds, { timeout: 5000 });
     await page.evaluate(() => window.__releaseRunStream());
   };
-  await release(1);
-  await release(2);
   const liveTimeline = page.locator("[data-execution-timeline]").last();
+  await release(1);
+  await liveTimeline.locator("[data-tool-group] > summary").getByText("Working", { exact: true }).waitFor();
+  await liveTimeline.getByText("Waiting for model", { exact: true }).waitFor();
+  await release(2);
   await liveTimeline.getByText("我先看一下你本周的日历。", { exact: true }).waitFor();
   const liveGroup = liveTimeline.locator("[data-tool-group]").first();
   await liveGroup.locator(":scope > summary").getByText("Working", { exact: true }).waitFor();

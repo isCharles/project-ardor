@@ -25,7 +25,7 @@ export function ExecutionTimeline({ title, elapsed, thinking, steps, running = f
     : completed && timeline.tools.length > 0
       ? timeline.tools.length === 1 ? t("Used 1 tool", "执行工具 1 次") : t(`Used ${timeline.tools.length} tools`, `执行工具 ${timeline.tools.length} 次`)
       : title;
-  if (timeline.rows.length === 0 && !thinking) return <div data-execution-timeline className="mb-4 min-w-0 text-sm text-stone-800">{children}</div>;
+  if (!working && timeline.rows.length === 0 && !thinking) return <div data-execution-timeline className="mb-4 min-w-0 text-sm text-stone-800">{children}</div>;
   return <div data-execution-timeline className="mb-4 min-w-0 text-sm text-stone-800">
     <details data-tool-group open={working} className="group text-xs text-stone-500">
       <summary className="flex w-fit cursor-pointer list-none items-center gap-2 py-1 transition-colors hover:text-stone-800 [&::-webkit-details-marker]:hidden">
