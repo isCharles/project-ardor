@@ -79,6 +79,8 @@ ASK 查询自动、写入确认；FULL 已登记的非删除写入自动；AUTO 
 | 面试记录与问题 | 求职 | `jobsearch.record.domain.InterviewRecap` 关联流程与可空轮次；问题通过报告继承 | 不推测历史轮次，不重复要求填写父对象拥有的信息 |
 | 最终纪要与规范化结果；历史转录/确认版本 | 求职 | 新提交直接保存最终纪要并异步规范化；V59 模式区分旧转录任务；旧 `interview_minutes` / `interview_minutes_reviews` 历史保留 | 新入口不要求原始转录或二次确认；Agent 不得改写用户提交来源；结果不是事实源；轮次关联覆盖整条来源链 |
 | 投递活动 | 求职 | 日计数、目标与提醒 | 日计数不等于逐份投递记录 |
+| 外部岗位 / JobPosting | 求职（公共岗位事实） | `jobsearch.discovery` 的 `job_postings` + `job_posting_sources`；规范化身份、来源、可空薪资/经验/截止、链接状态与核验时间；V94 | 不是用户收藏，也不是已投递岗位；发现不创建面试流程 |
+| 岗位收件箱状态 / JobDiscovery | 求职（用户状态） | `job_posting_discoveries`：NEW/SAVED/IGNORED、匹配理由与依据、`applied_at`；`job_discovery_preferences`、`job_discovery_runs` | 发现/收藏/打开链接不等于投递；只有明确确认简历已发出才计一次 RESUME |
 | 学习计划 | 学习 | SCHEDULED、IN_PROGRESS、NEEDS_REVIEW、COMPLETED；LearningPlanView 为 HTTP/Agent 共用的领域应用快照，见 [快照合同](LEARNING_ATTEMPT_HISTORY.md#学习计划应用快照) | 来源与目标面试是关联，不是全部学习都必须有面试父对象 |
 | 学习尝试与内容版本 | 学习 | V52 新增 `learning_attempts`（每轮提交一行不可变事实）与 `learning_plans.content_version`/`exercises_version`；旧 `last_evaluation.attempts` 仅作兼容投影 | 尝试历史不是最后分数缓存；版本号不是资源 UUID；回填的 LEGACY 行不伪造评分模型 |
 | 模拟面试 | 学习训练 | `learning.practice.mockinterview` 与既有 session 状态 | 名称必须明确 Mock Interview；真实面试保留 Interview |
@@ -102,6 +104,8 @@ ASK 查询自动、写入确认；FULL 已登记的非删除写入自动；AUTO 
 投递节奏返回 `ApplicationRhythmView`，HTTP 保留 `ApplicationRhythmResponse` 映射；每天的打招呼数和实际简历投递数是两个独立计数，不创建岗位实体，也不得相加或互相替代。V92 把旧 `application_daily_counts.count` 原值保留为 `greeting_count`，历史 `resume_count` 为 NULL（未记录，不是 0）；旧周目标迁为 `weekly_greeting_goal`，新的简历目标默认为 0。长期记忆服务、整理器与工具使用 `AgentMemoryView` / `AgentMemoryItemView`；HTTP 仍适配原字段，当前摘要与含失效项的历史列表保持不同含义。此次类型迁移不改变来源校验、可信度、自动维护、去重、有效期或删除确认。
 
 规范入口收拢在 `/app/job-search` 和 `/app/learning`。旧页面与规范路径复用同一个实现，保留 query string 与资源 ID；不得复制一套写入流程。旧 API 的语义不因产品命名而改变。
+
+岗位发现新增页面 `/app/job-search/discovery`，属于求职域页面而非新的稳定 destination ID（侧栏仍只有求职、面试、简历等子入口）；求职首页的“岗位收件箱”卡片进入该页，`/api/job-discovery/**` 的用户状态仍按当前用户隔离。搜索、抓取、去重、部分失败、取消/重试和安全边界见 [岗位发现合同](JOB_DISCOVERY.md)；它不新增调度器、队列或审批系统，执行复用 `ai_jobs` 与后台任务视图。
 
 | 稳定 destination ID | 规范页面 | 旧页面 / 对外 API 保持的含义 |
 |---|---|---|
@@ -139,6 +143,7 @@ A/B 阶段不改 schema；C 的轮次关联通过 V50 新增可空列与复合�
 - 删除学习计划会标记创建请求的删除状态，删除计划；日程的学习计划外键按既有迁移级联处理。
 - 新增轮次关联可空、核验用户及流程；历史项保留未指定，可按流程统计核对。不得回填假轮次。
 - V51 将规范学习来源区分为记录与问题，原 RECAP/sourceId 仅作兼容投影；无法可靠解析的历史项标为 LEGACY_RECAP。准备目标独立保存、不从来源推断。见 [学习来源与目标合同](LEARNING_ORIGIN_CONTEXT.md)。
+- V94 新增岗位发现：`job_postings`、`job_posting_sources`、`job_posting_discoveries`、`job_discovery_preferences`、`job_discovery_runs`，扩展 `ai_jobs` 的 `ck_ai_jobs_type` 约束以接受 `JOB_DISCOVERY`（不改写 V33），并重建 `background_task_catalog`（只映射 JOB_DISCOVERY 的模块与标题，旧视图改名保留）。岗位事实与用户收藏/忽略状态分表；不改写已执行迁移，不新增删除级联之外的业务级联（删除岗位会级联其来源和用户发现状态，删除用户会级联其发现状态）。
 - V52 新增学习尝试历史与内容/题目版本，旧 JSONB 投影、旧字段和资源 UUID 保持兼容；回填只从旧投影还原可证明字段，缺少 rubric/model 的历史行标 `legacy` 而不伪造；不一致历史（投影条数 > attempt_count）回填后 `attempt_no` 可超过 `attempt_count`，运行时按已存最大序号继续、允许跳号且不改写 `attempt_count`；删除学习计划通过复合外键不可逆级联删除尝试，是本批唯一新增的删除级联。见 [学习尝试历史与内容版本合同](LEARNING_ATTEMPT_HISTORY.md)。
 
 E2 的 V53 只新增可空列、新表和索引：`messages.request_id/run_id` 仅回填可证明的已完成交流（`agent_runs.assistant_message_id` 唯一指向 + 紧邻且内容一致的用户消息），无法证明的历史保持 NULL；新增 `agent_tool_calls`、`agent_proposals` 记录工具调用与提案生命周期，`agent_tool_audit` 增加 `approval_source` 且旧行默认 AUTO。旧 `messages.tool_calls`/`proposal_resolutions` JSON 投影继续写入；提案首决定与旧 key 兼容。提案的 CONFIRMED 是用户决定报告，不是业务写入成功的证明；已开始但未返回结果的工具在取消/超时/失败时记为 UNKNOWN。详见 [Agent 执行关联与审计合同](AGENT_EXECUTION_CONTRACTS.md)。

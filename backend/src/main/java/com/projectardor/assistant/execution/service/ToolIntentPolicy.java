@@ -9,6 +9,7 @@ public final class ToolIntentPolicy {
     private ToolIntentPolicy() {}
     private static final Set<String> READS = Set.of("get_profile", "search_web", "list_knowledge_documents", "search_knowledge",
             "list_learning_plans", "get_learning_plan", "list_memories", "search_memories", "get_application_rhythm",
+            "get_job_discovery_run", "list_discovered_jobs",
             "list_calendar_tasks", "list_recurring_tasks", "get_calendar_advice", "find_available_slots", "check_calendar_conflict",
             "list_resumes", "get_resume_analysis_status", "get_resume_analysis", "list_latex_projects", "read_latex_project",
             "read_latex_project_history", "list_interviews", "get_next_question", "get_ai_job", "get_interview_evaluation",

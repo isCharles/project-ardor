@@ -135,7 +135,9 @@ jobs:
       - name: Run end-to-end Golden Path
         shell: bash
         run: |
-          java -jar backend/target/ardor-backend-0.9.0.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s --app.agent.context.windows.semantic-recall-probe=65536 --app.agent.context.windows.runtime-integration-probe=32768 > "$RUNNER_TEMP/backend.log" 2>&1 &
+          # The synthetic window still forces compaction, but must leave room for the full
+          # tool schema catalog plus the eight-message recent window after summarizing.
+          java -jar backend/target/ardor-backend-0.9.0.jar --spring.datasource.hikari.maximum-pool-size=2 --app.agent.stream.silence-timeout=5s --app.ai-jobs.stale-after=10s --app.ai-jobs.maintenance-delay=1s --app.agent.context.windows.semantic-recall-probe=65536 --app.agent.context.windows.runtime-integration-probe=40960 > "$RUNNER_TEMP/backend.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/backend.pid"
           for attempt in {1..90}; do
             if curl --silent --fail http://127.0.0.1:8080/actuator/health \
@@ -165,7 +167,7 @@ jobs:
         env:
           ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
           ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
-          ARDOR_ACCEPTANCE_MODEL_WINDOW: 32768
+          ARDOR_ACCEPTANCE_MODEL_WINDOW: 40960
         run: |
           test "$ARDOR_ACCEPTANCE_DISPOSABLE_DB" = true
           # Bounded synthetic history reaches real compaction; rate denial has separate coverage.

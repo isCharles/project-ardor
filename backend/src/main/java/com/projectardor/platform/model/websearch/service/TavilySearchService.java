@@ -27,8 +27,14 @@ public class TavilySearchService {
     }
 
     public WebSearchResult search(UUID userId, String rawQuery) {
+        return search(userId, rawQuery, 5);
+    }
+
+    /** Job discovery bounds each query to keep one run's provider cost predictable. */
+    public WebSearchResult search(UUID userId, String rawQuery, int maxResults) {
         String query = normalizeQuery(rawQuery);
-        return execute(configService.requireApiKey(userId), query, 5);
+        if (maxResults < 1 || maxResults > 10) throw new IllegalArgumentException("每次搜索的结果数必须在 1 到 10 之间");
+        return execute(configService.requireApiKey(userId), query, maxResults);
     }
 
     public boolean available(UUID userId) {

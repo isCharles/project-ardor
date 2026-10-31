@@ -150,7 +150,8 @@ for (; extraTurns < 16; ) {
     reasoningDepth: "AUTO",
   } });
   const events = text.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => JSON.parse(line.slice(5).trim()));
-  assert.ok(events.some(event => event.type === "done"), "Synthetic compaction run must complete");
+  assert.ok(events.some(event => event.type === "done"),
+    `Synthetic compaction run must complete: ${JSON.stringify(events.filter(event => event.type === "error"))}`);
   const contexts = events.filter(event => event.type === "context").map(event => event.contextUsage);
   if (contexts.some(item => item.state === "COMPACTING")) {
     const measured = contexts.at(-1);
