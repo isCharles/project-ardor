@@ -27,7 +27,7 @@ export function AutoGrowTextarea({ className, onInput, ...props }: ComponentProp
   return (
     <textarea
       ref={ref}
-      className={cn("max-h-[60vh] overflow-y-auto", className)}
+      className={cn("max-h-[60vh] resize-none overflow-y-auto", className)}
       onInput={(event) => {
         grow(event.currentTarget);
         onInput?.(event);
