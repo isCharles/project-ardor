@@ -3,8 +3,8 @@ import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 
 // Synthetic messages and stream events only; never calls a model or a real account.
-const origin = "http://127.0.0.1:3128";
-const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", "3128"], { stdio: "pipe" });
+const origin = "http://127.0.0.1:3129";
+const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", "3129"], { stdio: "pipe" });
 let logs = "", browser, liveDone = false;
 const date = new Date().toISOString();
 server.stdout.on("data", chunk => logs += chunk); server.stderr.on("data", chunk => logs += chunk);
