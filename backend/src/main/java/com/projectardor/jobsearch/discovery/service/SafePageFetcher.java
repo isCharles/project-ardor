@@ -1,7 +1,6 @@
 package com.projectardor.jobsearch.discovery.service;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -10,6 +9,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -57,7 +59,7 @@ public class SafePageFetcher {
 
     @Autowired
     public SafePageFetcher(ExternalBaseUrlPolicy policy) {
-        this(policy::normalizeAndValidate, jdkTransport());
+        this(policy::validatePublicUrl, jdkTransport());
     }
 
     SafePageFetcher(UrlGuard guard, Transport transport) {
@@ -140,19 +142,90 @@ public class SafePageFetcher {
                     .header("Accept", "text/html,application/xhtml+xml")
                     .GET()
                     .build();
-            HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-            String body = "";
+            // Receiving headers does not bound the body. Wait for the capped body
+            // itself and cancel the exchange when the deadline expires, otherwise a
+            // stalled page can hold an AI worker indefinitely.
+            java.util.concurrent.CompletableFuture<HttpResponse<byte[]>> future =
+                    client.sendAsync(request, info -> cappedBody(MAX_BODY_BYTES));
+            HttpResponse<byte[]> response;
+            try {
+                response = future.get(READ_TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException timeout) {
+                future.cancel(true);
+                throw new IOException("读取页面超时", timeout);
+            } catch (InterruptedException interrupted) {
+                future.cancel(true);
+                Thread.currentThread().interrupt();
+                throw interrupted;
+            } catch (ExecutionException failure) {
+                if (failure.getCause() instanceof IOException io) throw io;
+                if (failure.getCause() instanceof RuntimeException runtime) throw runtime;
+                throw new IOException("页面请求失败", failure.getCause());
+            }
             String contentType = response.headers().firstValue("Content-Type").orElse("");
             boolean html = contentType.isEmpty() || contentType.toLowerCase(Locale.ROOT).contains("html");
-            try (InputStream stream = response.body()) {
-                if (html) {
-                    byte[] bytes = stream.readNBytes(MAX_BODY_BYTES + 1);
-                    int length = Math.min(bytes.length, MAX_BODY_BYTES);
-                    body = new String(bytes, 0, length, StandardCharsets.UTF_8);
-                }
+            String body = "";
+            if (html) {
+                byte[] bytes = response.body();
+                int length = Math.min(bytes.length, MAX_BODY_BYTES);
+                body = new String(bytes, 0, length, StandardCharsets.UTF_8);
             }
             String location = response.headers().firstValue("Location").orElse(null);
             return new Response(response.statusCode(), location, contentType, body);
         };
+    }
+
+    /** Collects at most {@code limit} bytes and stops the subscription once full. */
+    private static HttpResponse.BodySubscriber<byte[]> cappedBody(int limit) {
+        return new CappedBodySubscriber(limit);
+    }
+
+    private static final class CappedBodySubscriber implements HttpResponse.BodySubscriber<byte[]> {
+        private final int limit;
+        private final java.io.ByteArrayOutputStream collected = new java.io.ByteArrayOutputStream();
+        private final java.util.concurrent.CompletableFuture<byte[]> result =
+                new java.util.concurrent.CompletableFuture<>();
+        private java.util.concurrent.Flow.Subscription subscription;
+
+        private CappedBodySubscriber(int limit) {
+            this.limit = limit;
+        }
+
+        @Override
+        public java.util.concurrent.CompletionStage<byte[]> getBody() {
+            return result;
+        }
+
+        @Override
+        public void onSubscribe(java.util.concurrent.Flow.Subscription value) {
+            subscription = value;
+            value.request(Long.MAX_VALUE);
+        }
+
+        @Override
+        public void onNext(java.util.List<java.nio.ByteBuffer> buffers) {
+            if (result.isDone()) return;
+            for (java.nio.ByteBuffer buffer : buffers) {
+                int remaining = limit - collected.size();
+                if (remaining <= 0) break;
+                byte[] bytes = new byte[Math.min(remaining, buffer.remaining())];
+                buffer.get(bytes);
+                collected.write(bytes, 0, bytes.length);
+            }
+            if (collected.size() >= limit) {
+                subscription.cancel();
+                result.complete(collected.toByteArray());
+            }
+        }
+
+        @Override
+        public void onError(Throwable failure) {
+            result.completeExceptionally(failure);
+        }
+
+        @Override
+        public void onComplete() {
+            result.complete(collected.toByteArray());
+        }
     }
 }

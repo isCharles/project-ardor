@@ -25,23 +25,34 @@ public class ExternalBaseUrlPolicy {
     }
 
     public String normalizeAndValidate(String rawBaseUrl) {
-        if (rawBaseUrl == null || rawBaseUrl.isBlank()) {
-            throw new IllegalArgumentException("Base URL 不能为空");
-        }
-        String value = rawBaseUrl.strip();
+        String value = validatePublicUrl(rawBaseUrl, "Base URL 不能为空", "Base URL 必须是有效的 HTTP 或 HTTPS 公共地址");
+        while (value.endsWith("/")) value = value.substring(0, value.length() - 1);
+        return value;
+    }
+
+    /**
+     * Validates a public HTTP(S) destination without rewriting its path. Pages
+     * must keep a trailing slash: stripping it could turn one redirect into a loop.
+     */
+    public String validatePublicUrl(String rawUrl) {
+        return validatePublicUrl(rawUrl, "链接不能为空", "链接必须是有效的 HTTP 或 HTTPS 公共地址");
+    }
+
+    private String validatePublicUrl(String rawUrl, String blankMessage, String invalidMessage) {
+        if (rawUrl == null || rawUrl.isBlank()) throw new IllegalArgumentException(blankMessage);
+        String value = rawUrl.strip();
         URI uri;
         try {
             uri = new URI(value);
         } catch (URISyntaxException exception) {
-            throw invalidUrl();
+            throw new IllegalArgumentException(invalidMessage);
         }
         if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
                 || uri.getHost() == null
                 || uri.getUserInfo() != null) {
-            throw invalidUrl();
+            throw new IllegalArgumentException(invalidMessage);
         }
         validatePublicHost(uri.getHost());
-        while (value.endsWith("/")) value = value.substring(0, value.length() - 1);
         return value;
     }
 
@@ -91,10 +102,6 @@ public class ExternalBaseUrlPolicy {
             Thread.currentThread().interrupt();
             throw new ExternalHostResolutionException("Base URL 主机解析被中断，请重试", exception);
         }
-    }
-
-    private IllegalArgumentException invalidUrl() {
-        return new IllegalArgumentException("Base URL 必须是有效的 HTTP 或 HTTPS 公共地址");
     }
 
     private IllegalArgumentException privateAddress() {

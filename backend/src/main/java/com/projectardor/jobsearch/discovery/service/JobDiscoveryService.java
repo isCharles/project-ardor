@@ -195,37 +195,52 @@ public class JobDiscoveryService {
         List<ErrorItem> errors = new ArrayList<>();
         int queriesDone = 0, candidates = 0, newCount = 0, updatedCount = 0, skipped = 0, searchFailures = 0;
         boolean canceled = false;
-        outer:
-        for (String query : queries) {
-            if (repository.cancelRequested(userId, runId)) { canceled = true; break; }
-            WebSearchResult result;
-            try {
-                result = search.search(userId, query, RESULTS_PER_QUERY);
-            } catch (RuntimeException failure) {
-                searchFailures++;
-                addError(errors, query, null, "SEARCH_FAILED", safeMessage(failure));
+        try {
+            outer:
+            for (String query : queries) {
+                if (repository.cancelRequested(userId, runId)) { canceled = true; break; }
+                WebSearchResult result;
+                try {
+                    result = search.search(userId, query, RESULTS_PER_QUERY);
+                } catch (RuntimeException failure) {
+                    searchFailures++;
+                    addError(errors, query, null, "SEARCH_FAILED", safeMessage(failure));
+                    queriesDone++;
+                    saveProgress(userId, runId, queriesDone, candidates, newCount, updatedCount, skipped, errors);
+                    continue;
+                }
                 queriesDone++;
+                for (WebSearchResult.ResultItem item : result.results()) {
+                    if (repository.cancelRequested(userId, runId)) { canceled = true; break outer; }
+                    if (candidates >= MAX_CANDIDATES) {
+                        addError(errors, query, null, "CANDIDATE_LIMIT",
+                                "本次已处理 " + MAX_CANDIDATES + " 个候选，剩余结果留到下次搜索");
+                        break outer;
+                    }
+                    candidates++;
+                    Outcome outcome;
+                    try {
+                        outcome = processCandidate(userId, runId, item, run.roles(), run.locations(),
+                                run.keywords(), query, errors);
+                    } catch (RuntimeException failure) {
+                        // One bad page or oversized value must not strand the run in RUNNING.
+                        addError(errors, query, item.url(), "CANDIDATE_FAILED", safeMessage(failure));
+                        outcome = Outcome.SKIPPED;
+                    }
+                    switch (outcome) {
+                        case NEW -> newCount++;
+                        case UPDATED -> updatedCount++;
+                        case SKIPPED -> skipped++;
+                    }
+                }
                 saveProgress(userId, runId, queriesDone, candidates, newCount, updatedCount, skipped, errors);
-                continue;
             }
-            queriesDone++;
-            for (WebSearchResult.ResultItem item : result.results()) {
-                if (repository.cancelRequested(userId, runId)) { canceled = true; break outer; }
-                if (candidates >= MAX_CANDIDATES) {
-                    addError(errors, query, null, "CANDIDATE_LIMIT",
-                            "本次已处理 " + MAX_CANDIDATES + " 个候选，剩余结果留到下次搜索");
-                    break outer;
-                }
-                candidates++;
-                Outcome outcome = processCandidate(userId, runId, item, run.roles(), run.locations(),
-                        run.keywords(), query, errors);
-                switch (outcome) {
-                    case NEW -> newCount++;
-                    case UPDATED -> updatedCount++;
-                    case SKIPPED -> skipped++;
-                }
-            }
-            saveProgress(userId, runId, queriesDone, candidates, newCount, updatedCount, skipped, errors);
+        } catch (RuntimeException failure) {
+            addError(errors, null, null, "RUN_FAILED", safeMessage(failure));
+            String status = newCount + updatedCount > 0 ? "PARTIAL" : "FAILED";
+            repository.finish(userId, runId, status, queriesDone, candidates, newCount, updatedCount,
+                    skipped, errors.size(), json(errors));
+            throw failure;
         }
         if (repository.cancelRequested(userId, runId)) canceled = true;
         // Hitting the deliberate candidate cap leaves the rest for the next search;
@@ -245,9 +260,8 @@ public class JobDiscoveryService {
     private Outcome processCandidate(UUID userId, UUID runId, WebSearchResult.ResultItem item,
             List<String> roles, List<String> locations, List<String> keywords, String query,
             List<ErrorItem> errors) {
-        String key;
         try {
-            key = JobPostingKeys.canonicalKey(item.url());
+            JobPostingKeys.canonicalKey(item.url());
         } catch (IllegalArgumentException unsafe) {
             addError(errors, query, item.url(), "UNSAFE_URL", "链接不是可公开访问的 HTTP(S) 地址");
             return Outcome.SKIPPED;
@@ -260,6 +274,15 @@ public class JobDiscoveryService {
             return Outcome.SKIPPED;
         } catch (RuntimeException failure) {
             addError(errors, query, item.url(), "FETCH_FAILED", safeMessage(failure));
+            return Outcome.SKIPPED;
+        }
+        // Identity follows the validated final page, so a redirect and the direct
+        // ATS link converge on the same posting.
+        String key;
+        try {
+            key = JobPostingKeys.canonicalKey(page.finalUrl());
+        } catch (IllegalArgumentException unsafe) {
+            addError(errors, query, item.url(), "UNSAFE_URL", "链接不是可公开访问的 HTTP(S) 地址");
             return Outcome.SKIPPED;
         }
         JobPageParser.ParsedJob facts = parser.parse(page.body()).merge(fallbackFacts(item, page.finalUrl()));

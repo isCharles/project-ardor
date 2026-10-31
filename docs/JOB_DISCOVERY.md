@@ -23,11 +23,11 @@
 | `job_discovery_preferences` | 用户 | 上次搜索的目标岗位、地点、关键词 |
 | `job_discovery_runs` | 用户 | 一次搜索的业务状态：条件、查询、进度计数、逐查询错误、取消请求与时间；执行仍由 `ai_jobs` 队列承担 |
 
-`background_task_catalog` 视图在 V94 中重建，仅把 `JOB_DISCOVERY` 映射到 `applications` 组和 “Job discovery” 标题；旧视图改名为 `background_task_catalog_before_discovery`，不复制任务数据。V94 只新增表/索引和视图，不改写已执行迁移。
+`background_task_catalog` 视图在 V94 中重建，仅把 `JOB_DISCOVERY` 映射到 `applications` 组和 “Job discovery” 标题；旧视图改名为 `background_task_catalog_before_discovery`，不复制任务数据。V94 同时扩展 `ai_jobs` 的 `ck_ai_jobs_type` 约束以接受新任务类型；不改写 V33，也不复制任务数据。V94 只新增表/索引、替换约束和视图，不改写已执行迁移。
 
 ## 去重与来源
 
-`JobPostingKeys.canonicalKey` 按以下顺序生成身份，绝不只按“公司 + 标题”合并：
+`JobPostingKeys.canonicalKey` 在抓取后对**校验过的最终申请 URL**生成身份（搜索结果的原始 URL 只作为来源保留），按以下顺序判断，绝不只按“公司 + 标题”合并：
 
 1. ATS 岗位 ID：Greenhouse `greenhouse:<id>`、Lever/Ashby UUID、SmartRecruiters `<company>:<id>`、Workday `<host>:<RID>`、iCIMS `<host>:<id>`。
 2. 其他链接：`url:<host><path><sorted params>`；忽略 scheme、末尾斜杠、fragment、`utm_*` 与常见追踪参数（`gclid`、`fbclid`、`ref`、`lever-source` 等），参数排序后比较。
@@ -36,7 +36,7 @@
 
 ## 抓取与解析
 
-`SafePageFetcher` 复用 `ExternalBaseUrlPolicy.normalizeAndValidate`，并且手动跟随重定向：每一跳都重新校验目标，最多 5 跳；禁止 localhost、私网、链路本地与云元数据地址（含 `169.254.169.254`、`100.100.100.200`、`metadata.google.internal`）。连接 5 秒、读取 8 秒、HTML 最多 512 KB；不携带用户 Cookie 或认证信息，只使用 `ArdorJobDiscovery/1.0` User-Agent。
+`SafePageFetcher` 复用 `ExternalBaseUrlPolicy.validatePublicUrl` 的公共地址校验（与 Base URL 校验共享主机/DNS 规则，但保留页面路径和结尾斜杠），并且手动跟随重定向：每一跳都重新校验目标，最多 5 跳；禁止 localhost、私网、链路本地与云元数据地址（含 `169.254.169.254`、`100.100.100.200`、`metadata.google.internal`）。连接 5 秒，整个响应（头与正文）在 8 秒截止时间内读取，超时会取消请求；正文经限流订阅器截断到 512 KB。不携带用户 Cookie 或认证信息，只使用 `ArdorJobDiscovery/1.0` User-Agent。
 
 链接状态：`OPEN`（2xx 且页面无登录/验证标志）、`CLOSED`（404/410）、`RESTRICTED`（401/403/407/429 或页面含验证码/登录提示）、`UNKNOWN`（网络失败、重定向异常或其他状态）。`RESTRICTED` 仍保留岗位并展示来源限制，不用静默删除代替。
 
@@ -48,7 +48,8 @@
 - 条件上限：目标岗位 5 项（每项 80 字符）、地点 5 项、关键词 8 项（60 字符）；查询最多 4 条，每条取 6 个结果，单次最多处理 15 个候选。查询由岗位与地点组合生成，中文岗位追加“招聘”，英文追加“jobs”。
 - 每次搜索写入 `job_discovery_runs`，并以 `JOB_DISCOVERY` 任务进入现有 `ai_jobs` 队列；同一用户同时只允许一个进行中的搜索，避免成本失控。请求携带客户端 `requestId`，重复提交同一 ID 返回原运行。
 - Worker 在每个查询和候选之间检查取消请求；单条查询失败记录 `SEARCH_FAILED` 并继续，成功结果照常保存。全部查询失败为 `FAILED`，部分失败为 `PARTIAL`，其余为 `COMPLETED`；取消为 `CANCELED`。错误最多保留 20 条，按查询记录 code/message（不输出供应商原始响应头）。
-- 重试创建新的运行而不是复用旧运行；去重键与用户状态保证重试不会重复保存或重置状态。
+- 重试创建新的运行而不是复用旧运行；去重键与用户状态保证重试不会重复保存或重置状态。后台任务页的重试走 `JobDiscoveryRetryHandler`：已终态的搜索开新运行，尚未结束的搜索只重新排队同一任务，避免并行重复。
+- 单个候选保存失败（例如超长公司名）记为 `CANDIDATE_FAILED` 并继续；运行级异常会先把搜索标记为 `FAILED`/`PARTIAL` 再让 AI 任务失败，不让运行永久停在 `RUNNING`。
 - 付费优先级沿用现有会员任务优先级；不新增调度器、队列或审批系统。
 
 ## HTTP 合同

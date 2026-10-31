@@ -85,6 +85,12 @@ CREATE TABLE job_discovery_runs (
 );
 CREATE INDEX ix_job_discovery_runs_owner ON job_discovery_runs (user_id, created_at DESC);
 
+-- V33 constrains the queue's job types; add the new kind without rewriting that
+-- already-applied migration.
+ALTER TABLE ai_jobs DROP CONSTRAINT IF EXISTS ck_ai_jobs_type;
+ALTER TABLE ai_jobs ADD CONSTRAINT ck_ai_jobs_type
+    CHECK (job_type IN ('LEARNING_CREATE', 'LEARNING_EVALUATE', 'REPLAY_EVALUATE', 'INTERVIEW_EVALUATE', 'JOB_DISCOVERY'));
+
 -- The shared background-task read model projects the existing ai_jobs row; only
 -- the module label and title need discovery-specific values.
 ALTER VIEW background_task_catalog RENAME TO background_task_catalog_before_discovery;

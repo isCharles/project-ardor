@@ -186,6 +186,59 @@ class JobDiscoveryServiceTests {
         assertThat(refreshed.getValue().lastVerifiedAt()).isEqualTo(verifiedHourAgo);
     }
 
+    @Test void postingIdentityComesFromTheResolvedApplicationUrl() {
+        UUID runId = UUID.randomUUID();
+        String redirecting = "https://jobs.example.com/go/42";
+        when(repository.findRun(user, runId)).thenReturn(Optional.of(run(runId, user, "QUEUED", List.of("Backend Engineer"))));
+        when(repository.cancelRequested(user, runId)).thenReturn(false);
+        when(search.search(user, "Backend Engineer jobs", 6)).thenReturn(new WebSearchResult("q",
+                List.of(new WebSearchResult.ResultItem("Senior Backend Engineer - Acme", redirecting, "北京", 0.9)), 1, "1s"));
+        when(fetcher.fetch(redirecting)).thenReturn(new SafePageFetcher.Page(JOB_URL, 200, PAGE,
+                SafePageFetcher.STATUS_OPEN, null));
+        when(repository.findPosting("lever:" + LEVER_ID)).thenReturn(Optional.empty());
+        when(repository.insertPosting(any())).thenAnswer(call -> call.getArgument(0));
+        when(repository.insertDiscovery(any(), any(), any(), any(), any(), any())).thenReturn(true);
+
+        service.perform(user, runId);
+
+        ArgumentCaptor<JobDiscoveryRepository.Posting> saved = ArgumentCaptor.forClass(JobDiscoveryRepository.Posting.class);
+        verify(repository).insertPosting(saved.capture());
+        assertThat(saved.getValue().canonicalKey()).isEqualTo("lever:" + LEVER_ID);
+        assertThat(saved.getValue().applyUrl()).isEqualTo(JOB_URL);
+        verify(repository).addSource(any(), eq("jobs.lever.co"), eq(redirecting));
+    }
+
+    @Test void aCandidateStorageFailureIsRecordedWithoutStrandingTheRun() {
+        UUID runId = UUID.randomUUID();
+        when(repository.findRun(user, runId)).thenReturn(Optional.of(run(runId, user, "QUEUED", List.of("Backend Engineer"))));
+        when(repository.cancelRequested(user, runId)).thenReturn(false);
+        when(search.search(user, "Backend Engineer jobs", 6)).thenReturn(new WebSearchResult("q",
+                List.of(new WebSearchResult.ResultItem("Senior Backend Engineer - Acme", JOB_URL, "北京", 0.9)), 1, "1s"));
+        when(fetcher.fetch(JOB_URL)).thenReturn(new SafePageFetcher.Page(JOB_URL, 200, PAGE,
+                SafePageFetcher.STATUS_OPEN, null));
+        when(repository.findPosting("lever:" + LEVER_ID)).thenReturn(Optional.empty());
+        when(repository.insertPosting(any())).thenThrow(new IllegalStateException("value too long"));
+
+        service.perform(user, runId);
+
+        verify(repository).finish(eq(user), eq(runId), eq("PARTIAL"), eq(1), eq(1), eq(0), eq(0), eq(1), eq(1),
+                contains("CANDIDATE_FAILED"));
+    }
+
+    @Test void aProgressWriteFailureFinalizesTheRunBeforeTheJobFails() {
+        UUID runId = UUID.randomUUID();
+        when(repository.findRun(user, runId)).thenReturn(Optional.of(run(runId, user, "QUEUED", List.of("Backend Engineer"))));
+        when(repository.cancelRequested(user, runId)).thenReturn(false);
+        when(search.search(user, "Backend Engineer jobs", 6)).thenReturn(new WebSearchResult("q", List.of(), 0, "1s"));
+        doThrow(new IllegalStateException("database unavailable")).when(repository).saveProgress(any(), any(), anyInt(),
+                anyInt(), anyInt(), anyInt(), anyInt(), anyInt(), any());
+
+        assertThatThrownBy(() -> service.perform(user, runId)).isInstanceOf(IllegalStateException.class);
+
+        verify(repository).finish(eq(user), eq(runId), eq("FAILED"), eq(1), eq(0), eq(0), eq(0), eq(0), eq(1),
+                contains("RUN_FAILED"));
+    }
+
     @Test void oneFailedQueryKeepsTheOtherResultsAsPartialSuccess() {
         UUID runId = UUID.randomUUID();
         when(repository.findRun(user, runId)).thenReturn(Optional.of(run(runId, user, "QUEUED",

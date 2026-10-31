@@ -32,6 +32,12 @@ class ExternalBaseUrlPolicyTests {
     }
 
     @Test
+    void pageValidationKeepsThePathAndTrailingSlash() {
+        assertThat(policy.validatePublicUrl("https://api.openai.com/v1/jobs/"))
+                .isEqualTo("https://api.openai.com/v1/jobs/");
+    }
+
+    @Test
     void reportsUnresolvedPublicHostAsRetryableResolutionFailure() {
         assertThatThrownBy(() -> policy.normalizeAndValidate("https://definitely-unresolvable.invalid"))
                 .isInstanceOf(ExternalHostResolutionException.class)

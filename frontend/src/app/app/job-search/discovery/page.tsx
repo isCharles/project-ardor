@@ -216,10 +216,12 @@ function JobDiscoveryContent() {
   async function setPostingState(posting: Posting, state: StateFilter) {
     setBusyPosting(posting.id); setError("");
     try {
-      const updated = await api<Posting>(`/api/job-discovery/postings/${posting.id}`, {
+      await api<Posting>(`/api/job-discovery/postings/${posting.id}`, {
         method: "PATCH", body: JSON.stringify({ state }),
       });
-      setItems(current => current.map(item => item.id === updated.id ? updated : item).filter(item => item.state === stateFilter));
+      // The moved row leaves this filtered result set, so the next page must start
+      // from the top; keeping the old offset would skip an unseen posting.
+      await loadItems(stateFilter, appliedQuery, 0, false);
       void loadSummary();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("Could not update this job", "无法更新岗位"));

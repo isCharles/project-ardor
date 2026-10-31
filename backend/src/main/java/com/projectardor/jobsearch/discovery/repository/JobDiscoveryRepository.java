@@ -171,12 +171,6 @@ public class JobDiscoveryRepository {
                 """, postingId, source, url);
     }
 
-    public Optional<Discovery> findDiscovery(UUID userId, UUID postingId) {
-        return jdbc.query("""
-                SELECT * FROM job_posting_discoveries WHERE user_id = ? AND posting_id = ?
-                """, this::mapDiscovery, userId, postingId).stream().findFirst();
-    }
-
     /** Returns true when this search created the user's row rather than refreshing one. */
     public boolean insertDiscovery(UUID id, UUID userId, UUID postingId, String matchReason,
             String matchEvidence, String discoveryQuery) {
@@ -282,8 +276,7 @@ public class JobDiscoveryRepository {
     private List<PostingView> views(UUID userId, List<Posting> postings) {
         List<PostingView> views = new ArrayList<>();
         for (Posting posting : postings) {
-            Optional<Discovery> discovery = findDiscovery(userId, posting.id());
-            discovery.ifPresent(value -> views.add(withSources(new PostingView(posting, value, List.of()))));
+            findView(userId, posting.id()).ifPresent(views::add);
         }
         return views;
     }

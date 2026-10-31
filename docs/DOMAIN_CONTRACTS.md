@@ -143,7 +143,7 @@ A/B 阶段不改 schema；C 的轮次关联通过 V50 新增可空列与复合�
 - 删除学习计划会标记创建请求的删除状态，删除计划；日程的学习计划外键按既有迁移级联处理。
 - 新增轮次关联可空、核验用户及流程；历史项保留未指定，可按流程统计核对。不得回填假轮次。
 - V51 将规范学习来源区分为记录与问题，原 RECAP/sourceId 仅作兼容投影；无法可靠解析的历史项标为 LEGACY_RECAP。准备目标独立保存、不从来源推断。见 [学习来源与目标合同](LEARNING_ORIGIN_CONTEXT.md)。
-- V94 新增岗位发现：`job_postings`、`job_posting_sources`、`job_posting_discoveries`、`job_discovery_preferences`、`job_discovery_runs`，并重建 `background_task_catalog`（只映射 JOB_DISCOVERY 的模块与标题，旧视图改名保留）。岗位事实与用户收藏/忽略状态分表；不改写已执行迁移，不新增删除级联之外的业务级联（删除岗位会级联其来源和用户发现状态，删除用户会级联其发现状态）。
+- V94 新增岗位发现：`job_postings`、`job_posting_sources`、`job_posting_discoveries`、`job_discovery_preferences`、`job_discovery_runs`，扩展 `ai_jobs` 的 `ck_ai_jobs_type` 约束以接受 `JOB_DISCOVERY`（不改写 V33），并重建 `background_task_catalog`（只映射 JOB_DISCOVERY 的模块与标题，旧视图改名保留）。岗位事实与用户收藏/忽略状态分表；不改写已执行迁移，不新增删除级联之外的业务级联（删除岗位会级联其来源和用户发现状态，删除用户会级联其发现状态）。
 - V52 新增学习尝试历史与内容/题目版本，旧 JSONB 投影、旧字段和资源 UUID 保持兼容；回填只从旧投影还原可证明字段，缺少 rubric/model 的历史行标 `legacy` 而不伪造；不一致历史（投影条数 > attempt_count）回填后 `attempt_no` 可超过 `attempt_count`，运行时按已存最大序号继续、允许跳号且不改写 `attempt_count`；删除学习计划通过复合外键不可逆级联删除尝试，是本批唯一新增的删除级联。见 [学习尝试历史与内容版本合同](LEARNING_ATTEMPT_HISTORY.md)。
 
 E2 的 V53 只新增可空列、新表和索引：`messages.request_id/run_id` 仅回填可证明的已完成交流（`agent_runs.assistant_message_id` 唯一指向 + 紧邻且内容一致的用户消息），无法证明的历史保持 NULL；新增 `agent_tool_calls`、`agent_proposals` 记录工具调用与提案生命周期，`agent_tool_audit` 增加 `approval_source` 且旧行默认 AUTO。旧 `messages.tool_calls`/`proposal_resolutions` JSON 投影继续写入；提案首决定与旧 key 兼容。提案的 CONFIRMED 是用户决定报告，不是业务写入成功的证明；已开始但未返回结果的工具在取消/超时/失败时记为 UNKNOWN。详见 [Agent 执行关联与审计合同](AGENT_EXECUTION_CONTRACTS.md)。
