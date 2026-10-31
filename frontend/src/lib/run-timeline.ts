@@ -1,7 +1,7 @@
 /**
- * Orders a run's recorded steps the way the model worked: a short spoken line,
- * then the tools it announced, then the next line. The model-wait accounting row
- * is not a tool and is rendered as part of the run header instead.
+ * The run as one ordered process: the short lines the model said and the tools
+ * they announced, in recorded order. The model-wait accounting row is not a
+ * tool and is rendered as part of the summary instead.
  */
 
 export type TimelineStep = {
@@ -12,9 +12,15 @@ export type TimelineStep = {
   done?: boolean;
 };
 
-export type RunSegment<T extends TimelineStep = TimelineStep> =
+export type RunRow<T extends TimelineStep = TimelineStep> =
   | { kind: "say"; key: string; text: string }
-  | { kind: "tools"; key: string; steps: T[]; running: boolean };
+  | { kind: "tool"; key: string; step: T };
+
+export type RunTimeline<T extends TimelineStep = TimelineStep> = {
+  rows: RunRow<T>[];
+  tools: T[];
+  running: boolean;
+};
 
 const MODEL_WAIT_LABEL = /^模型输出与上游等待/;
 
@@ -24,31 +30,18 @@ function isModelWait(step: TimelineStep, index: number) {
   return index === 0 && MODEL_WAIT_LABEL.test(step.label);
 }
 
-export function runSegments<T extends TimelineStep>(steps: T[] | null | undefined): RunSegment<T>[] {
-  const segments: RunSegment<T>[] = [];
-  let tools: T[] = [];
-  let toolsStart = 0;
-  const flush = () => {
-    if (!tools.length) return;
-    segments.push({
-      kind: "tools",
-      key: `tools-${toolsStart}`,
-      steps: tools,
-      running: tools.some(step => step.done === false),
-    });
-    tools = [];
-  };
+export function runTimeline<T extends TimelineStep>(steps: T[] | null | undefined): RunTimeline<T> {
+  const rows: RunRow<T>[] = [];
+  const tools: T[] = [];
   (steps ?? []).forEach((step, index) => {
     if (isModelWait(step, index)) return;
     if (step.status === "COMMENTARY") {
-      flush();
       const text = String(step.label ?? "").trim();
-      if (text) segments.push({ kind: "say", key: `say-${index}`, text });
+      if (text) rows.push({ kind: "say", key: `say-${index}`, text });
       return;
     }
-    if (!tools.length) toolsStart = index;
     tools.push(step);
+    rows.push({ kind: "tool", key: `tool-${index}`, step });
   });
-  flush();
-  return segments;
+  return { rows, tools, running: tools.some(step => step.done === false) };
 }
