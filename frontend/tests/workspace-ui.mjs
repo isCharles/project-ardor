@@ -606,7 +606,15 @@ try {
     return !!(trace.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING);
   }), "Execution process must precede the final answer");
   await replyTrace.locator(":scope > summary").click();
-  await replyTrace.getByText("I'll inspect the plans.", { exact: true }).waitFor();
+  const nextSteps = replyArticle.locator("[data-run-intents]");
+  await nextSteps.getByText("I'll inspect the plans.", { exact: true }).waitFor();
+  assert.equal(await replyTrace.getByText("I'll inspect the plans.", { exact: true }).count(), 0,
+    "Commentary is a next-step line, not a repeated trace row");
+  assert.ok(await replyArticle.evaluate(element => {
+    const intents = element.querySelector('[data-run-intents]');
+    const answer = element.querySelector('.ardor-markdown');
+    return !!(intents && (intents.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING));
+  }), "Next-step lines must precede the final answer");
   assert.equal(await replyArticle.locator(".ardor-markdown").innerText(), "Synthetic agent reply", "Intermediate text must not be repeated in the final answer");
   const reasoning = replyTrace.locator("details");
   await reasoning.locator("summary").click();
@@ -633,7 +641,7 @@ try {
   }, { accountId: userId, conversationId: conversation.id });
   await page.reload();
   await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).waitFor();
-  await page.getByText("Recovered live commentary", { exact: true }).waitFor();
+  await page.locator("[data-run-intents]").getByText("Recovered live commentary", { exact: true }).waitFor();
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   assert.equal(await draftBox.isEnabled(), true);
   assert.equal(await toolPermissions.count(), 0, "Ordinary writes must not show permission prompts");
