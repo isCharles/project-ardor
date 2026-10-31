@@ -10,6 +10,23 @@ import styles from "./next-gen-landing.module.css";
 
 type VisualKind = "tunnel" | "mesh" | "beams" | "wedges";
 
+function wrapUnit(value: number) {
+  return ((value % 1) + 1) % 1;
+}
+
+function scrollViewport(section: HTMLElement) {
+  let node = section.parentElement;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    if (/(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) {
+      const bounds = node.getBoundingClientRect();
+      return { top: bounds.top + node.clientTop, height: node.clientHeight };
+    }
+    node = node.parentElement;
+  }
+  return { top: 0, height: window.innerHeight };
+}
+
 function CanvasVisual({ kind }: { kind: VisualKind }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -39,7 +56,7 @@ function CanvasVisual({ kind }: { kind: VisualKind }) {
       const maxRadius = Math.max(width, height) * 0.9;
       for (let index = 0; index < 36; index += 1) {
         let progress = index / 36;
-        if (!reduceMotion) progress = (progress - time * 0.052 + 1) % 1;
+        if (!reduceMotion) progress = wrapUnit(progress - time * 0.052);
         const radius = maxRadius * Math.pow(progress, 1.8);
         const x = width * 0.5 + (width * 0.12 - width * 0.5) * (1 - progress);
         const y = height * 0.38 + (height * 0.84 - height * 0.38) * (1 - progress);
@@ -164,15 +181,25 @@ export function NextGenLanding() {
   const demoRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
+    const landing = landingRef.current;
+    const section = demoRef.current;
+    if (!landing || !section) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      landing.style.setProperty("--demo-page-opacity", "1");
+      landing.style.setProperty("--demo-page-blur", "0rem");
+      landing.style.setProperty("--demo-page-scale", "1");
+      landing.style.setProperty("--demo-content-opacity", "1");
+      landing.style.setProperty("--demo-content-shift", "0rem");
+      landing.style.setProperty("--demo-content-scale", "1");
+      return;
+    }
     let frame = 0;
     const updateReveal = () => {
       frame = 0;
-      const section = demoRef.current;
-      const landing = landingRef.current;
-      if (!section || !landing) return;
-      const viewport = window.innerHeight;
-      const top = section.getBoundingClientRect().top;
-      const progress = Math.max(0, Math.min(1, (viewport * 0.94 - top) / (viewport * 0.94)));
+      const viewport = scrollViewport(section);
+      const travel = Math.max(1, viewport.height * 0.94);
+      const top = section.getBoundingClientRect().top - viewport.top;
+      const progress = Math.max(0, Math.min(1, (travel - top) / travel));
       landing.style.setProperty("--demo-reveal", progress.toFixed(3));
       landing.style.setProperty("--demo-page-opacity", Math.min(1, progress * 1.08).toFixed(3));
       landing.style.setProperty("--demo-page-blur", `${(1 - progress) * 3}rem`);
@@ -185,10 +212,10 @@ export function NextGenLanding() {
       if (!frame) frame = window.requestAnimationFrame(updateReveal);
     };
     updateReveal();
-    window.addEventListener("scroll", scheduleReveal, { passive: true });
+    document.addEventListener("scroll", scheduleReveal, { capture: true, passive: true });
     window.addEventListener("resize", scheduleReveal);
     return () => {
-      window.removeEventListener("scroll", scheduleReveal);
+      document.removeEventListener("scroll", scheduleReveal, true);
       window.removeEventListener("resize", scheduleReveal);
       window.cancelAnimationFrame(frame);
     };

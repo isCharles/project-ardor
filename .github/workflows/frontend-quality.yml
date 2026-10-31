@@ -147,6 +147,8 @@ jobs:
         run: node tests/pipeline-ui.mjs
       - name: Official brand mark and icon UI regression (mock APIs)
         run: node tests/brand-ui.mjs
+      - name: Landing scroll reveal and canvas UI regression
+        run: node tests/landing-reveal-ui.mjs
       - name: Upload pipeline UI screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4
