@@ -114,30 +114,37 @@ final class GenAiSemconv {
         putSafe(attributes, PROVIDER_PROTOCOL, effectiveProvider);
         putSafe(attributes, TOOL_NAME, stringValue(business, "tool"));
         putSafe(attributes, TOOL_CALL_ID, stringValue(business, "toolCallId"));
-        if (business != null) {
-            for (Map.Entry<String, String> mapping : DIRECT_STRING.entrySet()) {
-                putSafe(attributes, mapping.getValue(), stringValue(business, mapping.getKey()));
-            }
-            for (Map.Entry<String, String> mapping : DIRECT_NUMERIC.entrySet()) {
-                Object value = business.get(mapping.getKey());
-                if (value instanceof Number number) attributes.put(AttributeKey.longKey(mapping.getValue()), number.longValue());
-            }
-            for (Map.Entry<String, String> mapping : DIRECT_BOOLEAN.entrySet()) {
-                Object value = business.get(mapping.getKey());
-                if (value instanceof Boolean flag) attributes.put(AttributeKey.booleanKey(mapping.getValue()), flag);
-            }
-            if (business.get("requestedTools") instanceof List<?> requested) {
-                List<String> names = requested.stream().filter(String.class::isInstance).map(String.class::cast)
-                        .map(GenAiSemconv::safe).filter(value -> !value.isEmpty()).toList();
-                if (!names.isEmpty()) attributes.put(AttributeKey.stringArrayKey(REQUESTED_TOOLS), names);
-            }
-            if (business.get("tools") instanceof List<?> tools) {
-                List<String> names = tools.stream().filter(String.class::isInstance).map(String.class::cast)
-                        .map(GenAiSemconv::safe).filter(value -> !value.isEmpty()).toList();
-                if (!names.isEmpty()) attributes.put(AttributeKey.stringArrayKey(REQUESTED_TOOLS), names);
-            }
-        }
+        applyAllowlistedBusiness(attributes, business);
         return attributes.build();
+    }
+
+    /**
+     * Completion-only facts such as timings and requested tools use the same allowlist. The
+     * product trace already bounds these fields; previews are never part of the allowlist.
+     */
+    private static void applyAllowlistedBusiness(AttributesBuilder attributes, Map<String, Object> business) {
+        if (business == null) return;
+        for (Map.Entry<String, String> mapping : DIRECT_STRING.entrySet()) {
+            putSafe(attributes, mapping.getValue(), stringValue(business, mapping.getKey()));
+        }
+        for (Map.Entry<String, String> mapping : DIRECT_NUMERIC.entrySet()) {
+            Object value = business.get(mapping.getKey());
+            if (value instanceof Number number) attributes.put(AttributeKey.longKey(mapping.getValue()), number.longValue());
+        }
+        for (Map.Entry<String, String> mapping : DIRECT_BOOLEAN.entrySet()) {
+            Object value = business.get(mapping.getKey());
+            if (value instanceof Boolean flag) attributes.put(AttributeKey.booleanKey(mapping.getValue()), flag);
+        }
+        if (business.get("requestedTools") instanceof List<?> requested) {
+            List<String> names = requested.stream().filter(String.class::isInstance).map(String.class::cast)
+                    .map(GenAiSemconv::safe).filter(value -> !value.isEmpty()).toList();
+            if (!names.isEmpty()) attributes.put(AttributeKey.stringArrayKey(REQUESTED_TOOLS), names);
+        }
+        if (business.get("tools") instanceof List<?> tools) {
+            List<String> names = tools.stream().filter(String.class::isInstance).map(String.class::cast)
+                    .map(GenAiSemconv::safe).filter(value -> !value.isEmpty()).toList();
+            if (!names.isEmpty()) attributes.put(AttributeKey.stringArrayKey(REQUESTED_TOOLS), names);
+        }
     }
 
     /** Attributes added when a span finishes: model, usage, status and the finish reason. */
@@ -171,6 +178,7 @@ final class GenAiSemconv {
                 attributes.put(AttributeKey.booleanKey(CACHE_USAGE_MISSING), missing);
             }
         }
+        applyAllowlistedBusiness(attributes, business);
         return attributes.build();
     }
 

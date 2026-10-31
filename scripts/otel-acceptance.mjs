@@ -165,6 +165,8 @@ assert.ok(successRun, "agent.run span must exist");
 assert.equal(tags(successRun)["ardor.run.id"], success.requestId);
 assert.equal(statusOf(successRun), "OK");
 assert.equal(tags(successRun)["gen_ai.operation.name"], "invoke_agent");
+assert.ok(Number(tags(spanNamed(successOtel, "llm.call.1"))["ardor.llm.request_duration_ms"]) >= 0,
+  "completion timing must be exported");
 assert.match(ancestorChain(successOtel, spanNamed(successOtel, "llm.call.1")).join(" > "),
   /agent\.run > /, "LLM span must descend from the run");
 for (const businessSpan of successBusiness.spans) {

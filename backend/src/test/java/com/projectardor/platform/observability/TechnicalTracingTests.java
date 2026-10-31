@@ -75,7 +75,8 @@ class TechnicalTracingTests {
                 Map.of("purpose", "ASSISTANT", "inputPreview", "secret prompt",
                         "requestedTools", List.of("list_resumes")));
         run.finishChild(llmBusiness, "COMPLETED", null, "model-a", 120, 40, null, null,
-                Map.of("finishReason", "STOP"));
+                Map.of("finishReason", "STOP", "requestDurationMs", 1_234L, "firstContentMs", 200L,
+                        "timingSource", "STREAM", "requestedTools", List.of("list_resumes")));
         UUID toolBusiness = UUID.randomUUID();
         run.startChild(toolBusiness, llmBusiness, "TOOL", "list_resumes", null, null,
                 Map.of("tool", "list_resumes", "toolCallId", "call-1", "argumentsPreview", "secret args"));
@@ -102,6 +103,11 @@ class TechnicalTracingTests {
                 GenAiSemconv.TOOL_EXECUTED))).isTrue();
         assertThat(tool.getAttributes().get(io.opentelemetry.api.common.AttributeKey.booleanKey(
                 GenAiSemconv.TOOL_PROPOSAL))).isTrue();
+        assertThat(llm.getAttributes().get(AttributeKey.longKey("ardor.llm.request_duration_ms"))).isEqualTo(1_234L);
+        assertThat(llm.getAttributes().get(AttributeKey.longKey("ardor.llm.first_content_ms"))).isEqualTo(200L);
+        assertThat(llm.getAttributes().get(AttributeKey.stringKey("ardor.llm.timing_source"))).isEqualTo("STREAM");
+        assertThat(llm.getAttributes().get(AttributeKey.stringArrayKey(GenAiSemconv.REQUESTED_TOOLS)))
+                .containsExactly("list_resumes");
         assertThat(String.valueOf(root.getAttributes().asMap()))
                 .doesNotContain("secret prompt").doesNotContain("inputPreview");
         assertThat(String.valueOf(llm.getAttributes().asMap())).doesNotContain("secret prompt");
@@ -153,6 +159,38 @@ class TechnicalTracingTests {
         try (var attachment = tracing.attach("not-a-traceparent")) {
             assertThat(MDC.get("traceId")).isNull();
         }
+    }
+
+    @Test
+    void aToolChildCarriesTheParentIntoWorkItEnqueues() {
+        var run = tracing.startRun("agent.run", UUID.randomUUID(), null, "model-a", null, "v1", Map.of());
+        UUID rootBusiness = UUID.randomUUID();
+        run.attachRoot(rootBusiness);
+        UUID toolBusiness = UUID.randomUUID();
+        run.startChild(toolBusiness, rootBusiness, "TOOL", "discover_jobs", null, null,
+                Map.of("tool", "discover_jobs"));
+        String traceparent;
+        try (var attached = run.attachChild(toolBusiness)) {
+            traceparent = tracing.currentTraceparent();
+            assertThat(MDC.get("spanId")).isEqualTo(run.spanIdOf(toolBusiness));
+        }
+        assertThat(traceparent).isEqualTo(
+                "00-" + run.traceId() + "-" + run.spanIdOf(toolBusiness) + "-01");
+        assertThat(MDC.get("traceId")).isNull();
+        assertThat(MDC.get("spanId")).isNull();
+        run.finish("COMPLETED", null);
+    }
+
+    @Test
+    void aChildRegisteredAfterTerminationNeverOutlivesTheRoot() {
+        var run = tracing.startRun("agent.run", UUID.randomUUID(), null, "model-a", null, "v1", Map.of());
+        UUID rootBusiness = UUID.randomUUID();
+        run.attachRoot(rootBusiness);
+        run.finish("FAILED", "AGENT_RUN_CANCELLED");
+        UUID late = UUID.randomUUID();
+        run.startChild(late, rootBusiness, "TOOL", "late.tool", null, null, Map.of("tool", "late.tool"));
+        assertThat(run.spanIdOf(late)).isNull();
+        assertThat(exporter.getFinishedSpanItems()).extracting(SpanData::getName).doesNotContain("late.tool");
     }
 
     @Test

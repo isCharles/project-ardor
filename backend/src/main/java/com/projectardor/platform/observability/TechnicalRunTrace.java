@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
@@ -30,6 +31,8 @@ public final class TechnicalRunTrace {
     private final ConcurrentHashMap<UUID, Span> spans = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Boolean> open = new ConcurrentHashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean();
+    /** Serializes child registration with the terminal drain so no child outlives the root. */
+    private final Object lifecycle = new Object();
 
     private TechnicalRunTrace(Tracer tracer, Span root) {
         this.tracer = tracer;
@@ -74,17 +77,43 @@ public final class TechnicalRunTrace {
         spans.put(businessSpanId, root);
     }
 
+    /**
+     * Makes a child span current for business work that leaves the model callback thread, such as
+     * a tool enqueueing a durable job. Without this, the enqueue captures no traceparent even
+     * though the child span itself already has the right parent.
+     */
+    public TechnicalTracing.Attachment attachChild(UUID businessSpanId) {
+        Span span = businessSpanId == null ? null : spans.get(businessSpanId);
+        if (span == null) return () -> { };
+        SpanContext spanContext = span.getSpanContext();
+        String previousTraceId = org.slf4j.MDC.get("traceId");
+        String previousSpanId = org.slf4j.MDC.get("spanId");
+        io.opentelemetry.context.Scope scope = Context.root().with(span).makeCurrent();
+        org.slf4j.MDC.put("traceId", spanContext.getTraceId());
+        org.slf4j.MDC.put("spanId", spanContext.getSpanId());
+        return () -> {
+            if (previousTraceId == null) org.slf4j.MDC.remove("traceId");
+            else org.slf4j.MDC.put("traceId", previousTraceId);
+            if (previousSpanId == null) org.slf4j.MDC.remove("spanId");
+            else org.slf4j.MDC.put("spanId", previousSpanId);
+            scope.close();
+        };
+    }
+
     public void startChild(UUID businessSpanId, UUID businessParentSpanId, String kind, String name,
             String model, String provider, Map<String, Object> businessAttributes) {
-        if (!active() || businessSpanId == null) return;
-        Span parent = businessParentSpanId == null ? root : spans.get(businessParentSpanId);
-        Context parentContext = parent == null
-                ? Context.root().with(root)
-                : Context.root().with(Span.wrap(parent.getSpanContext()));
-        Span span = tracer.spanBuilder(name).setParent(parentContext).setSpanKind(SpanKind.INTERNAL).startSpan();
-        span.setAllAttributes(GenAiSemconv.spanAttributes(kind, model, provider, businessAttributes));
-        spans.put(businessSpanId, span);
-        open.put(businessSpanId, Boolean.TRUE);
+        if (businessSpanId == null) return;
+        synchronized (lifecycle) {
+            if (!active()) return;
+            Span parent = businessParentSpanId == null ? root : spans.get(businessParentSpanId);
+            Context parentContext = parent == null
+                    ? Context.root().with(root)
+                    : Context.root().with(Span.wrap(parent.getSpanContext()));
+            Span span = tracer.spanBuilder(name).setParent(parentContext).setSpanKind(SpanKind.INTERNAL).startSpan();
+            span.setAllAttributes(GenAiSemconv.spanAttributes(kind, model, provider, businessAttributes));
+            spans.put(businessSpanId, span);
+            open.put(businessSpanId, Boolean.TRUE);
+        }
     }
 
     public void finishChild(UUID businessSpanId, String status, String errorCode, String responseModel,
@@ -113,16 +142,18 @@ public final class TechnicalRunTrace {
     }
 
     public void finish(String status, String errorCode) {
-        if (!started() || !closed.compareAndSet(false, true)) return;
-        for (UUID id : open.keySet()) {
-            Span span = spans.get(id);
-            if (span != null && open.remove(id) != null) {
-                applyStatus(span, "FAILED", errorCode);
-                span.end();
+        synchronized (lifecycle) {
+            if (!started() || !closed.compareAndSet(false, true)) return;
+            for (UUID id : open.keySet()) {
+                Span span = spans.get(id);
+                if (span != null && open.remove(id) != null) {
+                    applyStatus(span, "FAILED", errorCode);
+                    span.end();
+                }
             }
+            applyStatus(root, status, errorCode);
+            root.end();
         }
-        applyStatus(root, status, errorCode);
-        root.end();
     }
 
     private static void applyStatus(Span span, String status, String errorCode) {

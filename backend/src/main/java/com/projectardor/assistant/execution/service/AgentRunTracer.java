@@ -136,6 +136,11 @@ public final class AgentRunTracer {
         return toolCallId == null ? null : toolCallParents.get(toolCallId);
     }
 
+    /** Makes a child's technical context current while business code leaves the callback thread. */
+    public com.projectardor.platform.observability.TechnicalTracing.Attachment attachChild(UUID spanId) {
+        return technical.attachChild(spanId);
+    }
+
     public void finishChild(UUID spanId, String status, String errorCode, String modelName,
             Integer inTokens, Integer outTokens, Map<String, Object> attributes) {
         finishChild(spanId, status, errorCode, modelName,
