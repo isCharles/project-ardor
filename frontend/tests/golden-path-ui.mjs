@@ -35,7 +35,7 @@ async function openWorkRecords(page) {
   const groups = page.locator("[data-tool-group]");
   if (await groups.count() === 0) return;
   for (const group of await groups.all()) {
-    if (await group.getAttribute("open") == null) await group.locator("summary").click();
+    if (await group.getAttribute("open") == null) await group.locator(":scope > summary").click();
   }
 }
 

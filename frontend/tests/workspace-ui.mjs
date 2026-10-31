@@ -599,24 +599,24 @@ try {
   const replyArticle = page.getByRole("article").filter({ hasText: "Synthetic agent reply" });
   const replyTimeline = replyArticle.locator("[data-execution-timeline]");
   const replyGroup = replyTimeline.locator("[data-tool-group]").first();
+  assert.equal(await replyTimeline.locator("[data-tool-group]").count(), 1, "One process record per reply");
   assert.equal(await page.locator("[data-execution-timeline]").count(), 1, "Live state must not survive beside the committed timeline");
-  assert.equal(await replyGroup.getAttribute("open"), null, "Tool groups default to collapsed");
+  assert.equal(await replyGroup.getAttribute("open"), null, "A finished process is folded");
   assert.ok(await replyArticle.evaluate(element => {
     const timeline = element.querySelector('[data-execution-timeline]');
     const answer = element.querySelector('[data-answer]');
     return !!(timeline.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING);
   }), "Execution timeline must precede the final answer");
   const narration = replyTimeline.locator("[data-run-say]");
+  assert.equal(await narration.isVisible(), false, "Narration folds with the process after the answer");
+  await replyGroup.locator(":scope > summary").click();
+  await narration.waitFor();
   assert.equal((await narration.innerText()).trim(), "I'll inspect the plans.");
-  assert.equal(await narration.evaluate(node => !node.closest("details")), true, "Narration stays outside the tool disclosure");
-  await replyGroup.locator("summary").click();
+  assert.equal(await narration.evaluate(node => !!node.closest("details")), true, "Narration belongs to the folded process");
   await replyGroup.getByText("Read plans", { exact: true }).waitFor();
-  assert.equal(await replyGroup.getByText("I'll inspect the plans.", { exact: true }).count(), 0,
-    "The tool group does not repeat the spoken line");
   assert.equal(await replyArticle.locator("[data-answer]").innerText(), "Synthetic agent reply", "Intermediate text must not be repeated in the final answer");
-  const reasoning = replyTimeline.locator("details").first();
-  await reasoning.locator("summary").click();
-  await reasoning.getByText("Synthetic public reasoning", { exact: true }).waitFor();
+  await replyTimeline.getByText("Model reasoning output", { exact: true }).click();
+  await replyTimeline.getByText("Synthetic public reasoning", { exact: true }).waitFor();
   assert.deepEqual(sentMessage.contextReferences, [{ type: "SERVICE", id: "f1111111-1111-3111-8111-111111111111" }]);
   const sentBubble = page.getByRole("article").filter({ hasText: "Make a study outline" });
   await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
@@ -713,7 +713,7 @@ try {
   await page.getByText("Incomplete reply · saved before execution stopped", { exact: true }).click();
   await page.getByText("Saved incomplete answer", { exact: true }).waitFor();
   const stoppedTimeline = page.locator("[data-execution-timeline]").filter({ hasText: "Execution stopped" }).first();
-  await stoppedTimeline.locator("[data-tool-group] summary").click();
+  await stoppedTimeline.locator("[data-tool-group] > summary").click();
   await stoppedTimeline.getByText("Recovered read plans", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Model and thinking depth", exact: true }).isEnabled(), true);
   activeRun = null;

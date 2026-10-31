@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runSegments } from "../src/lib/run-timeline.ts";
+import { runTimeline } from "../src/lib/run-timeline.ts";
 
-const shape = segments => segments.map(segment => segment.kind === "say"
-  ? `say:${segment.text}`
-  : `tools:${segment.steps.length}${segment.running ? "!" : ""}`);
+const shape = timeline => timeline.rows.map(row => row.kind === "say"
+  ? `say:${row.text}`
+  : `tool:${row.step.label}`);
 
-test("each spoken line is followed by the tools it announced", () => {
-  const segments = runSegments([
+test("spoken lines and tools keep their recorded order", () => {
+  const timeline = runTimeline([
     { label: "模型输出与上游等待（非纯思考时间）", status: "MODEL_WAIT", elapsedMs: 12400 },
     { label: "我先查看今天的日历。", status: "COMMENTARY", elapsedMs: 0 },
     { label: "读取日历", status: "COMPLETED", elapsedMs: 19 },
@@ -15,46 +15,49 @@ test("each spoken line is followed by the tools it announced", () => {
     { label: "日历是空的，我再核对学习计划。", status: "COMMENTARY", elapsedMs: 0 },
     { label: "更新学习计划", status: "COMPLETED", elapsedMs: 18 },
   ]);
-  assert.deepEqual(shape(segments), [
+  assert.deepEqual(shape(timeline), [
     "say:我先查看今天的日历。",
-    "tools:2",
+    "tool:读取日历",
+    "tool:读取学习计划",
     "say:日历是空的，我再核对学习计划。",
-    "tools:1",
+    "tool:更新学习计划",
   ]);
+  assert.deepEqual(timeline.tools.map(step => step.label), ["读取日历", "读取学习计划", "更新学习计划"]);
 });
 
 test("the model-wait accounting row never becomes a tool", () => {
-  const segments = runSegments([
+  const timeline = runTimeline([
     { label: "模型输出与上游等待（非纯思考时间）", status: "MODEL_WAIT", elapsedMs: 12000 },
     { key: "status", label: "等待模型输出", elapsedMs: 0 },
     { label: "读取日历", status: "COMPLETED", elapsedMs: 19 },
   ]);
-  assert.deepEqual(shape(segments), ["tools:1"]);
+  assert.deepEqual(shape(timeline), ["tool:读取日历"]);
+  assert.equal(timeline.tools.length, 1);
 });
 
 test("older traces identify the first model-wait row by its fixed label", () => {
-  const segments = runSegments([
+  const timeline = runTimeline([
     { label: "模型输出与上游等待（非纯思考时间）", status: "COMPLETED", elapsedMs: 1200 },
     { label: "读取日历", status: "COMPLETED", elapsedMs: 19 },
   ]);
-  assert.deepEqual(shape(segments), ["tools:1"]);
+  assert.deepEqual(shape(timeline), ["tool:读取日历"]);
 });
 
-test("a running tool marks its group as in progress", () => {
-  const segments = runSegments([{ label: "读取日历", done: false }]);
-  assert.equal(segments[0].running, true);
-  assert.equal(shape(segments)[0], "tools:1!");
+test("a running tool marks the timeline as in progress", () => {
+  const timeline = runTimeline([{ label: "读取日历", done: false }]);
+  assert.equal(timeline.running, true);
+  assert.equal(timeline.tools.length, 1);
 });
 
 test("blank commentary is skipped and empty runs produce nothing", () => {
-  assert.deepEqual(runSegments([{ label: "   ", status: "COMMENTARY" }]), []);
-  assert.deepEqual(runSegments([]), []);
-  assert.deepEqual(runSegments(null), []);
-  assert.deepEqual(runSegments(undefined), []);
+  assert.deepEqual(runTimeline([{ label: "   ", status: "COMMENTARY" }]).rows, []);
+  assert.deepEqual(runTimeline([]).rows, []);
+  assert.deepEqual(runTimeline(null).rows, []);
+  assert.deepEqual(runTimeline(undefined).rows, []);
 });
 
-test("consecutive commentary keeps its order without inventing a tool group", () => {
-  assert.deepEqual(shape(runSegments([
+test("consecutive commentary keeps its order", () => {
+  assert.deepEqual(shape(runTimeline([
     { label: "第一句。", status: "COMMENTARY" },
     { label: "第二句。", status: "COMMENTARY" },
   ])), ["say:第一句。", "say:第二句。"]);

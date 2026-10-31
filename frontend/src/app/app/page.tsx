@@ -1539,6 +1539,7 @@ export default function AgentHomePage() {
     ? streamProgress.steps.map((step, index) => ({ ...step, key: `recovered-${index}`, done: true })) : runSteps;
   const liveTrace = showLiveTrace ? <ExecutionTimeline title={liveTitle}
     elapsed={runElapsed > 0 ? formatElapsed(runElapsed, locale) : ""} thinking={runThinking} steps={displayedSteps}
+    running={!!(busy || runningRun || approvalRunId)}
     >
     {runningRun && <p className="text-xs text-stone-500">{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
     {retryFailures.map((failure, index) => <p key={index} className="text-xs text-amber-700">{failure.label} · {failure.detail}</p>)}
@@ -1665,7 +1666,7 @@ export default function AgentHomePage() {
                         </>}
                         {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <>
                           <CompactionNotice usage={trace.contextUsage} traceHref={message.runId ? `/app/agent-runs/${message.runId}` : undefined} />
-                          <ExecutionTimeline title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs, locale)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTimeline>
+                          <ExecutionTimeline title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} completed={trace.status === "COMPLETED"} elapsed={formatElapsed(trace.elapsedMs, locale)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTimeline>
                         </>; })()}
                         <div data-answer className="ardor-markdown"><ReactMarkdown remarkPlugins={markdownPlugins}>{message.content}</ReactMarkdown></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 block text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time>
                       </div>
