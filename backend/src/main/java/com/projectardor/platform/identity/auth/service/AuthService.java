@@ -21,21 +21,25 @@ public class AuthService {
     private final UserProfileRepository profileRepository;
     private final PasswordEncoder passwordEncoder;
     private final MembershipService memberships;
+    private final RegistrationPolicy registrationPolicy;
 
     public AuthService(
             UserAccountRepository userRepository,
             UserProfileRepository profileRepository,
             PasswordEncoder passwordEncoder,
-            MembershipService memberships) {
+            MembershipService memberships,
+            RegistrationPolicy registrationPolicy) {
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
         this.passwordEncoder = passwordEncoder;
         this.memberships = memberships;
+        this.registrationPolicy = registrationPolicy;
     }
 
     @Transactional
     public UserAccount register(String rawEmail, String rawPassword, String displayName) {
         String email = normalizeEmail(rawEmail);
+        registrationPolicy.requireAllowed(email);
         if (userRepository.existsByEmail(email)) {
             throw new DuplicateEmailException();
         }

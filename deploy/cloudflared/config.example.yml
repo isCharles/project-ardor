@@ -1,0 +1,17 @@
+# Copy the rendered form of this file outside the repository and point
+# CLOUDFLARE_TUNNEL_CONFIG at it. Replace <TUNNEL_UUID> with the id printed by
+# `cloudflared tunnel create ardor`; never place credentials in this file.
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/credentials.json
+no-autoupdate: true
+loglevel: info
+
+ingress:
+  # The browser opens wss://<host>/ws/... at the public origin, so the upgrade must
+  # reach the backend directly; Next.js only proxies /api/*.
+  - hostname: app.ischarlesyang.com
+    path: /ws/.*
+    service: http://backend:8080
+  - hostname: app.ischarlesyang.com
+    service: http://frontend:3000
+  - service: http_status:404
