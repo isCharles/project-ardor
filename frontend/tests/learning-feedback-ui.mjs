@@ -100,7 +100,33 @@ try {
   await archive.getByRole("button", { name: /Legacy course/ }).waitFor();
   await page.goto(`${origin}/app/learning?id=scheduled`);
   await page.getByRole("heading", { name: "Scheduled course", exact: true }).waitFor();
-  await page.locator("#learning-practice textarea").fill("A complete synthetic answer");
+  const answerBox = page.locator("#learning-practice textarea");
+  const collapsedHeight = await answerBox.evaluate(element => element.getBoundingClientRect().height);
+  await answerBox.fill(Array.from({ length: 8 }, (_, index) => `Synthetic answer line ${index + 1}`).join("\n"));
+  await page.waitForFunction(() => {
+    const textarea = document.querySelector("#learning-practice textarea");
+    return textarea && textarea.scrollHeight <= textarea.clientHeight + 1 && textarea.getBoundingClientRect().height > 120;
+  });
+  const grown = await answerBox.evaluate(element => ({
+    height: element.getBoundingClientRect().height,
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }));
+  assert.ok(grown.height > collapsedHeight + 80, `The answer box grows with its content: ${collapsedHeight} -> ${grown.height}`);
+  assert.ok(grown.scrollHeight <= grown.clientHeight + 1, "A normal long answer stays visible without inner scrolling");
+  await answerBox.fill("A one-line answer");
+  const shrunkHeight = await answerBox.evaluate(element => element.getBoundingClientRect().height);
+  assert.ok(shrunkHeight < grown.height - 80, `Deleting text shrinks the answer box back: ${grown.height} -> ${shrunkHeight}`);
+  await answerBox.fill(Array.from({ length: 40 }, (_, index) => `Long answer line ${index + 1}`).join("\n"));
+  const capped = await answerBox.evaluate(element => ({
+    height: element.getBoundingClientRect().height,
+    viewport: window.innerHeight,
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }));
+  assert.ok(capped.height <= capped.viewport * 0.6 + 1, `The field stops growing at the viewport cap: ${capped.height} > ${capped.viewport * 0.6}`);
+  assert.ok(capped.scrollHeight > capped.clientHeight, "Only answers beyond the cap scroll inside the field");
+  await answerBox.fill("A complete synthetic answer");
   const submit = page.getByRole("button", { name: "Submit answers", exact: true });
   assert.equal(await submit.isEnabled(), true, "No separate start action blocks submission");
   assert.equal(await page.getByRole("button", { name: "Start learning", exact: true }).count(), 0);
