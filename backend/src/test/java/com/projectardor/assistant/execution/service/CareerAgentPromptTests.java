@@ -12,6 +12,8 @@ class CareerAgentPromptTests {
 
         assertThat(prompt.length()).isLessThan(3_000);
         assertThat(prompt).contains("先读后写", "确认", "不可信", "长期记忆");
+        // Intermediate narration is user-visible text, not reasoning.
+        assertThat(prompt).contains("再调用工具", "不是思考内容");
         assertThat(prompt).doesNotContain("17a", "23b", "27a", "学习单元", "学校课表");
     }
 }

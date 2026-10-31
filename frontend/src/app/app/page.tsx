@@ -23,9 +23,7 @@ import { ModelSettingsDialog, type ModelSettingsUpdate } from "@/components/ardo
 import { ContextUsageIndicator, CompactionNotice, type ContextUsage } from "@/components/ardor/context-usage";
 import { ServicePicker } from "@/components/ardor/service-picker";
 import { type ToolMeasurement } from "@/components/ardor/tool-duration";
-import { ExecutionTrace } from "@/components/ardor/execution-trace";
-import { RunIntents } from "@/components/ardor/run-intents";
-import { toolSteps } from "@/lib/run-intents";
+import { ExecutionTimeline } from "@/components/ardor/execution-timeline";
 import { DeletionPermissions } from "@/components/ardor/deletion-permissions";
 import { OperationPermissions } from "@/components/ardor/operation-permissions";
 import { LearningPermissions } from "@/components/ardor/learning-permissions";
@@ -1539,14 +1537,13 @@ export default function AgentHomePage() {
   const liveTitle = !(busy || runningRun) ? t("Execution stopped", "执行已停止") : phase === "THINKING" ? t("Thinking", "思考中") : phase === "PLAN" ? t("Planning", "正在规划") : phase === "GATHER" ? t("Gathering evidence", "正在收集证据") : phase === "REFLECT" ? t("Reviewing evidence", "正在审查证据") : phase === "ANSWER" ? t("Writing reply", "正在生成回复") : phase === "TOOL" ? t("Using tools", "正在调用工具") : phase === "OUTPUT" ? t("Writing reply", "正在生成回复") : t("Waiting for model", "等待模型回应");
   const displayedSteps = runningRun && !busy && streamProgress?.steps
     ? streamProgress.steps.map((step, index) => ({ ...step, key: `recovered-${index}`, done: true })) : runSteps;
-  const liveTrace = showLiveTrace ? <ExecutionTrace title={liveTitle}
-    active={(busy || !!runningRun) && phase !== "OUTPUT"}
-    elapsed={formatElapsed(runElapsed, locale)} thinking={runThinking} steps={toolSteps(displayedSteps)}
+  const liveTrace = showLiveTrace ? <ExecutionTimeline title={liveTitle}
+    elapsed={runElapsed > 0 ? formatElapsed(runElapsed, locale) : ""} thinking={runThinking} steps={displayedSteps}
     >
-    {runningRun && <p>{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
-    {retryFailures.map((failure, index) => <p key={index} className="text-amber-700">{failure.label} · {failure.detail}</p>)}
-    {busy && retryAttempt > 0 && <p>{t(`Reconnecting · retry ${retryAttempt}/${MAX_MESSAGE_RETRIES}`, `正在重新连接 · 第 ${retryAttempt}/${MAX_MESSAGE_RETRIES} 次重试`)}</p>}
-  </ExecutionTrace> : null;
+    {runningRun && <p className="text-xs text-stone-500">{streamProgress?.label ?? runningRun.label} · {t("You can refresh to resume", "可刷新页面继续查看")}</p>}
+    {retryFailures.map((failure, index) => <p key={index} className="text-xs text-amber-700">{failure.label} · {failure.detail}</p>)}
+    {busy && retryAttempt > 0 && <p className="text-xs text-stone-500">{t(`Reconnecting · retry ${retryAttempt}/${MAX_MESSAGE_RETRIES}`, `正在重新连接 · 第 ${retryAttempt}/${MAX_MESSAGE_RETRIES} 次重试`)}</p>}
+  </ExecutionTimeline> : null;
   const proposalResults = (message: AgentMessage) => (savedRunTrace(message.runTrace)?.proposals ?? []).map((proposal) => {
     const item = { ...proposal, sourceMessageId: message.id };
     const current = confirmations.find((value) => value.sourceMessageId === message.id && confirmationKey(value) === confirmationKey(item));
@@ -1665,20 +1662,18 @@ export default function AgentHomePage() {
                         {message === liveAssistant && <>
                           <CompactionNotice usage={streamProgress?.contextUsage ?? liveContext?.usage} traceHref={activeLiveRunId ? `/app/agent-runs/${activeLiveRunId}` : undefined} />
                           {liveTrace}
-                          {!liveAssistant.runTrace && <RunIntents steps={displayedSteps} />}
                         </>}
                         {savedRunTrace(message.runTrace) && (() => { const trace = savedRunTrace(message.runTrace)!; return <>
                           <CompactionNotice usage={trace.contextUsage} traceHref={message.runId ? `/app/agent-runs/${message.runId}` : undefined} />
-                          <ExecutionTrace title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs, locale)} thinking={trace.thinkingOutput} steps={toolSteps(trace.steps)}>{proposalResults(message)}</ExecutionTrace>
+                          <ExecutionTimeline title={trace.status === "COMPLETED" ? t("Completed", "已完成") : t("Execution stopped", "执行已停止")} elapsed={formatElapsed(trace.elapsedMs, locale)} thinking={trace.thinkingOutput} steps={trace.steps}>{proposalResults(message)}</ExecutionTimeline>
                         </>; })()}
-                        <RunIntents steps={savedRunTrace(message.runTrace)?.steps} />
-                        <div className="ardor-markdown"><ReactMarkdown remarkPlugins={markdownPlugins}>{message.content}</ReactMarkdown></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 block text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time>
+                        <div data-answer className="ardor-markdown"><ReactMarkdown remarkPlugins={markdownPlugins}>{message.content}</ReactMarkdown></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 block text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time>
                       </div>
                     )}
                   </article>
                 ))}
-                {!liveAssistant && <><CompactionNotice usage={streamProgress?.contextUsage ?? liveContext?.usage} traceHref={activeLiveRunId ? `/app/agent-runs/${activeLiveRunId}` : undefined} />{liveTrace}{!terminalInHistory && <RunIntents steps={displayedSteps} />}</>}
-                {runningRun && streamProgress?.answerPartial && <div aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={markdownPlugins}>{streamProgress.answerPartial}</ReactMarkdown></div>}
+                {!liveAssistant && <><CompactionNotice usage={streamProgress?.contextUsage ?? liveContext?.usage} traceHref={activeLiveRunId ? `/app/agent-runs/${activeLiveRunId}` : undefined} />{liveTrace}</>}
+                {runningRun && streamProgress?.answerPartial && <div data-answer aria-label={t("Reply in progress", "正在生成的回复")} className="ardor-markdown max-w-full text-sm leading-7 text-stone-800"><ReactMarkdown remarkPlugins={markdownPlugins}>{streamProgress.answerPartial}</ReactMarkdown></div>}
                 {!terminalInHistory && !runningRun && !busy && streamProgress?.answerPartial && streamProgress.phase !== "COMPLETED" && <details className="max-w-xl rounded-2xl border border-stone-200/70 bg-white/50 p-4"><summary className="cursor-pointer text-xs text-stone-500">{t("Incomplete reply · saved before execution stopped", "未完成回复 · 停止前保留的片段")}</summary><div className="ardor-markdown mt-3 text-sm leading-7"><ReactMarkdown remarkPlugins={markdownPlugins}>{streamProgress.answerPartial}</ReactMarkdown></div></details>}
                 <QueuedMessages key={state?.conversationId} conversationId={state?.conversationId ?? null} activeRunId={runningRun?.id ?? approvalRunId} onPendingChange={setHasQueuedMessages} onCompleted={load} onStarted={setQueuedWakeId} />
                 <div ref={endRef} />

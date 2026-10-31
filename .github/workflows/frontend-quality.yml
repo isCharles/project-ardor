@@ -91,8 +91,8 @@ jobs:
         run: node --experimental-strip-types tests/markdown-ranges.mjs
       - name: Streaming error and proxy compatibility contract
         run: node tests/stream-error-contract.mjs
-      - name: Intermediate next-step line contract
-        run: node --experimental-strip-types --test tests/run-intents.test.mjs
+      - name: Run timeline segmentation contract
+        run: node --experimental-strip-types --test tests/run-timeline.test.mjs
       - name: Learning feedback identity and legacy preservation contract
         run: node tests/learning-feedback-contract.mjs
       - name: Build production frontend
@@ -111,8 +111,8 @@ jobs:
         run: node tests/agent-approval-ui.mjs
       - name: Context usage and compaction UI regression (mock APIs)
         run: node tests/context-usage-ui.mjs
-      - name: Intermediate next-step intents UI regression (mock APIs)
-        run: node tests/run-intents-ui.mjs
+      - name: Narration and tool group timeline UI regression (mock APIs)
+        run: node tests/run-timeline-ui.mjs
       - name: One resume against several job descriptions UI regression (mock APIs)
         run: node tests/resume-multi-jd-ui.mjs
       - name: Primary resume and displayed report UI regression (mock APIs)

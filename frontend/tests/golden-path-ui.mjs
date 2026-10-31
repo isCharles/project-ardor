@@ -32,10 +32,10 @@ async function waitForApiState(page,path,accept) {
 }
 
 async function openWorkRecords(page) {
-  const records = page.locator("[data-execution-trace] > div > details");
-  await records.first().waitFor();
-  for (const record of await records.all()) {
-    if (await record.getAttribute("open") == null) await record.locator(":scope > summary").click();
+  const groups = page.locator("[data-tool-group]");
+  if (await groups.count() === 0) return;
+  for (const group of await groups.all()) {
+    if (await group.getAttribute("open") == null) await group.locator("summary").click();
   }
 }
 
@@ -48,8 +48,7 @@ try {
 
   // The latest synthetic conversation contains both a deleted proposal and a
   // distinct pending one. Only the pending one may still offer creation.
-  await page.locator("[data-execution-trace]").first().waitFor();
-  assert.equal(await page.locator("[data-execution-trace] > div > details").first().getAttribute("open"), null, "Process records default to collapsed");
+  await page.locator("[data-execution-timeline]").first().waitFor();
   await openWorkRecords(page);
   await page.getByText(/Plan removed|计划已移除/).waitFor();
   await page.getByRole("button", { name: /Confirm creation|确认创建/ }).waitFor();
@@ -65,13 +64,13 @@ try {
     return response.json();
   });
   await page.getByRole("button", { name: /Confirm creation|确认创建/ }).click();
-  await page.locator("[data-execution-trace]").getByText(/^(Learning plan created|学习计划已创建) ·/).waitFor();
+  await page.locator("[data-execution-timeline]").getByText(/^(Learning plan created|学习计划已创建) ·/).waitFor();
   const createdPlanPath = await page.getByRole("link", { name: /Open lesson|打开学习/ }).getAttribute("href");
   assert.match(createdPlanPath, /^\/app\/learning\?id=[0-9a-f-]{36}$/i);
   await page.reload();
   await openWorkRecords(page);
   await page.getByText(/Plan removed|计划已移除/).waitFor();
-  await page.locator("[data-execution-trace]").getByText(/^(Learning plan created|学习计划已创建) ·/).waitFor();
+  await page.locator("[data-execution-timeline]").getByText(/^(Learning plan created|学习计划已创建) ·/).waitFor();
   assert.equal(await page.getByRole("button", { name: /Confirm creation|确认创建/ }).count(), 0);
   const plansAfterConfirmation = await page.evaluate(async () => {
     const response = await fetch("/api/learning-plans");
