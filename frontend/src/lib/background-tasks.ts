@@ -17,6 +17,27 @@ export async function readBackgroundTask(task: BackgroundTask) {
   window.dispatchEvent(new Event("ardor:background-refresh"));
 }
 
+/**
+ * Acknowledges every finished task in one module once its result page has
+ * loaded. Pass a new version when a result arrives while the page stays open;
+ * hidden tabs wait for visibility so a notification is not consumed unseen.
+ */
+export function useAcknowledgeModule(module: string, ready: boolean, version: string | number = "") {
+  useEffect(() => {
+    if (!ready) return;
+    let active = true;
+    const acknowledge = () => {
+      if (!active || document.hidden) return;
+      void api<void>(`/api/background-tasks/modules/${encodeURIComponent(module)}/read`, { method: "POST" })
+        .then(() => { if (active) window.dispatchEvent(new Event("ardor:background-refresh")); })
+        .catch(() => undefined);
+    };
+    acknowledge();
+    document.addEventListener("visibilitychange", acknowledge);
+    return () => { active = false; document.removeEventListener("visibilitychange", acknowledge); };
+  }, [module, ready, version]);
+}
+
 // A specific loaded report is acknowledgment; merely visiting a module is not.
 export function useReadVisibleResult(kind: string,resourceId: string | null | undefined,ready: boolean,version: string | number | undefined = "",taskId?: string | null) {
   useEffect(() => {
