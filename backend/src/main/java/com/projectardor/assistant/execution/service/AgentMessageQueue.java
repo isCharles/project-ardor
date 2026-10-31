@@ -30,6 +30,7 @@ public class AgentMessageQueue {
     private final TransactionTemplate transactions;
     private final Function<UUID, MembershipTier> tiers;
     private final long priorityAgingSeconds;
+    private final com.projectardor.platform.observability.TechnicalTracing technicalTracing;
 
     /** Compatibility for callers without membership context; queued rows start as free tier. */
     public AgentMessageQueue(JdbcTemplate jdbc, ObjectMapper mapper, AgentConversationStore conversations,
@@ -37,20 +38,36 @@ public class AgentMessageQueue {
         this(jdbc, mapper, conversations, transactionManager, ignored -> MembershipTier.FREE, 60);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public AgentMessageQueue(JdbcTemplate jdbc, ObjectMapper mapper, AgentConversationStore conversations,
             PlatformTransactionManager transactionManager, MembershipService memberships,
             @Value("${app.agent.queue.priority-aging-seconds:60}") long priorityAgingSeconds) {
-        this(jdbc, mapper, conversations, transactionManager, memberships::tier, priorityAgingSeconds);
+        this(jdbc, mapper, conversations, transactionManager, memberships::tier, priorityAgingSeconds,
+                com.projectardor.platform.observability.TechnicalTracing.disabled());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentMessageQueue(JdbcTemplate jdbc, ObjectMapper mapper, AgentConversationStore conversations,
+            PlatformTransactionManager transactionManager, MembershipService memberships,
+            @Value("${app.agent.queue.priority-aging-seconds:60}") long priorityAgingSeconds,
+            com.projectardor.platform.observability.TechnicalTracing technicalTracing) {
+        this(jdbc, mapper, conversations, transactionManager, memberships::tier, priorityAgingSeconds, technicalTracing);
     }
 
     AgentMessageQueue(JdbcTemplate jdbc, ObjectMapper mapper, AgentConversationStore conversations,
             PlatformTransactionManager transactionManager, Function<UUID, MembershipTier> tiers,
             long priorityAgingSeconds) {
+        this(jdbc, mapper, conversations, transactionManager, tiers, priorityAgingSeconds,
+                com.projectardor.platform.observability.TechnicalTracing.disabled());
+    }
+
+    AgentMessageQueue(JdbcTemplate jdbc, ObjectMapper mapper, AgentConversationStore conversations,
+            PlatformTransactionManager transactionManager, Function<UUID, MembershipTier> tiers,
+            long priorityAgingSeconds, com.projectardor.platform.observability.TechnicalTracing technicalTracing) {
         this.jdbc = jdbc; this.mapper = mapper; this.conversations = conversations;
         this.transactions = new TransactionTemplate(transactionManager);
         this.tiers = tiers;
         this.priorityAgingSeconds = Math.max(1, priorityAgingSeconds);
+        this.technicalTracing = technicalTracing;
     }
     private final RowMapper<Item> rows = this::mapRow;
     private Item mapRow(java.sql.ResultSet rs, int index) throws java.sql.SQLException {
@@ -58,7 +75,7 @@ public class AgentMessageQueue {
             rs.getObject("user_id", UUID.class), rs.getString("status"),
             mapper.readValue(rs.getString("payload"), AgentMessageRequest.class),
             rs.getObject("blocked_by", UUID.class), rs.getString("error_message"), rs.getTimestamp("created_at").toInstant(),
-            queuePosition(rs));
+            queuePosition(rs), rs.getString("traceparent"));
     }
     private Integer queuePosition(java.sql.ResultSet rs) throws java.sql.SQLException {
         for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++) {
@@ -270,12 +287,17 @@ public class AgentMessageQueue {
                 : List.of("FAILED", "INTERRUPTED").contains(previous.status()) && activeRun != null ? activeRun : previous.id();
         int priority = tiers.apply(userId).paid() ? 1 : 0;
         int inserted = jdbc.update("""
-                INSERT INTO agent_message_queue(id,user_id,conversation_id,payload,blocked_by,priority)
-                VALUES(?,?,?,CAST(? AS jsonb),?,?) ON CONFLICT(id) DO NOTHING
-                """, request.requestId(), userId, request.conversationId(), payload, predecessor, priority);
+                INSERT INTO agent_message_queue(id,user_id,conversation_id,payload,blocked_by,priority,traceparent)
+                VALUES(?,?,?,CAST(? AS jsonb),?,?,?) ON CONFLICT(id) DO NOTHING
+                """, request.requestId(), userId, request.conversationId(), payload, predecessor, priority,
+                technicalTracing.currentTraceparent());
         if (inserted != 1) throw new IllegalArgumentException("请求标识不可用");
         return new Accepted(get(userId, request.requestId()), true);
     }
     private record Accepted(Item item, boolean created) {}
-    public record Item(UUID id, UUID userId, String status, AgentMessageRequest request, UUID blockedBy, String errorMessage, Instant createdAt, Integer queuePosition) {}
+    public record Item(UUID id, UUID userId, String status, AgentMessageRequest request, UUID blockedBy, String errorMessage, Instant createdAt, Integer queuePosition, String traceparent) {
+        public Item(UUID id, UUID userId, String status, AgentMessageRequest request, UUID blockedBy, String errorMessage, Instant createdAt, Integer queuePosition) {
+            this(id, userId, status, request, blockedBy, errorMessage, createdAt, queuePosition, null);
+        }
+    }
 }

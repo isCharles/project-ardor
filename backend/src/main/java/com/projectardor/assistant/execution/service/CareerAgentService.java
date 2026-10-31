@@ -70,6 +70,7 @@ public class CareerAgentService {
     private final AgentMetrics agentMetrics;
     private final AgentPlanner planner;
     private final AgentPlanStore planStore;
+    private final com.projectardor.platform.observability.TechnicalTracing technicalTracing;
     private final java.time.Duration silenceTimeout;
     private final java.time.Duration totalTimeout;
     private final ConcurrentHashMap<UUID, ActiveStream> activeStreams = new ConcurrentHashMap<>();
@@ -104,6 +105,33 @@ public class CareerAgentService {
             AgentPlanner planner, AgentPlanStore planStore,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:90s}") java.time.Duration silenceTimeout,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.total-timeout:10m}") java.time.Duration totalTimeout) {
+        this(store, runStore, modelFactory, tools, llmConfigService, memoryService, contextBuilder,
+                profileService, objectMapper, streamProgress, toolApprovals, permissionGrants, executionAudit,
+                traceStore, modelCatalog, images, usageTokens, agentMetrics, planner, planStore,
+                com.projectardor.platform.observability.TechnicalTracing.disabled(), silenceTimeout, totalTimeout);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public CareerAgentService(
+            AgentConversationStore store,
+            AgentRunStore runStore,
+            LangChainModelFactory modelFactory,
+            CareerAgentTools tools,
+            LlmConfigService llmConfigService,
+            AgentMemoryService memoryService,
+            AgentContextBuilder contextBuilder,
+            ProfileService profileService,
+            ObjectMapper objectMapper,
+            AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals,
+            AgentPermissionGrants permissionGrants, AgentExecutionAuditStore executionAudit,
+            AgentTraceStore traceStore, AgentModelCatalogService modelCatalog,
+            com.projectardor.assistant.conversation.service.ChatImageService images,
+            com.projectardor.platform.usage.UsageTokenStore usageTokens,
+            AgentMetrics agentMetrics,
+            AgentPlanner planner, AgentPlanStore planStore,
+            com.projectardor.platform.observability.TechnicalTracing technicalTracing,
+            @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:90s}") java.time.Duration silenceTimeout,
+            @org.springframework.beans.factory.annotation.Value("${app.agent.stream.total-timeout:10m}") java.time.Duration totalTimeout) {
         this.store = store;
         this.runStore = runStore;
         this.modelFactory = modelFactory;
@@ -124,6 +152,7 @@ public class CareerAgentService {
         this.agentMetrics = agentMetrics;
         this.planner = planner;
         this.planStore = planStore;
+        this.technicalTracing = technicalTracing;
         if (silenceTimeout.isNegative() || silenceTimeout.isZero() || totalTimeout.isNegative() || totalTimeout.isZero()) throw new IllegalArgumentException("Agent 运行期限必须大于零");
         this.silenceTimeout = silenceTimeout; this.totalTimeout = totalTimeout;
     }
@@ -268,7 +297,7 @@ public class CareerAgentService {
                     ? store.create(userId)
                     : store.requireActive(userId, conversationId);
             tracer = requestId == null ? null : AgentRunTracer.begin(traceStore, userId, requestId,
-                    conversation.getId(), runtimeConfig.model(), AgentRunTracer.PROMPT_VERSION, jobId);
+                    conversation.getId(), runtimeConfig.model(), AgentRunTracer.PROMPT_VERSION, jobId, technicalTracing);
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
                     java.util.Map.of("historyLimit", 40));
             AgentContextBuilder.Prepared promptContext;
@@ -490,7 +519,8 @@ public class CareerAgentService {
                 return;
             }
             AgentRunTracer tracer = requestId == null ? null : AgentRunTracer.begin(traceStore,
-                    userId, requestId, conversation.getId(), runtimeConfig.model(), AgentRunTracer.PROMPT_VERSION);
+                    userId, requestId, conversation.getId(), runtimeConfig.model(), AgentRunTracer.PROMPT_VERSION,
+                    null, technicalTracing);
             traceRef.set(tracer);
             streamProgress.begin(userId, progressId);
             if (finished.get()) { streamProgress.finish(progressId, true); return; }
@@ -644,6 +674,14 @@ public class CareerAgentService {
                     .onCompleteResponse(response -> {
                         if (!finished.compareAndSet(false, true)) return;
                         lease.fence();
+                        // The SDK completes on its own transport pool, not the request virtual thread.
+                        // Re-establish the run's correlation keys before any completion log or cleanup.
+                        MDC.put("runId", requestId == null ? "" : requestId.toString());
+                        MDC.put("userId", userId.toString());
+                        if (tracer != null && tracer.technicalTraceId() != null) {
+                            MDC.put("traceId", tracer.technicalTraceId());
+                            MDC.put("spanId", tracer.technicalSpanId());
+                        }
                         try {
                             String answer = response.aiMessage().text();
                             if (answer == null || answer.isBlank()) throw new IllegalStateException("Agent 没有返回可用内容");
@@ -675,11 +713,19 @@ public class CareerAgentService {
                         } finally {
                             MDC.remove("runId");
                             MDC.remove("userId");
+                            MDC.remove("traceId");
+                            MDC.remove("spanId");
                             toolApprovals.close(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
                     })
                     .onError(exception -> {
                         if (!finished.compareAndSet(false, true)) return;
                         lease.fence();
+                        MDC.put("runId", requestId == null ? "" : requestId.toString());
+                        MDC.put("userId", userId.toString());
+                        if (tracer != null && tracer.technicalTraceId() != null) {
+                            MDC.put("traceId", tracer.technicalTraceId());
+                            MDC.put("spanId", tracer.technicalSpanId());
+                        }
                         if (planning != null) planning.finish("FAILED");
                         if (tracer != null) tracer.fail("AGENT_STREAM_FAILED");
                         recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
@@ -689,6 +735,8 @@ public class CareerAgentService {
                         finally {
                             MDC.remove("runId");
                             MDC.remove("userId");
+                            MDC.remove("traceId");
+                            MDC.remove("spanId");
                             toolApprovals.close(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
                     });
             if (!finished.get()) stream.start();

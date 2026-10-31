@@ -50,14 +50,25 @@ public class AgentController {
     private final AgentMemoryService memoryService;
     private final com.projectardor.assistant.execution.service.AgentMessageQueue queue;
     private final com.projectardor.assistant.execution.service.AgentPermissionGrants permissionGrants;
+    private final com.projectardor.platform.observability.TechnicalTracing technicalTracing;
 
     public AgentController(CareerAgentService agentService, AgentMemoryService memoryService,
             com.projectardor.assistant.execution.service.AgentMessageQueue queue,
             com.projectardor.assistant.execution.service.AgentPermissionGrants permissionGrants) {
+        this(agentService, memoryService, queue, permissionGrants,
+                com.projectardor.platform.observability.TechnicalTracing.disabled());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentController(CareerAgentService agentService, AgentMemoryService memoryService,
+            com.projectardor.assistant.execution.service.AgentMessageQueue queue,
+            com.projectardor.assistant.execution.service.AgentPermissionGrants permissionGrants,
+            com.projectardor.platform.observability.TechnicalTracing technicalTracing) {
         this.agentService = agentService;
         this.memoryService = memoryService;
         this.queue = queue;
         this.permissionGrants = permissionGrants;
+        this.technicalTracing = technicalTracing;
     }
 
     @PostMapping("/queue")
@@ -167,7 +178,9 @@ public class AgentController {
         // Return the emitter before blocking context/graph work. Otherwise Spring
         // buffers every send until the controller returns and the UI sees no live progress.
         java.util.UUID userId = principal.userId();
-        Thread.ofVirtual().name("ardor-agent-request").start(() -> {
+        // A new virtual thread does not inherit ThreadLocal trace state; capture the request
+        // context here so the run span has the HTTP server span as its parent.
+        Thread.ofVirtual().name("ardor-agent-request").start(technicalTracing.wrap(() -> {
             try {
                 agentService.chatStream(userId, request.conversationId(), request.message(), request.contextType(), request.contextId(),
                         request.contextReferences(), request.requestId(), request.reasoningDepth(), request.modelChoice(), request.imageIds(), sink);
@@ -176,7 +189,7 @@ public class AgentController {
                         "请求未能继续，请查看运行记录后重试", false, 0));
                 sink.complete();
             }
-        });
+        }));
         return emitter;
     }
 

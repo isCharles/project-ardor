@@ -25,14 +25,23 @@ public class CompatibleLlmGateway implements LlmGateway {
     private final ModelProtocols<JsonModelProtocol> protocols;
     private final Map<LlmProvider, JsonStreamProtocol> streamProtocols;
     private final ModelCallCapacity capacity;
+    private final com.projectardor.platform.observability.TechnicalTracing technicalTracing;
 
     @org.springframework.beans.factory.annotation.Autowired
     public CompatibleLlmGateway(LlmConfigService configService, List<JsonModelProtocol> protocols,
-            List<JsonStreamProtocol> streamProtocols, ModelCallCapacity capacity) {
+            List<JsonStreamProtocol> streamProtocols, ModelCallCapacity capacity,
+            com.projectardor.platform.observability.TechnicalTracing technicalTracing) {
         this.configService = configService;
         this.protocols = new ModelProtocols<>(protocols);
         this.streamProtocols = register(streamProtocols);
         this.capacity = capacity;
+        this.technicalTracing = technicalTracing;
+    }
+
+    public CompatibleLlmGateway(LlmConfigService configService, List<JsonModelProtocol> protocols,
+            List<JsonStreamProtocol> streamProtocols, ModelCallCapacity capacity) {
+        this(configService, protocols, streamProtocols, capacity,
+                com.projectardor.platform.observability.TechnicalTracing.disabled());
     }
 
     /** Compatibility for protocol tests that do not exercise the shared capacity guard. */
@@ -59,6 +68,19 @@ public class CompatibleLlmGateway implements LlmGateway {
     }
 
     public LlmResult completeJson(UUID userId, LlmConfigService.LlmRuntimeConfig config,
+            String systemPrompt, String userPrompt) {
+        var span = technicalTracing.startModelCall(config.model(), config.provider().name());
+        try {
+            LlmResult result = completeJsonCore(userId, config, systemPrompt, userPrompt);
+            technicalTracing.finishModelCall(span, result.model(), true, null);
+            return result;
+        } catch (RuntimeException failure) {
+            technicalTracing.finishModelCall(span, config.model(), false, errorCode(failure));
+            throw failure;
+        }
+    }
+
+    private LlmResult completeJsonCore(UUID userId, LlmConfigService.LlmRuntimeConfig config,
             String systemPrompt, String userPrompt) {
         var estimator = AgentRequestTokens.estimator(config);
         long tokens = estimator.estimateTokenCountInText(systemPrompt)
@@ -103,9 +125,27 @@ public class CompatibleLlmGateway implements LlmGateway {
             String userPrompt,
             Consumer<String> onDelta,
             BooleanSupplier stopRequested) {
+        var span = technicalTracing.startModelCall(config.model(), config.provider().name());
+        try {
+            LlmResult result = completeJsonStreamingCore(userId, config, systemPrompt, userPrompt, onDelta, stopRequested);
+            technicalTracing.finishModelCall(span, result.model(), true, null);
+            return result;
+        } catch (RuntimeException failure) {
+            technicalTracing.finishModelCall(span, config.model(), false, errorCode(failure));
+            throw failure;
+        }
+    }
+
+    private LlmResult completeJsonStreamingCore(
+            UUID userId,
+            LlmConfigService.LlmRuntimeConfig config,
+            String systemPrompt,
+            String userPrompt,
+            Consumer<String> onDelta,
+            BooleanSupplier stopRequested) {
         JsonStreamProtocol protocol = streamProtocols.get(config.provider());
         if (protocol == null) {
-            LlmResult result = completeJson(userId, config, systemPrompt, userPrompt);
+            LlmResult result = completeJsonCore(userId, config, systemPrompt, userPrompt);
             if (!stopRequested.getAsBoolean()) onDelta.accept(result.content());
             return result;
         }
@@ -142,6 +182,10 @@ public class CompatibleLlmGateway implements LlmGateway {
             registered.putIfAbsent(protocol.provider(), protocol);
         }
         return registered;
+    }
+
+    private static String errorCode(RuntimeException failure) {
+        return failure instanceof LlmCallException llm ? llm.getCode() : failure.getClass().getSimpleName();
     }
 
     private LlmCallException httpFailure(RestClientResponseException exception) {

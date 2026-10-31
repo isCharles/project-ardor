@@ -171,4 +171,31 @@ class AgentModelTraceListenerTests {
         verify(store).finishSpan(eq(user), eq(llmSpan), eq("COMPLETED"), isNull(), eq("actual-model"),
                 eq("v1"), eq(100), eq(25), isNull(), isNull(), any());
     }
+
+    @Test
+    void modelErrorsRecordTheStableStreamCodeInsteadOfTheSdkClassName() {
+        AgentTraceStore store = mock(AgentTraceStore.class);
+        when(store.enabled()).thenReturn(true);
+        UUID user = UUID.randomUUID(), run = UUID.randomUUID(), root = UUID.randomUUID(), llmSpan = UUID.randomUUID();
+        when(store.startSpan(eq(user), eq(run), isNull(), eq("RUN"), eq("agent.run"), any())).thenReturn(root);
+        AgentRunTracer tracer = AgentRunTracer.begin(store, user, run, null, "fixture", "v1");
+        when(store.startSpan(eq(user), eq(run), eq(tracer.rootSpanId()), eq("LLM"), eq("llm.call.1"), any()))
+                .thenReturn(llmSpan);
+        AgentModelTraceListener listener = new AgentModelTraceListener(tracer, "fixture");
+        Map<Object, Object> attributes = new HashMap<>();
+        ChatModelRequestContext request = mock(ChatModelRequestContext.class);
+        when(request.attributes()).thenReturn(attributes);
+        when(request.chatRequest()).thenReturn(null);
+        when(request.modelProvider()).thenReturn(null);
+        listener.onRequest(request);
+        dev.langchain4j.model.chat.listener.ChatModelErrorContext error =
+                mock(dev.langchain4j.model.chat.listener.ChatModelErrorContext.class);
+        when(error.attributes()).thenReturn(attributes);
+        when(error.error()).thenReturn(new dev.langchain4j.exception.InternalServerException("provider body"));
+        listener.onError(error);
+
+        verify(store).finishSpan(eq(user), eq(llmSpan), eq("FAILED"), eq("LLM_HTTP_ERROR"), eq("fixture"),
+                eq("v1"), isNull(), isNull(), isNull(), isNull(),
+                org.mockito.ArgumentMatchers.argThat(span -> "LLM_HTTP_ERROR".equals(span.get("errorType"))));
+    }
 }

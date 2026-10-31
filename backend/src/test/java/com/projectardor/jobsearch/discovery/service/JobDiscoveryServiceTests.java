@@ -85,7 +85,7 @@ class JobDiscoveryServiceTests {
         assertThat(result.status()).isEqualTo("QUEUED");
         verify(repository).savePreferences(user, List.of("Backend Engineer"), List.of("Beijing"), List.of());
         verify(repository).insertRun(requestId, user, List.of("Backend Engineer"), List.of("Beijing"), List.of());
-        verify(jobs).enqueue(user, requestId, AiJobType.JOB_DISCOVERY, requestId, "{}", 0);
+        verify(jobs).enqueue(user, requestId, AiJobType.JOB_DISCOVERY, requestId, "{}", 0, null);
     }
 
     @Test void startRefusesWhenNoReliableRoleExistsOrAnotherRunIsActive() {

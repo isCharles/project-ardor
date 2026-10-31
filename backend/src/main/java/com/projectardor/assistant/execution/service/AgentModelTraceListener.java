@@ -143,7 +143,11 @@ public final class AgentModelTraceListener implements ChatModelListener {
         tracer.recordLlm(purpose, null, null, false, 0);
         if (metrics != null) metrics.recordLlmCall(durationNanos, null, null, model, true);
         if (span == null) return;
-        String errorCode = context.error() == null ? "LLM_CALL_FAILED" : context.error().getClass().getSimpleName();
+        // Record the same stable code the stream reports instead of an SDK class name.
+        Throwable classified = context.error() == null ? null : AgentModelFailures.classify(context.error());
+        String errorCode = classified instanceof com.projectardor.platform.model.llm.service.LlmCallException llm
+                ? llm.getCode()
+                : classified == null ? "LLM_CALL_FAILED" : classified.getClass().getSimpleName();
         Map<String, Object> attributes = new LinkedHashMap<>();
         attributes.put("errorType", errorCode);
         copyTiming(context.attributes(), attributes);

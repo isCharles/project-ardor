@@ -17,8 +17,16 @@ public class AiJobService {
     private final Map<AiJobType,AiJobHandler> handlers;
     private final ObjectMapper mapper;
     private final MembershipService memberships;
+    private final com.projectardor.platform.observability.TechnicalTracing technicalTracing;
     public AiJobService(AiJobStore store,List<AiJobHandler> registered,ObjectMapper mapper,MembershipService memberships) {
+        this(store, registered, mapper, memberships,
+                com.projectardor.platform.observability.TechnicalTracing.disabled());
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public AiJobService(AiJobStore store,List<AiJobHandler> registered,ObjectMapper mapper,MembershipService memberships,
+            com.projectardor.platform.observability.TechnicalTracing technicalTracing) {
         this.store=store; this.mapper=mapper; this.memberships=memberships;
+        this.technicalTracing=technicalTracing;
         var map=new EnumMap<AiJobType,AiJobHandler>(AiJobType.class);
         for(var handler:registered) {
             if (handler.type() == null || map.putIfAbsent(handler.type(),handler) != null)
@@ -55,7 +63,7 @@ public class AiJobService {
         boolean existing=request != null && store.find(owner,request).isPresent();
         handler(type).validateEnqueue(owner,resource,payload,existing);
         int priority = priority(owner);
-        var queued = store.enqueue(owner,request,type,resource,payload,priority);
+        var queued = store.enqueue(owner,request,type,resource,payload,priority,technicalTracing.currentTraceparent());
         return AiJobResponse.from(queued, -1, store.durationSamples().get(type));
     }
     public String perform(AiJobStore.Job job) {

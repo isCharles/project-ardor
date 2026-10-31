@@ -9,7 +9,7 @@ tool argument or model reply is written to logs or metric tags.
 The backend uses SLF4J + Logback with a correlation-aware console pattern:
 
 ```
-%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %level [%thread] %logger{36} — %msg — runId=%X{runId:-} userId=%X{userId:-}
+%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %level [%thread] %logger{36} — %msg — traceId=%X{traceId:-} spanId=%X{spanId:-} runId=%X{runId:-} userId=%X{userId:-}
 ```
 
 `RequestCorrelationFilter` populates MDC at the HTTP boundary:
@@ -18,10 +18,14 @@ The backend uses SLF4J + Logback with a correlation-aware console pattern:
 |-------------|-----------------------------------------------------|
 | `requestId` | `X-Request-Id` header or a random UUID per request  |
 | `userId`    | Spring Security authentication context              |
+| `traceId`   | Active OpenTelemetry span, when technical tracing is on |
+| `spanId`    | Active OpenTelemetry span, when technical tracing is on |
 
-`CareerAgentService` also sets `runId` and `userId` in MDC for the duration of
-each agent run (both sync and streaming paths). All MDC entries are cleared in
-`finally` blocks to prevent leakage across pooled threads.
+`CareerAgentService` also sets `runId`, `userId`, `traceId` and `spanId` in MDC
+for the duration of each agent run (both sync and streaming paths). The model
+completion/error callbacks run on transport threads, so they re-establish these
+keys explicitly. All MDC entries are cleared in `finally` blocks to prevent
+leakage across pooled threads.
 
 ## Micrometer metrics
 
@@ -100,13 +104,21 @@ trajectory.
 Log lines emitted during a run carry the same `runId` in MDC, so a specific
 run can be traced from the Prometheus metrics → log lines → persisted spans.
 
+Technical tracing is an optional mirror of the same spans in OpenTelemetry. The
+product trace remains authoritative; exported spans add `traceId/spanId`, GenAI
+attributes and OTLP export without changing run state or approvals. The exporter
+counters are `ardor.otel.export.spans` and `ardor.otel.export.failures`. See
+[`docs/OPENTELEMETRY.md`](OPENTELEMETRY.md) for the span shape, configuration,
+privacy allowlist, local Jaeger commands and rollback.
+
 ## What this does not cover
 
 - **Semantic correctness**: metrics confirm that tools ran and LLM calls
   completed; they do not prove the answer was correct.
 - **Business error detection**: a tool that returns an error message as normal
   text (without throwing) is still recorded as `COMPLETED`.
-- **OTLP export**: the trace system is PostgreSQL-backed, not OpenTelemetry.
-  OTLP export to Jaeger/Tempo/Grafana is a future consideration.
+- **OTLP as a source of truth**: spans are exported to OpenTelemetry for
+  diagnosis only. The PostgreSQL trace stays authoritative and is complete even
+  when the collector is down, sampling is off, or export drops spans.
 - **Evaluation persistence**: `scripts/agent-eval.mjs` reads trace data but
   results are ephemeral JSON; historical eval dashboards are not yet built.

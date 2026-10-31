@@ -17,16 +17,23 @@ public class AiJobWorker {
     private final AiJobStore store;
     private final AiJobService service;
     private final AgentMetrics metrics;
+    private final com.projectardor.platform.observability.TechnicalTracing technicalTracing;
     private final Semaphore slots;
     private final ConcurrentHashMap<UUID, AiJobStore.Job> active = new ConcurrentHashMap<>();
     private final ExecutorService executor;
     public AiJobWorker(AiJobStore store, AiJobService service, AgentMetrics metrics) {
         this(store, service, metrics, 2);
     }
+    public AiJobWorker(AiJobStore store, AiJobService service, AgentMetrics metrics, int capacity) {
+        this(store, service, metrics, capacity,
+                com.projectardor.platform.observability.TechnicalTracing.disabled());
+    }
     @org.springframework.beans.factory.annotation.Autowired
     public AiJobWorker(AiJobStore store, AiJobService service, AgentMetrics metrics,
-            @org.springframework.beans.factory.annotation.Value("${app.ai-jobs.worker-capacity:2}") int capacity) {
+            @org.springframework.beans.factory.annotation.Value("${app.ai-jobs.worker-capacity:2}") int capacity,
+            com.projectardor.platform.observability.TechnicalTracing technicalTracing) {
         this.store = store; this.service = service; this.metrics = metrics;
+        this.technicalTracing = technicalTracing;
         int slotsCount = Math.max(1, capacity);
         this.slots = new Semaphore(slotsCount);
         this.executor = Executors.newFixedThreadPool(slotsCount,
@@ -44,11 +51,20 @@ public class AiJobWorker {
                     java.time.Duration.between(job.createdAt(), Instant.now()).toNanos());
             active.put(job.id(), job);
             try { executor.execute(() -> {
-                try {
-                    if (store.complete(job, service.perform(job)))
-                        metrics.recordJobCompletion(job.type().name(), "COMPLETED");
-                } catch (RuntimeException failure) { handleFailure(job, failure); }
-                finally { active.remove(job.id(), job); slots.release(); }
+                long waitMs = job.startedAt() == null ? 0
+                        : Math.max(0, java.time.Duration.between(job.createdAt(), job.startedAt()).toMillis());
+                try (var attached = technicalTracing.attach(job.traceparent())) {
+                    var span = technicalTracing.startJobExecution(job.type().name(), job.id(), job.attempts(), waitMs);
+                    try (var scope = span.makeCurrent()) {
+                        if (store.complete(job, service.perform(job)))
+                            metrics.recordJobCompletion(job.type().name(), "COMPLETED");
+                        technicalTracing.finishOperation(span, true, null);
+                    } catch (RuntimeException failure) {
+                        technicalTracing.finishOperation(span, false,
+                                failure instanceof LlmCallException llm ? llm.getCode() : "AI_JOB_FAILED");
+                        handleFailure(job, failure);
+                    } finally { active.remove(job.id(), job); slots.release(); }
+                }
             }); } catch (RuntimeException rejected) {
                 active.remove(job.id(), job);
                 if (store.requeue(job, Instant.now().plusSeconds(30)))

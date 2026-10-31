@@ -23,7 +23,8 @@ public class AiJobStore {
             rs.getTimestamp("created_at").toInstant(),
             rs.getTimestamp("started_at") == null ? null : rs.getTimestamp("started_at").toInstant(),
             rs.getTimestamp("finished_at") == null ? null : rs.getTimestamp("finished_at").toInstant(),
-            rs.getTimestamp("retry_after") == null ? null : rs.getTimestamp("retry_after").toInstant());
+            rs.getTimestamp("retry_after") == null ? null : rs.getTimestamp("retry_after").toInstant(),
+            rs.getString("traceparent"));
     private final JdbcTemplate jdbc;
     private final long staleSeconds;
     public AiJobStore(JdbcTemplate jdbc,@org.springframework.beans.factory.annotation.Value("${app.ai-jobs.stale-after:5m}") java.time.Duration staleAfter) {
@@ -33,12 +34,17 @@ public class AiJobStore {
     }
 
     public Job enqueue(UUID userId, UUID requestId, AiJobType type, UUID resourceId, String payload, int priority) {
+        return enqueue(userId, requestId, type, resourceId, payload, priority, null);
+    }
+
+    public Job enqueue(UUID userId, UUID requestId, AiJobType type, UUID resourceId, String payload, int priority,
+            String traceparent) {
         UUID id = requestId == null ? UUID.randomUUID() : requestId;
         String hash = hash(type + ":" + resourceId + ":" + payload);
         int inserted = jdbc.update("""
-                INSERT INTO ai_jobs(id, user_id, job_type, resource_id, request_hash, payload, priority)
-                VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb), ?) ON CONFLICT DO NOTHING
-                """, id, userId, type.name(), resourceId, hash, payload, priority);
+                INSERT INTO ai_jobs(id, user_id, job_type, resource_id, request_hash, payload, priority, traceparent)
+                VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?) ON CONFLICT DO NOTHING
+                """, id, userId, type.name(), resourceId, hash, payload, priority, traceparent);
         if (inserted == 0) {
             var existing = jdbc.query("SELECT * FROM ai_jobs WHERE id = ? AND user_id = ?", MAPPER, id, userId);
             if (existing.isEmpty()) {
@@ -208,5 +214,13 @@ public class AiJobStore {
 
     public record Job(UUID id, UUID userId, AiJobType type, UUID resourceId, String requestHash, String payload,
             String status, int attempts, int maxAttempts, int priority, String resultPath, String errorCode,
-            String errorMessage, Instant createdAt, Instant startedAt, Instant finishedAt, Instant retryAfter) {}
+            String errorMessage, Instant createdAt, Instant startedAt, Instant finishedAt, Instant retryAfter,
+            String traceparent) {
+        public Job(UUID id, UUID userId, AiJobType type, UUID resourceId, String requestHash, String payload,
+                String status, int attempts, int maxAttempts, int priority, String resultPath, String errorCode,
+                String errorMessage, Instant createdAt, Instant startedAt, Instant finishedAt, Instant retryAfter) {
+            this(id, userId, type, resourceId, requestHash, payload, status, attempts, maxAttempts, priority,
+                    resultPath, errorCode, errorMessage, createdAt, startedAt, finishedAt, retryAfter, null);
+        }
+    }
 }
