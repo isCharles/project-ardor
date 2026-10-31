@@ -373,7 +373,7 @@ function PostingCard({ posting, locale, busy, confirming, onConfirmApplied, onCa
 
     {(posting.matchReason || posting.matchEvidence) && <div className="mt-4 rounded-2xl bg-stone-50/80 px-4 py-3">
       {posting.matchReason && <p className="text-xs font-medium text-stone-700">{t("Match", "匹配判断")} · {posting.matchReason}</p>}
-      {posting.matchEvidence && <details className="mt-2 text-xs text-stone-500"><summary className="cursor-pointer">{t("Page facts used", "页面事实依据")}</summary><p className="mt-1.5 leading-5">{posting.matchEvidence}</p></details>}
+      {posting.matchEvidence && <details className="mt-2 text-xs text-stone-500"><summary className="cursor-pointer">{t("Match evidence", "匹配依据")}</summary><p className="mt-1.5 leading-5">{posting.matchEvidence}</p></details>}
     </div>}
 
     <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-stone-500">

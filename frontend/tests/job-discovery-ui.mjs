@@ -193,7 +193,7 @@ try {
   await acme.getByText("Beijing", { exact: true }).waitFor();
   await acme.getByText("Link reachable", { exact: true }).waitFor();
   await acme.getByText("Match · Role matches Backend Engineer", { exact: true }).waitFor();
-  await acme.getByText("Page facts used", { exact: true }).click();
+  await acme.getByText("Match evidence", { exact: true }).click();
   await acme.getByText("Title: Backend Engineer · Location: Beijing", { exact: true }).waitFor();
   assert.match(await acme.innerText(), /Source greenhouse\.io \+1/);
   assert.match(await acme.innerText(), /Found/);
