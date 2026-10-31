@@ -12,6 +12,6 @@ import com.projectardor.platform.notification.BackgroundTaskStore;
 public class AiJobRetryHandler implements BackgroundRetryHandler {
     private final AiJobStore jobs;
     public AiJobRetryHandler(AiJobStore jobs) { this.jobs=jobs; }
-    public Set<String> kinds() { return Arrays.stream(AiJobType.values()).map(Enum::name).collect(Collectors.toUnmodifiableSet()); }
+    public Set<String> kinds() { return Arrays.stream(AiJobType.values()).filter(type -> type != AiJobType.JOB_DISCOVERY).map(Enum::name).collect(Collectors.toUnmodifiableSet()); }
     public void retry(UUID owner, BackgroundTaskStore.Task task) { jobs.retry(owner,task.id()); }
 }
