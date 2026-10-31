@@ -287,10 +287,13 @@ try {
   // Retry starts a fresh run; cancel stops it.
   await runPanel.getByRole("button", { name: "Retry", exact: true }).click();
   await runPanel.getByText("Queued", { exact: true }).waitFor();
+  const readsBeforeCancel = moduleReads.length;
   await runPanel.getByRole("button", { name: "Cancel", exact: true }).click();
   await runPanel.getByText("Canceled", { exact: true }).waitFor();
   assert.equal(writes.filter(entry => entry.startsWith("POST /api/job-discovery/runs/run-1/retry")).length, 1);
   assert.equal(writes.filter(entry => entry.endsWith("/cancel")).length, 1);
+  await waitForNode(() => moduleReads.length > readsBeforeCancel,
+    "A terminal cancellation acknowledges the results it refreshed");
 
   // Zero results have their own readable state.
   postings = [];

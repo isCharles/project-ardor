@@ -33,10 +33,14 @@ export function useAcknowledgeModule(module: string, ready: boolean, version: st
         pending = true;
         return;
       }
-      pending = false;
       void api<void>(`/api/background-tasks/modules/${encodeURIComponent(module)}/read`, { method: "POST" })
-        .then(() => { if (active) window.dispatchEvent(new Event("ardor:background-refresh")); })
-        .catch(() => undefined);
+        .then(() => {
+          pending = false;
+          if (active) window.dispatchEvent(new Event("ardor:background-refresh"));
+        })
+        // Keep the acknowledgment pending so returning to the tab retries a
+        // transient failure instead of silently leaving viewed results unread.
+        .catch(() => { pending = true; });
     };
     const resume = () => { if (!document.hidden && pending) acknowledge(); };
     acknowledge();

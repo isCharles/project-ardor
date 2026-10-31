@@ -213,8 +213,17 @@ function JobDiscoveryContent() {
   async function cancelRun() {
     if (!run) return;
     setError("");
-    try { setRun(await api<Run>(`/api/job-discovery/runs/${run.id}/cancel`, { method: "POST" })); void loadSummary(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not cancel the search", "无法取消搜索")); }
+    try {
+      const next = await api<Run>(`/api/job-discovery/runs/${run.id}/cancel`, { method: "POST" });
+      setRun(next);
+      void loadSummary();
+      if (!["QUEUED", "RUNNING"].includes(next.status)) {
+        // Cancellation can return a terminal run directly, so the polling effect
+        // never sees it; refresh before acknowledging what the user now sees.
+        const loaded = await loadItems(stateFilter, appliedQuery, 0, false);
+        if (loaded) setInboxVersion(version => version + 1);
+      }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t("Could not cancel the search", "无法取消搜索")); }
   }
 
   async function retryRun() {
