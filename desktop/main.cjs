@@ -7,6 +7,7 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { DEFAULT_SERVER_URL, normalizeServerUrl, isTrustedAppUrl, isHealthyBackendStatus } = require("./server-config.cjs");
 const { updateErrorKind } = require("./update-errors.cjs");
+const { resolveDesktopUpdate } = require("./update-channel.cjs");
 const { isMicrophoneOnly, microphoneGrantFor, allowsRememberedMicrophone } = require("./media-permissions.cjs");
 const { navigationState, navigate, menuTemplate, shortcutAction } = require("./window-chrome.cjs");
 const { normalizeLocale, desktopText, updateStatusMessage, serverErrorKey, serverErrorMessage } = require("./i18n.cjs");
@@ -139,13 +140,39 @@ function configureUpdater() {
   autoUpdater.on("error", (error) => sendUpdateStatus("error", { errorKind: updateErrorKind(error) }));
 }
 
+// Product releases and desktop installers are published independently. Resolve the
+// newest *complete desktop* release first and pin electron-updater to that tag, so a
+// server-only release, or a release whose assets are still uploading, is never treated
+// as an update or mistaken for "already up to date".
 async function checkForUpdates() {
   if (!app.isPackaged) return { state: "unavailable", message: desktopText(currentLocale(), "unavailable") };
   if (updateCheckRunning || ["downloading", "ready"].includes(updateStatus.state)) return updateStatus;
   updateCheckRunning = true;
-  try { await autoUpdater.checkForUpdates(); return updateStatus; }
-  catch (error) { sendUpdateStatus("error", { errorKind: updateErrorKind(error) }); return updateStatus; }
-  finally { updateCheckRunning = false; }
+  sendUpdateStatus("checking");
+  try {
+    const resolution = await resolveDesktopUpdate({
+      currentVersion: app.getVersion(),
+      fetchText: async (url, init) => {
+        const response = await net.fetch(url, init);
+        if (!response.ok) throw new Error(`HTTP ${response.status} ${url}`);
+        return response.text();
+      },
+    });
+    if (resolution.kind === "current") {
+      sendUpdateStatus("current");
+      return updateStatus;
+    }
+    if (resolution.kind === "update") {
+      autoUpdater.setFeedURL({ provider: "generic", url: resolution.downloadUrl });
+      await autoUpdater.checkForUpdates();
+      return updateStatus;
+    }
+    sendUpdateStatus("error", { errorKind: resolution.kind, detail: resolution.detail ?? "" });
+    return updateStatus;
+  } catch (error) {
+    sendUpdateStatus("error", { errorKind: updateErrorKind(error), detail: String(error?.message ?? error) });
+    return updateStatus;
+  } finally { updateCheckRunning = false; }
 }
 
 function scheduleUpdateChecks() {

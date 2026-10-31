@@ -19,11 +19,38 @@ Ardor 使用 `v主版本.次版本.修订版本` 标记**经过验证的产品�
 
 只有在公开部署的安全、备份恢复、升级路径和外部接口契约都明确并通过验收后，才考虑 `v1.0.0`。到那时，破坏已承诺接口兼容性需升主版本；兼容新增升次版本；兼容修复升修订版本。这个结构遵循 [Semantic Versioning 2.0.0](https://semver.org/) 的版本语义，但不会把尚未承诺稳定的内部接口伪装成稳定 API。
 
+## 发布、部署与桌面分发
+
+三件事彼此独立：
+
+- **发布产品版本**：给一个已验证的源码提交打 `vX.Y.Z` 标签并创建 GitHub Release，更新 CHANGELOG。它固定的是源码、后端与前端构建产物。
+- **部署**：把这套产物装到自托管服务器。部署不产生版本号，也不能替代发布。
+- **桌面分发**：构建并公开 Windows 安装包。只有桌面壳本身变化（窗口、图标、权限、更新机制、安装包元数据）时才需要新安装包；服务端新增能力只要部署，已装客户端连接后就能用。
+
+因此**桌面版本可以落后于产品版本**：`desktop/package.json` 只在准备发布安装包时才上调，允许跳过中间产品版本，但不得高于产品版本。客户端落后于产品是正常状态，不是需要修复的漂移。桌面版本落后时，`node scripts/check-version.mjs` 通过；带 `--desktop-tag vX.Y.Z` 时则要求桌面版本等于该标签，桌面构建工作流使用这个模式。候选产品版本（如 `v0.10.0-rc.1`）不构建新的桌面安装包：桌面保持最近的稳定版本，安装包不使用 `-rc` 编号。
+
 ## 发布方式
 
-1. 在 `feat/version-*` 分支准备发布 PR。同步修改 `backend/pom.xml`、`backend/Dockerfile`、`backend/.dockerignore`、`frontend/package.json`、`frontend/package-lock.json`、`desktop/package.json`、`desktop/package-lock.json` 和 README 中的产品版本；更新 [CHANGELOG](../CHANGELOG.md)。不改 Flyway 迁移编号：数据库迁移与产品版本是两条独立序列。
-2. 对 PR 执行相关测试、前端构建和 Compose 启动验证。若改动涉及数据库，额外检查从上一版本升级。`node scripts/check-version.mjs` 会检查构建元数据与容器 JAR 路径是否一致；版本文件变更的 PR 也会自动运行该检查。
-3. 合并后在**合并提交**打带注释的 `vX.Y.Z` 标签，再以同一标签创建 GitHub Release；候选版本标为 pre-release。Release Notes 写明用户可见变化、已知限制和升级步骤。Release 发布后 Windows Runner 会构建桌面安装包并附加更新元数据；公开宣告桌面版可下载前，核对 Release 中安装包、`.blockmap`、`latest.yml` 均已出现。
+1. 在 `feat/version-*` 分支准备发布 PR。同步修改 `backend/pom.xml`、`backend/Dockerfile`、`backend/.dockerignore`、`frontend/package.json`、`frontend/package-lock.json` 和 README 中的产品版本；更新 [CHANGELOG](../CHANGELOG.md)。**只有本次同时要发桌面安装包时**，才把 `desktop/package.json` 与 `desktop/package-lock.json` 一并改到同一版本。不改 Flyway 迁移编号：数据库迁移与产品版本是两条独立序列。
+2. 对 PR 执行相关测试、前端构建和 Compose 启动验证。若改动涉及数据库，额外检查从上一版本升级。`node scripts/check-version.mjs` 检查产品版本在各构建元数据中一致、桌面版本不高于产品；版本文件变更的 PR 会自动运行该检查。
+3. 合并后在**合并提交**打带注释的 `vX.Y.Z` 标签，再以同一标签创建 GitHub Release；候选版本标为 pre-release。Release Notes 写明用户可见变化、已知限制和升级步骤。
 4. 后续功能 PR 不自动修改版本号。未打标签的 `main` 是开发状态；判断一个可复现发布版本时，以 Git 标签与其提交为准，而不是仅看包里的版本字符串。
+
+## 桌面安装包
+
+产品 Release 不再自动构建安装包。需要发桌面版时：
+
+1. 先建**草稿** Release：`gh release create vX.Y.Z --draft --title "Ardor vX.Y.Z" --notes "..."`
+2. 手动运行 **Windows desktop installer** 工作流（`workflow_dispatch`，输入该标签）。工作流要求标签对应草稿、桌面版本等于标签，构建与本地校验完成后才把附件传进草稿，并拒绝向已发布的 Release 追加附件。
+3. 工作流用与客户端相同的口径核对草稿（`scripts/check-desktop-release.mjs --require-draft`），通过后自动把草稿转为正式 Release，再按已发布状态复核一次。
+4. 客户端只认已发布且附件完整的桌面版本：`desktop/update-channel.cjs` 按语义版本挑选最新的完整桌面发布，并把它作为更新源。服务端单独发布不会导致检查失败，附件未传完的 Release 也不会被下载。
+
+## 旧客户端过渡
+
+0.9.x 及更早的客户端无法修改自身的检查逻辑：它们读取 GitHub 的 `/releases/latest`，并要求该 Release 带 `latest.yml`。因此在仍有旧客户端时：
+
+- 最新的正式 Release **必须**包含完整桌面附件，否则旧客户端会报“找不到更新文件”，而不是提示已是最新。
+- 每次发布后运行 `node scripts/check-desktop-release.mjs --legacy`；它检查 `/releases/latest` 指向的版本三件附件是否齐全，不通过就不算发布完成。
+- 先发布带新检查逻辑的桌面版作为过渡版本，并在你关心的机器上完成安装；**之后**才开始只发服务端的版本。若届时仍有旧客户端，把服务端版本标为 pre-release，让 `/releases/latest` 继续指向完整桌面版。
 
 发布后的版本不可覆盖或移动标签。修复已发布版本应创建新修订版本。

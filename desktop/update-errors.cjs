@@ -2,6 +2,9 @@
 
 function updateErrorKind(error) {
   const detail = String(error?.message ?? error ?? "");
+  // A release that is missing its update metadata is a publishing problem, not a
+  // missing release: say so instead of falling back to "you're up to date".
+  if (/Cannot find latest\.yml|invalid release feed|ERR_UPDATER_INVALID_RELEASE_FEED/i.test(detail)) return "incomplete";
   if (/\b404\b/.test(detail)) return "not-found";
   if (/\b(?:401|403)\b/.test(detail)) return "access";
   if (/ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|network|fetch failed/i.test(detail)) return "network";
@@ -13,6 +16,12 @@ function updateErrorKind(error) {
 function updateErrorMessage(error, locale = "en") {
   const english = locale === "en";
   const kind = error?.kind ?? updateErrorKind(error);
+  if (kind === "incomplete") {
+    return english ? "A newer desktop version is still being published. Try again later." : "更新的桌面版本还在发布中，请稍后重试。";
+  }
+  if (kind === "metadata") {
+    return english ? "The update information is damaged. Try again later." : "更新信息不完整或损坏，请稍后重试。";
+  }
   if (kind === "not-found") {
     return english ? "Update files are unavailable (404). Check that the public release and its assets have been published." : "更新文件不可访问（404）。请确认公开下载仓库和该版本附件已发布。";
   }
