@@ -117,6 +117,15 @@ try {
   await answerBox.fill("A one-line answer");
   const shrunkHeight = await answerBox.evaluate(element => element.getBoundingClientRect().height);
   assert.ok(shrunkHeight < grown.height - 80, `Deleting text shrinks the answer box back: ${grown.height} -> ${shrunkHeight}`);
+  await answerBox.fill(Array.from({ length: 40 }, (_, index) => `Long answer line ${index + 1}`).join("\n"));
+  const capped = await answerBox.evaluate(element => ({
+    height: element.getBoundingClientRect().height,
+    viewport: window.innerHeight,
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }));
+  assert.ok(capped.height <= capped.viewport * 0.6 + 1, `The field stops growing at the viewport cap: ${capped.height} > ${capped.viewport * 0.6}`);
+  assert.ok(capped.scrollHeight > capped.clientHeight, "Only answers beyond the cap scroll inside the field");
   await answerBox.fill("A complete synthetic answer");
   const submit = page.getByRole("button", { name: "Submit answers", exact: true });
   assert.equal(await submit.isEnabled(), true, "No separate start action blocks submission");
