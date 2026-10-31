@@ -52,6 +52,16 @@ let appliedCalls = 0;
 let runPolls = 0;
 let runSeq = 0;
 let canceled = false;
+let failNextCompletedInbox = false;
+let failInboxLoads = 0;
+
+async function waitForNode(predicate, message, timeout = 5000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline && !predicate()) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert.ok(predicate(), message);
+}
 
 try {
   let ready = false;
@@ -91,6 +101,10 @@ try {
     if (path === "/api/job-discovery/preferences") return route.fulfill({ json: preferences });
     if (path === "/api/job-discovery/summary") return route.fulfill({ json: summary() });
     if (path === "/api/job-discovery/postings" && method === "GET") {
+      if (failInboxLoads > 0) {
+        failInboxLoads -= 1;
+        return route.fulfill({ status: 503, json: { message: "Inbox refresh failed" } });
+      }
       const state = url.searchParams.get("state");
       const text = (url.searchParams.get("q") ?? "").toLowerCase();
       const offset = Number(url.searchParams.get("offset") ?? 0);
@@ -164,6 +178,11 @@ try {
       }
       if (canceled) return route.fulfill({ json: makeRun(runPath[1], { status: "CANCELED", cancelRequested: true, finishedAt: now }) });
       if (runPolls === 1) return route.fulfill({ json: makeRun(runPath[1], { status: "RUNNING" }) });
+      if (failNextCompletedInbox) {
+        failNextCompletedInbox = false;
+        postings = [posting({ id: "posting-deferred", company: "Deferred", title: "Deferred result" })];
+        failInboxLoads += 1;
+      }
       activeRunId = null;
       return route.fulfill({ json: makeRun(runPath[1], { status: "COMPLETED", queriesDone: 2, finishedAt: now }) });
     }
@@ -268,10 +287,13 @@ try {
   // Retry starts a fresh run; cancel stops it.
   await runPanel.getByRole("button", { name: "Retry", exact: true }).click();
   await runPanel.getByText("Queued", { exact: true }).waitFor();
+  const readsBeforeCancel = moduleReads.length;
   await runPanel.getByRole("button", { name: "Cancel", exact: true }).click();
   await runPanel.getByText("Canceled", { exact: true }).waitFor();
   assert.equal(writes.filter(entry => entry.startsWith("POST /api/job-discovery/runs/run-1/retry")).length, 1);
   assert.equal(writes.filter(entry => entry.endsWith("/cancel")).length, 1);
+  await waitForNode(() => moduleReads.length > readsBeforeCancel,
+    "A terminal cancellation acknowledges the results it refreshed");
 
   // Zero results have their own readable state.
   postings = [];
@@ -282,6 +304,26 @@ try {
   assert.equal(runStarts.length, 2);
   assert.equal(appliedCalls, 1, "Discovery writes stay limited to explicit user actions");
   await page.screenshot({ path: ".next/job-discovery-inbox.png", fullPage: true });
+
+  // A completion whose refreshed inbox fails must keep the finished results unread.
+  await waitForNode(() => moduleReads.length >= 3, "Each successful inbox load acknowledges once");
+  await page.waitForTimeout(400);
+  const readsBeforeFailure = moduleReads.length;
+  failNextCompletedInbox = true;
+  await page.getByRole("button", { name: "Find jobs" }).click();
+  await page.getByText("Inbox refresh failed").waitFor({ timeout: 10000 });
+  await page.waitForTimeout(600);
+  assert.equal(moduleReads.length, readsBeforeFailure,
+    "A failed refresh after completion leaves the notification unread");
+  assert.equal(await page.getByText("Deferred result", { exact: true }).count(), 0,
+    "The stale inbox stays on screen until a refresh succeeds");
+
+  // A later successful completion clears it.
+  await page.getByRole("button", { name: "Find jobs" }).click();
+  await waitForNode(() => moduleReads.length > readsBeforeFailure,
+    "A successful refresh after completion acknowledges the results");
+  await page.getByText("Deferred result", { exact: true }).waitFor();
+  assert.equal(runStarts.length, 4);
 
   // The job-search home previews the inbox and links into the same page.
   postings = [posting({})];

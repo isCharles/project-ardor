@@ -26,15 +26,26 @@ export function useAcknowledgeModule(module: string, ready: boolean, version: st
   useEffect(() => {
     if (!ready) return;
     let active = true;
+    let pending = false;
     const acknowledge = () => {
-      if (!active || document.hidden) return;
+      if (!active) return;
+      if (document.hidden) {
+        pending = true;
+        return;
+      }
       void api<void>(`/api/background-tasks/modules/${encodeURIComponent(module)}/read`, { method: "POST" })
-        .then(() => { if (active) window.dispatchEvent(new Event("ardor:background-refresh")); })
-        .catch(() => undefined);
+        .then(() => {
+          pending = false;
+          if (active) window.dispatchEvent(new Event("ardor:background-refresh"));
+        })
+        // Keep the acknowledgment pending so returning to the tab retries a
+        // transient failure instead of silently leaving viewed results unread.
+        .catch(() => { pending = true; });
     };
+    const resume = () => { if (!document.hidden && pending) acknowledge(); };
     acknowledge();
-    document.addEventListener("visibilitychange", acknowledge);
-    return () => { active = false; document.removeEventListener("visibilitychange", acknowledge); };
+    document.addEventListener("visibilitychange", resume);
+    return () => { active = false; document.removeEventListener("visibilitychange", resume); };
   }, [module, ready, version]);
 }
 
