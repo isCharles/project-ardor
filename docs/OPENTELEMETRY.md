@@ -182,6 +182,9 @@ For a local disposable stack that uses loopback fake-model URLs, set
   are deployed.
 - AI job retry/backoff is covered by existing unit tests, not by this end-to-end acceptance: job
   discovery completes even when no search provider is configured, so no retry is produced.
+- An Agent tool that enqueues durable work is covered by a unit test, not end-to-end: the
+  synthetic `discover_jobs` call is a write-risk proposal, so the acceptance cannot approve and
+  execute the enqueue. The direct AI-job path is verified end-to-end.
 - The exporter has no disk spool. A long collector outage loses spans once the in-memory queue fills.
 - A process crash can leave the last partial batch unexported; the product trace and the queue/job
   recovery paths still decide the business outcome.
