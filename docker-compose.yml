@@ -48,6 +48,12 @@ services:
       REDIS_PORT: 6379
       ARDOR_ENCRYPTION_KEY: ${ARDOR_ENCRYPTION_KEY:?ARDOR_ENCRYPTION_KEY must be set}
       ARDOR_ADMIN_EMAILS: ${ARDOR_ADMIN_EMAILS:-}
+      # Empty keeps open registration for local use; a comma-separated list gates new
+      # accounts for a small public trial without changing existing logins.
+      ARDOR_REGISTRATION_ALLOWLIST: ${ARDOR_REGISTRATION_ALLOWLIST:-}
+      # Browser origins allowed to open the voice WebSocket. The public HTTPS origin
+      # must be added when serving through a tunnel.
+      ARDOR_REALTIME_ALLOWED_ORIGINS: ${ARDOR_REALTIME_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       # Off by default: user-supplied Base URLs must resolve to public addresses, so a
       # tenant cannot point the server at the internal network. Turn on only for local
       # development against a self-hosted model (Ollama, LM Studio, a local embedding server).

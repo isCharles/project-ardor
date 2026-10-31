@@ -2,6 +2,7 @@ package com.projectardor.config;
 
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -28,9 +29,11 @@ import com.projectardor.platform.identity.auth.security.CredentialFreshnessFilte
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, UserAccountRepository users) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, UserAccountRepository users,
+            @Value("${SESSION_COOKIE_SECURE:false}") boolean secureCookies) throws Exception {
         CookieCsrfTokenRepository csrfRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         csrfRepository.setCookiePath("/");
+        csrfRepository.setCookieCustomizer(cookie -> cookie.secure(secureCookies).sameSite("Lax"));
 
         return http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))

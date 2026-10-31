@@ -1,0 +1,3 @@
+# Rendered tunnel configuration and credentials belong outside the repository.
+config.yml
+*.json

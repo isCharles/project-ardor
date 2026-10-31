@@ -1,0 +1,31 @@
+name: project-ardor
+
+# Opt-in public entry through a locally managed Cloudflare Tunnel.
+# Start it explicitly after the stack is healthy:
+#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d cloudflared
+# The tunnel reaches frontend/backend over the Compose network, so no extra host
+# ports are published and PostgreSQL, Redis and debug ports stay loopback-only.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    volumes:
+      - type: bind
+        source: ${CLOUDFLARE_TUNNEL_CONFIG:?set CLOUDFLARE_TUNNEL_CONFIG to the resolved tunnel config file}
+        target: /etc/cloudflared/config.yml
+        read_only: true
+      - type: bind
+        source: ${CLOUDFLARE_TUNNEL_CREDENTIALS:?set CLOUDFLARE_TUNNEL_CREDENTIALS to the tunnel credentials JSON}
+        target: /etc/cloudflared/credentials.json
+        read_only: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

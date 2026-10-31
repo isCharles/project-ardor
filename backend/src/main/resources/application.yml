@@ -37,6 +37,7 @@ spring:
 
 server:
   port: ${BACKEND_PORT:8080}
+  forward-headers-strategy: framework
   servlet:
     session:
       timeout: 30d
@@ -74,6 +75,15 @@ app:
     worker-capacity: ${ARDOR_AI_JOB_WORKER_CAPACITY:2}
   admin:
     emails: ${ARDOR_ADMIN_EMAILS:}
+  auth:
+    # Empty keeps open registration for local use. A comma-separated list limits
+    # account creation to those addresses, without changing login for existing users.
+    registration-allowlist: ${ARDOR_REGISTRATION_ALLOWLIST:}
+  realtime:
+    # Browser origins allowed to open the voice WebSocket. Add the public HTTPS origin
+    # when the app is served through a tunnel; same-origin HTTP local development keeps
+    # the two loopback entries.
+    allowed-origins: ${ARDOR_REALTIME_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
   http:
     proxy-host: ${ARDOR_HTTP_PROXY_HOST:}
     proxy-port: ${ARDOR_HTTP_PROXY_PORT:0}

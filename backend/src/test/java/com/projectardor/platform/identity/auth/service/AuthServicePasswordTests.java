@@ -20,7 +20,8 @@ class AuthServicePasswordTests {
     private final UserAccountRepository users = mock(UserAccountRepository.class);
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(4);
     private final AuthService service = new AuthService(
-            users, mock(UserProfileRepository.class), encoder, mock(MembershipService.class));
+            users, mock(UserProfileRepository.class), encoder, mock(MembershipService.class),
+            new RegistrationPolicy(""));
 
     @Test
     void changesPasswordOnlyAfterMatchingCurrentPassword() {

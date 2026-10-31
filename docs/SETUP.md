@@ -116,4 +116,10 @@ docker exec project-ardor-postgres-1 psql -U ardor -d ardor -c "REINDEX DATABASE
 
 后端容器使用 `ARDOR_DNS_PRIMARY` / `ARDOR_DNS_SECONDARY` 作为上游 DNS，默认值在 `.env.example` 中。企业 VPN、split-horizon DNS 或内网模型若需要内部域名解析，应改为实际的内部 DNS；否则可能出现「Base URL 的主机暂时无法解析」。若 Docker 无法直接访问外部模型服务，还可配置 `ARDOR_HTTP_PROXY_HOST` / `ARDOR_HTTP_PROXY_PORT`。
 
+## 公网试用（Cloudflare Tunnel）
+
+小范围试用可通过独立的命名 Tunnel 暴露前端入口，API 继续走现有 Next `/api` 代理，语音 WebSocket 单独路由到后端；数据库、Redis 与调试端口不对外发布。准入使用 `ARDOR_REGISTRATION_ALLOWLIST`，HTTPS Cookie、Origin 和恢复步骤见 [Cloudflare Tunnel 部署说明](CLOUDFLARE_TUNNEL.md)。
+
+本机断网、关机或休眠会中断公网服务；该入口不是高可用部署。
+
 更多实现和安全边界见 [架构说明](ARCHITECTURE.md)、[数据库设计](DATABASE.md) 与 [AI 开发指南](AI_GUIDE.md)。

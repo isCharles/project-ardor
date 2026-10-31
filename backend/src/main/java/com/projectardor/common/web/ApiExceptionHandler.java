@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import com.projectardor.platform.identity.auth.service.DuplicateEmailException;
+import com.projectardor.platform.identity.auth.service.RegistrationNotAllowedException;
 import com.projectardor.common.security.ExternalHostResolutionException;
 import com.projectardor.platform.model.llm.service.LlmCallException;
 import com.projectardor.platform.model.speech.service.SpeechCallException;
@@ -42,6 +43,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(DuplicateEmailException.class)
     ResponseEntity<ApiError> duplicateEmail() {
         return error(HttpStatus.CONFLICT, new ApiError("EMAIL_ALREADY_EXISTS", "该邮箱已注册"));
+    }
+
+    @ExceptionHandler(RegistrationNotAllowedException.class)
+    ResponseEntity<ApiError> registrationNotAllowed(RegistrationNotAllowedException exception) {
+        return error(HttpStatus.FORBIDDEN, new ApiError("REGISTRATION_NOT_ALLOWED", exception.getMessage()));
     }
 
     @ExceptionHandler(BadCredentialsException.class)
