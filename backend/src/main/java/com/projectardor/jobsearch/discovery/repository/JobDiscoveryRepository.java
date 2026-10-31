@@ -194,8 +194,7 @@ public class JobDiscoveryRepository {
     public List<PostingView> listPostings(UUID userId, String state, String query, int limit, int offset) {
         String filter = query == null || query.isBlank() ? null : "%" + query.strip() + "%";
         List<Posting> postings = jdbc.query("""
-                SELECT p.*, d.id AS d_id, d.state AS d_state, d.match_reason, d.match_evidence,
-                       d.discovery_query, d.discovered_at, d.last_seen_at, d.applied_at
+                SELECT p.*
                 FROM job_posting_discoveries d JOIN job_postings p ON p.id = d.posting_id
                 WHERE d.user_id = ?
                   AND (CAST(? AS varchar) IS NULL OR d.state = ?)
@@ -209,7 +208,6 @@ public class JobDiscoveryRepository {
                         posting.experienceText(), posting.deadlineText(), posting.linkStatus(),
                         posting.firstSeenAt(), posting.lastVerifiedAt()))
                 .toList();
-        // The join selected discovery columns too; re-read them through the view query below.
         return views(userId, postings);
     }
 
