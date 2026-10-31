@@ -6,8 +6,9 @@ import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Operator-owned OTLP export settings. The endpoint is validated once at startup and never
- * logged, because it may carry deployment-specific hostnames.
+ * Operator-owned OTLP export settings. The endpoint is validated once at startup and is never
+ * included in application log messages; keep credentials in headers, because the HTTP client can
+ * expose the endpoint origin in its thread name.
  */
 @ConfigurationProperties("app.observability.otel")
 public class OtelExportProperties {
