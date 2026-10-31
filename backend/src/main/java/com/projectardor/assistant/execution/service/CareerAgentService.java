@@ -574,6 +574,10 @@ public class CareerAgentService {
                         String text = response == null || response.aiMessage() == null ? "" : response.aiMessage().text();
                         text = text == null ? "" : text.strip();
                         if (text.isBlank()) text = streamProgress.pendingAnswer(progressId).strip();
+                        // A model can decide a tool batch without saying anything. The user still
+                        // needs a sentence before the tools, so speak for the actual batch instead
+                        // of leaving an unexplained "执行工具 N 次" with no context.
+                        if (text.isBlank()) text = spokenToolBatch(response);
                         if (text.codePointCount(0, text.length()) > 1200)
                             text = text.substring(0, text.offsetByCodePoints(0, 1200)) + "…";
                         streamProgress.intermediate(progressId, text);
@@ -929,6 +933,10 @@ public class CareerAgentService {
             case "list_interviews", "get_next_question", "get_interview_evaluation" -> "读取模拟面试";
             case "create_interview", "submit_interview_answer", "finish_interview" -> "推进模拟面试";
             case "list_calendar_tasks" -> "读取日历";
+            case "get_application_rhythm" -> "读取投递节奏";
+            case "find_available_slots" -> "查找空闲时段";
+            case "get_calendar_advice" -> "读取日历建议";
+            case "update_calendar_advice" -> "更新日历建议";
             case "create_calendar_task" -> "添加日历待办";
             case "delete_calendar_task" -> "删除日历待办";
             case "list_recurring_tasks" -> "读取重复安排";
@@ -968,6 +976,33 @@ public class CareerAgentService {
             default -> "调用职业工具";
         };
         return failed ? action + "失败" : action;
+    }
+
+    // A model can decide a tool batch without writing any text. Summarize the batch it
+    // actually chose, grouped by action, so a tool group never appears without a lead-in.
+    String spokenToolBatch(dev.langchain4j.model.chat.response.ChatResponse response) {
+        if (response == null || response.aiMessage() == null) return "";
+        var requests = response.aiMessage().toolExecutionRequests();
+        if (requests == null || requests.isEmpty()) return "";
+        var groups = new java.util.LinkedHashMap<String, java.util.LinkedHashSet<String>>();
+        for (var request : requests) {
+            if (request == null || request.name() == null || request.name().isBlank()) continue;
+            String label = toolLabel(request.name(), false);
+            String verb = label.length() >= 2 ? label.substring(0, 2) : label;
+            String object = label.length() > 2 ? label.substring(2) : "";
+            groups.computeIfAbsent(verb, key -> new java.util.LinkedHashSet<>()).add(object);
+        }
+        if (groups.isEmpty()) return "";
+        var clauses = new java.util.ArrayList<String>();
+        groups.forEach((verb, objects) -> {
+            String joined = String.join("、", objects.stream().filter(object -> !object.isBlank()).toList());
+            clauses.add(joined.isBlank() ? verb : verb + joined);
+        });
+        String body = String.join("、", clauses.subList(0, Math.min(4, clauses.size())));
+        if (clauses.size() > 4) body += "等";
+        String line = "我先" + body + "。";
+        return line.codePointCount(0, line.length()) > 48
+                ? line.substring(0, line.offsetByCodePoints(0, 47)) + "…" : line;
     }
 
     public AgentConversationResponse createConversation(UUID userId) {

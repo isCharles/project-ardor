@@ -115,7 +115,38 @@ class CareerAgentRuntimeIntegrationTests {
         assertThat(f.requests).hasSize(2);
         assertThat(f.events.stream().filter(event -> "done".equals(event.type()))).hasSize(1);
         assertThat(f.events.stream().filter(event -> "intermediate".equals(event.type())))
-                .allSatisfy(event -> assertThat(event.content()).isEmpty());
+                .allSatisfy(event -> assertThat(event.content()).isEqualTo("我先读取简历资料。"));
+    }
+
+    @Test void aSilentToolBatchGetsASpokenLeadInAndASavedCommentaryStep() {
+        var f = new Fixture();
+        f.reply = (request, handler) -> {
+            if (request.messages().stream().noneMatch(message -> message instanceof dev.langchain4j.data.message.ToolExecutionResultMessage)) {
+                var call = dev.langchain4j.agent.tool.ToolExecutionRequest.builder().id("read-1").name("list_resumes").arguments("{}").build();
+                handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from(List.of(call))).build());
+            } else handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from("Synthetic final answer")).build());
+        };
+        f.run("Please check my resumes");
+        assertThat(f.events).anyMatch(event -> "intermediate".equals(event.type()) && "我先读取简历资料。".equals(event.content()));
+        var intermediate = java.util.stream.IntStream.range(0, f.events.size())
+                .filter(i -> "intermediate".equals(f.events.get(i).type())).findFirst().orElseThrow();
+        var toolStart = java.util.stream.IntStream.range(0, f.events.size())
+                .filter(i -> "tool_start".equals(f.events.get(i).type())).findFirst().orElseThrow();
+        assertThat(intermediate).isLessThan(toolStart);
+        var trace = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(f.conversations).appendExchange(any(), any(), anyString(), eq("Synthetic final answer"), trace.capture(), anyList(), eq(false), anyList());
+        assertThat(trace.getValue()).contains("COMMENTARY", "我先读取简历资料。");
+    }
+
+    @Test void silentToolBatchesAreSummarizedFromTheActionsTheyChose() {
+        var f = new Fixture();
+        var response = ChatResponse.builder().aiMessage(AiMessage.from(List.of(
+                dev.langchain4j.agent.tool.ToolExecutionRequest.builder().id("1").name("list_calendar_tasks").arguments("{}").build(),
+                dev.langchain4j.agent.tool.ToolExecutionRequest.builder().id("2").name("list_learning_plans").arguments("{}").build(),
+                dev.langchain4j.agent.tool.ToolExecutionRequest.builder().id("3").name("get_application_rhythm").arguments("{}").build(),
+                dev.langchain4j.agent.tool.ToolExecutionRequest.builder().id("4").name("list_due_memory_cards").arguments("{}").build()))).build();
+        assertThat(f.service.spokenToolBatch(response)).isEqualTo("我先读取日历、学习计划、投递节奏、记忆卡。");
+        assertThat(f.service.spokenToolBatch(ChatResponse.builder().aiMessage(AiMessage.from("Hello")).build())).isEmpty();
     }
 
     @Test void streamedCommentaryIsRetainedWhenIntermediateResponseOmitsItsText() {
