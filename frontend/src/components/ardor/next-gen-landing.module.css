@@ -9,9 +9,9 @@
   --demo-page-opacity: 0;
   --demo-page-blur: 3rem;
   --demo-page-scale: 1.08;
-  --demo-content-opacity: 0;
-  --demo-content-shift: 4rem;
-  --demo-content-scale: 0.97;
+  --demo-content-opacity: 1;
+  --demo-content-shift: 0rem;
+  --demo-content-scale: 1;
   position: relative;
   isolation: isolate;
   min-height: var(--ardor-page-height, 100vh);
@@ -226,7 +226,7 @@
 
 .demoAgent {
   position: relative;
-  min-height: 138svh;
+  min-height: 112svh;
   margin-top: clamp(2rem, 5vw, 5rem);
   scroll-margin-top: 0;
 }
@@ -420,7 +420,7 @@
   .agentEnding h2 { font-size: clamp(2.6rem, 12vw, 4rem); }
   .callToAction, .siteFooter { width: min(100% - 1.5rem, 92rem); }
   .callToAction { grid-template-columns: 1fr; gap: 2.5rem; }
-  .demoAgent { min-height: 132svh; }
+  .demoAgent { min-height: 106svh; }
   .demoStage { padding-inline: 1rem; }
   .demoComposerFoot > span { display: none; }
   .callToAction { padding: 4rem 1.5rem; }
@@ -431,6 +431,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .canvas, .heroAside a svg, .moduleAct footer svg { transition: none; }
-  .demoAgentInner { transform: none; }
-  .pageColorWash { filter: none; transform: none; }
+  .demoAgent { min-height: 100svh; }
+  .demoAgentInner { opacity: 1; transform: none; }
+  .pageColorWash { filter: none; opacity: 1; transform: none; }
 }
