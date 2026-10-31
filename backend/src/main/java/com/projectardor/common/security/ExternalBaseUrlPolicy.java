@@ -14,6 +14,8 @@ public class ExternalBaseUrlPolicy {
 
     private static final int DNS_RESOLUTION_ATTEMPTS = 3;
     private static final long DNS_RETRY_DELAY_MS = 300;
+    private static final java.util.Set<String> CLOUD_METADATA_HOSTS = java.util.Set.of(
+            "100.100.100.200", "169.254.169.254", "169.254.170.2", "metadata.google.internal");
 
     private final boolean allowPrivateAddresses;
 
@@ -50,7 +52,8 @@ public class ExternalBaseUrlPolicy {
                 || normalized.equals("localhost")
                 || normalized.endsWith(".localhost")
                 || normalized.endsWith(".local")
-                || normalized.endsWith(".internal")) {
+                || normalized.endsWith(".internal")
+                || CLOUD_METADATA_HOSTS.contains(normalized)) {
             throw privateAddress();
         }
         InetAddress[] addresses = resolveAddresses(host);

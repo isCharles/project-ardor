@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, FileText, MessageSquareText } from "lucide-react";
+import { ArrowUpRight, FileText, Inbox, MessageSquareText } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -33,6 +33,7 @@ type Opportunity = {
 type Tip = { label: [string, string]; text: string };
 type ResumePreview = { file: string; score: number | null; tips: Tip[]; state: "ready" | "pending" | "failed" | "unanalyzed" };
 type InterviewPreview = { id: string; company: string; role: string | null; status: string; round: number; stage: string | null; at: string | null };
+type JobInbox = { inbox: number; saved: number; ignored: number; activeRunId: string | null };
 
 const criterionLabels: Record<string, [string, string]> = {
   completeness: ["Professional information", "职业信息完整性"],
@@ -197,19 +198,24 @@ export function DomainHome({ practice = false }: { practice?: boolean }) {
   const [loading, setLoading] = useState(!practice);
   const [resume, setResume] = useState<ResumePreview | null>(null);
   const [interview, setInterview] = useState<InterviewPreview | null>(null);
+  const [jobInbox, setJobInbox] = useState<JobInbox | null>(null);
 
   useEffect(() => {
     if (practice) return;
     let active = true;
     (async () => {
-      const [resumesResult, opportunitiesResult] = await Promise.allSettled([
+      const [resumesResult, opportunitiesResult, jobInboxResult] = await Promise.allSettled([
         api<ResumeItem[]>("/api/resumes"),
         api<Opportunity[]>("/api/opportunities"),
+        api<JobInbox>("/api/job-discovery/summary"),
       ]);
       if (!active) return;
 
       if (opportunitiesResult.status === "fulfilled" && Array.isArray(opportunitiesResult.value)) {
         setInterview(latestOpportunity(opportunitiesResult.value));
+      }
+      if (jobInboxResult.status === "fulfilled") {
+        setJobInbox(jobInboxResult.value);
       }
 
       const resumes = resumesResult.status === "fulfilled" && Array.isArray(resumesResult.value) ? resumesResult.value : [];
@@ -331,6 +337,27 @@ export function DomainHome({ practice = false }: { practice?: boolean }) {
             </>
           ) : (
             <p className="mt-2 text-sm text-stone-500">{t("No interview process yet — record the next real interview here.", "还没有面试流程，记录下一场真实面试。")}</p>
+          )}
+        </PreviewRow>
+
+        <PreviewRow
+          href="/app/job-search/discovery"
+          icon={<Inbox aria-hidden="true" className="size-5" />}
+          accent="bg-emerald-100 text-emerald-700"
+          title={t("Job inbox", "岗位收件箱")}
+          cta={t("Review discovered jobs", "查看发现岗位")}
+        >
+          {jobInbox && (jobInbox.inbox + jobInbox.saved + jobInbox.ignored > 0 || jobInbox.activeRunId) ? (
+            <>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-4xl font-semibold tracking-tight text-stone-900">{jobInbox.inbox}</span>
+                <span className="pb-1 text-xs text-stone-500">{t("to review", "待查看")}</span>
+                <span className="pb-1 text-sm text-stone-500">{t(`${jobInbox.saved} saved`, `${jobInbox.saved} 个已收藏`)}</span>
+              </div>
+              {jobInbox.activeRunId && <p className="mt-2 text-sm text-stone-500">{t("A search is still running.", "正在进行一次搜索。")}</p>}
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-stone-500">{t("No discovered jobs yet — search public postings from your target roles.", "还没有发现岗位，按目标岗位搜索公开职位。")}</p>
           )}
         </PreviewRow>
 

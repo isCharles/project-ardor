@@ -36,9 +36,12 @@ public final class ToolCatalog {
         register(risks, ToolModule.MEMORY, Capability.UPDATE, "update_memory");
         register(risks, ToolModule.MEMORY, Capability.DELETE, "delete_memory", "clear_all_memories");
 
-        register(risks, ToolModule.APPLICATIONS, Capability.READ, "get_application_rhythm");
+        register(risks, ToolModule.APPLICATIONS, Capability.READ,
+                "get_application_rhythm", "get_job_discovery_run", "list_discovered_jobs");
+        register(risks, ToolModule.APPLICATIONS, Capability.CREATE, "discover_jobs");
         register(risks, ToolModule.APPLICATIONS, Capability.UPDATE,
-                "record_application_activity", "set_application_rhythm", "update_application_advice");
+                "record_application_activity", "set_application_rhythm", "update_application_advice",
+                "save_job_posting", "ignore_job_posting");
 
         register(risks, ToolModule.CALENDAR, Capability.READ, "list_calendar_tasks", "list_recurring_tasks", "get_calendar_advice", "find_available_slots", "check_calendar_conflict");
         register(risks, ToolModule.CALENDAR, Capability.CREATE, "create_calendar_task", "create_recurring_task");

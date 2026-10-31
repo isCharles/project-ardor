@@ -113,6 +113,8 @@ jobs:
         run: node tests/context-usage-ui.mjs
       - name: Narration and tool group timeline UI regression (mock APIs)
         run: node tests/run-timeline-ui.mjs
+      - name: Job discovery inbox UI regression (mock APIs)
+        run: node tests/job-discovery-ui.mjs
       - name: One resume against several job descriptions UI regression (mock APIs)
         run: node tests/resume-multi-jd-ui.mjs
       - name: Primary resume and displayed report UI regression (mock APIs)
