@@ -597,39 +597,37 @@ try {
   // The live progress card is replaced after completion. Inspect the persisted
   // assistant article so a click cannot land on the soon-to-be-unmounted card.
   const replyArticle = page.getByRole("article").filter({ hasText: "Synthetic agent reply" });
-  const replyTrace = replyArticle.locator("[data-execution-trace] > div > details");
-  assert.equal(await page.locator("[data-execution-trace]").count(), 1, "Live state must not survive beside the committed trace");
-  assert.equal(await replyTrace.getAttribute("open"), null, "Process defaults to collapsed");
+  const replyTimeline = replyArticle.locator("[data-execution-timeline]");
+  const replyGroup = replyTimeline.locator("[data-tool-group]").first();
+  assert.equal(await page.locator("[data-execution-timeline]").count(), 1, "Live state must not survive beside the committed timeline");
+  assert.equal(await replyGroup.getAttribute("open"), null, "Tool groups default to collapsed");
   assert.ok(await replyArticle.evaluate(element => {
-    const trace = element.querySelector('[data-execution-trace]');
-    const answer = element.querySelector('.ardor-markdown');
-    return !!(trace.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING);
-  }), "Execution process must precede the final answer");
-  await replyTrace.locator(":scope > summary").click();
-  const nextSteps = replyArticle.locator("[data-run-intents]");
-  await nextSteps.getByText("I'll inspect the plans.", { exact: true }).waitFor();
-  assert.equal(await replyTrace.getByText("I'll inspect the plans.", { exact: true }).count(), 0,
-    "Commentary is a next-step line, not a repeated trace row");
-  assert.ok(await replyArticle.evaluate(element => {
-    const intents = element.querySelector('[data-run-intents]');
-    const answer = element.querySelector('.ardor-markdown');
-    return !!(intents && (intents.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING));
-  }), "Next-step lines must precede the final answer");
-  assert.equal(await replyArticle.locator(".ardor-markdown").innerText(), "Synthetic agent reply", "Intermediate text must not be repeated in the final answer");
-  const reasoning = replyTrace.locator("details");
+    const timeline = element.querySelector('[data-execution-timeline]');
+    const answer = element.querySelector('[data-answer]');
+    return !!(timeline.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }), "Execution timeline must precede the final answer");
+  const narration = replyTimeline.locator("[data-run-say]");
+  assert.equal((await narration.innerText()).trim(), "I'll inspect the plans.");
+  assert.equal(await narration.evaluate(node => !node.closest("details")), true, "Narration stays outside the tool disclosure");
+  await replyGroup.locator("summary").click();
+  await replyGroup.getByText("Read plans", { exact: true }).waitFor();
+  assert.equal(await replyGroup.getByText("I'll inspect the plans.", { exact: true }).count(), 0,
+    "The tool group does not repeat the spoken line");
+  assert.equal(await replyArticle.locator("[data-answer]").innerText(), "Synthetic agent reply", "Intermediate text must not be repeated in the final answer");
+  const reasoning = replyTimeline.locator("details").first();
   await reasoning.locator("summary").click();
   await reasoning.getByText("Synthetic public reasoning", { exact: true }).waitFor();
   assert.deepEqual(sentMessage.contextReferences, [{ type: "SERVICE", id: "f1111111-1111-3111-8111-111111111111" }]);
   const sentBubble = page.getByRole("article").filter({ hasText: "Make a study outline" });
   await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
-  await replyTrace.getByText("Approval wait 40.0 s", { exact: true }).waitFor();
-  await replyTrace.getByText("Not executed", { exact: true }).waitFor();
+  await replyGroup.getByText("Approval wait 40.0 s", { exact: true }).waitFor();
+  await replyGroup.getByText("Not executed", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Change service" }).count(), 0);
   await page.reload();
   await sentBubble.getByRole("link", { name: "Learning", exact: true }).waitFor();
-  assert.equal(await page.locator("[data-execution-trace]").count(), 1);
-  assert.equal(await replyTrace.getAttribute("open"), null, "Reload restores one collapsed trace");
+  assert.equal(await page.locator("[data-execution-timeline]").count(), 1);
+  assert.equal(await replyGroup.getAttribute("open"), null, "Reload restores collapsed tool groups");
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   // Reconnect to an accepted run: it is history, never the next-message draft.
   activeRun = { id: "accepted-run", conversationId: conversation.id, message: "Accepted message after disconnect", status: "RUNNING", label: "Waiting", showCommentary: true, createdAt: new Date().toISOString() };
@@ -641,7 +639,7 @@ try {
   }, { accountId: userId, conversationId: conversation.id });
   await page.reload();
   await page.getByRole("article").filter({ hasText: "Accepted message after disconnect" }).waitFor();
-  await page.locator("[data-run-intents]").getByText("Recovered live commentary", { exact: true }).waitFor();
+  await page.locator("[data-run-say]").getByText("Recovered live commentary", { exact: true }).waitFor();
   assert.equal(await draftBox.inputValue(), "Next message draft survives completion");
   assert.equal(await draftBox.isEnabled(), true);
   assert.equal(await toolPermissions.count(), 0, "Ordinary writes must not show permission prompts");
@@ -714,8 +712,9 @@ try {
   await page.reload();
   await page.getByText("Incomplete reply · saved before execution stopped", { exact: true }).click();
   await page.getByText("Saved incomplete answer", { exact: true }).waitFor();
-  await page.getByText("Execution stopped", { exact: true }).click();
-  await page.getByText("Recovered read plans", { exact: true }).waitFor();
+  const stoppedTimeline = page.locator("[data-execution-timeline]").filter({ hasText: "Execution stopped" }).first();
+  await stoppedTimeline.locator("[data-tool-group] summary").click();
+  await stoppedTimeline.getByText("Recovered read plans", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Model and thinking depth", exact: true }).isEnabled(), true);
   activeRun = null;
   queueItems = [];
@@ -723,8 +722,6 @@ try {
   await page.reload();
   await draftBox.fill("Stop during retry backoff");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  const retryTrace = page.getByText("Waiting for model", { exact: true }).locator("xpath=ancestor::details[1]");
-  if (await retryTrace.getAttribute("open") === null) await retryTrace.locator(":scope > summary").click();
   await page.getByText(/Reconnecting · retry 1\/5/).waitFor();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.getByText("Stopped. Any operation already started may still finish; check its result.", { exact: true }).waitFor();
@@ -826,7 +823,7 @@ try {
   await page.getByText('Deleted “Synthetic career preference”.', { exact: true }).waitFor();
   await page.waitForTimeout(5200);
   assert.equal(await page.getByText('Deleted “Synthetic career preference”.', { exact: true }).count(), 0);
-  assert.equal(await page.getByText('Deleted · Synthetic career preference', { exact: true }).isVisible(), false, "Result belongs inside the collapsed original trace");
+  assert.equal(await page.getByText('Deleted · Synthetic career preference', { exact: true }).isVisible(), true, "The outcome stays readable beneath the run timeline");
   await page.reload();
   await page.getByRole("textbox", { name: "Message Ardor", exact: true }).waitFor();
   assert.equal(await deletionDock.count(), 0, "Completed deletion must not revive on reload");

@@ -69,7 +69,7 @@ try {
   const traceLink = page.locator("header [data-conversation-trace-link]");
   assert.equal(await traceLink.count(), 1, "Conversation trace has one header entry");
   assert.equal(await traceLink.getAttribute("href"), "/app/agent-runs/learning-fixture-run?conversation=learning-chat");
-  assert.equal(await page.locator('[data-execution-trace] a[href*="/agent-runs/"]').count(), 0,
+  assert.equal(await page.locator('[data-execution-timeline] a[href*="/agent-runs/"]').count(), 0,
     "Individual replies do not repeat the global trace entry");
   const headerPosition = await traceLink.evaluate(element => {
     const header = element.closest("header").getBoundingClientRect();
@@ -88,9 +88,8 @@ try {
   await dock.getByRole("button", { name: "Reject", exact: true }).click();
   await savedRejection;
   await dock.waitFor({ state: "hidden" }); assert.equal(submissions, 0);
-  const trace = page.locator("[data-execution-trace] > div > details");
-  await trace.locator(":scope > summary").click();
-  await trace.getByText("Creation declined · JVM memory", { exact: true }).waitFor();
+  const timeline = page.locator("[data-execution-timeline]").first();
+  await timeline.getByText("Creation declined · JVM memory", { exact: true }).waitFor();
   await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
   await page.reload(); await dock.waitFor({ state: "hidden" }); assert.equal(submissions, 0);
   requestId = "learning-request-two"; await page.reload();
@@ -100,19 +99,18 @@ try {
   failSubmission = false;
   await dock.getByRole("button", { name: "Confirm creation", exact: true }).click();
   await dock.waitFor({ state: "hidden" }); assert.equal(submissions, 2);
-  await trace.locator(":scope > summary").click();
-  await trace.getByText("Preparing lesson in background · JVM memory", { exact: true }).waitFor();
+  await timeline.getByText("Preparing lesson in background · JVM memory", { exact: true }).waitFor();
   job = { ...job, status: "COMPLETED", resultPath: "/app/learning?id=created-fixture" };
-  await trace.getByRole("link", { name: "Open lesson", exact: true }).waitFor({ timeout: 10000 });
+  await timeline.getByRole("link", { name: "Open lesson", exact: true }).waitFor({ timeout: 10000 });
   await page.getByRole("status").filter({ hasText: "Learning plan created:" }).waitFor();
   await page.waitForTimeout(5500);
   assert.equal(await page.getByRole("status").filter({ hasText: "Learning plan created:" }).count(), 0);
-  await page.reload(); await trace.locator(":scope > summary").click();
-  await trace.getByText("Learning plan created · JVM memory", { exact: true }).waitFor();
-  await trace.getByRole("link", { name: "Open lesson", exact: true }).waitFor();
+  await page.reload();
+  await timeline.getByText("Learning plan created · JVM memory", { exact: true }).waitFor();
+  await timeline.getByRole("link", { name: "Open lesson", exact: true }).waitFor();
   assert.equal(await dock.count(), 0, "Completed proposals stay in the original trace");
   await page.evaluate(() => { localStorage.setItem("ardor:locale", "zh-CN"); window.dispatchEvent(new Event("ardor:locale-change")); });
-  await trace.getByText("学习计划已创建 · JVM memory", { exact: true }).waitFor();
+  await timeline.getByText("学习计划已创建 · JVM memory", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
   console.log("Learning operation UI: dock, consent, rejection/reload, retry, background completion, transient feedback and durable trace passed.");
 } finally { await browser?.close(); server.kill(); }

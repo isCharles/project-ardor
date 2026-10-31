@@ -875,7 +875,7 @@ public class CareerAgentService {
             List<CareerAgentTools.PendingConfirmation> pending, AgentStreamProgress.View progress) {
         List<RunStep> steps = new java.util.ArrayList<>();
         long toolElapsed = toolSteps.stream().mapToLong(RunStep::elapsedMs).sum();
-        steps.add(new RunStep("模型输出与上游等待（非纯思考时间）", Math.max(1, elapsedMs - toolElapsed), "COMPLETED"));
+        steps.add(new RunStep("模型输出与上游等待（非纯思考时间）", Math.max(1, elapsedMs - toolElapsed), "MODEL_WAIT"));
         steps.addAll(toolSteps);
         List<AgentStreamEvent.AgentConfirmation> proposals = pending.stream()
                 .map(AgentStreamEvent.AgentConfirmation::from).toList();
