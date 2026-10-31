@@ -22,7 +22,8 @@ public record AgentTraceResponse(
         int returnedSpans,
         int totalSpans,
         Integer nextOffset,
-        boolean truncated) {
+        boolean truncated,
+        String traceId) {
 
     public record Totals(int llmCalls, int assistantCalls, int summaryCalls, int toolCalls,
             int requestedToolCalls, int executedToolCalls, int loopRounds,
@@ -47,10 +48,13 @@ public record AgentTraceResponse(
         var totals = runAttributes.get("llmCalls") instanceof Number
                 ? fromRunSummary(runRoot, runAttributes, page, truncated)
                 : fromSpans(page, truncated);
+        String traceId = runRoot != null ? runRoot.otelTraceId()
+                : spans.stream().map(AgentTraceSpanResponse::otelTraceId)
+                        .filter(id -> id != null && !id.isBlank()).findFirst().orElse(null);
         return new AgentTraceResponse(runId, conversationId,
                 runRoot == null ? "UNKNOWN" : runRoot.status(),
                 runRoot == null || runRoot.durationMs() == null ? 0 : runRoot.durationMs(),
-                totals, spans, spans.size(), totalSpans, nextOffset, truncated);
+                totals, spans, spans.size(), totalSpans, nextOffset, truncated, traceId);
     }
 
     private static Totals fromRunSummary(AgentTraceSpanResponse root, Map<String, Object> attributes,

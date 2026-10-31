@@ -59,10 +59,39 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+  # Technical tracing is opt-in. The product trace in PostgreSQL and all run state do not
+  # depend on this switch; disabling it only stops OTel span creation and export.
+  opentelemetry:
+    enabled: ${ARDOR_OTEL_ENABLED:false}
+    map-environment-variables: false
+    resource-attributes:
+      service.name: ${spring.application.name}
+      deployment.environment: ${ARDOR_OTEL_DEPLOYMENT_ENV:local}
+    tracing:
+      export:
+        max-batch-size: ${ARDOR_OTEL_MAX_BATCH_SIZE:512}
+        max-queue-size: ${ARDOR_OTEL_MAX_QUEUE_SIZE:2048}
+        schedule-delay: ${ARDOR_OTEL_SCHEDULE_DELAY:5s}
+        timeout: ${ARDOR_OTEL_BATCH_TIMEOUT:30s}
+        include-unsampled: false
+    logging:
+      # Logs keep their existing console/SLF4J pipeline. Enabling a second OTel log
+      # exporter would duplicate records and ship message bodies to the collector.
+      export:
+        otlp:
+          enabled: false
+  tracing:
+    sampling:
+      probability: ${ARDOR_OTEL_SAMPLE_RATE:1.0}
+    export:
+      # The application supplies its own counted OTLP exporter (OtelExportConfiguration);
+      # leaving Boot's exporter enabled would export every span twice.
+      otlp:
+        enabled: false
 
 logging:
   pattern:
-    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %level [%thread] %logger{36} — %msg — runId=%X{runId:-} userId=%X{userId:-}%n"
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %level [%thread] %logger{36} — %msg — traceId=%X{traceId:-} spanId=%X{spanId:-} runId=%X{runId:-} userId=%X{userId:-}%n"
   level:
     com.projectardor: INFO
 
@@ -99,6 +128,11 @@ app:
     user-qpm: ${ARDOR_MODEL_USER_QPM:0}
   observability:
     queue-sample-interval: ${ARDOR_QUEUE_SAMPLE_INTERVAL:15s}
+    otel:
+      enabled: ${ARDOR_OTEL_ENABLED:false}
+      endpoint: ${ARDOR_OTEL_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+      timeout: ${ARDOR_OTEL_TIMEOUT:10s}
+      connect-timeout: ${ARDOR_OTEL_CONNECT_TIMEOUT:5s}
   speech:
     openai-voice: ${ARDOR_OPENAI_TTS_VOICE:alloy}
     dashscope-voice: ${ARDOR_DASHSCOPE_TTS_VOICE:Cherry}

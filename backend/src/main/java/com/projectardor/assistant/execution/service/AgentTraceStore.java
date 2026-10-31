@@ -37,7 +37,7 @@ public class AgentTraceStore {
                 ELSE GREATEST(1, (EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)::bigint) END) AS duration_ms,
             model, prompt_version, input_tokens, output_tokens,
             cache_creation_input_tokens, cache_read_input_tokens,
-            error_code, attributes::text AS attributes
+            error_code, attributes::text AS attributes, otel_trace_id, otel_span_id
             """;
     private final org.springframework.jdbc.core.RowMapper<Span> spanMapper = (rs, row) -> new Span(
             rs.getObject("id", UUID.class), rs.getObject("run_id", UUID.class),
@@ -47,7 +47,8 @@ public class AgentTraceStore {
             (Long) rs.getObject("duration_ms"), rs.getString("model"), rs.getString("prompt_version"),
             (Integer) rs.getObject("input_tokens"), (Integer) rs.getObject("output_tokens"),
             (Integer) rs.getObject("cache_creation_input_tokens"), (Integer) rs.getObject("cache_read_input_tokens"),
-            rs.getString("error_code"), jsonMap(rs.getString("attributes")));
+            rs.getString("error_code"), jsonMap(rs.getString("attributes")),
+            rs.getString("otel_trace_id"), rs.getString("otel_span_id"));
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -75,15 +76,20 @@ public class AgentTraceStore {
 
     public UUID startSpan(UUID userId, UUID runId, UUID parentSpanId, String kind, String name,
             Map<String, Object> attributes) {
+        return startSpan(userId, runId, parentSpanId, kind, name, attributes, null, null);
+    }
+
+    public UUID startSpan(UUID userId, UUID runId, UUID parentSpanId, String kind, String name,
+            Map<String, Object> attributes, String otelTraceId, String otelSpanId) {
         if (!enabled || userId == null || runId == null) return null;
         UUID id = UUID.randomUUID();
         try {
             jdbc.update("""
                     INSERT INTO agent_trace_spans(id, user_id, run_id, parent_span_id, kind, name, status,
-                        started_at, attributes)
-                    VALUES (?, ?, ?, ?, ?, ?, 'RUNNING', CURRENT_TIMESTAMP, CAST(? AS jsonb))
+                        started_at, attributes, otel_trace_id, otel_span_id)
+                    VALUES (?, ?, ?, ?, ?, ?, 'RUNNING', CURRENT_TIMESTAMP, CAST(? AS jsonb), ?, ?)
                     """, id, userId, runId, parentSpanId, trim(kind, 24), trim(name, 160),
-                    attributes(attributes));
+                    attributes(attributes), otelTraceId, otelSpanId);
             return id;
         } catch (RuntimeException failure) {
             recordFailure("start", runId, failure);
@@ -189,6 +195,35 @@ public class AgentTraceStore {
         }
     }
 
+    /** Links the product run row to the exported trace even if the run never completes. */
+    public void linkRunTrace(UUID userId, UUID runId, String otelTraceId) {
+        if (!enabled || userId == null || runId == null || otelTraceId == null || otelTraceId.isBlank()) return;
+        try {
+            jdbc.update("""
+                    UPDATE agent_runs SET otel_trace_id = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND user_id = ?
+                    """, trim(otelTraceId, 32), runId, userId);
+        } catch (RuntimeException failure) {
+            recordFailure("link", runId, failure);
+        }
+    }
+
+    /**
+     * Child rows learn their OTel ids after the product insert, because the product id is the
+     * parent lookup key. A failure here only loses the technical join for this span.
+     */
+    public void linkSpanTrace(UUID userId, UUID spanId, String otelTraceId, String otelSpanId) {
+        if (!enabled || userId == null || spanId == null || otelTraceId == null || otelSpanId == null) return;
+        try {
+            jdbc.update("""
+                    UPDATE agent_trace_spans SET otel_trace_id = ?, otel_span_id = ?
+                    WHERE id = ? AND user_id = ?
+                    """, trim(otelTraceId, 32), trim(otelSpanId, 16), spanId, userId);
+        } catch (RuntimeException failure) {
+            recordFailure("link-span", spanId, failure);
+        }
+    }
+
     @Scheduled(fixedDelayString = "${app.agent.trace.cleanup-delay:6h}", initialDelay = 3_600_000)
     public void cleanup() {
         if (!enabled) return;
@@ -238,12 +273,23 @@ public class AgentTraceStore {
             Instant startedAt, Instant finishedAt, Long durationMs, String model, String promptVersion,
             Integer inputTokens, Integer outputTokens,
             Integer cacheCreationInputTokens, Integer cacheReadInputTokens,
-            String errorCode, Map<String, Object> attributes) {
+            String errorCode, Map<String, Object> attributes,
+            String otelTraceId, String otelSpanId) {
+        public Span(UUID id, UUID runId, UUID parentSpanId, String kind, String name, String status,
+                Instant startedAt, Instant finishedAt, Long durationMs, String model, String promptVersion,
+                Integer inputTokens, Integer outputTokens,
+                Integer cacheCreationInputTokens, Integer cacheReadInputTokens,
+                String errorCode, Map<String, Object> attributes) {
+            this(id, runId, parentSpanId, kind, name, status, startedAt, finishedAt, durationMs, model,
+                    promptVersion, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens,
+                    errorCode, attributes, null, null);
+        }
+
         public Span(UUID id, UUID runId, UUID parentSpanId, String kind, String name, String status,
                 Instant startedAt, Instant finishedAt, Long durationMs, String model, String promptVersion,
                 Integer inputTokens, Integer outputTokens, String errorCode, Map<String, Object> attributes) {
             this(id, runId, parentSpanId, kind, name, status, startedAt, finishedAt, durationMs, model,
-                    promptVersion, inputTokens, outputTokens, null, null, errorCode, attributes);
+                    promptVersion, inputTokens, outputTokens, null, null, errorCode, attributes, null, null);
         }
     }
 }

@@ -49,10 +49,20 @@ public class JobDiscoveryService {
     private final AiJobStore jobs;
     private final MembershipService memberships;
     private final ObjectMapper mapper;
+    private final com.projectardor.platform.observability.TechnicalTracing technicalTracing;
 
     public JobDiscoveryService(JobDiscoveryRepository repository, TavilySearchService search,
             SafePageFetcher fetcher, JobPageParser parser, ApplicationRhythmService rhythm,
             ProfileService profiles, AiJobStore jobs, MembershipService memberships, ObjectMapper mapper) {
+        this(repository, search, fetcher, parser, rhythm, profiles, jobs, memberships, mapper,
+                com.projectardor.platform.observability.TechnicalTracing.disabled());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public JobDiscoveryService(JobDiscoveryRepository repository, TavilySearchService search,
+            SafePageFetcher fetcher, JobPageParser parser, ApplicationRhythmService rhythm,
+            ProfileService profiles, AiJobStore jobs, MembershipService memberships, ObjectMapper mapper,
+            com.projectardor.platform.observability.TechnicalTracing technicalTracing) {
         this.repository = repository;
         this.search = search;
         this.fetcher = fetcher;
@@ -62,6 +72,7 @@ public class JobDiscoveryService {
         this.jobs = jobs;
         this.memberships = memberships;
         this.mapper = mapper;
+        this.technicalTracing = technicalTracing;
     }
 
     public record Criteria(List<String> roles, List<String> locations, List<String> keywords) {}
@@ -97,7 +108,8 @@ public class JobDiscoveryService {
         if (active.isPresent()) throw new IllegalStateException("已有进行中的岗位搜索，请等待完成或取消");
         repository.insertRun(requestId, userId, normalized.roles(), normalized.locations(), normalized.keywords());
         int priority = memberships.tier(userId).paid() ? 1 : 0;
-        jobs.enqueue(userId, requestId, AiJobType.JOB_DISCOVERY, requestId, "{}", priority);
+        jobs.enqueue(userId, requestId, AiJobType.JOB_DISCOVERY, requestId, "{}", priority,
+                technicalTracing.currentTraceparent());
         return view(requireRun(userId, requestId));
     }
 

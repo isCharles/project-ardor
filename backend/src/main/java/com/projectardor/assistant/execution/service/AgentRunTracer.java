@@ -6,6 +6,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.projectardor.platform.observability.TechnicalRunTrace;
+import com.projectardor.platform.observability.TechnicalTracing;
+
 /**
  * One run's trace cursor. Context is passed explicitly through model listeners and tool wrappers;
  * it never relies on ThreadLocal/MDC, so streaming callbacks and asynchronous tool execution stay
@@ -13,6 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class AgentRunTracer {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentRunTracer.class);
     public static final String PROMPT_VERSION = "agent-system-v5";
 
     private final AgentTraceStore store;
@@ -22,6 +29,7 @@ public final class AgentRunTracer {
     private final String model;
     private final String promptVersion;
     private final UUID rootSpanId;
+    private final TechnicalRunTrace technical;
     private final AtomicInteger llmCalls = new AtomicInteger();
     private final AtomicInteger assistantCalls = new AtomicInteger();
     private final AtomicInteger summaryCalls = new AtomicInteger();
@@ -43,7 +51,7 @@ public final class AgentRunTracer {
             new java.util.concurrent.ConcurrentHashMap<>();
 
     private AgentRunTracer(AgentTraceStore store, UUID userId, UUID runId, UUID conversationId,
-            String model, String promptVersion, UUID rootSpanId) {
+            String model, String promptVersion, UUID rootSpanId, TechnicalRunTrace technical) {
         this.store = store;
         this.userId = userId;
         this.runId = runId;
@@ -51,6 +59,7 @@ public final class AgentRunTracer {
         this.model = model;
         this.promptVersion = promptVersion;
         this.rootSpanId = rootSpanId;
+        this.technical = technical;
     }
 
     public static AgentRunTracer begin(AgentTraceStore store, UUID userId, UUID runId, UUID conversationId,
@@ -60,27 +69,58 @@ public final class AgentRunTracer {
 
     public static AgentRunTracer begin(AgentTraceStore store, UUID userId, UUID runId, UUID conversationId,
             String model, String promptVersion, UUID jobId) {
+        return begin(store, userId, runId, conversationId, model, promptVersion, jobId, TechnicalTracing.disabled());
+    }
+
+    public static AgentRunTracer begin(AgentTraceStore store, UUID userId, UUID runId, UUID conversationId,
+            String model, String promptVersion, UUID jobId, TechnicalTracing tracing) {
+        String resolvedPromptVersion = promptVersion == null ? PROMPT_VERSION : promptVersion;
         Map<String, Object> attributes = new java.util.LinkedHashMap<>();
         attributes.put("conversationId", conversationId == null ? "" : conversationId.toString());
         attributes.put("model", model == null ? "" : model);
-        attributes.put("promptVersion", promptVersion == null ? "" : promptVersion);
+        attributes.put("promptVersion", resolvedPromptVersion);
         attributes.put("originRun", runId == null ? "" : runId.toString());
         attributes.put("jobId", jobId == null ? "" : jobId.toString());
-        UUID root = store == null ? null : store.startSpan(userId, runId, null, "RUN", "agent.run", attributes);
+        boolean traceable = store != null && runId != null;
+        TechnicalRunTrace technical = traceable
+                ? tracing.startRun("agent.run", runId, conversationId, model, null, resolvedPromptVersion, attributes)
+                : TechnicalRunTrace.disabled();
+        UUID root = traceable
+                ? (technical.started()
+                        ? store.startSpan(userId, runId, null, "RUN", "agent.run", attributes,
+                                technical.traceId(), technical.spanId())
+                        : store.startSpan(userId, runId, null, "RUN", "agent.run", attributes))
+                : null;
+        if (root != null) {
+            technical.attachRoot(root);
+            store.linkRunTrace(userId, runId, technical.traceId());
+            if (technical.started()) {
+                log.info("Agent technical trace linked: runId={}, traceId={}, spanId={}",
+                        runId, technical.traceId(), technical.spanId());
+            }
+        } else if (technical.started()) {
+            technical.finish("FAILED", "TRACE_ROOT_WRITE_FAILED");
+        }
         return new AgentRunTracer(store, userId, runId, conversationId, model,
-                promptVersion == null ? PROMPT_VERSION : promptVersion, root);
+                resolvedPromptVersion, root, technical);
     }
 
     public UUID startChild(String kind, String name, Map<String, Object> attributes) {
-        if (!active()) return null;
-        UUID span = store.startSpan(userId, runId, rootSpanId, kind, name, attributes);
-        if ("CONTEXT".equals(kind) && "context.load".equals(name)) contextSpan.set(span);
-        return span;
+        return startChild(null, kind, name, attributes);
     }
 
     public UUID startChild(UUID parent, String kind, String name, Map<String, Object> attributes) {
         if (!active()) return null;
-        return store.startSpan(userId, runId, parent == null ? rootSpanId : parent, kind, name, attributes);
+        UUID businessParent = parent == null ? rootSpanId : parent;
+        UUID span = store.startSpan(userId, runId, businessParent, kind, name, attributes);
+        if (span != null) {
+            technical.startChild(span, businessParent, kind, name, model, null, attributes);
+            if (technical.started()) {
+                store.linkSpanTrace(userId, span, technical.traceId(), technical.spanIdOf(span));
+            }
+        }
+        if ("CONTEXT".equals(kind) && "context.load".equals(name)) contextSpan.set(span);
+        return span;
     }
 
     public UUID contextSpanId() { return contextSpan.get(); }
@@ -96,6 +136,11 @@ public final class AgentRunTracer {
         return toolCallId == null ? null : toolCallParents.get(toolCallId);
     }
 
+    /** Makes a child's technical context current while business code leaves the callback thread. */
+    public com.projectardor.platform.observability.TechnicalTracing.Attachment attachChild(UUID spanId) {
+        return technical.attachChild(spanId);
+    }
+
     public void finishChild(UUID spanId, String status, String errorCode, String modelName,
             Integer inTokens, Integer outTokens, Map<String, Object> attributes) {
         finishChild(spanId, status, errorCode, modelName,
@@ -108,6 +153,8 @@ public final class AgentRunTracer {
         store.finishSpan(userId, spanId, status, errorCode, modelName, promptVersion,
                 usage.inputTokens(), usage.outputTokens(),
                 usage.cacheCreationInputTokens(), usage.cacheReadInputTokens(), attributes);
+        technical.finishChild(spanId, status, errorCode, modelName, usage.inputTokens(), usage.outputTokens(),
+                usage.cacheCreationInputTokens(), usage.cacheReadInputTokens(), attributes);
         contextSpan.compareAndSet(spanId, null);
     }
 
@@ -115,6 +162,7 @@ public final class AgentRunTracer {
     public void annotateChild(UUID spanId, Map<String, Object> attributes) {
         if (!active() || spanId == null || attributes == null || attributes.isEmpty()) return;
         store.annotateSpan(userId, spanId, attributes);
+        technical.annotateChild(spanId, attributes);
     }
 
     public void recordLlm(Integer inTokens, Integer outTokens, boolean toolRound) {
@@ -168,32 +216,38 @@ public final class AgentRunTracer {
     private void finish(String status, String errorCode) {
         boolean observable = active();
         if (!closed.compareAndSet(false, true)) return;
-        if (!observable) return;
-        Map<String, Object> summary = new java.util.LinkedHashMap<>();
-        summary.put("llmCalls", llmCalls.get());
-        summary.put("assistantCalls", assistantCalls.get());
-        summary.put("summaryCalls", summaryCalls.get());
-        summary.put("toolCalls", toolCalls.get());
-        summary.put("requestedToolCalls", requestedToolCalls.get());
-        summary.put("executedToolCalls", executedToolCalls.get());
-        summary.put("loopRounds", loopRounds.get());
-        summary.put("usageMissingCalls", usageMissingCalls.get());
-        summary.put("cacheUsageMissingCalls", cacheUsageMissingCalls.get());
-        long cacheRead = cacheReadInputTokens.get();
-        long cacheCreation = cacheCreationInputTokens.get();
-        boolean cacheReported = cacheUsageReported.get();
-        if (cacheReported) {
-            summary.put("cacheReadInputTokens", cacheRead);
-            summary.put("cacheCreationInputTokens", cacheCreation);
+        if (observable) {
+            Map<String, Object> summary = new java.util.LinkedHashMap<>();
+            summary.put("llmCalls", llmCalls.get());
+            summary.put("assistantCalls", assistantCalls.get());
+            summary.put("summaryCalls", summaryCalls.get());
+            summary.put("toolCalls", toolCalls.get());
+            summary.put("requestedToolCalls", requestedToolCalls.get());
+            summary.put("executedToolCalls", executedToolCalls.get());
+            summary.put("loopRounds", loopRounds.get());
+            summary.put("usageMissingCalls", usageMissingCalls.get());
+            summary.put("cacheUsageMissingCalls", cacheUsageMissingCalls.get());
+            long cacheRead = cacheReadInputTokens.get();
+            long cacheCreation = cacheCreationInputTokens.get();
+            boolean cacheReported = cacheUsageReported.get();
+            if (cacheReported) {
+                summary.put("cacheReadInputTokens", cacheRead);
+                summary.put("cacheCreationInputTokens", cacheCreation);
+            }
+            store.finishSpan(userId, rootSpanId, status, errorCode, model, promptVersion,
+                    (int) Math.min(Integer.MAX_VALUE, inputTokens.get()),
+                    (int) Math.min(Integer.MAX_VALUE, outputTokens.get()),
+                    cacheReported ? (int) Math.min(Integer.MAX_VALUE, cacheCreation) : null,
+                    cacheReported ? (int) Math.min(Integer.MAX_VALUE, cacheRead) : null,
+                    summary);
+            store.updateRunAggregates(userId, runId, llmCalls.get(), toolCalls.get(), loopRounds.get(),
+                    inputTokens.get(), outputTokens.get(), cacheCreation, cacheRead, cacheReported, model, promptVersion);
         }
-        store.finishSpan(userId, rootSpanId, status, errorCode, model, promptVersion,
-                (int) Math.min(Integer.MAX_VALUE, inputTokens.get()),
-                (int) Math.min(Integer.MAX_VALUE, outputTokens.get()),
-                cacheReported ? (int) Math.min(Integer.MAX_VALUE, cacheCreation) : null,
-                cacheReported ? (int) Math.min(Integer.MAX_VALUE, cacheRead) : null,
-                summary);
-        store.updateRunAggregates(userId, runId, llmCalls.get(), toolCalls.get(), loopRounds.get(),
-                inputTokens.get(), outputTokens.get(), cacheCreation, cacheRead, cacheReported, model, promptVersion);
+        technical.finish(status, errorCode);
+        if (!"COMPLETED".equals(status)) {
+            log.warn("Agent run ended: runId={}, status={}, errorCode={}, traceId={}, spanId={}",
+                    runId, status, errorCode, technical.traceId(), technical.spanId());
+        }
     }
 
     public boolean active() {
@@ -203,6 +257,8 @@ public final class AgentRunTracer {
     public UUID userId() { return userId; }
     public UUID runId() { return runId; }
     public UUID rootSpanId() { return rootSpanId; }
+    public String technicalTraceId() { return technical.traceId(); }
+    public String technicalSpanId() { return technical.spanId(); }
     public String model() { return model; }
     public String promptVersion() { return promptVersion; }
     public int llmCalls() { return llmCalls.get(); }

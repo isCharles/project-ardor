@@ -1,0 +1,30 @@
+name: project-ardor-observability
+
+# Optional local trace backend. Not part of docker-compose.yml: the application runs
+# without it, and enabling this file alone does not start tracing.
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: ardor-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+      # Seven days. Old spans are dropped by Badger; the product trace keeps its own retention.
+      BADGER_SPAN_STORE_TTL: 168h
+    ports:
+      # Local operator only. Never publish the UI or OTLP receiver on a public interface.
+      - "127.0.0.1:16686:16686"
+      - "127.0.0.1:4318:4318"
+    volumes:
+      - ardor-jaeger-data:/badger
+    # The named volume is created root-owned. This container is local-only; running it
+    # as root avoids a host-specific chown step and has no write path outside the volume.
+    user: "0:0"
+    mem_limit: 512m
+    restart: unless-stopped
+
+volumes:
+  ardor-jaeger-data:

@@ -24,13 +24,15 @@ public record AgentTraceSpanResponse(
         Integer cacheCreationInputTokens,
         Integer cacheReadInputTokens,
         String errorCode,
-        Map<String, Object> attributes) {
+        Map<String, Object> attributes,
+        String otelTraceId,
+        String otelSpanId) {
 
     public static AgentTraceSpanResponse from(AgentTraceStore.Span span) {
         return new AgentTraceSpanResponse(span.id(), span.runId(), span.parentSpanId(), span.kind(), span.name(),
                 span.status(), span.startedAt(), span.finishedAt(), span.durationMs(), span.model(),
                 span.promptVersion(), span.inputTokens(), span.outputTokens(),
                 span.cacheCreationInputTokens(), span.cacheReadInputTokens(),
-                span.errorCode(), span.attributes());
+                span.errorCode(), span.attributes(), span.otelTraceId(), span.otelSpanId());
     }
 }

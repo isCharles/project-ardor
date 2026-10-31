@@ -249,7 +249,12 @@ final class ApprovedAgentTools {
                 String errorCode = null;
                 String auditResult = null;
                 String returned = null;
-                try {
+                // Tool bodies can enqueue durable work from the model callback thread; keep the
+                // tool span current so that work persists the same traceparent.
+                var toolContext = tracer == null
+                        ? (com.projectardor.platform.observability.TechnicalTracing.Attachment) () -> { }
+                        : tracer.attachChild(traceSpan);
+                try (toolContext) {
                     returned = lease == null ? call.get() : lease.execute(call);
                     if (!executed.get()) {
                         // The lease refused a late call after cancel/deadline: it never ran.
