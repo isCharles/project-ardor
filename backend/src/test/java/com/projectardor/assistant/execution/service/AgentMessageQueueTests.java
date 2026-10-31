@@ -69,6 +69,7 @@ class AgentMessageQueueTests {
                   blocked_by uuid,
                   error_message varchar(400),
                   priority smallint NOT NULL DEFAULT 0,
+                  traceparent varchar(64),
                   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
