@@ -26,15 +26,22 @@ export function useAcknowledgeModule(module: string, ready: boolean, version: st
   useEffect(() => {
     if (!ready) return;
     let active = true;
+    let pending = false;
     const acknowledge = () => {
-      if (!active || document.hidden) return;
+      if (!active) return;
+      if (document.hidden) {
+        pending = true;
+        return;
+      }
+      pending = false;
       void api<void>(`/api/background-tasks/modules/${encodeURIComponent(module)}/read`, { method: "POST" })
         .then(() => { if (active) window.dispatchEvent(new Event("ardor:background-refresh")); })
         .catch(() => undefined);
     };
+    const resume = () => { if (!document.hidden && pending) acknowledge(); };
     acknowledge();
-    document.addEventListener("visibilitychange", acknowledge);
-    return () => { active = false; document.removeEventListener("visibilitychange", acknowledge); };
+    document.addEventListener("visibilitychange", resume);
+    return () => { active = false; document.removeEventListener("visibilitychange", resume); };
   }, [module, ready, version]);
 }
 

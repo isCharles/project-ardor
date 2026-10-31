@@ -93,6 +93,7 @@ function JobDiscoveryContent() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [inboxReady, setInboxReady] = useState(false);
+  const [inboxVersion, setInboxVersion] = useState(0);
   const [starting, setStarting] = useState(false);
   const [busyPosting, setBusyPosting] = useState("");
   const [confirmApplied, setConfirmApplied] = useState("");
@@ -138,7 +139,10 @@ function JobDiscoveryContent() {
         }
         if (active) {
           const loaded = await loadItems("NEW", "", 0, false);
-          if (loaded && active) setInboxReady(true);
+          if (loaded && active) {
+            setInboxReady(true);
+            setInboxVersion(version => version + 1);
+          }
         }
       } catch (reason) {
         if (!active) return;
@@ -158,7 +162,10 @@ function JobDiscoveryContent() {
         const next = await api<Run>(`/api/job-discovery/runs/${run.id}`);
         setRun(next);
         if (!["QUEUED", "RUNNING"].includes(next.status)) {
-          void loadItems(stateFilter, appliedQuery, 0, false);
+          // Only acknowledge finished results once the refreshed inbox is on screen;
+          // a failed refresh keeps the notification unread.
+          const loaded = await loadItems(stateFilter, appliedQuery, 0, false);
+          if (loaded) setInboxVersion(version => version + 1);
           void loadSummary();
         }
       } catch { /* Keep the last known progress. */ }
@@ -261,7 +268,7 @@ function JobDiscoveryContent() {
     void loadItems(next, "", 0, false);
   }
 
-  useAcknowledgeModule(DISCOVERY_MODULE, inboxReady, `${run?.id ?? ""}:${run?.status ?? ""}`);
+  useAcknowledgeModule(DISCOVERY_MODULE, inboxReady, inboxVersion);
 
   const working = !!run && ["QUEUED", "RUNNING"].includes(run.status);
   const lastRunTerminal = !!run && ["COMPLETED", "PARTIAL", "FAILED", "CANCELED"].includes(run.status);
