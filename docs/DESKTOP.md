@@ -12,7 +12,7 @@ Ardor 桌面版是一个安装在 Windows 上的轻量客户端。双击桌面�
 
 产品 Release 与桌面安装包是两条独立的发布线：服务端新增能力只要部署就能被已装客户端使用，只有桌面壳本身变化时才需要新安装包（见 `docs/VERSIONING.md`）。客户端因此不能假设“最新 Release 就是桌面版”。
 
-`desktop/update-channel.cjs` 在调用更新器之前先解析通道：列出公开 Release，只保留已发布、稳定、带 `latest.yml` 的桌面版本，按语义版本取最高者，再用该 Release 自己的 `latest.yml` 核对安装包名、附件状态、字节数与 `sha512`。全部通过后才把这个 Release 的下载地址设为更新源并交给更新器；因此服务端单独发布不会触发检查失败，附件还没传完的 Release 也不会被下载。错误按 `network`、`incomplete`、`metadata`、`not-found`、`access` 分别提示，`current` 只在确实没有更高的完整桌面版本时出现。
+`desktop/update-channel.cjs` 在调用更新器之前先解析通道：列出公开 Release，只保留已发布、稳定、带 `latest.yml` 的桌面版本，按语义版本取最高者，再用该 Release 自己的 `latest.yml` 核对安装包名、附件状态、字节数与 `sha512`。全部通过后才把这个 Release 的下载地址设为更新源并交给更新器；因此服务端单独发布不会触发检查失败，附件还没传完的 Release 也不会被下载。Release 列表会继续翻页，直到找到桌面发布或历史读完，连续多个服务端版本不会把桌面版挤出视野；无法解析的列表按 `metadata` 报告。错误按 `network`、`incomplete`、`metadata`、`not-found`、`access` 分别提示，`current` 只在确实没有更高的完整桌面版本时出现。
 
 附件必须齐备才算桌面发布：先把安装包传进**草稿** Release，工作流用与客户端相同的口径核对（`scripts/check-desktop-release.mjs --require-draft`），通过后才把草稿转为正式 Release。缺少安装包、`.blockmap` 或 `latest.yml` 时 Release 不会发布，客户端也就看不到它。
 

@@ -64,7 +64,11 @@ function readSingleRelease(options) {
 
 function readReleases(options) {
   if (options.releasesJson) return JSON.parse(readFileSync(options.releasesJson, "utf8"));
-  return JSON.parse(gh(["api", `repos/${options.repo}/releases?per_page=30`]));
+  // Old-client safety depends on the newest *normal* release, which can sit below
+  // a long run of drafts or prereleases; read every page instead of only the first.
+  const pages = JSON.parse(gh(["api", "--paginate", "--slurp", `repos/${options.repo}/releases?per_page=100`]));
+  if (!Array.isArray(pages)) throw new Error("The release listing is not an array.");
+  return pages.flat();
 }
 
 function verifyUploadedAssets(options) {

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { compareVersions, parseVersion } = require("../desktop/update-channel.cjs");
+const { compareProductVersions, parseVersion } = require("../desktop/update-channel.cjs");
 
 // The product has one version. The desktop installer may lag behind it: installers
 // are only built when the desktop shell itself changes, and a product release that
@@ -58,7 +58,7 @@ for (const [source, actual] of Object.entries(desktopSources)) {
   if (actual !== desktopVersion) throw new Error(`${source} has ${actual ?? "no version"}, expected ${desktopVersion}`);
 }
 if (!parseVersion(desktopVersion)) throw new Error(`Invalid desktop version: ${desktopVersion ?? "missing"}`);
-if (compareVersions(desktopVersion, version) > 0) {
+if (compareProductVersions(desktopVersion, version) > 0) {
   throw new Error(`desktop/package.json is ${desktopVersion}, newer than product ${version}; desktop may lag, never lead.`);
 }
 

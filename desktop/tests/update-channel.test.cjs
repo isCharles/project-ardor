@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const {
   compareVersions,
+  compareProductVersions,
   parseLatestYml,
   selectDesktopRelease,
   resolveDesktopUpdate,
@@ -60,6 +61,15 @@ test("versions compare numerically, so 0.10.0 is newer than 0.9.0", () => {
   assert.equal(compareVersions("0.10.0", "0.9.0"), 1);
   assert.equal(compareVersions("v0.9.0", "0.9.0"), 0);
   assert.equal(compareVersions("0.8.9", "0.9.0"), -1);
+});
+
+test("release candidates order below their stable product version", () => {
+  assert.equal(compareProductVersions("0.10.0-rc.1", "0.10.0-rc.2"), -1);
+  assert.equal(compareProductVersions("0.10.0", "0.10.0-rc.2"), 1);
+  assert.equal(compareProductVersions("v0.10.0-rc.1", "0.10.0-rc.1"), 0);
+  assert.equal(compareProductVersions("0.10.0-rc.1", "0.9.0"), 1);
+  assert.equal(compareProductVersions("0.9.0", "0.10.0-rc.1"), -1);
+  assert.throws(() => compareProductVersions("0.10.0-beta.1", "0.9.0"), /Not a version/);
 });
 
 test("a server-only product release never enters the desktop channel", () => {
@@ -126,6 +136,49 @@ test("no desktop release at all means the client is current", async () => {
   });
   assert.equal(result.kind, "current");
   assert.equal(result.reason, "no-desktop-release");
+});
+
+test("a full page of server-only releases does not hide a later desktop release", async () => {
+  const pageOne = Array.from({ length: 30 }, (_, index) => serverOnly(`v0.10.${index + 2}`));
+  const desktop = release("v0.10.1", { assets: desktopAssets("0.10.1") });
+  const pages = [];
+  const result = await resolveDesktopUpdate({
+    currentVersion: "0.9.0",
+    fetchText: async (url) => {
+      if (url.includes("/releases?") && url.includes("page=1")) { pages.push(1); return JSON.stringify(pageOne); }
+      if (url.includes("/releases?") && url.includes("page=2")) { pages.push(2); return JSON.stringify([desktop]); }
+      if (url.includes("/download/v0.10.1/latest.yml")) return latestYml("0.10.1");
+      throw new Error(`unexpected fetch: ${url}`);
+    },
+  });
+  assert.equal(result.kind, "update");
+  assert.equal(result.tag, "v0.10.1");
+  assert.deepEqual(pages, [1, 2]);
+});
+
+test("an exhausted history of server-only releases stays current", async () => {
+  const pageOne = Array.from({ length: 30 }, (_, index) => serverOnly(`v0.10.${index + 2}`));
+  let requests = 0;
+  const result = await resolveDesktopUpdate({
+    currentVersion: "0.9.0",
+    fetchText: async (url) => {
+      requests += 1;
+      if (url.includes("page=1")) return JSON.stringify(pageOne);
+      if (url.includes("page=2")) return JSON.stringify([serverOnly("v0.10.0")]);
+      throw new Error(`unexpected fetch: ${url}`);
+    },
+  });
+  assert.equal(result.kind, "current");
+  assert.equal(result.reason, "no-desktop-release");
+  assert.equal(requests, 2, "Paging stops at the first short page");
+});
+
+test("an unreadable release list is corrupt metadata, not a network outage", async () => {
+  const result = await resolveDesktopUpdate({
+    currentVersion: "0.9.0",
+    fetchText: async () => "<html>rate limited</html>",
+  });
+  assert.equal(result.kind, "metadata");
 });
 
 test("metadata that contradicts its release is reported as metadata, never as current", async () => {

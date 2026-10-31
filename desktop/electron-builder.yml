@@ -9,6 +9,7 @@ files:
   - server-config.cjs
   - media-permissions.cjs
   - i18n.cjs
+  - update-channel.cjs
   - update-errors.cjs
   - window-chrome.cjs
   - offline.html

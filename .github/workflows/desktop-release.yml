@@ -25,6 +25,8 @@ jobs:
     env:
       RELEASE_TAG: ${{ inputs.tag }}
       GH_TOKEN: ${{ github.token }}
+      # This step runs before checkout, so gh cannot infer the repository locally.
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Require an existing draft release
         shell: pwsh

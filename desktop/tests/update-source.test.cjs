@@ -11,6 +11,17 @@ test("packaged update source is the public source repository", () => {
   assert.ok(!workflow.includes("ARDOR_RELEASES_TOKEN"));
   assert.ok(!workflow.includes("project-ardor-releases"));
   assert.ok(workflow.includes("visibility -ne 'PUBLIC'"));
+  // The draft check runs before checkout, so gh needs the repository explicitly.
+  assert.match(workflow, /GH_REPO: \$\{\{ github\.repository \}\}/);
+});
+
+test("every local module loaded by the main process is packaged", () => {
+  const config = readFileSync(path.join(__dirname, "../electron-builder.yml"), "utf8");
+  const main = readFileSync(path.join(__dirname, "../main.cjs"), "utf8");
+  for (const [, file] of main.matchAll(/require\("\.\/([^"]+)"\)/g)) {
+    const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(config, new RegExp(`^  - ${escaped}$`, "m"), `${file} is required by main.cjs but missing from electron-builder files`);
+  }
 });
 
 test("desktop installers are opt-in and never published with partial assets", () => {

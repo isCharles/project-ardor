@@ -6,6 +6,8 @@
 
 const PRODUCT_REPO = { owner: "isCharles", repo: "project-ardor" };
 const METADATA_ASSET = "latest.yml";
+const RELEASE_PAGE_SIZE = 30;
+const MAX_RELEASE_PAGES = 10;
 
 function parseVersion(value) {
   const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(value ?? "").trim());
@@ -20,6 +22,30 @@ function compareVersions(a, b) {
     if (left[index] !== right[index]) return left[index] < right[index] ? -1 : 1;
   }
   return 0;
+}
+
+// Product releases may be release candidates (`X.Y.Z-rc.N`); desktop installers
+// stay on stable versions because the update channel only ships stable releases.
+function parseProductVersion(value) {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$/.exec(String(value ?? "").trim());
+  if (!match) return null;
+  return {
+    numbers: [Number(match[1]), Number(match[2]), Number(match[3])],
+    candidate: match[4] === undefined ? null : Number(match[4]),
+  };
+}
+
+function compareProductVersions(a, b) {
+  const left = parseProductVersion(a);
+  const right = parseProductVersion(b);
+  if (!left || !right) throw new Error(`Not a version: ${!left ? a : b}`);
+  for (let index = 0; index < 3; index += 1) {
+    if (left.numbers[index] !== right.numbers[index]) return left.numbers[index] < right.numbers[index] ? -1 : 1;
+  }
+  if (left.candidate === right.candidate) return 0;
+  if (left.candidate === null) return 1;
+  if (right.candidate === null) return -1;
+  return left.candidate < right.candidate ? -1 : 1;
 }
 
 function isNewer(candidate, current) {
@@ -140,6 +166,30 @@ function downloadBaseUrl(tag, repo = PRODUCT_REPO) {
   return `https://github.com/${repo.owner}/${repo.repo}/releases/download/${encodeURIComponent(tag)}/`;
 }
 
+async function fetchReleases({ fetchText, apiBase, timeoutMs }) {
+  const releases = [];
+  for (let page = 1; page <= MAX_RELEASE_PAGES; page += 1) {
+    const body = await fetchText(`${apiBase}/releases?per_page=${RELEASE_PAGE_SIZE}&page=${page}`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    let pageReleases;
+    try {
+      pageReleases = JSON.parse(body);
+    } catch (error) {
+      throw Object.assign(new Error(`release list is unreadable: ${error?.message ?? error}`), { metadata: true });
+    }
+    if (!Array.isArray(pageReleases)) {
+      throw Object.assign(new Error("release list is not an array"), { metadata: true });
+    }
+    releases.push(...pageReleases);
+    // A short page is the end of the history. Otherwise keep paging only while a
+    // desktop release is missing: newer server-only releases must not hide it.
+    if (pageReleases.length < RELEASE_PAGE_SIZE) break;
+    if (desktopReleases(releases).length) break;
+  }
+  return releases;
+}
+
 async function resolveDesktopUpdate(options) {
   const {
     currentVersion,
@@ -152,15 +202,14 @@ async function resolveDesktopUpdate(options) {
 
   let releases;
   try {
-    const body = await fetchText(`${apiBase}/releases?per_page=30`, { signal: AbortSignal.timeout(timeoutMs) });
-    releases = JSON.parse(body);
+    releases = await fetchReleases({ fetchText, apiBase, timeoutMs });
   } catch (error) {
     const detail = error?.message ?? String(error);
+    if (error?.metadata) return { kind: "metadata", detail };
     // A 404 here means the repository or its releases are not publicly readable,
     // which is a different problem from an unreachable network.
     return { kind: /HTTP 404/.test(detail) ? "not-found" : "network", detail };
   }
-  if (!Array.isArray(releases)) return { kind: "metadata", detail: "release list is not an array" };
 
   const selection = selectDesktopRelease({ releases, currentVersion });
   if (selection.kind === "current") return selection;
@@ -225,6 +274,8 @@ module.exports = {
   METADATA_ASSET,
   compareVersions,
   parseVersion,
+  parseProductVersion,
+  compareProductVersions,
   parseLatestYml,
   normalizeRelease,
   desktopReleases,
