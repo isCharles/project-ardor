@@ -30,7 +30,9 @@ class AgentTraceStoreTests {
         @SuppressWarnings({"unchecked", "rawtypes"})
         ArgumentCaptor<Object[]> arguments = (ArgumentCaptor) ArgumentCaptor.forClass(Object[].class);
         verify(jdbc).update(anyString(), arguments.capture());
-        String storedAttributes = String.valueOf(arguments.getValue()[arguments.getValue().length - 1]);
+        String storedAttributes = java.util.Arrays.stream(arguments.getValue())
+                .filter(String.class::isInstance).map(String.class::cast)
+                .filter(value -> value.contains("truncated")).findFirst().orElseThrow();
         assertThat(storedAttributes).contains("\"truncated\":true").doesNotContain("aaaaaaaa");
     }
 }
