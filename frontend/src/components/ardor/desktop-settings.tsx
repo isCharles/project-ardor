@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { describeDesktopUpdateError } from "@/lib/desktop-update-error";
 import { useLocale, type Locale } from "@/lib/locale";
 
-type UpdateStatus = { state: "idle" | "checking" | "downloading" | "current" | "ready" | "error" | "unavailable"; message: string; percent?: number; version?: string };
+type UpdateStatus = { state: "idle" | "checking" | "downloading" | "current" | "ready" | "error" | "unavailable"; message: string; percent?: number; version?: string; errorKind?: string; detail?: string };
 type DesktopInfo = { version: string; serverUrl: string; locale: Locale | null; updateStatus: UpdateStatus; packaged: boolean };
 type SetServerResult = { changed: boolean; connected?: boolean; errorCode?: "invalidServer" | "httpsRequired" | "rootOnly"; message?: string };
 type DesktopBridge = {
@@ -78,16 +78,20 @@ export function DesktopSettings() {
     catch (error) { setStatus({ state: "error", message: error instanceof Error ? error.message : t("Update check failed", "检查更新失败") }); }
   }
 
-  const updateError = status?.state === "error" ? describeDesktopUpdateError(status.message) : null;
+  const updateError = status?.state === "error" ? describeDesktopUpdateError(status.message, status) : null;
   const updateSummary = updateError?.kind === "legacy-feed"
     ? t("This installer uses an old private update feed. Install the latest public release once.", "此安装包仍使用旧的私有更新源。请手动安装一次最新公开版本。")
-    : updateError?.kind === "not-found"
-      ? t("Update files are not available yet (404).", "更新文件暂不可用（404）。")
-      : updateError?.kind === "access"
-        ? t("The update source denied access.", "更新源拒绝访问。")
-        : updateError?.kind === "network"
-          ? t("Could not reach the update source. Try again later.", "暂时无法连接更新源，请稍后重试。")
-          : t("Could not check for updates. Try again later.", "检查更新失败，请稍后重试。");
+    : updateError?.kind === "incomplete"
+      ? t("A newer desktop version is still being published. Try again later.", "更新的桌面版本还在发布中，请稍后重试。")
+      : updateError?.kind === "metadata"
+        ? t("The update information is damaged. Try again later.", "更新信息不完整或损坏，请稍后重试。")
+        : updateError?.kind === "not-found"
+          ? t("Update files are not available yet (404).", "更新文件暂不可用（404）。")
+          : updateError?.kind === "access"
+            ? t("The update source denied access.", "更新源拒绝访问。")
+            : updateError?.kind === "network"
+              ? t("Could not reach the update source. Try again later.", "暂时无法连接更新源，请稍后重试。")
+              : t("Could not check for updates. Try again later.", "检查更新失败，请稍后重试。");
   const statusText = updateError ? updateSummary : status?.state === "checking"
     ? t("Checking for updates…", "正在检查更新…")
     : status?.state === "downloading"

@@ -1,8 +1,19 @@
 name: Windows desktop installer
 
+# Desktop installers are built only when the desktop shell itself changes. Nothing
+# here runs for a normal product release: those fix the source, backend and frontend
+# and are deployed on their own. Start this workflow with a tag that already has a
+# DRAFT release; the job uploads the installer into that draft, verifies the release
+# the same way the updater does, and only then publishes it. Clients therefore never
+# observe a release with missing or half-uploaded assets.
+
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Draft release tag to build, e.g. v0.10.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,23 +22,34 @@ jobs:
   installer:
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Require an existing draft release
+        shell: pwsh
+        run: |
+          $raw = gh release view $env:RELEASE_TAG --json isDraft,isPrerelease,assets 2>$null
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($raw)) {
+            throw "No release for $env:RELEASE_TAG. Create it as a draft first: gh release create $env:RELEASE_TAG --draft --title ... --notes ..."
+          }
+          $release = $raw | ConvertFrom-Json
+          if (-not $release.isDraft) {
+            throw "$env:RELEASE_TAG is already published. Desktop assets are uploaded to a draft and published only after they are verified; publish a new version instead of changing a live release."
+          }
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.tag }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: desktop/package-lock.json
-      - name: Verify product version
+      - name: Verify desktop version matches the release tag
         shell: pwsh
         run: |
-          node scripts/check-version.mjs
-          $expected = "v$((Get-Content -Raw -Encoding UTF8 desktop/package.json | ConvertFrom-Json).version)"
-          if ($env:RELEASE_TAG -ne $expected) { throw "Release tag $env:RELEASE_TAG does not match $expected" }
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          node scripts/check-version.mjs --desktop-tag $env:RELEASE_TAG
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Determine signing mode
         id: signing
         shell: pwsh
@@ -80,11 +102,8 @@ jobs:
           } else {
             ./desktop/scripts/verify-signed-release.ps1 -DistDirectory desktop/dist
           }
-      - name: Attach installer and update metadata to this release
+      - name: Upload installer assets into the draft
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           $visibility = gh repo view $env:GITHUB_REPOSITORY --json visibility --jq '.visibility'
           if ($LASTEXITCODE -ne 0 -or $visibility -ne 'PUBLIC') { throw 'Desktop updates require a public source repository.' }
@@ -94,13 +113,29 @@ jobs:
           if ($assets.Count -ne 3) { throw "Expected installer, blockmap and latest.yml; found $($assets.Count) assets." }
           foreach ($asset in $assets) {
             $existing = @($release.assets | Where-Object { $_.name -eq $asset.Name })
-            if ($existing.Count -gt 1 -or ($existing.Count -eq 1 -and $existing[0].size -le 0)) {
-              throw "Release asset is incomplete or duplicated: $($asset.Name)"
-            }
+            if ($existing.Count -gt 1) { throw "Release asset is duplicated: $($asset.Name)" }
             if ($existing.Count -eq 1) {
-              Write-Host "Already attached: $($asset.Name)"
-            } else {
-              gh release upload $env:RELEASE_TAG $asset.FullName
+              if ($existing[0].state -eq 'uploaded' -and [int64]$existing[0].size -eq [int64]$asset.Length) {
+                Write-Host "Already attached: $($asset.Name)"
+                continue
+              }
+              # A previous run left a partial asset; remove it before uploading again.
+              gh release delete-asset $env:RELEASE_TAG $asset.Name --yes
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             }
+            gh release upload $env:RELEASE_TAG $asset.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+      - name: Verify the draft the way the updater will read it
+        shell: pwsh
+        run: |
+          node scripts/check-desktop-release.mjs --tag $env:RELEASE_TAG --dist desktop/dist --require-draft
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish the release
+        shell: pwsh
+        run: |
+          gh release edit $env:RELEASE_TAG --draft=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/check-desktop-release.mjs --tag $env:RELEASE_TAG --dist desktop/dist --require-published
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Published $env:RELEASE_TAG with installer, blockmap and latest.yml."
