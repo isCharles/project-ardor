@@ -111,7 +111,7 @@ final class ApprovedAgentTools {
             String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
             UUID conversationId, boolean automation, AgentRunTracer tracer, PlanningAgentTools planning) {
         return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
-                executionAudit, conversationId, automation, tracer, null, planning);
+                executionAudit, conversationId, automation, tracer, null, planning, 0);
     }
 
     /** A graph phase may only see an explicit read-only subset of the tool surface. */
@@ -120,6 +120,17 @@ final class ApprovedAgentTools {
             String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
             UUID conversationId, boolean automation, AgentRunTracer tracer, Set<String> allowedTools,
             PlanningAgentTools planning) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
+                executionAudit, conversationId, automation, tracer, allowedTools, planning, 0);
+    }
+
+    /** {@code maxToolResultChars} bounds what one tool result may add to the model context; 0 uses the default. */
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
+            AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
+            String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
+            UUID conversationId, boolean automation, AgentRunTracer tracer, Set<String> allowedTools,
+            PlanningAgentTools planning, int maxToolResultChars) {
+        int resultCeiling = AgentToolResultBudget.resolve(maxToolResultChars);
         Map<ToolSpecification, ToolExecutor> result = new LinkedHashMap<>();
         Map<String, Boolean> attemptedWrites = new java.util.concurrent.ConcurrentHashMap<>();
         var automaticWriteOrdinal = new java.util.concurrent.atomic.AtomicInteger();
@@ -255,7 +266,10 @@ final class ApprovedAgentTools {
                         ? (com.projectardor.platform.observability.TechnicalTracing.Attachment) () -> { }
                         : tracer.attachChild(traceSpan);
                 try (toolContext) {
-                    returned = lease == null ? call.get() : lease.execute(call);
+                    String complete = lease == null ? call.get() : lease.execute(call);
+                    // The model sees a bounded payload; the audit row and the plan evidence keep the
+                    // complete result, so shortening the prompt view never shortens the record.
+                    returned = AgentToolResultBudget.bound(complete, tool, request.id(), resultCeiling);
                     if (!executed.get()) {
                         // The lease refused a late call after cancel/deadline: it never ran.
                         outcome = "NOT_EXECUTED";
@@ -265,7 +279,7 @@ final class ApprovedAgentTools {
                         outcome = "PROPOSED";
                         recordLegacyAudit(executionAudit, userId, requestId, tool, request.arguments(), approvalSource);
                     } else {
-                        auditResult = returned;
+                        auditResult = complete;
                     }
                     return returned;
                 } catch (RuntimeException failure) {
