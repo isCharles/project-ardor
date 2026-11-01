@@ -325,7 +325,8 @@ public class CareerAgentService {
                     traceListener == null ? java.util.List.of() : java.util.List.of(traceListener);
 
             CareerAssistant assistant = AiServices.builder(CareerAssistant.class)
-                    .chatModel(modelFactory.create(userId, runtimeConfig, depth, listeners))
+                    .chatModel(modelFactory.create(userId, runtimeConfig, depth, listeners,
+                            runtimeContextObserver(null, null, tracer, runtimeConfig.model())))
                     .systemMessage(systemMessage)
                     .chatMemory(memory)
                     // A synchronous retry keeps the logical request but is a new tool-call attempt.
@@ -581,7 +582,8 @@ public class CareerAgentService {
                     : new PlanningAgentTools(userId, requestId, conversation.getId(), planner, planStore, tracer);
             planningRef.set(planning);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
-                    .streamingChatModel(modelFactory.createStreaming(userId, runtimeConfig, depth, lease, listeners))
+                    .streamingChatModel(modelFactory.createStreaming(userId, runtimeConfig, depth, lease, listeners,
+                            runtimeContextObserver(contextObserver, latestContext, tracer, runtimeConfig.model())))
                     .systemMessage(systemMessage).chatMemory(memory)
                     .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings,
                             sink::waitingForApproval, message, permissionGrants, executionAudit,
@@ -939,6 +941,67 @@ public class CareerAgentService {
             log.warn("Could not serialize agent run trace: {}", exception.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Reports what the run did to stay inside the window, at the boundary where it happened.
+     *
+     * <p>The span covers the reduction alone, never the model wait after it, so a slow provider cannot be
+     * read as expensive context management. The figures are Ardor's own estimates: the provider's counts
+     * arrive separately on the response and stay marked as authoritative there.</p>
+     */
+    private RuntimeContextGovernor.Observer runtimeContextObserver(
+            java.util.function.Consumer<AgentContextUsage> contextObserver,
+            java.util.concurrent.atomic.AtomicReference<AgentContextUsage> latestContext,
+            AgentRunTracer tracer, String model) {
+        return new RuntimeContextGovernor.Observer() {
+            private long startedAt;
+
+            @Override public void onState(String state) {
+                startedAt = System.nanoTime();
+                if (contextObserver == null) return;
+                var base = latestContext == null ? null : latestContext.get();
+                if (base == null) return;
+                contextObserver.accept(new AgentContextUsage(state, base.model(), base.estimatedTokens(),
+                        base.compressionBudgetTokens(), base.modelWindowTokens(), base.summaryVersion(),
+                        base.compactedMessages(), base.compaction(), false, false, null));
+            }
+
+            @Override public void onReduction(RuntimeContextGovernor.Reduction reduction) {
+                long nanos = startedAt == 0 ? 0 : Math.max(0, System.nanoTime() - startedAt);
+                startedAt = 0;
+                agentMetrics.recordRuntimeReduction(reduction.outcome(), reduction.method(), nanos);
+                if ("DEFERRED".equals(reduction.outcome()) || contextObserver == null) return;
+                String spanId = null;
+                if (tracer != null) {
+                    java.util.Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+                    attributes.put("scope", "RUN");
+                    attributes.put("outcome", reduction.outcome());
+                    attributes.put("method", reduction.method());
+                    attributes.put("estimatedTokensBefore", reduction.beforeTokens());
+                    attributes.put("estimatedTokensAfter", reduction.afterTokens());
+                    attributes.put("allowanceTokens", reduction.allowanceTokens());
+                    attributes.put("softThresholdTokens", reduction.softThresholdTokens());
+                    attributes.put("foldedRounds", reduction.foldedRounds());
+                    attributes.put("summarizedTurns", reduction.summarizedTurns());
+                    attributes.put("attempts", reduction.attempts());
+                    attributes.put("reductionNanos", nanos);
+                    UUID span = tracer.startChild("COMPACTION", "context.runtime", attributes);
+                    tracer.finishChild(span, "EXHAUSTED".equals(reduction.outcome()) ? "FAILED" : "COMPLETED",
+                            reduction.errorCode(), model, null, null, attributes);
+                    spanId = span == null ? null : span.toString();
+                }
+                var base = latestContext == null ? null : latestContext.get();
+                if (base == null) return;
+                contextObserver.accept(new AgentContextUsage("READY", base.model(), reduction.afterTokens(),
+                        base.compressionBudgetTokens(), base.modelWindowTokens(), base.summaryVersion(),
+                        base.compactedMessages(), base.compaction(), false, false,
+                        new AgentContextUsage.RuntimeReduction(reduction.outcome(), reduction.method(),
+                                reduction.beforeTokens(), reduction.afterTokens(), reduction.allowanceTokens(),
+                                reduction.softThresholdTokens(), reduction.foldedRounds(), reduction.summarizedTurns(),
+                                reduction.attempts(), true, reduction.errorCode(), spanId)));
+            }
+        };
     }
 
     private record RunTrace(long elapsedMs, String status, List<RunStep> steps,

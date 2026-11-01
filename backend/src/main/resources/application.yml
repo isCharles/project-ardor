@@ -100,6 +100,17 @@ app:
     queue:
       enabled: ${ARDOR_AGENT_QUEUE_ENABLED:true}
       capacity: ${ARDOR_AGENT_QUEUE_CAPACITY:2}
+    context:
+      # A run reduces its own outgoing request at each model-call boundary. The ceiling bounds one tool
+      # result; a folded round is replaced by one factual line, and the model-backed step is capped so a
+      # long run cannot spend an unbounded number of summary calls.
+      result-ceiling-chars: ${ARDOR_CONTEXT_RESULT_CEILING_CHARS:16000}
+      max-folded-rounds-per-boundary: ${ARDOR_CONTEXT_MAX_FOLDED_ROUNDS:8}
+      defer-boundaries: ${ARDOR_CONTEXT_DEFER_BOUNDARIES:1}
+      max-run-summaries: ${ARDOR_CONTEXT_MAX_RUN_SUMMARIES:2}
+      keep-recent-text-turns: ${ARDOR_CONTEXT_KEEP_RECENT_TEXT_TURNS:2}
+      summary-input-chars: ${ARDOR_CONTEXT_SUMMARY_INPUT_CHARS:12000}
+      summary-output-chars: ${ARDOR_CONTEXT_SUMMARY_OUTPUT_CHARS:4000}
   ai-jobs:
     worker-capacity: ${ARDOR_AI_JOB_WORKER_CAPACITY:2}
   admin:

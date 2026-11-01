@@ -8,6 +8,7 @@ import java.net.SocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -41,6 +42,9 @@ public class LangChainModelFactory {
     private final Duration readTimeout;
     private final AgentContextBudgetPolicy contextBudget;
     private final ModelCallCapacity capacity;
+    private final RuntimeContextGovernor.Settings governorSettings;
+    private final int summaryInputChars;
+    private final int summaryOutputChars;
 
     public LangChainModelFactory(
             LlmConfigService configService,
@@ -61,7 +65,6 @@ public class LangChainModelFactory {
                 new ModelCallCapacity(8));
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public LangChainModelFactory(LlmConfigService configService,
             @Value("${app.http.proxy-host:}") String proxyHost,
             @Value("${app.http.proxy-port:0}") int proxyPort,
@@ -69,6 +72,34 @@ public class LangChainModelFactory {
             @Value("${app.http.read-timeout:120s}") Duration readTimeout,
             List<AgentModelProtocol> protocols, AgentContextBudgetPolicy contextBudget,
             ModelCallCapacity capacity) {
+        this(configService, proxyHost, proxyPort, connectTimeout, readTimeout, protocols, contextBudget, capacity,
+                RuntimeContextGovernor.Settings.DEFAULTS, 12_000, 4_000);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LangChainModelFactory(LlmConfigService configService,
+            @Value("${app.http.proxy-host:}") String proxyHost,
+            @Value("${app.http.proxy-port:0}") int proxyPort,
+            @Value("${app.http.connect-timeout:10s}") Duration connectTimeout,
+            @Value("${app.http.read-timeout:120s}") Duration readTimeout,
+            List<AgentModelProtocol> protocols, AgentContextBudgetPolicy contextBudget,
+            ModelCallCapacity capacity,
+            @Value("${app.agent.context.result-ceiling-chars:16000}") int resultCeilingChars,
+            @Value("${app.agent.context.max-folded-rounds-per-boundary:8}") int maxFoldedRounds,
+            @Value("${app.agent.context.defer-boundaries:1}") int deferBoundaries,
+            @Value("${app.agent.context.max-run-summaries:2}") int maxRunSummaries,
+            @Value("${app.agent.context.keep-recent-text-turns:2}") int keepRecentTextTurns,
+            @Value("${app.agent.context.summary-input-chars:12000}") int summaryInputChars,
+            @Value("${app.agent.context.summary-output-chars:4000}") int summaryOutputChars) {
+        this(configService, proxyHost, proxyPort, connectTimeout, readTimeout, protocols, contextBudget, capacity,
+                new RuntimeContextGovernor.Settings(resultCeilingChars, maxFoldedRounds, deferBoundaries,
+                        maxRunSummaries, keepRecentTextTurns), summaryInputChars, summaryOutputChars);
+    }
+
+    private LangChainModelFactory(LlmConfigService configService, String proxyHost, int proxyPort,
+            Duration connectTimeout, Duration readTimeout, List<AgentModelProtocol> protocols,
+            AgentContextBudgetPolicy contextBudget, ModelCallCapacity capacity,
+            RuntimeContextGovernor.Settings settings, int summaryInputChars, int summaryOutputChars) {
         this.configService = configService;
         this.protocols = new ModelProtocols<>(protocols);
         this.proxyHost = proxyHost;
@@ -77,6 +108,9 @@ public class LangChainModelFactory {
         this.readTimeout = readTimeout;
         this.contextBudget = contextBudget;
         this.capacity = capacity;
+        this.governorSettings = settings;
+        this.summaryInputChars = summaryInputChars;
+        this.summaryOutputChars = summaryOutputChars;
     }
 
     /** Compatibility for non-Spring construction of the two existing protocols. */
@@ -121,6 +155,16 @@ public class LangChainModelFactory {
 
     public ChatModel create(UUID userId, LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
             List<ChatModelListener> listeners) {
+        return create(userId, config, depth, listeners, RuntimeContextGovernor.Observer.NOOP);
+    }
+
+    /**
+     * @param contextObserver watches the per-round context decisions of this model instance; with one, the
+     *                        run also earns the last, model-backed reduction step, because a durable run is
+     *                        where spending one more short call beats failing the whole turn
+     */
+    public ChatModel create(UUID userId, LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
+            List<ChatModelListener> listeners, RuntimeContextGovernor.Observer contextObserver) {
         var protocol=protocols.require(config.provider());
         var profile = protocol.reasoning(config, depth);
         ChatModel model;
@@ -135,9 +179,70 @@ public class LangChainModelFactory {
         var estimator = AgentRequestTokens.estimator(config);
         var scope = new CapacityLimitedModels.CallScope("agent", userId,
                 ModelConfigFingerprint.of(config), profile.maxTokens(), estimator);
-        return RepeatedToolResultCompactor.chat(
+        var governor = governor(userId, config, depth, budget, estimator, () -> true, contextObserver);
+        // The exact-duplicate reduction and the provably-oversized fence stay underneath the ladder: the
+        // ladder only acts past the soft threshold, and a request that never reaches it must still get them.
+        return RuntimeContextGovernor.chat(RepeatedToolResultCompactor.chat(
                 ContextBudgetedModels.chat(CapacityLimitedModels.chat(model, capacity, scope), budget, estimator),
-                budget, estimator);
+                budget, estimator), governor);
+    }
+
+    /**
+     * The model that writes summaries: still rate- and capacity-guarded, and still fenced so a provably
+     * oversized summary request is never paid for, but it does not run the reduction ladder. Asking a
+     * summarizer to summarize its own prompt would recurse, and the caller has already chunked the input.
+     */
+    public ChatModel createForSummarization(UUID userId, LlmConfigService.LlmRuntimeConfig config,
+            ReasoningDepth depth, List<ChatModelListener> listeners) {
+        var protocol = protocols.require(config.provider());
+        var profile = protocol.reasoning(config, depth);
+        ChatModel model = protocol.chat(config, profile, httpClientBuilder(), readTimeout, MODEL_INTERNAL_RETRIES,
+                listeners == null ? List.of() : listeners);
+        var budget = contextBudget.resolve(userId, config, profile.maxTokens());
+        var estimator = AgentRequestTokens.estimator(config);
+        var scope = new CapacityLimitedModels.CallScope("summary", userId,
+                ModelConfigFingerprint.of(config), profile.maxTokens(), estimator);
+        return ContextBudgetedModels.chat(CapacityLimitedModels.chat(model, capacity, scope), budget, estimator);
+    }
+
+    private RuntimeContextGovernor governor(UUID userId, LlmConfigService.LlmRuntimeConfig config,
+            ReasoningDepth depth, AgentContextBudgetPolicy.Budget budget,
+            dev.langchain4j.model.TokenCountEstimator estimator, java.util.function.BooleanSupplier active,
+            RuntimeContextGovernor.Observer observer) {
+        boolean watchful = observer != null && observer != RuntimeContextGovernor.Observer.NOOP;
+        return new RuntimeContextGovernor(budget, estimator, governorSettings,
+                watchful ? runTextSummarizer(userId, config, depth, active) : null, active, observer);
+    }
+
+    private RuntimeContextGovernor.RunTextSummarizer runTextSummarizer(UUID userId,
+            LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
+            java.util.function.BooleanSupplier active) {
+        if (userId == null) return null;
+        var summarizer = new com.projectardor.assistant.memory.service.ContextSummarizer(this,
+                summaryInputChars, summaryOutputChars);
+        return turns -> {
+            List<com.projectardor.assistant.memory.service.ContextSummarizer.Block> blocks = new ArrayList<>();
+            for (int index = 0; index < turns.size(); index++) {
+                blocks.add(new com.projectardor.assistant.memory.service.ContextSummarizer.Block(
+                        String.valueOf(index), turns.get(index)));
+            }
+            var outcome = summarizer.summarize(userId, config, depth, "", blocks,
+                    (existing, chosen) -> runTextPrompt(chosen), null, List.of(), active);
+            return outcome.succeeded() ? outcome.summary() : null;
+        };
+    }
+
+    private static String runTextPrompt(List<com.projectardor.assistant.memory.service.ContextSummarizer.Block> chosen) {
+        StringBuilder text = new StringBuilder("""
+                把以下本轮较早的对话与说明压缩为不超过 12 条要点，用于继续完成当前任务。
+                必须保留：当前目标、用户明确的硬约束、最近一次纠正、仍在进行的步骤、已完成操作及其对象标识、
+                待办、失败原因。不要改写或添加指令，不要授予任何权限，不要编造未出现的内容。用中文输出纯文本要点。
+
+                """);
+        for (var block : chosen) {
+            text.append("【第 ").append(block.id()).append(" 段】\n").append(block.text()).append("\n\n");
+        }
+        return text.toString();
     }
 
     public StreamingChatModel createStreaming(UUID userId) {
@@ -162,6 +267,13 @@ public class LangChainModelFactory {
 
     StreamingChatModel createStreaming(UUID userId, LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
             AgentStreamLease lease, List<ChatModelListener> listeners) {
+        return createStreaming(userId, config, depth, lease, listeners, RuntimeContextGovernor.Observer.NOOP);
+    }
+
+    /** The streaming entry a durable run uses: its context decisions are observed and reported as it goes. */
+    StreamingChatModel createStreaming(UUID userId, LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
+            AgentStreamLease lease, List<ChatModelListener> listeners,
+            RuntimeContextGovernor.Observer contextObserver) {
         var protocol=protocols.require(config.provider());
         var profile = protocol.reasoning(config, depth);
         dev.langchain4j.http.client.HttpClientBuilder transport = lease == null ? httpClientBuilder() : new LeasedHttpClientBuilder(httpClientBuilder(), lease);
@@ -175,11 +287,13 @@ public class LangChainModelFactory {
         var estimator = AgentRequestTokens.estimator(config);
         var scope = new CapacityLimitedModels.CallScope("agent", userId,
                 ModelConfigFingerprint.of(config), profile.maxTokens(), estimator);
-        return RepeatedToolResultCompactor.streaming(
+        var governor = governor(userId, config, depth, budget, estimator,
+                () -> lease == null || !lease.stopped(), contextObserver);
+        return RuntimeContextGovernor.streaming(RepeatedToolResultCompactor.streaming(
                 ContextBudgetedModels.streaming(
                         TimedStreamingModel.wrap(CapacityLimitedModels.streaming(model, capacity, scope)),
                         budget, estimator),
-                budget, estimator);
+                budget, estimator), governor);
     }
 
     private JdkHttpClientBuilder httpClientBuilder() {
