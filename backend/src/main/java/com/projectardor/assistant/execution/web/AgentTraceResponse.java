@@ -23,7 +23,8 @@ public record AgentTraceResponse(
         int totalSpans,
         Integer nextOffset,
         boolean truncated,
-        String traceId) {
+        String traceId,
+        String recordState) {
 
     public record Totals(int llmCalls, int assistantCalls, int summaryCalls, int toolCalls,
             int requestedToolCalls, int executedToolCalls, int loopRounds,
@@ -34,11 +35,23 @@ public record AgentTraceResponse(
     }
 
     public static AgentTraceResponse from(UUID runId, UUID conversationId, List<AgentTraceSpanResponse> spans) {
-        return from(runId, conversationId, null, spans, spans.size(), null);
+        return from(runId, conversationId, null, spans, spans.size(), null,
+                spans.isEmpty() ? "NOT_RECORDED" : "RECORDED");
     }
 
     public static AgentTraceResponse from(UUID runId, UUID conversationId, AgentTraceSpanResponse root,
             List<AgentTraceSpanResponse> spans, int totalSpans, Integer nextOffset) {
+        return from(runId, conversationId, root, spans, totalSpans, nextOffset,
+                root == null && spans.isEmpty() ? "NOT_RECORDED" : "RECORDED");
+    }
+
+    /**
+     * {@code recordState} separates a trace that exists from a run whose spans were never recorded or are
+     * still on their way: {@code RECORDED}, {@code PREPARING} or {@code NOT_RECORDED}. Absent spans are never
+     * evidence that a step did not run, so the caller states which of the two it is looking at.
+     */
+    public static AgentTraceResponse from(UUID runId, UUID conversationId, AgentTraceSpanResponse root,
+            List<AgentTraceSpanResponse> spans, int totalSpans, Integer nextOffset, String recordState) {
         boolean truncated = nextOffset != null;
         var page = derive(spans);
         var runRoot = root != null ? root
@@ -54,7 +67,7 @@ public record AgentTraceResponse(
         return new AgentTraceResponse(runId, conversationId,
                 runRoot == null ? "UNKNOWN" : runRoot.status(),
                 runRoot == null || runRoot.durationMs() == null ? 0 : runRoot.durationMs(),
-                totals, spans, spans.size(), totalSpans, nextOffset, truncated, traceId);
+                totals, spans, spans.size(), totalSpans, nextOffset, truncated, traceId, recordState);
     }
 
     private static Totals fromRunSummary(AgentTraceSpanResponse root, Map<String, Object> attributes,

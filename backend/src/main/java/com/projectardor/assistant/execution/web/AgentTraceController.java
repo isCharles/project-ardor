@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.assistant.execution.service.AgentRunStore;
 import com.projectardor.assistant.execution.service.AgentTraceStore;
-import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 
 @RestController
@@ -31,17 +30,18 @@ public class AgentTraceController {
             @PathVariable UUID requestId,
             @RequestParam(defaultValue = "0") int offset,
             @RequestParam(defaultValue = "128") int limit) {
+        // Owner-scoped lookup first: unknown and foreign runs get the same 404, so nothing is revealed,
+        // and a run that exists but has no spans is a different fact and must not be reported as one.
+        var run = runStore.get(principal.userId(), requestId);
         var root = traceStore.findRoot(principal.userId(), requestId).orElse(null);
         var page = traceStore.findPage(principal.userId(), requestId, offset, limit);
-        if (root == null && page.spans().isEmpty()) {
-            // Same response for unknown and foreign runs: never reveal ownership.
-            throw new ResourceNotFoundException("执行记录不存在");
-        }
-        return AgentTraceResponse.from(requestId,
-                runStore.get(principal.userId(), requestId).conversationId(),
+        boolean recorded = root != null || !page.spans().isEmpty();
+        String recordState = recorded ? "RECORDED"
+                : "RUNNING".equals(run.status()) ? "PREPARING" : "NOT_RECORDED";
+        return AgentTraceResponse.from(requestId, run.conversationId(),
                 root == null ? null : AgentTraceSpanResponse.from(root),
                 page.spans().stream().map(AgentTraceSpanResponse::from).toList(),
-                page.totalSpans(), page.nextOffset());
+                page.totalSpans(), page.nextOffset(), recordState);
     }
 }
 

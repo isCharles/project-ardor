@@ -28,12 +28,43 @@ class AgentTraceControllerTests {
         UUID owner = UUID.randomUUID();
         UUID run = UUID.randomUUID();
         var principal = new ArdorPrincipal(owner, "trace@ardor.invalid", "", true, UserRole.USER);
-        when(store.findRoot(owner, run)).thenReturn(java.util.Optional.empty());
-        when(store.findPage(owner, run, 0, 128)).thenReturn(new AgentTraceStore.SpanPage(List.of(), 0, 0, 128, null));
+        when(runs.get(owner, run)).thenThrow(new ResourceNotFoundException("请求记录不存在"));
 
         assertThatThrownBy(() -> controller.trace(principal, run, 0, 128))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("不存在");
+    }
+
+    @Test
+    void aRunWhoseSpansWereNeverRecordedIsReportedAsAbsentTraceNotAsMissingRun() {
+        AgentTraceStore store = mock(AgentTraceStore.class);
+        AgentRunStore runs = mock(AgentRunStore.class);
+        var controller = new AgentTraceController(store, runs);
+        UUID owner = UUID.randomUUID();
+        UUID run = UUID.randomUUID();
+        var principal = new ArdorPrincipal(owner, "trace@ardor.invalid", "", true, UserRole.USER);
+        when(store.findRoot(owner, run)).thenReturn(java.util.Optional.empty());
+        when(store.findPage(owner, run, 0, 128)).thenReturn(new AgentTraceStore.SpanPage(List.of(), 0, 0, 128, null));
+        when(runs.get(owner, run)).thenReturn(new AgentRunStore.AgentRun(run, UUID.randomUUID(), "message", "COMPLETED",
+                "done", null, null, false, false, null, Instant.now(), Instant.now()));
+
+        assertThat(controller.trace(principal, run, 0, 128).recordState()).isEqualTo("NOT_RECORDED");
+    }
+
+    @Test
+    void aRunningRunWithNoSpansYetIsStillPreparing() {
+        AgentTraceStore store = mock(AgentTraceStore.class);
+        AgentRunStore runs = mock(AgentRunStore.class);
+        var controller = new AgentTraceController(store, runs);
+        UUID owner = UUID.randomUUID();
+        UUID run = UUID.randomUUID();
+        var principal = new ArdorPrincipal(owner, "trace@ardor.invalid", "", true, UserRole.USER);
+        when(store.findRoot(owner, run)).thenReturn(java.util.Optional.empty());
+        when(store.findPage(owner, run, 0, 128)).thenReturn(new AgentTraceStore.SpanPage(List.of(), 0, 0, 128, null));
+        when(runs.get(owner, run)).thenReturn(new AgentRunStore.AgentRun(run, UUID.randomUUID(), "message", "RUNNING",
+                "working", null, null, false, false, null, Instant.now(), Instant.now()));
+
+        assertThat(controller.trace(principal, run, 0, 128).recordState()).isEqualTo("PREPARING");
     }
 
     @Test
@@ -61,6 +92,7 @@ class AgentTraceControllerTests {
         assertThat(response.totals().llmCalls()).isEqualTo(1);
         assertThat(response.totals().source()).isEqualTo("RUN_SUMMARY");
         assertThat(response.truncated()).isFalse();
+        assertThat(response.recordState()).isEqualTo("RECORDED");
         assertThat(response.spans()).hasSize(1);
     }
 
