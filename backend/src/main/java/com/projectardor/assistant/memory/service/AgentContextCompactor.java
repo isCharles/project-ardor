@@ -1,5 +1,6 @@
 package com.projectardor.assistant.memory.service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -48,6 +49,7 @@ public class AgentContextCompactor {
     private final AgentToolSchemaCatalog schemas;
     private final ConversationStructureExtractor structureExtractor;
     private final com.projectardor.assistant.execution.service.AgentMetrics metrics;
+    private final ContextSummarizer summarizer;
 
     public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
             LangChainModelFactory modelFactory,
@@ -63,9 +65,19 @@ public class AgentContextCompactor {
             @Value("${app.agent.context.recent-messages:8}") int recentMessages,
             @Value("${app.agent.context.max-history-tokens:200000}") int maxHistoryTokens,
             AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas,
+            com.projectardor.assistant.execution.service.AgentMetrics metrics,
+            @Value("${app.agent.context.summary-input-chars:12000}") int summaryInputChars,
+            @Value("${app.agent.context.summary-output-chars:4000}") int summaryOutputChars) {
+        this(conversations, summaries, modelFactory, recentMessages, maxHistoryTokens, budgetPolicy, schemas,
+                new ConversationStructureExtractor(), metrics, summaryInputChars, summaryOutputChars);
+    }
+
+    public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
+            LangChainModelFactory modelFactory, int recentMessages, int maxHistoryTokens,
+            AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas,
             com.projectardor.assistant.execution.service.AgentMetrics metrics) {
         this(conversations, summaries, modelFactory, recentMessages, maxHistoryTokens, budgetPolicy, schemas,
-                new ConversationStructureExtractor(), metrics);
+                new ConversationStructureExtractor(), metrics, 12_000, 4_000);
     }
 
     public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
@@ -73,6 +85,16 @@ public class AgentContextCompactor {
             AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas,
             ConversationStructureExtractor structureExtractor,
             com.projectardor.assistant.execution.service.AgentMetrics metrics) {
+        this(conversations, summaries, modelFactory, recentMessages, maxHistoryTokens, budgetPolicy, schemas,
+                structureExtractor, metrics, 12_000, 4_000);
+    }
+
+    public AgentContextCompactor(AgentConversationStore conversations, ConversationSummaryStore summaries,
+            LangChainModelFactory modelFactory, int recentMessages, int maxHistoryTokens,
+            AgentContextBudgetPolicy budgetPolicy, AgentToolSchemaCatalog schemas,
+            ConversationStructureExtractor structureExtractor,
+            com.projectardor.assistant.execution.service.AgentMetrics metrics,
+            int summaryInputChars, int summaryOutputChars) {
         this.conversations = conversations;
         this.summaries = summaries;
         this.modelFactory = modelFactory;
@@ -82,6 +104,7 @@ public class AgentContextCompactor {
         this.schemas = schemas;
         this.structureExtractor = structureExtractor;
         this.metrics = metrics;
+        this.summarizer = new ContextSummarizer(modelFactory, summaryInputChars, summaryOutputChars);
     }
 
     public Prepared prepare(UUID userId, UUID conversationId, String systemPrompt,
@@ -203,8 +226,6 @@ public class AgentContextCompactor {
 
     public int budgetTokens() { return maxHistoryTokens; }
 
-    private static final int MAX_COMPACTION_ATTEMPTS = 2;
-
     private CompactionOutcome compact(UUID userId, UUID conversationId, LlmConfigService.LlmRuntimeConfig config,
             ReasoningDepth depth, java.util.Optional<ConversationSummaryStore.Summary> previous,
             List<ConversationMessage> older, TokenCountEstimator estimator,
@@ -212,74 +233,34 @@ public class AgentContextCompactor {
             java.util.function.BooleanSupplier active) {
         String existingSummary = previous.map(ConversationSummaryStore.Summary::content).orElse("");
         var extraction = structureExtractor.extract(older);
-
-        int used = 0;
-        int included = 0;
+        Map<String, ConversationMessage> byId = new java.util.LinkedHashMap<>();
+        List<ContextSummarizer.Block> blocks = new ArrayList<>(older.size());
         for (ConversationMessage message : older) {
-            String content = message.getContent() == null ? "" : message.getContent();
-            if (included > 0 && used + content.length() > 12_000) break;
-            used += content.length();
-            included++;
+            String id = String.valueOf(message.getId());
+            byId.put(id, message);
+            blocks.add(new ContextSummarizer.Block(id, message.getContent() == null ? "" : message.getContent()));
         }
-
-        int messageCount = included;
-        for (int attempt = 1; attempt <= MAX_COMPACTION_ATTEMPTS; attempt++) {
-            requireActive(active);
-            List<ConversationMessage> messagesForPrompt = attempt == 1 ? older : older.subList(0, messageCount);
-            String prompt = structureExtractor.buildStructuredSummaryPrompt(existingSummary, messagesForPrompt, extraction);
-
-            ChatResponse response;
-            try {
-                ChatModel model = modelFactory.create(userId, config, depth, listeners);
-                ChatRequest request = ChatRequest.builder().messages(UserMessage.from(prompt)).build();
-                response = model.chat(request);
-            } catch (RuntimeException unavailable) {
-                requireActive(active);
-                log.warn("Context summarization unavailable: conversationId={}, type={}", conversationId,
-                        unavailable.getClass().getSimpleName());
-                return CompactionOutcome.failed("COMPACTION_MODEL_UNAVAILABLE");
-            }
-
-            String rawSummary = response == null || response.aiMessage() == null ? null : response.aiMessage().text();
-            if (rawSummary == null || rawSummary.isBlank()) return CompactionOutcome.failed("COMPACTION_EMPTY_SUMMARY");
-            requireActive(active);
-
-            boolean truncated = isOutputTruncated(response);
-            String summaryContent = parseStructuredSummary(rawSummary, extraction);
-
-            if (summaryContent == null) {
-                log.debug("Structured summary parsing failed, using raw text: conversationId={}", conversationId);
-                summaryContent = rawSummary;
-            }
-
-            if (summaryContent.length() > 4000) {
-                log.warn("Context summary exceeds storage limit: conversationId={}, length={}, attempt={}",
-                        conversationId, summaryContent.length(), attempt);
-                if (attempt < MAX_COMPACTION_ATTEMPTS) {
-                    messageCount = Math.max(2, messageCount / 2);
-                    continue;
-                }
-                return CompactionOutcome.failed("COMPACTION_SUMMARY_TOO_LONG");
-            }
-
-            if (truncated) {
-                log.info("Context summarization output truncated: conversationId={}, attempt={}", conversationId, attempt);
-                if (attempt < MAX_COMPACTION_ATTEMPTS) {
-                    messageCount = Math.max(2, messageCount / 2);
-                    continue;
-                }
-                return CompactionOutcome.failed("COMPACTION_OUTPUT_TRUNCATED");
-            }
-
-            int version = previous.map(ConversationSummaryStore.Summary::version).orElse(0) + 1;
-            UUID coveredMessageId = older.get(Math.max(0, messageCount - 1)).getId();
-            int tokenCount = estimator.estimateTokenCountInText(summaryContent);
-            int coveredCount = previous.map(ConversationSummaryStore.Summary::coveredCount).orElse(0) + messageCount;
-            var saved = summaries.save(userId, conversationId, version, coveredMessageId, coveredCount, summaryContent,
-                    tokenCount, config.model());
-            return new CompactionOutcome(new CompactionResult(saved, summaryContent), null);
+        var outcome = summarizer.summarize(userId, config, depth, existingSummary, blocks,
+                (carried, chosen) -> structureExtractor.buildStructuredSummaryPrompt(carried,
+                        chosen.stream().map(block -> byId.get(block.id())).toList(), extraction),
+                raw -> {
+                    String parsed = parseStructuredSummary(raw, extraction);
+                    return parsed == null ? raw : parsed;
+                }, listeners, active);
+        if (!outcome.succeeded()) {
+            log.info("History summary not written: conversationId={}, code={}", conversationId, outcome.errorCode());
+            return CompactionOutcome.failed(outcome.errorCode());
         }
-        return CompactionOutcome.failed("COMPACTION_RETRY_EXHAUSTED");
+        // Coverage is the messages that were actually fed in, so nothing summarized is left unrepresented
+        // and nothing unsaid is claimed.
+        UUID coveredMessageId = UUID.fromString(outcome.coveredIds().get(outcome.coveredIds().size() - 1));
+        int version = previous.map(ConversationSummaryStore.Summary::version).orElse(0) + 1;
+        int tokenCount = estimator.estimateTokenCountInText(outcome.summary());
+        int coveredCount = previous.map(ConversationSummaryStore.Summary::coveredCount).orElse(0)
+                + outcome.coveredIds().size();
+        var saved = summaries.save(userId, conversationId, version, coveredMessageId, coveredCount, outcome.summary(),
+                tokenCount, config.model());
+        return new CompactionOutcome(new CompactionResult(saved, outcome.summary()), null);
     }
 
     /** The numbers a reader needs to recheck why this run summarized history. */
@@ -328,12 +309,6 @@ public class AgentContextCompactor {
         return null;
     }
 
-    private static boolean isOutputTruncated(ChatResponse response) {
-        if (response == null || response.metadata() == null || response.metadata().finishReason() == null) return false;
-        String reason = response.metadata().finishReason().name();
-        return "LENGTH".equals(reason) || "MAX_TOKENS".equals(reason);
-    }
-
     private String parseStructuredSummary(String rawOutput, ConversationStructureExtractor.ExtractionResult extraction) {
         String json = extractJson(rawOutput);
         if (json == null) return null;
@@ -368,12 +343,6 @@ public class AgentContextCompactor {
         int preserved = summary.estimatedInformationDensity();
         if (extracted > 0 && preserved == 0) {
             log.warn("Structured summary lost all extracted information: extracted={}, preserved={}", extracted, preserved);
-        }
-    }
-
-    private static void requireActive(java.util.function.BooleanSupplier active) {
-        if (!active.getAsBoolean() || Thread.currentThread().isInterrupted()) {
-            throw new java.util.concurrent.CancellationException("本轮已停止，未保存迟到的摘要");
         }
     }
 
