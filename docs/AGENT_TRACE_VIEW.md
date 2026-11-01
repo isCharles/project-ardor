@@ -22,6 +22,12 @@ never evidence that a step did not execute: approvals, tool audit, plan steps, t
 state and the billing ledger are the record of what happened. The run's own call
 counts and provider-reported usage are written to `agent_runs` independently of the
 trace switch, so turning tracing off cannot leave a completed run reporting nothing.
+When no RUN span exists to read from, the response is built from that run row instead:
+its status, duration, model/tool/loop counts and provider token totals, with
+`totals.source = "RUN_RECORD"` and `complete = false` because the per-purpose split
+(assistant versus summary calls, requested versus executed tools, cache figures) only
+ever exists in the spans. Those stay unknown (`-1`) rather than being shown as none,
+so an absent trace never looks like a run that did nothing.
 
 Conversation trace requests use bounded keyset pages: optional `before` (run ID)
 and `limit` (default 30, maximum 100), with additive `nextBefore` in the response.

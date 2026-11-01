@@ -149,6 +149,28 @@ public class AgentRunStore {
                 .orElseThrow(() -> new ResourceNotFoundException("请求记录不存在"));
     }
 
+    /**
+     * What the run row alone proves, for reading a trace whose span projection is missing. The counters
+     * are the ones the tracer kept regardless of tracing, and a null token figure means the provider
+     * never reported one — it is not a zero.
+     */
+    public RunFacts facts(UUID userId, UUID requestId) {
+        return jdbc.query("""
+                SELECT id, conversation_id, status, created_at, finished_at, llm_calls, tool_calls, loop_rounds,
+                       input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens
+                FROM agent_runs WHERE id = ? AND user_id = ?
+                """, (rs, rowNum) -> new RunFacts(rs.getObject("id", UUID.class),
+                rs.getObject("conversation_id", UUID.class),
+                rs.getString("status"),
+                rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("finished_at") == null ? null : rs.getTimestamp("finished_at").toInstant(),
+                rs.getInt("llm_calls"), rs.getInt("tool_calls"), rs.getInt("loop_rounds"),
+                rs.getObject("input_tokens", Long.class),
+                rs.getObject("output_tokens", Long.class),
+                rs.getObject("cache_creation_input_tokens", Long.class),
+                rs.getObject("cache_read_input_tokens", Long.class)), requestId, userId).stream().findFirst().orElse(null);
+    }
+
     public boolean hasEarlierQueuedMessage(UUID userId, UUID requestId) {
         return Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS(SELECT 1 FROM agent_message_queue q
@@ -430,6 +452,15 @@ public class AgentRunStore {
         if (json == null || json.isBlank()) return List.of();
         return tools.jackson.databind.json.JsonMapper.builder().build()
                 .readValue(json, new tools.jackson.core.type.TypeReference<List<UUID>>() {});
+    }
+
+    /**
+     * The run's own record of what it counted: status, the window it ran in and the totals the tracer
+     * wrote independently of span persistence. Token figures stay null when no provider reported them.
+     */
+    public record RunFacts(UUID runId, UUID conversationId, String status, Instant startedAt, Instant finishedAt,
+            int llmCalls, int toolCalls, int loopRounds, Long inputTokens, Long outputTokens,
+            Long cacheCreationInputTokens, Long cacheReadInputTokens) {
     }
 
     public record AgentRun(UUID id, UUID conversationId, String message, String status, String label,

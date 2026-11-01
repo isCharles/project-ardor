@@ -324,7 +324,7 @@ function AgentRunTraceContent() {
           </div>
         </div>
 
-        {trace.spans.length === 0 && <p className="mt-3 text-sm text-stone-500">{trace.recordState === "NOT_RECORDED" ? t("No detailed trace was recorded for this run — tracing may have been off, or the record aged out. The steps themselves are not disproved by this page.", "这次运行没有记录详细轨迹——可能轨迹记录未开启，或记录已超过保留期。这不表示步骤没有执行。") : t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</p>}
+        {trace.spans.length === 0 && <p className="mt-3 text-sm text-stone-500">{trace.recordState === "NOT_RECORDED" ? t("No detailed trace was recorded for this run — tracing may have been off, or the record aged out. The figures above come from the run itself; nothing here disproves a step.", "这次运行没有记录详细轨迹——可能轨迹记录未开启，或记录已超过保留期。上方数字来自运行记录本身；这不表示步骤没有执行。") : t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</p>}
       {view === "flow"
           ? <section className="mt-3">
               <FlowGraph nodes={flow} selectedId={selectedId} onSelect={setSelectedId} />

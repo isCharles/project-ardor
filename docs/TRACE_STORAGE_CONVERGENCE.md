@@ -91,6 +91,10 @@ Run
   `agent_tool_calls`/`agent_proposals` 的 `message_id` 指针改为提交后的尽力写入，失败只丢关联不丢回复。
 - Trace 接口返回 `recordState`（`RECORDED` / `PREPARING` / `NOT_RECORDED`），只有未知或他人 Run 仍是 404；
   轨迹页据此区分「没有记录到轨迹」与「这次运行不存在」，并停止把前者当加载失败反复重试。
+- 没有 RUN Span 可读时，接口改用 Run 行本身的事实（状态、时长、模型/工具/循环次数、供应商 Token），
+  标记 `totals.source = RUN_RECORD` 且 `complete = false`；只有 Span 里才有的用途拆分与缓存计数保留为
+  未知（`-1`），不把「没有记录」显示成「零次调用」，也不把空投影说成完整执行摘要（`AgentRunStore.facts`、
+  `AgentTraceResponse.fromRunRecord`）。
 
 ## 七、尚未确定、必须先验证再实现
 

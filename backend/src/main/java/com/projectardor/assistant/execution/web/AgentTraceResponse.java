@@ -4,6 +4,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.projectardor.assistant.execution.service.AgentRunStore.RunFacts;
+
+
 /**
  * Read-only, developer-facing execution trace for one owned Agent run.
  *
@@ -34,40 +37,69 @@ public record AgentTraceResponse(
             String source, boolean complete) {
     }
 
-    public static AgentTraceResponse from(UUID runId, UUID conversationId, List<AgentTraceSpanResponse> spans) {
-        return from(runId, conversationId, null, spans, spans.size(), null,
-                spans.isEmpty() ? "NOT_RECORDED" : "RECORDED");
-    }
-
     public static AgentTraceResponse from(UUID runId, UUID conversationId, AgentTraceSpanResponse root,
             List<AgentTraceSpanResponse> spans, int totalSpans, Integer nextOffset) {
-        return from(runId, conversationId, root, spans, totalSpans, nextOffset,
-                root == null && spans.isEmpty() ? "NOT_RECORDED" : "RECORDED");
+        return from(runId, conversationId, root, spans, totalSpans, nextOffset, null);
     }
 
     /**
      * {@code recordState} separates a trace that exists from a run whose spans were never recorded or are
      * still on their way: {@code RECORDED}, {@code PREPARING} or {@code NOT_RECORDED}. Absent spans are never
      * evidence that a step did not run, so the caller states which of the two it is looking at.
+     *
+     * <p>{@code facts} is what the run row itself proves. It is only consulted when no RUN span exists:
+     * a run that completed with tracing off, or whose projection aged out, still has its status, its
+     * duration and its call and token counts, and showing those as unknown and zero would contradict
+     * the sentence underneath them. Anything the run row does not carry stays unknown (-1) and the
+     * totals say so through {@code complete}.</p>
      */
     public static AgentTraceResponse from(UUID runId, UUID conversationId, AgentTraceSpanResponse root,
-            List<AgentTraceSpanResponse> spans, int totalSpans, Integer nextOffset, String recordState) {
+            List<AgentTraceSpanResponse> spans, int totalSpans, Integer nextOffset,
+            RunFacts facts) {
         boolean truncated = nextOffset != null;
         var page = derive(spans);
         var runRoot = root != null ? root
                 : spans.stream().filter(span -> "RUN".equals(span.kind())).findFirst().orElse(null);
         Map<String, Object> runAttributes = runRoot == null || runRoot.attributes() == null
                 ? Map.of() : runRoot.attributes();
-        var totals = runAttributes.get("llmCalls") instanceof Number
+        var totals = runRoot != null ? runAttributes.get("llmCalls") instanceof Number
                 ? fromRunSummary(runRoot, runAttributes, page, truncated)
-                : fromSpans(page, truncated);
+                : fromSpans(page, truncated)
+                : fromRunRecord(facts, page);
         String traceId = runRoot != null ? runRoot.otelTraceId()
                 : spans.stream().map(AgentTraceSpanResponse::otelTraceId)
                         .filter(id -> id != null && !id.isBlank()).findFirst().orElse(null);
+        Long duration = runRoot != null ? runRoot.durationMs()
+                : facts == null || facts.finishedAt() == null || facts.startedAt() == null
+                        ? null : Math.max(0, facts.finishedAt().toEpochMilli() - facts.startedAt().toEpochMilli());
         return new AgentTraceResponse(runId, conversationId,
-                runRoot == null ? "UNKNOWN" : runRoot.status(),
-                runRoot == null || runRoot.durationMs() == null ? 0 : runRoot.durationMs(),
-                totals, spans, spans.size(), totalSpans, nextOffset, truncated, traceId, recordState);
+                runRoot != null ? runRoot.status() : facts == null ? "UNKNOWN" : facts.status(),
+                duration == null ? 0 : duration,
+                totals, spans, spans.size(), totalSpans, nextOffset, truncated, traceId,
+                recordState(runRoot, spans, facts));
+    }
+
+    /** Absent spans say nothing about execution, so the caller states which of the three cases it is in. */
+    private static String recordState(AgentTraceSpanResponse root, List<AgentTraceSpanResponse> spans,
+            RunFacts facts) {
+        if (root != null || !spans.isEmpty()) return "RECORDED";
+        if (facts == null) return "NOT_RECORDED";
+        return "RUNNING".equals(facts.status()) ? "PREPARING" : "NOT_RECORDED";
+    }
+
+    private static Totals fromRunRecord(RunFacts facts, Derived page) {
+        if (facts == null) return fromSpans(page, false);
+        // The run row keeps the totals the tracer counted. Which of those calls were assistant turns,
+        // which were summaries, and what the cache did only ever exists in the spans, so they stay
+        // unknown here instead of being reported as none.
+        return new Totals(facts.llmCalls(), -1, -1, facts.toolCalls(), -1, -1,
+                facts.loopRounds(), longOrZero(facts.inputTokens()), longOrZero(facts.outputTokens()),
+                facts.cacheCreationInputTokens(), facts.cacheReadInputTokens(), -1, -1,
+                "RUN_RECORD", false);
+    }
+
+    private static long longOrZero(Long value) {
+        return value == null ? 0 : value;
     }
 
     private static Totals fromRunSummary(AgentTraceSpanResponse root, Map<String, Object> attributes,
