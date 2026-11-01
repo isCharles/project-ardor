@@ -216,6 +216,14 @@ public final class AgentRunTracer {
     private void finish(String status, String errorCode) {
         boolean observable = active();
         if (!closed.compareAndSet(false, true)) return;
+        long cacheRead = cacheReadInputTokens.get();
+        long cacheCreation = cacheCreationInputTokens.get();
+        boolean cacheReported = cacheUsageReported.get();
+        // Counts and usage belong to the run, so they are written even when no span was ever recorded.
+        if (store != null && runId != null) {
+            store.updateRunAggregates(userId, runId, llmCalls.get(), toolCalls.get(), loopRounds.get(),
+                    inputTokens.get(), outputTokens.get(), cacheCreation, cacheRead, cacheReported, model, promptVersion);
+        }
         if (observable) {
             Map<String, Object> summary = new java.util.LinkedHashMap<>();
             summary.put("llmCalls", llmCalls.get());
@@ -227,9 +235,6 @@ public final class AgentRunTracer {
             summary.put("loopRounds", loopRounds.get());
             summary.put("usageMissingCalls", usageMissingCalls.get());
             summary.put("cacheUsageMissingCalls", cacheUsageMissingCalls.get());
-            long cacheRead = cacheReadInputTokens.get();
-            long cacheCreation = cacheCreationInputTokens.get();
-            boolean cacheReported = cacheUsageReported.get();
             if (cacheReported) {
                 summary.put("cacheReadInputTokens", cacheRead);
                 summary.put("cacheCreationInputTokens", cacheCreation);
@@ -240,8 +245,6 @@ public final class AgentRunTracer {
                     cacheReported ? (int) Math.min(Integer.MAX_VALUE, cacheCreation) : null,
                     cacheReported ? (int) Math.min(Integer.MAX_VALUE, cacheRead) : null,
                     summary);
-            store.updateRunAggregates(userId, runId, llmCalls.get(), toolCalls.get(), loopRounds.get(),
-                    inputTokens.get(), outputTokens.get(), cacheCreation, cacheRead, cacheReported, model, promptVersion);
         }
         technical.finish(status, errorCode);
         if (!"COMPLETED".equals(status)) {

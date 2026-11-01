@@ -173,10 +173,15 @@ public class AgentTraceStore {
                 """, spanMapper, userId, runId).stream().findFirst();
     }
 
+    /**
+     * Writes the run's own counts and provider-reported usage onto the durable run row. This is a
+     * business fact, not part of the optional span record, so the trace switch does not gate it:
+     * a run must not silently keep zero calls and no model because tracing was turned off.
+     */
     public void updateRunAggregates(UUID userId, UUID runId, int llmCalls, int toolCalls, int loopRounds,
             long inputTokens, long outputTokens, long cacheCreationInputTokens, long cacheReadInputTokens,
             boolean cacheReported, String model, String promptVersion) {
-        if (!enabled || userId == null || runId == null) return;
+        if (userId == null || runId == null) return;
         try {
             jdbc.update("""
                     UPDATE agent_runs

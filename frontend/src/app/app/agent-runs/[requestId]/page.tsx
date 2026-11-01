@@ -55,6 +55,8 @@ type Trace = {
     cacheReadInputTokens: number | null; cacheCreationInputTokens: number | null; cacheUsageMissingCalls: number;
   };
   spans: TraceSpan[];
+  /** RECORDED, PREPARING or NOT_RECORDED: absent spans are never evidence that a step did not run. */
+  recordState?: string;
 };
 
 type ConversationTrace = {
@@ -212,7 +214,7 @@ function AgentRunTraceContent() {
         setSelectedId((current) => value.spans.some((span) => span.id === current) ? current : value.spans[0]?.id ?? null);
         setError("");
         failures = 0;
-        if (value.status === "RUNNING") timer = window.setTimeout(() => void load(), 2000);
+        if (value.status === "RUNNING" || value.recordState === "PREPARING") timer = window.setTimeout(() => void load(), 2000);
       } catch (reason) {
         if (!active) return;
         const transient = !(reason instanceof ApiError) || reason.status === 404 || reason.status >= 500;
@@ -322,7 +324,8 @@ function AgentRunTraceContent() {
           </div>
         </div>
 
-        {view === "flow"
+        {trace.spans.length === 0 && <p className="mt-3 text-sm text-stone-500">{trace.recordState === "NOT_RECORDED" ? t("No detailed trace was recorded for this run — tracing may have been off, or the record aged out. The figures above come from the run itself; nothing here disproves a step.", "这次运行没有记录详细轨迹——可能轨迹记录未开启，或记录已超过保留期。上方数字来自运行记录本身；这不表示步骤没有执行。") : t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</p>}
+      {view === "flow"
           ? <section className="mt-3">
               <FlowGraph nodes={flow} selectedId={selectedId} onSelect={setSelectedId} />
               <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-stone-400">
@@ -331,7 +334,7 @@ function AgentRunTraceContent() {
               <p className="mt-3 text-xs text-stone-400">{t("Switch to Trajectory to inspect parameters, results, schema and timing.", "切换到轨迹检查器查看参数、结果、Schema 和计时。")}</p>
             </section>
           : view === "timeline"
-          ? <section className="mt-3">{trace.spans.filter((span) => span.kind === "RUN").map((span) => <TraceRow key={span.id} span={span} root />)}<div className="relative ml-5 mt-2 space-y-2 border-l border-stone-200/80 pl-5">{trace.spans.filter((span) => span.kind !== "RUN").map((span) => <TraceRow key={span.id} span={span} />)}</div>{trace.spans.length === 0 && <p className="text-sm text-stone-500">{t("No spans were recorded for this run.", "这次运行没有记录到步骤。")}</p>}</section>
+          ? <section className="mt-3">{trace.spans.filter((span) => span.kind === "RUN").map((span) => <TraceRow key={span.id} span={span} root />)}<div className="relative ml-5 mt-2 space-y-2 border-l border-stone-200/80 pl-5">{trace.spans.filter((span) => span.kind !== "RUN").map((span) => <TraceRow key={span.id} span={span} />)}</div></section>
           : <InspectorView spans={filteredSpans} selected={selected} filter={filter} onFilter={setFilter} onSelect={setSelectedId} schemas={toolSchemas} />}
       </>}
     </div>

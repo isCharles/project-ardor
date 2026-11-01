@@ -13,6 +13,22 @@ horizontally inside the overview instead of widening the page.
 Missing run timing falls back to recorded bounds within that run only; nested
 model/tool spans are never summed on top of the root duration.
 
+A run whose spans were never recorded is a different fact from a run that does not
+exist, so `GET /api/agent/runs/{id}/trace` answers `recordState`: `RECORDED`,
+`PREPARING` (the run is still going and its spans have not landed) or `NOT_RECORDED`
+(tracing was off, a span write failed, or the 30-day projection aged out). Only the
+unknown or foreign run stays a 404, so ownership is never revealed. Absent spans are
+never evidence that a step did not execute: approvals, tool audit, plan steps, task
+state and the billing ledger are the record of what happened. The run's own call
+counts and provider-reported usage are written to `agent_runs` independently of the
+trace switch, so turning tracing off cannot leave a completed run reporting nothing.
+When no RUN span exists to read from, the response is built from that run row instead:
+its status, duration, model/tool/loop counts and provider token totals, with
+`totals.source = "RUN_RECORD"` and `complete = false` because the per-purpose split
+(assistant versus summary calls, requested versus executed tools, cache figures) only
+ever exists in the spans. Those stay unknown (`-1`) rather than being shown as none,
+so an absent trace never looks like a run that did nothing.
+
 Conversation trace requests use bounded keyset pages: optional `before` (run ID)
 and `limit` (default 30, maximum 100), with additive `nextBefore` in the response.
 Each page retains chronological order. A cursor must belong to both the current
