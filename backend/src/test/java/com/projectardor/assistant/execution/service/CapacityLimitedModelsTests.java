@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.longThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,7 +16,9 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import com.projectardor.platform.model.llm.service.LlmCallException;
+import com.projectardor.platform.model.llm.domain.LlmProvider;
 import com.projectardor.platform.model.llm.service.ModelCallCapacity;
+import com.projectardor.platform.model.llm.service.ModelRateGroup;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -66,20 +69,43 @@ class CapacityLimitedModelsTests {
     }
 
     @Test
-    void scopedCallsChargeTheEstimatedTokensToTheUserAndModel() {
+    void scopedCallsChargeTheEstimatedTokensToTheUserAndCredential() {
         var capacity = mock(ModelCallCapacity.class);
         var user = UUID.randomUUID();
-        when(capacity.tryAcquire(eq("agent"), eq(user), eq("model-k"), longThat(value -> value > 0)))
-                .thenReturn(true);
+        var group = ModelRateGroup.of(LlmProvider.OPENAI_COMPATIBLE, "https://api.example.invalid",
+                "synthetic-key", "synthetic-model");
+        when(capacity.tryAcquire(eq("agent"), eq(user), eq(group), longThat(value -> value > 0)))
+                .thenReturn(new ModelCallCapacity.Admission(true, 0, null, false));
         var delegate = mock(ChatModel.class);
         when(delegate.defaultRequestParameters()).thenReturn(ChatRequestParameters.builder().build());
         when(delegate.doChat(any())).thenReturn(response);
         var model = CapacityLimitedModels.chat(delegate, capacity,
-                new CapacityLimitedModels.CallScope("agent", user, "model-k", 64, null));
+                new CapacityLimitedModels.CallScope("agent", user, group, 64, null));
 
         assertThat(model.doChat(request)).isSameAs(response);
-        verify(capacity).tryAcquire(eq("agent"), eq(user), eq("model-k"), longThat(value -> value >= 64));
+        verify(capacity).tryAcquire(eq("agent"), eq(user), eq(group), longThat(value -> value >= 64));
         verify(capacity).release();
+    }
+
+    @Test
+    void aRateDenialReachesTheCallerWithItsOwnRetryAfter() {
+        var capacity = mock(ModelCallCapacity.class);
+        var user = UUID.randomUUID();
+        var group = ModelRateGroup.of(LlmProvider.OPENAI_COMPATIBLE, "https://api.example.invalid",
+                "synthetic-key", "synthetic-model");
+        when(capacity.tryAcquire(eq("agent"), eq(user), eq(group), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(new ModelCallCapacity.Admission(false, 7, "account-qpm", false));
+        when(capacity.busy(any(ModelCallCapacity.Admission.class)))
+                .thenReturn(new LlmCallException("LLM_BUSY", "busy", true, 7, null));
+        var delegate = mock(ChatModel.class);
+        var model = CapacityLimitedModels.chat(delegate, capacity,
+                new CapacityLimitedModels.CallScope("agent", user, group, 0, null));
+
+        // The call that was never made must not hold a slot, and the refusal the provider priced must
+        // not be flattened to a generic "try later".
+        assertThatThrownBy(() -> model.doChat(request)).isInstanceOf(LlmCallException.class)
+                .satisfies(failure -> assertThat(((LlmCallException) failure).getRetryAfterSeconds()).isEqualTo(7));
+        verify(capacity, never()).release();
     }
 
     @Test

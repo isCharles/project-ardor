@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import com.projectardor.platform.model.llm.service.LlmConfigService;
 import com.projectardor.platform.model.llm.service.ModelCallCapacity;
+import com.projectardor.platform.model.llm.service.ModelRateGroup;
 import com.projectardor.platform.model.llm.service.ModelProtocols;
 import com.projectardor.assistant.ReasoningDepth;
 
@@ -134,7 +135,7 @@ public class LangChainModelFactory {
         var budget = contextBudget.resolve(userId, config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
         var scope = new CapacityLimitedModels.CallScope("agent", userId,
-                ModelConfigFingerprint.of(config), profile.maxTokens(), estimator);
+                ModelRateGroup.of(config), profile.maxTokens(), estimator);
         return RepeatedToolResultCompactor.chat(
                 ContextBudgetedModels.chat(CapacityLimitedModels.chat(model, capacity, scope), budget, estimator),
                 budget, estimator);
@@ -174,7 +175,7 @@ public class LangChainModelFactory {
         var budget = contextBudget.resolve(userId, config, profile.maxTokens());
         var estimator = AgentRequestTokens.estimator(config);
         var scope = new CapacityLimitedModels.CallScope("agent", userId,
-                ModelConfigFingerprint.of(config), profile.maxTokens(), estimator);
+                ModelRateGroup.of(config), profile.maxTokens(), estimator);
         return RepeatedToolResultCompactor.streaming(
                 ContextBudgetedModels.streaming(
                         TimedStreamingModel.wrap(CapacityLimitedModels.streaming(model, capacity, scope)),

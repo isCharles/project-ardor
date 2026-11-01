@@ -13,7 +13,6 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.ResourceAccessException;
 
 import com.projectardor.assistant.execution.service.AgentRequestTokens;
-import com.projectardor.assistant.execution.service.ModelConfigFingerprint;
 import com.projectardor.platform.model.llm.domain.LlmProvider;
 
 import tools.jackson.databind.ObjectMapper;
@@ -85,9 +84,8 @@ public class CompatibleLlmGateway implements LlmGateway {
         var estimator = AgentRequestTokens.estimator(config);
         long tokens = estimator.estimateTokenCountInText(systemPrompt)
                 + estimator.estimateTokenCountInText(userPrompt);
-        if (!capacity.tryAcquire("job", userId, ModelConfigFingerprint.of(config), tokens)) {
-            throw capacity.busy();
-        }
+        var admission = capacity.tryAcquire("job", userId, ModelRateGroup.of(config), tokens);
+        if (!admission.acquired()) throw capacity.busy(admission);
         try {
             return protocols.require(config.provider()).complete(config, systemPrompt, userPrompt);
         } catch (RestClientResponseException exception) {
@@ -152,9 +150,8 @@ public class CompatibleLlmGateway implements LlmGateway {
         var estimator = AgentRequestTokens.estimator(config);
         long tokens = estimator.estimateTokenCountInText(systemPrompt)
                 + estimator.estimateTokenCountInText(userPrompt);
-        if (!capacity.tryAcquire("stream", userId, ModelConfigFingerprint.of(config), tokens)) {
-            throw capacity.busy();
-        }
+        var admission = capacity.tryAcquire("stream", userId, ModelRateGroup.of(config), tokens);
+        if (!admission.acquired()) throw capacity.busy(admission);
         try {
             return protocol.stream(config, systemPrompt, userPrompt, onDelta, stopRequested);
         } catch (RestClientResponseException exception) {

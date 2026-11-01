@@ -24,9 +24,11 @@ import org.springframework.stereotype.Component;
  * every model behind it competes for the same budget.</p>
  *
  * <p>Admission is one script over all buckets, and every key carries the account's hash tag, so a
- * denial charges nothing and the script stays valid on a sharded Redis. When Redis cannot answer, the
- * window reports {@link Decision#UNAVAILABLE} and the caller refuses the call rather than passing it
- * through: a rate limiter that is invisible is worse than a visible retry.</p>
+ * denial charges nothing and the script stays valid on a sharded Redis. {@code burst} is a floor, not a
+ * ceiling: each bucket tolerates at least the cost of the call it is judging, so a slow rate can still
+ * make progress. When Redis cannot answer, the window reports {@link Decision#UNAVAILABLE} and the
+ * caller refuses the call rather than passing it through: a rate limiter that is invisible is worse
+ * than a visible retry.</p>
  */
 @Component
 public class SlidingRateWindow {
@@ -115,7 +117,7 @@ public class SlidingRateWindow {
         for (Bucket bucket : buckets) {
             arguments.add(String.valueOf(bucket.emissionMicros()));
             arguments.add(String.valueOf(bucket.weight()));
-            arguments.add(String.valueOf(burstMicros));
+            arguments.add(String.valueOf(tolerance(bucket)));
         }
         arguments.add(String.valueOf(nowMicros));
         arguments.add(String.valueOf(ttlMillis(buckets)));
@@ -175,6 +177,16 @@ public class SlidingRateWindow {
         buckets.add(new Bucket(key, dimension, emission, weight));
     }
 
+    /**
+     * The tolerance a bucket really grants: the configured burst, but never less than the cost of the
+     * call being judged. Without the floor a rate slower than one call per burst window (30 requests a
+     * minute costs 2,000,000 microseconds each against a 1s burst) could never admit anything, not even
+     * the first call against an empty bucket.
+     */
+    private long tolerance(Bucket bucket) {
+        return Math.max(burstMicros, bucket.creditMicros());
+    }
+
     private Outcome unavailable(List<Bucket> buckets) {
         String dimensions = buckets.stream().map(Bucket::dimension).reduce((left, right) -> left + "," + right)
                 .orElse("rate");
@@ -191,7 +203,7 @@ public class SlidingRateWindow {
     private long ttlMillis(List<Bucket> buckets) {
         long horizon = 0;
         for (Bucket bucket : buckets) {
-            horizon = Math.max(horizon, bucket.creditMicros() + burstMicros);
+            horizon = Math.max(horizon, bucket.creditMicros() + tolerance(bucket));
         }
         return Math.min(MAX_TTL_MILLIS, 60_000 + horizon / 1000);
     }

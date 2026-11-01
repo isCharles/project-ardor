@@ -76,7 +76,12 @@ public class ModelCallCapacity {
     }
 
     public boolean tryAcquire(String surface) {
-        return acquireSlot(surface).acquired();
+        return acquireProcessSlot(surface).acquired();
+    }
+
+    /** The local in-flight permit alone, for callers that reach no provider budget worth charging. */
+    public Admission acquireProcessSlot(String surface) {
+        return acquireSlot(surface);
     }
 
     public Admission tryAcquire(String surface, UUID userId, ModelRateGroup group, long estimatedTokens) {

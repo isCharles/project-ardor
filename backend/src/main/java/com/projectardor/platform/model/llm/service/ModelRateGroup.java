@@ -28,6 +28,11 @@ public record ModelRateGroup(String account, String model) {
         return new ModelRateGroup(digest("unattributed"), "unknown");
     }
 
+    public static ModelRateGroup of(LlmConfigService.LlmRuntimeConfig config) {
+        return config == null ? unattributed()
+                : of(config.provider(), config.baseUrl(), config.apiKey(), config.model());
+    }
+
     public static ModelRateGroup of(LlmProvider provider, String baseUrl, String apiKey, String model) {
         String account = digest(String.join("|",
                 provider == null ? "unknown" : provider.name(),
