@@ -30,6 +30,10 @@ class AgentRunTracerTests {
         assertThat(tracer.toolCalls()).isEqualTo(1);
         assertThat(tracer.closed()).isTrue();
         org.mockito.Mockito.verify(store, org.mockito.Mockito.never()).finishSpan(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        // The durable run row still gets its counts and provider-reported usage: metering is a business fact,
+        // so neither the trace switch nor a failed root-span insert may leave the run reporting nothing.
+        org.mockito.Mockito.verify(store).updateRunAggregates(any(), any(), eq(3), eq(1), eq(1),
+                eq(125L), eq(46L), eq(0L), eq(0L), eq(false), eq("fixture"), any());
     }
 
     @Test

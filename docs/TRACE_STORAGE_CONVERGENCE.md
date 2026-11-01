@@ -83,7 +83,16 @@ Run
 - 验证一律用 Fake 模型与本地夹具，不消耗付费额度；覆盖两个用户交叉查询、导出延迟、采样缺失、
   观测后端离线、重启持久性、旧记录可读、异步任务关联、层级与计时、遥测丢失时业务状态与计费仍正确。
 
-## 六、尚未确定、必须先验证再实现
+## 六、阶段 0 已落地内容
+
+- Run 的调用数、循环数与供应商回报 Token 改由业务事实写入 `agent_runs`，不再受
+  `app.agent.trace.enabled` 或根 Span 是否插入成功影响（`AgentRunTracer.finish`、`AgentTraceStore.updateRunAggregates`）。
+- `messages.request_id/run_id` 的业务链接留在 Run 完成事务内并如实抛错；
+  `agent_tool_calls`/`agent_proposals` 的 `message_id` 指针改为提交后的尽力写入，失败只丢关联不丢回复。
+- Trace 接口返回 `recordState`（`RECORDED` / `PREPARING` / `NOT_RECORDED`），只有未知或他人 Run 仍是 404；
+  轨迹页据此区分「没有记录到轨迹」与「这次运行不存在」，并停止把前者当加载失败反复重试。
+
+## 七、尚未确定、必须先验证再实现
 
 - 观测后端选型：现用 Jaeger all-in-one + Badger 只有单机能力，产品侧不把它当作权威存储。
   是否升级版本或换后端，取决于阶段 1 之后谁需要长期看技术子树；**不因接入需要而预设集群**。

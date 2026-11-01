@@ -690,6 +690,9 @@ public class CareerAgentService {
                             List<ConversationMessage> saved = requestId == null
                                     ? store.appendExchange(userId, conversation, message, answer.strip(), trace, references, false, imageIds)
                                     : runStore.complete(userId, requestId, conversation, message, answer.strip(), trace, references, imageIds);
+                            // Diagnostic joins happen after the reply committed: a lost pointer costs a join,
+                            // never the exchange the user just received.
+                            if (requestId != null) executionAudit.linkRunRecords(userId, requestId, saved.get(1).getId());
                             streamProgress.finish(progressId, false);
                             if (planning != null) planning.finish("COMPLETED");
                             if (tracer != null) tracer.complete();

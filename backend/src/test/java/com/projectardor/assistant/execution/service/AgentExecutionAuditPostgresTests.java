@@ -209,6 +209,7 @@ class AgentExecutionAuditPostgresTests {
                 });
 
         audit.linkRunExchange(owner, run, userMessage, assistantMessage);
+        audit.linkRunRecords(owner, run, assistantMessage);
         assertThat(runOf(userMessage)).isEqualTo(run);
         assertThat(runOf(assistantMessage)).isEqualTo(run);
         assertThat(audit.proposals(owner, run).getFirst().messageId()).isEqualTo(assistantMessage);
@@ -336,6 +337,7 @@ class AgentExecutionAuditPostgresTests {
                 null, null, "learning-request-id", "JVM", "建议学习", "/api/learning-plans/jobs",
                 UUID.randomUUID()));
         audit.linkRunExchange(owner, run, userMessage, assistantMessage);
+        audit.linkRunRecords(owner, run, assistantMessage);
 
         var joined = jdbc.queryForMap("""
                 SELECT r.id AS run_id, um.id AS user_message_id, am.id AS assistant_message_id,

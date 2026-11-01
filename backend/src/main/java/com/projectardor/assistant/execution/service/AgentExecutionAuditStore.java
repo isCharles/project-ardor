@@ -122,11 +122,21 @@ public class AgentExecutionAuditStore {
      * Links the saved exchange to the run: messages receive request/run identity, tool calls
      * and proposals receive the assistant message id. Called after the messages are flushed.
      */
+    /**
+     * Business link between a run and the two messages it produced. Called inside the run's own
+     * transaction, so a failure aborts the completion instead of leaving a reply that no conversation
+     * or trace page can attribute; swallowing here would only hide an aborted PostgreSQL transaction.
+     */
     public void linkRunExchange(UUID userId, UUID runId, UUID userMessageId, UUID assistantMessageId) {
         if (userId == null || runId == null) return;
+        if (userMessageId != null) linkMessage(userId, runId, userMessageId);
+        if (assistantMessageId != null) linkMessage(userId, runId, assistantMessageId);
+    }
+
+    /** Diagnostic pointers onto audit and proposal rows: best effort, and never part of the reply. */
+    public void linkRunRecords(UUID userId, UUID runId, UUID assistantMessageId) {
+        if (userId == null || runId == null) return;
         try {
-            if (userMessageId != null) linkMessage(userId, runId, userMessageId);
-            if (assistantMessageId != null) linkMessage(userId, runId, assistantMessageId);
             jdbc.update("""
                     UPDATE agent_tool_calls SET message_id = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = ? AND run_id = ? AND message_id IS NULL
@@ -136,7 +146,7 @@ public class AgentExecutionAuditStore {
                     WHERE user_id = ? AND run_id = ? AND message_id IS NULL
                     """, assistantMessageId, userId, runId);
         } catch (RuntimeException failure) {
-            log.warn("Could not link agent run exchange: runId={}, failure={}",
+            log.warn("Could not link agent run records to the reply: runId={}, failure={}",
                     runId, failure.getClass().getSimpleName());
         }
     }

@@ -313,6 +313,7 @@ public class AgentRunStore {
                 """, saved.get(1).getId(), requestId, userId);
         if (updated != 1) throw new IllegalStateException("请求状态已改变，回复未保存");
         if (executionAudit != null) {
+            // Business link, inside this transaction: the reply and its run must be attributable together.
             executionAudit.linkRunExchange(userId, requestId, saved.get(0).getId(), saved.get(1).getId());
         }
         activeRuns.remove(requestId);
