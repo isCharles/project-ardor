@@ -165,6 +165,18 @@ public class LangChainModelFactory {
      */
     public ChatModel create(UUID userId, LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
             List<ChatModelListener> listeners, RuntimeContextGovernor.Observer contextObserver) {
+        return create(userId, config, depth, listeners, contextObserver, List.of());
+    }
+
+    /**
+     * @param contextListeners watches only the calls a run makes to shorten its own context. They are not
+     *                         {@code listeners}: a summary is a paid call that must still reach the run's
+     *                         metering, but it is not another assistant turn, and measuring its prompt as
+     *                         the run's context would report a size the run never sent.
+     */
+    public ChatModel create(UUID userId, LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
+            List<ChatModelListener> listeners, RuntimeContextGovernor.Observer contextObserver,
+            List<ChatModelListener> contextListeners) {
         var protocol=protocols.require(config.provider());
         var profile = protocol.reasoning(config, depth);
         ChatModel model;
@@ -179,7 +191,8 @@ public class LangChainModelFactory {
         var estimator = AgentRequestTokens.estimator(config);
         var scope = new CapacityLimitedModels.CallScope("agent", userId,
                 ModelConfigFingerprint.of(config), profile.maxTokens(), estimator);
-        var governor = governor(userId, config, depth, budget, estimator, () -> true, contextObserver);
+        var governor = governor(userId, config, depth, budget, estimator, () -> true, contextListeners,
+                contextObserver);
         // The exact-duplicate reduction and the provably-oversized fence stay underneath the ladder: the
         // ladder only acts past the soft threshold, and a request that never reaches it must still get them.
         return RuntimeContextGovernor.chat(RepeatedToolResultCompactor.chat(
@@ -205,18 +218,28 @@ public class LangChainModelFactory {
         return ContextBudgetedModels.chat(CapacityLimitedModels.chat(model, capacity, scope), budget, estimator);
     }
 
+    /**
+     * The per-result ceiling this deployment configured. A run should bound a tool result with the same
+     * number at the source and in its recovery ladder; two different knobs would let an operator change
+     * one and silently keep the other.
+     */
+    public int toolResultCeilingChars() {
+        return governorSettings.resultCeilingChars();
+    }
+
     private RuntimeContextGovernor governor(UUID userId, LlmConfigService.LlmRuntimeConfig config,
             ReasoningDepth depth, AgentContextBudgetPolicy.Budget budget,
             dev.langchain4j.model.TokenCountEstimator estimator, java.util.function.BooleanSupplier active,
-            RuntimeContextGovernor.Observer observer) {
+            List<ChatModelListener> contextListeners, RuntimeContextGovernor.Observer observer) {
         boolean watchful = observer != null && observer != RuntimeContextGovernor.Observer.NOOP;
         return new RuntimeContextGovernor(budget, estimator, governorSettings,
-                watchful ? runTextSummarizer(userId, config, depth, active) : null, active, observer);
+                watchful ? runTextSummarizer(userId, config, depth, active, contextListeners) : null,
+                active, observer);
     }
 
     private RuntimeContextGovernor.RunTextSummarizer runTextSummarizer(UUID userId,
             LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
-            java.util.function.BooleanSupplier active) {
+            java.util.function.BooleanSupplier active, List<ChatModelListener> contextListeners) {
         if (userId == null) return null;
         var summarizer = new com.projectardor.assistant.memory.service.ContextSummarizer(this,
                 summaryInputChars, summaryOutputChars);
@@ -226,9 +249,15 @@ public class LangChainModelFactory {
                 blocks.add(new com.projectardor.assistant.memory.service.ContextSummarizer.Block(
                         String.valueOf(index), turns.get(index)));
             }
+            // These listeners make the paid call visible to the run ledger and the trace, the way history
+            // compaction is; an empty list here would bill nothing for a call that cost tokens.
             var outcome = summarizer.summarize(userId, config, depth, "", blocks,
-                    (existing, chosen) -> runTextPrompt(chosen), null, List.of(), active);
-            return outcome.succeeded() ? outcome.summary() : null;
+                    (existing, chosen) -> runTextPrompt(chosen), null,
+                    contextListeners == null ? List.of() : contextListeners, active);
+            if (!outcome.succeeded()) return null;
+            // Only the blocks actually handed to the model are covered; the summarizer stops at its own
+            // input budget, and the caller must not replace text it never saw.
+            return new RuntimeContextGovernor.TextDigest(outcome.summary(), outcome.coveredIds().size());
         };
     }
 
@@ -270,10 +299,19 @@ public class LangChainModelFactory {
         return createStreaming(userId, config, depth, lease, listeners, RuntimeContextGovernor.Observer.NOOP);
     }
 
-    /** The streaming entry a durable run uses: its context decisions are observed and reported as it goes. */
     StreamingChatModel createStreaming(UUID userId, LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
             AgentStreamLease lease, List<ChatModelListener> listeners,
             RuntimeContextGovernor.Observer contextObserver) {
+        return createStreaming(userId, config, depth, lease, listeners, contextObserver, List.of());
+    }
+
+    /**
+     * The streaming entry a durable run uses: its context decisions are observed and reported as it goes,
+     * and the calls it makes to shorten its own context are metered through {@code contextListeners}.
+     */
+    StreamingChatModel createStreaming(UUID userId, LlmConfigService.LlmRuntimeConfig config, ReasoningDepth depth,
+            AgentStreamLease lease, List<ChatModelListener> listeners,
+            RuntimeContextGovernor.Observer contextObserver, List<ChatModelListener> contextListeners) {
         var protocol=protocols.require(config.provider());
         var profile = protocol.reasoning(config, depth);
         dev.langchain4j.http.client.HttpClientBuilder transport = lease == null ? httpClientBuilder() : new LeasedHttpClientBuilder(httpClientBuilder(), lease);
@@ -288,7 +326,7 @@ public class LangChainModelFactory {
         var scope = new CapacityLimitedModels.CallScope("agent", userId,
                 ModelConfigFingerprint.of(config), profile.maxTokens(), estimator);
         var governor = governor(userId, config, depth, budget, estimator,
-                () -> lease == null || !lease.stopped(), contextObserver);
+                () -> lease == null || !lease.stopped(), listeners, contextObserver);
         return RuntimeContextGovernor.streaming(RepeatedToolResultCompactor.streaming(
                 ContextBudgetedModels.streaming(
                         TimedStreamingModel.wrap(CapacityLimitedModels.streaming(model, capacity, scope)),

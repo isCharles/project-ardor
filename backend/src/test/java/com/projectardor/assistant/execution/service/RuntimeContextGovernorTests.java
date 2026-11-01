@@ -233,7 +233,8 @@ class RuntimeContextGovernorTests {
         RuntimeContextGovernor.RunTextSummarizer summarizer = turns -> {
             summarized.incrementAndGet();
             assertThat(turns).allMatch(text -> text.length() > 400);
-            return "目标：完成投递清单；约束：只改周五的日程；已读取 3 份简历。";
+            return new RuntimeContextGovernor.TextDigest(
+                    "目标：完成投递清单；约束：只改周五的日程；已读取 3 份简历。", turns.size());
         };
         // Old narration that no folding step can reach: no tool rounds, only earlier text turns.
         var messages = new ArrayList<ChatMessage>(List.of(
@@ -260,27 +261,80 @@ class RuntimeContextGovernorTests {
                 assertThat(reduction.method()).isEqualTo("summarize-run-text"));
     }
 
+    @Test void aPaidSummaryIsNotBoughtTwiceForTextTheModelNeverSawAgain() {
+        var summarizer = mock(RuntimeContextGovernor.RunTextSummarizer.class);
+        when(summarizer.summarize(any())).thenReturn(new RuntimeContextGovernor.TextDigest("摘要", 2));
+        // Measured, not assumed: over the soft threshold and without room for another round, so every
+        // boundary reaches the last step and the only question is whether a call has to be paid for again.
+        var budget = budgetOf(runText("narration ".repeat(50)));
+        var governor = governor(summarizer, () -> true, new Settings(16_000, 8, 0, 4, 2), budget);
+
+        governor.govern(runText("narration ".repeat(50)));
+        governor.govern(runText("narration ".repeat(50)));
+        governor.govern(runText("narration ".repeat(50) + " and a new line"));
+
+        // Memory resends the original turns at every boundary. Without reuse the run would spend its
+        // remaining summarizations — and then fail — on work it had already paid for.
+        verify(summarizer, times(2)).summarize(any());
+    }
+
     @Test void summaryCallsAreCappedForTheWholeRun() {
         var summarizer = mock(RuntimeContextGovernor.RunTextSummarizer.class);
-        when(summarizer.summarize(any())).thenReturn("摘要");
-        var oversized = ChatRequest.builder().messages(List.of(
-                UserMessage.from("goal"), AiMessage.from("narration ".repeat(50)),
-                AiMessage.from("more ".repeat(40)), AiMessage.from("even more ".repeat(50)),
-                AiMessage.from("and more ".repeat(56)), AiMessage.from("older step ".repeat(45)),
-                AiMessage.from("last narration ".repeat(40)), UserMessage.from("now?"))).build();
-        // Measured, not assumed: over the soft threshold and without room for another round, yet still
-        // sendable, so the cap alone decides when the run stops paying for summaries.
-        long measured = AgentRequestTokens.estimate(oversized, null);
-        var budget = new AgentContextBudgetPolicy.Budget(64000L, measured / 2, measured + 20, 100, 50);
+        when(summarizer.summarize(any())).thenReturn(new RuntimeContextGovernor.TextDigest("摘要", 2));
+        var budget = budgetOf(runText("narration ".repeat(50)));
         // No deferred boundary, so every press on the soft threshold reaches the ladder on its own.
         var governor = governor(summarizer, () -> true, new Settings(16_000, 8, 0, 2, 2), budget);
 
-        governor.govern(oversized);
-        governor.govern(oversized);
-        governor.govern(oversized);
+        governor.govern(runText("narration ".repeat(50)));
+        governor.govern(runText("narration ".repeat(50) + " first new"));
+        governor.govern(runText("narration ".repeat(50) + " second new"));
 
-        // One summary per boundary, at most two per run: a run must not spend calls folding forever.
+        // At most two paid summaries per run, however many different oldest texts arrive: a run must not
+        // spend calls folding forever.
         verify(summarizer, times(2)).summarize(any());
+    }
+
+    @Test void aSummaryThatCoversAPrefixLeavesTheRestOfTheRunVerbatim() {
+        // The summarizer stops at its own input budget. Saying it covered three turns when it read one
+        // would let the run replace text no model ever saw, which is silent loss, not compaction.
+        RuntimeContextGovernor.RunTextSummarizer summarizer = turns -> {
+            assertThat(turns).hasSizeGreaterThan(1);
+            return new RuntimeContextGovernor.TextDigest("最早一轮的摘要", 1);
+        };
+        var request = ChatRequest.builder().messages(List.of(
+                UserMessage.from("goal that stays verbatim"),
+                AiMessage.from("narration ".repeat(70)),
+                AiMessage.from("more narration ".repeat(50)),
+                AiMessage.from("even more narration ".repeat(40)),
+                AiMessage.from("older step ".repeat(60)),
+                AiMessage.from("still older step ".repeat(45)),
+                UserMessage.from("latest correction"))).build();
+
+        var governed = governor(summarizer, () -> true, null, LOOP_BUDGET).govern(request, true);
+
+        assertThat(governed.messages()).filteredOn(AiMessage.class::isInstance)
+                .extracting(message -> ((AiMessage) message).text())
+                .contains("more narration ".repeat(50));
+        assertThat(governed.messages()).filteredOn(message -> String.valueOf(message).contains("run_text_digest"))
+                .hasSize(1);
+        assertThat(reported).singleElement().satisfies(reduction -> {
+            assertThat(reduction.method()).isEqualTo("summarize-run-text");
+            assertThat(reduction.summarizedTurns()).isEqualTo(1);
+        });
+    }
+
+    /** A budget whose soft threshold this fixture crosses and whose room it outgrows, from one measurement. */
+    private static AgentContextBudgetPolicy.Budget budgetOf(ChatRequest request) {
+        long measured = AgentRequestTokens.estimate(request, null);
+        return new AgentContextBudgetPolicy.Budget(64000L, measured / 2, measured + 20, 100, 50);
+    }
+
+    private static ChatRequest runText(String oldest) {
+        return ChatRequest.builder().messages(List.of(
+                UserMessage.from("goal"), AiMessage.from(oldest),
+                AiMessage.from("more ".repeat(40)), AiMessage.from("even more ".repeat(50)),
+                AiMessage.from("and more ".repeat(56)), AiMessage.from("older step ".repeat(45)),
+                AiMessage.from("last narration ".repeat(40)), UserMessage.from("now?"))).build();
     }
 
     @Test void foldingIsAbandonedWhenItWouldBreakTheToolPairing() {
@@ -342,6 +396,29 @@ class RuntimeContextGovernorTests {
 
     private static ChatResponse response(String text) {
         return ChatResponse.builder().aiMessage(AiMessage.from(text)).build();
+    }
+
+    @Test void aProviderRefusalForcesReductionEvenWhenOurOwnMeasureSawRoom() {
+        var request = ChatRequest.builder().messages(List.of(
+                UserMessage.from("goal"),
+                AiMessage.from(readCall("call-1", "list_calendar_tasks")),
+                ToolExecutionResultMessage.from("call-1", "list_calendar_tasks", "a".repeat(4000)),
+                AiMessage.from(readCall("call-2", "list_memory_cards")),
+                ToolExecutionResultMessage.from("call-2", "list_memory_cards", "b".repeat(4000)),
+                UserMessage.from("now?"))).build();
+        // A window the estimate calls comfortable: only the refusal itself can justify acting here, and
+        // aiming at the configured allowance alone would resend the payload the provider just rejected.
+        long measured = AgentRequestTokens.estimate(request, null);
+        var budget = new AgentContextBudgetPolicy.Budget(64000L, measured / 2, measured * 2, 100, 50);
+
+        var governed = governor(null, () -> true, null, budget).govern(request, true);
+
+        assertThat(governed.messages()).anyMatch(message -> String.valueOf(message).contains(ToolRoundDigest.FENCE));
+        assertThat(governed.messages()).hasSameSizeAs(request.messages());
+        assertThat(reported).singleElement().satisfies(reduction -> {
+            assertThat(reduction.method()).contains("fold-tool-rounds");
+            assertThat(reduction.afterTokens()).isLessThan(reduction.beforeTokens());
+        });
     }
 
     private static ChatRequest captured(ChatModel delegate) {

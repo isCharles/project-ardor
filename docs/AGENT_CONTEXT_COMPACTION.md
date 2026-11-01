@@ -145,6 +145,13 @@ shrank the request **and** `ToolRoundDigest.keepsProtocol` still holds:
 4. `summarize-run-text` — only when the deterministic steps failed and the run is being observed: the
    oldest narration/user text of this run is summarized through the shared `ContextSummarizer` kernel,
    capped by `max-run-summaries` per run, keeping the opening goal and the newest turns verbatim.
+   The kernel reports which turns it actually fed to the model, and only those are replaced: a summary
+   of a prefix never speaks for the text behind it, which stays verbatim. Chat memory re-sends the
+   originals at every boundary, so a paid digest is reused for the same oldest text rather than bought
+   again — the cap limits new summarization work, not reductions already achieved. Each attempt,
+   including a rejected overlong summary, is metered through a run-bound `CONTEXT_COMPACTION` listener,
+   so its tokens reach the run totals and the usage ledger; it is not the run's assistant listener,
+   because a summary prompt is not this run's context and must not move the ring or its anchor.
 
 Folded and summarized text is fenced as untrusted data. It grants nothing, cannot become a system
 instruction, and states that the recorded operations already finished. Only the outgoing copy is
@@ -159,10 +166,12 @@ messages. An unknown model window never produces a local refusal — there is no
 against — so it only ever reduces toward the soft target.
 
 If the provider itself refuses the length, `AgentContextRefusals` recognizes the combination of a 4xx
-status and context-length wording, and one bounded retry is made per model instance aiming 10% below
-the local allowance. A streaming response that already began is never re-sent: an answer in flight is
-the answer. Generic network, 5xx and authentication failures are deliberately not treated as context
-problems.
+status and context-length wording, and one bounded retry is made per model instance aiming below the
+payload that was just rejected (10% under its measured size) and never above the local allowance —
+aiming only at the allowance would re-send the same request whenever our own estimate had called the
+rejected payload roomy, and in that case the folding steps would have been skipped. A streaming
+response that already began is never re-sent: an answer in flight is the answer. Generic network, 5xx
+and authentication failures are deliberately not treated as context problems.
 
 ```yaml
 app:

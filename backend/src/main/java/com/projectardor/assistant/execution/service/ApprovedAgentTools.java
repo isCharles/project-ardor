@@ -80,6 +80,14 @@ final class ApprovedAgentTools {
                 userRequest, permissions, null, null, automation, tracer);
     }
 
+    /** The synchronous transport bounds tool output with the same ceiling the run's own ladder uses. */
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
+            AgentToolApprovals approvals, String userRequest, AgentPermissionGrants permissions, boolean automation,
+            AgentRunTracer tracer, int maxToolResultChars) {
+        return wrap(bound, userId, requestId, approvals, null, new AgentToolTimings(), waiting -> {},
+                userRequest, permissions, null, null, automation, tracer, null, null, maxToolResultChars);
+    }
+
     /** Full variant used by a durable streaming run: adds the structured execution audit context. */
     static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
             AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
@@ -112,6 +120,16 @@ final class ApprovedAgentTools {
             UUID conversationId, boolean automation, AgentRunTracer tracer, PlanningAgentTools planning) {
         return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
                 executionAudit, conversationId, automation, tracer, null, planning, 0);
+    }
+
+    /** ... and the ceiling one result may add to the run's context, so the source and the ladder agree. */
+    static Map<ToolSpecification, ToolExecutor> wrap(Object bound, UUID userId, UUID requestId,
+            AgentToolApprovals approvals, AgentStreamLease lease, AgentToolTimings timings, Consumer<Boolean> waiting,
+            String userRequest, AgentPermissionGrants permissions, AgentExecutionAuditStore executionAudit,
+            UUID conversationId, boolean automation, AgentRunTracer tracer, PlanningAgentTools planning,
+            int maxToolResultChars) {
+        return wrap(bound, userId, requestId, approvals, lease, timings, waiting, userRequest, permissions,
+                executionAudit, conversationId, automation, tracer, null, planning, maxToolResultChars);
     }
 
     /** A graph phase may only see an explicit read-only subset of the tool surface. */

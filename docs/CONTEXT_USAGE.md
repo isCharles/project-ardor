@@ -97,10 +97,24 @@ JSON 验证新版读取；没有改动 Jackson 的全局解析规则。
 - 环仍只读本轮首个供应商回报，运行中的本地估算不移动环；整理次数与前后估算记在 `context.reduction`
   和 `COMPACTION` 轨迹节点上，耗时只计整理本身，不把模型等待算作压缩时间。估算值不冒充供应商统计。
 - 整理后仍超限才报错：无法安全折叠为 `CONTEXT_IRREDUCIBLE`，用尽步数为 `CONTEXT_RECOVERY_EXHAUSTED`；
-  未知窗口不做本地硬拒绝。供应商明确以长度拒绝时按更紧的目标重试一次，已开始流式返回的回答不重发。
-- 配置见 `app.agent.context.result-ceiling-chars` 等键（`AGENT_CONTEXT_COMPACTION.md`），
+  未知窗口不做本地硬拒绝。供应商明确以长度拒绝时以「被拒请求实测的 90%」与本次输入上限取更小者为
+  目标重整，估算认为有余量也不跳过折叠；已开始流式返回的回答不重发。
+- 摘要只覆盖实际送进模型的那几轮：一次调用受自身输入预算限制只处理前缀时，未处理的轮次继续原样
+  发送，提示只说覆盖了几轮，不冒充覆盖了全部。同一段最早的文字在后续边界不会被再次付费——已成功的
+  摘要在本轮内复用，`max-run-summaries` 限制的是新的摘要工作，不是已完成的整理次数。
+- 本轮整理时调用的摘要模型带运行绑定的 `CONTEXT_COMPACTION` 监听器：每次尝试（含被判定过长而重试的
+  那次）都进入 `AgentRunTracer`，token 与摘要调用数计入本轮总额，再由 `recordAgentUsage` 落到额度账。
+  它不共用本轮回答的监听器，因此其提示不会被当成本轮上下文规模发布，环与首个回报锚点仍只描述本轮
+  真实发出的请求。
+- 配置见 `app.agent.context.result-ceiling-chars` 等键（`AGENT_CONTEXT_COMPACTION.md`）：
+  同一个值既限制工具返回进入上下文的大小，也用于边界上的过大结果整理，改配置不会再只作用于一侧。
   回退方式是把 `max-folded-rounds-per-boundary`、`defer-boundaries`、`max-run-summaries` 调小或
-  只保留原有硬拦截；旧记录不含 `reduction` 字段时界面不显示整理提示。
+  只保留原有硬拦截；旧记录不含 `reduction` 字段时界面不显示整理提示。整理提示挂在本轮最后一次用量上，
+  后续请求的用量更新不会把它擦掉，完成消息的 `runTrace.contextUsage` 因此仍能读到它。
+- 本机全套 1223 项：1 项失败是本机 DNS 对 `.invalid` 合成应答的既有问题（基线 `c843256` 同样失败，
+  与整理无关），62 项显式门控跳过。`RuntimeContextGovernorTests` 16 项含前缀覆盖、摘要复用、
+  付费上限与被拒后强制折叠；`CareerAgentRuntimeIntegrationTests` 39 项含整理提示在后续用量更新后保留；
+  `context-usage-ui.mjs` 用合成 API 通过。全部使用脚本模型，不消耗供应商额度。
 
 ## 已知特性：接近预算时每轮都会重写摘要
 

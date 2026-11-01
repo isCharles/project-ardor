@@ -326,13 +326,14 @@ public class CareerAgentService {
 
             CareerAssistant assistant = AiServices.builder(CareerAssistant.class)
                     .chatModel(modelFactory.create(userId, runtimeConfig, depth, listeners,
-                            runtimeContextObserver(null, null, tracer, runtimeConfig.model())))
+                            runtimeContextObserver(null, null, tracer, runtimeConfig.model()),
+                            contextCallListeners(tracer, runtimeConfig.model())))
                     .systemMessage(systemMessage)
                     .chatMemory(memory)
                     // A synchronous retry keeps the logical request but is a new tool-call attempt.
                     // Reusing requestId as the run ID would make regenerated arguments create a second slot.
                     .tools(ApprovedAgentTools.wrap(bound, userId, null, toolApprovals, message, permissionGrants,
-                            hiddenUserMessage, tracer))
+                            hiddenUserMessage, tracer, modelFactory.toolResultCeilingChars()))
                     .maxToolCallingRoundTrips(8)
                     .maxSequentialToolsInvocations(12)
                     .toolExecutionErrorHandler(new AgentToolFailureHandler())
@@ -529,9 +530,10 @@ public class CareerAgentService {
             var latestContext = new java.util.concurrent.atomic.AtomicReference<AgentContextUsage>();
             java.util.function.Consumer<AgentContextUsage> contextObserver = usage -> {
                 if (finished.get() || lease.stopped()) return;
-                latestContext.set(usage);
-                streamProgress.context(progressId, usage);
-                sink.send(AgentStreamEvent.context(usage));
+                var carried = carryReduction(usage, latestContext.get());
+                latestContext.set(carried);
+                streamProgress.context(progressId, carried);
+                sink.send(AgentStreamEvent.context(carried));
             };
             contextObserver.accept(AgentContextUsage.preparing(runtimeConfig.model()));
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
@@ -583,11 +585,12 @@ public class CareerAgentService {
             planningRef.set(planning);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
                     .streamingChatModel(modelFactory.createStreaming(userId, runtimeConfig, depth, lease, listeners,
-                            runtimeContextObserver(contextObserver, latestContext, tracer, runtimeConfig.model())))
+                            runtimeContextObserver(contextObserver, latestContext, tracer, runtimeConfig.model()),
+                            contextCallListeners(tracer, runtimeConfig.model())))
                     .systemMessage(systemMessage).chatMemory(memory)
                     .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings,
                             sink::waitingForApproval, message, permissionGrants, executionAudit,
-                            conversation.getId(), false, tracer, planning))
+                            conversation.getId(), false, tracer, planning, modelFactory.toolResultCeilingChars()))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12)
                     .toolExecutionErrorHandler(new AgentToolFailureHandler())
                     .toolArgumentsErrorHandler(new AgentToolArgumentsErrorHandler()).build();
@@ -941,6 +944,33 @@ public class CareerAgentService {
             log.warn("Could not serialize agent run trace: {}", exception.getMessage());
             return null;
         }
+    }
+
+    /**
+     * The listeners for the short calls a run makes to tidy its own context. They are deliberately not the
+     * run's model listeners: the call is paid for and must reach the ledger and the trace, but it belongs
+     * to compaction rather to another assistant turn, and its prompt is not the run's context — measuring
+     * it as if it were would move the ring and anchor the wrong number.
+     */
+    private java.util.List<dev.langchain4j.model.chat.listener.ChatModelListener> contextCallListeners(
+            AgentRunTracer tracer, String model) {
+        if (tracer == null) return java.util.List.of();
+        return java.util.List.of(new AgentModelTraceListener(tracer, model, "CONTEXT_COMPACTION", null));
+    }
+
+    /**
+     * A later request or response is not a new context decision, so it keeps the run's last one attached.
+     * Without that, the next model call would republish the usage without the reduction that produced it
+     * and the notice would disappear before the run record was written. While the run is organizing its
+     * context, the previous action is not the current news, so that state carries none.
+     */
+    static AgentContextUsage carryReduction(AgentContextUsage usage, AgentContextUsage previous) {
+        if (usage.reduction() != null || previous == null || previous.reduction() == null
+                || "RUN_COMPACTING".equals(usage.state())) return usage;
+        return new AgentContextUsage(usage.state(), usage.model(), usage.estimatedTokens(),
+                usage.compressionBudgetTokens(), usage.modelWindowTokens(), usage.summaryVersion(),
+                usage.compactedMessages(), usage.compaction(), usage.authoritative(), usage.conversationAnchor(),
+                previous.reduction());
     }
 
     /**
