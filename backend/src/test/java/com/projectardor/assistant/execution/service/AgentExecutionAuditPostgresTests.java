@@ -299,6 +299,9 @@ class AgentExecutionAuditPostgresTests {
 
         List<ConversationMessage> completed = runs.complete(owner, run, domainConversation,
                 "帮我安排学习计划", "建议如下", null, List.of());
+        // The run saves and links the exchange; the pointers onto audit rows are a separate, later step —
+        // the same order the service uses — so a link failure cannot undo a finished reply.
+        audit.linkRunRecords(owner, run, completed.get(1).getId());
 
         assertThat(completed).hasSize(2);
         // The saved assistant message identity is the run's message link, and both messages carry it.
@@ -308,7 +311,7 @@ class AgentExecutionAuditPostgresTests {
         assertThat(saved.get(1).getRequestId()).isEqualTo(run);
         assertThat(jdbc.queryForObject("SELECT run_id FROM messages WHERE id = ?", UUID.class, saved.get(1).getId()))
                 .isEqualTo(run);
-        // Structured rows are linked to the assistant message in the same transaction.
+        // Structured rows carry the reply identity, and only where they were not linked yet.
         assertThat(jdbc.queryForObject("SELECT message_id FROM agent_tool_calls WHERE id = ?", UUID.class, call))
                 .isEqualTo(saved.get(1).getId());
         assertThat(jdbc.queryForObject("SELECT message_id FROM agent_proposals WHERE id = ?", UUID.class, proposal))
