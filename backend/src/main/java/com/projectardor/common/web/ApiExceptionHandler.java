@@ -17,6 +17,7 @@ import com.projectardor.platform.identity.auth.service.RegistrationNotAllowedExc
 import com.projectardor.common.security.ExternalHostResolutionException;
 import com.projectardor.platform.model.llm.service.LlmCallException;
 import com.projectardor.platform.model.speech.service.SpeechCallException;
+import com.projectardor.platform.usage.QuotaDecision;
 import com.projectardor.platform.usage.QuotaExceededException;
 
 @RestControllerAdvice
@@ -26,7 +27,11 @@ public class ApiExceptionHandler {
     ResponseEntity<ApiError> quotaExceeded(QuotaExceededException exception) {
         long retryAfter = Math.max(1, java.time.Duration.between(
                 java.time.Instant.now(), exception.resetAt()).toSeconds());
-        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        // A guard that cannot answer is a server-side outage, not the user running out: same error
+        // code so existing clients keep their quota messaging, but a status that says "retry later".
+        HttpStatus status = exception.reason() == QuotaDecision.GUARD_UNAVAILABLE
+                ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.TOO_MANY_REQUESTS;
+        return ResponseEntity.status(status)
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Retry-After", String.valueOf(retryAfter))
                 .body(new ApiError("QUOTA_EXCEEDED", exception.getMessage(), Map.of(

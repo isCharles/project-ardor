@@ -44,7 +44,7 @@ class QuotaAspectTests {
         UUID requestId = UUID.randomUUID();
         var principal = new ArdorPrincipal(userId, "user@example.com", "", true, UserRole.USER);
         doThrow(new QuotaExceededException(UsageFeature.AGENT_CHAT,
-                QuotaStore.Decision.MONTHLY_LIMIT, java.time.Instant.now()))
+                QuotaDecision.MONTHLY_LIMIT, java.time.Instant.now()))
                 .when(quotas).consume(userId, UsageFeature.AGENT_CHAT, requestId);
 
         assertThatThrownBy(() -> operation.call(principal,

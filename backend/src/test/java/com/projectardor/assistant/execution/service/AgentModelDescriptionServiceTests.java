@@ -31,7 +31,7 @@ import com.projectardor.platform.model.websearch.service.TavilySearchService;
 import com.projectardor.platform.model.websearch.service.WebSearchResult;
 import com.projectardor.platform.usage.QuotaExceededException;
 import com.projectardor.platform.usage.QuotaService;
-import com.projectardor.platform.usage.QuotaStore;
+import com.projectardor.platform.usage.QuotaDecision;
 import com.projectardor.platform.usage.UsageFeature;
 
 class AgentModelDescriptionServiceTests {
@@ -165,7 +165,7 @@ class AgentModelDescriptionServiceTests {
     @Test
     void quotaDenialPreventsPaidResearchAndIsNotCachedAsAModelFailure() {
         doThrow(new QuotaExceededException(UsageFeature.MODEL_DESCRIPTION,
-                QuotaStore.Decision.MONTHLY_LIMIT, Instant.parse("2026-11-01T00:00:00Z")))
+                QuotaDecision.MONTHLY_LIMIT, Instant.parse("2026-11-01T00:00:00Z")))
                 .when(quotas).consume(user, UsageFeature.MODEL_DESCRIPTION, null);
         var service = service(Clock.systemUTC());
 

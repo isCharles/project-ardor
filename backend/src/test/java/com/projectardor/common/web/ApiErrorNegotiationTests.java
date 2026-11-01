@@ -27,7 +27,7 @@ import com.projectardor.platform.identity.auth.service.DuplicateEmailException;
 import com.projectardor.platform.model.llm.service.LlmCallException;
 import com.projectardor.platform.model.speech.service.SpeechCallException;
 import com.projectardor.platform.usage.QuotaExceededException;
-import com.projectardor.platform.usage.QuotaStore;
+import com.projectardor.platform.usage.QuotaDecision;
 import com.projectardor.platform.usage.UsageFeature;
 
 class ApiErrorNegotiationTests {
@@ -68,6 +68,15 @@ class ApiErrorNegotiationTests {
     }
 
     @Test
+    void anUnanswerableQuotaGuardIsAnUnavailableStateRatherThanAPassedRequest() throws Exception {
+        mvc.perform(get("/probe/GUARD_UNAVAILABLE").accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("QUOTA_EXCEEDED"))
+                .andExpect(jsonPath("$.fields.dimension").value("GUARD_UNAVAILABLE"))
+                .andExpect(header().string("Retry-After", org.hamcrest.Matchers.notNullValue()));
+    }
+
+    @Test
     void bodyValidationAlsoReturnsJsonToStrictSseClients() throws Exception {
         mvc.perform(post("/probe/body").accept(MediaType.TEXT_EVENT_STREAM).contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isBadRequest()).andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -94,8 +103,8 @@ class ApiErrorNegotiationTests {
 
         @GetMapping(value = "/probe/{kind}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
         public String call(@PathVariable String kind) {
-            if (kind.endsWith("LIMIT")) throw new QuotaExceededException(UsageFeature.AGENT_CHAT,
-                    QuotaStore.Decision.valueOf(kind), RESET);
+            if (kind.endsWith("LIMIT") || kind.equals("GUARD_UNAVAILABLE")) throw new QuotaExceededException(
+                    UsageFeature.AGENT_CHAT, QuotaDecision.valueOf(kind), RESET);
             return switch (kind) {
                 case "missing" -> throw new ResourceNotFoundException("Fixture missing");
                 case "duplicate" -> throw new DuplicateEmailException();
