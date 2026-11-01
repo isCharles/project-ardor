@@ -213,7 +213,56 @@ try {
   await page.getByRole("button", { name: "Send", exact: true }).waitFor();
   assert.equal(Number(await indicator.locator("svg").getAttribute("data-context-fill")), 0.09,
     "After completion the persisted anchor still drives the ring");
-  console.log("Context usage UI: legacy unknown, persisted estimate, honest unknown window, live preparation/compaction/READY transitions, stable anchor, in-transcript notice and narrow viewport passed.");
+  // Mid-run tidy: the turn keeps going, the ring stays on its anchor, and the transcript says what happened.
+  await page.evaluate(() => {
+    const context = (state, tokens, extra = {}) => ({ state, model: "synthetic-model", estimatedTokens: tokens,
+      compressionBudgetTokens: 139428, modelWindowTokens: 200000, summaryVersion: 2, compactedMessages: 8, ...extra });
+    window.__contextStream = [
+      { event: { type: "context", contextUsage: context("RUN_COMPACTING", null, { reduction: { outcome: "REDUCED",
+        method: "fold-tool-rounds", beforeTokens: 181000, afterTokens: 123000, allowanceTokens: 139428,
+        softThresholdTokens: 139428, foldedRounds: 2, summarizedTurns: 0, attempts: 1, spanId: "runtime-span", errorCode: null } }) }, hold: true },
+      { event: { type: "delta", content: "Synthetic answer after a mid-run tidy" } },
+      { event: { type: "done", conversationId: "context-chat", messageId: "tidied-answer",
+        content: "Synthetic answer after a mid-run tidy", elapsedMs: 10 } },
+    ];
+  });
+  await page.getByRole("textbox", { name: "Message Ardor", exact: true }).fill("Second synthetic request");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.locator('[data-context-state="RUN_COMPACTING"]').waitFor();
+  assert.equal(await indicator.locator("svg[data-context-fill]").count(), 0, "Mid-run tidy shows a spinner, not a percentage");
+  await indicator.hover();
+  await tooltip.getByText("Organizing context for this run", { exact: true }).waitFor();
+  const liveTidy = page.locator("[data-runtime-context-notice]").first();
+  await liveTidy.waitFor();
+  assert.equal(await page.locator("[data-runtime-context-notice]").count(), 1, "One tidy line per reduced boundary");
+  assert.match(await liveTidy.innerText(), /Context organized[\s\S]*2 tool steps folded[\s\S]*181K → 123K tokens/);
+  await release(1);
+  await page.getByRole("button", { name: "Send", exact: true }).waitFor();
+  // Reloaded from the persisted run trace, where the notice points at the span that recorded it.
+  running = false;
+  usage = { state: "READY", model: "synthetic-model", estimatedTokens: 41000, compressionBudgetTokens: 139428,
+    modelWindowTokens: 200000, summaryVersion: 2, compactedMessages: 8,
+    reduction: { outcome: "REDUCED", method: "fold-tool-rounds+summarize-run-text", beforeTokens: 181000,
+      afterTokens: 123000, allowanceTokens: 139428, softThresholdTokens: 139428, foldedRounds: 2, summarizedTurns: 3,
+      attempts: 2, spanId: "runtime-span", errorCode: null } };
+  await page.reload();
+  const tidy = page.locator("[data-runtime-context-notice]").first();
+  await tidy.waitFor();
+  assert.match(await tidy.innerText(), /2 tool steps folded, earlier turns summarized/);
+  assert.equal(await tidy.locator("a").first().getAttribute("href"), "/app/agent-runs/context-run?span=runtime-span",
+    "The tidy line points at the span that recorded the decision");
+  usage = { ...usage, reduction: { ...usage.reduction, outcome: "DEFERRED", foldedRounds: 0, summarizedTurns: 0 } };
+  await page.reload();
+  await page.locator('[data-context-state="READY"]').waitFor();
+  assert.equal(await page.locator("[data-runtime-context-notice]").count(), 0,
+    "A boundary that only waited does not announce itself");
+  usage = { ...usage, reduction: { ...usage.reduction, outcome: "EXHAUSTED", foldedRounds: 2, summarizedTurns: 1,
+    afterTokens: 150000, errorCode: "CONTEXT_RECOVERY_EXHAUSTED" } };
+  await page.reload();
+  await tidy.waitFor();
+  assert.match(await tidy.innerText(), /Context still too large[\s\S]*still over the model limit \(CONTEXT_RECOVERY_EXHAUSTED\)[\s\S]*oversized request was not sent/,
+    "An exhausted ladder is reported instead of silently continuing");
+  console.log("Context usage UI: legacy unknown, persisted estimate, honest unknown window, live preparation/compaction/READY transitions, stable anchor, mid-run tidy, in-transcript notices and narrow viewport passed.");
 } finally {
   await browser?.close(); server.kill();
   if (server.exitCode === null) await new Promise(resolve => server.once("close", resolve));

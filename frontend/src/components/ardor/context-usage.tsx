@@ -14,11 +14,18 @@ export type ContextCompaction = {
   summaryVersionAfter: number; errorCode: string | null;
 };
 
+export type ContextReduction = {
+  outcome: "REDUCED" | "NO_PROGRESS" | "DEFERRED" | "EXHAUSTED"; method: string; beforeTokens: number | null;
+  afterTokens: number; allowanceTokens: number; softThresholdTokens: number; foldedRounds: number;
+  summarizedTurns: number; attempts: number; estimated: boolean; errorCode: string | null; spanId: string | null;
+};
+
 export type ContextUsage = {
-  state: "PREPARING" | "COMPACTING" | "COMPACTION_FAILED" | "READY";
+  state: "PREPARING" | "COMPACTING" | "RUN_COMPACTING" | "COMPACTION_FAILED" | "READY";
   model: string; estimatedTokens: number | null; compressionBudgetTokens: number;
   modelWindowTokens: number | null; summaryVersion: number; compactedMessages: number;
   compaction?: ContextCompaction | null;
+  reduction?: ContextReduction | null;
   authoritative?: boolean;
   conversationAnchor?: boolean;
 };
@@ -50,6 +57,33 @@ export function CompactionNotice({ usage, traceHref }: { usage?: ContextUsage | 
   </p>;
 }
 
+/**
+ * A reduction the run made to itself, between two model calls. Says what was folded and what it cost,
+ * and only on the outcomes a reader can act on: a run that quietly deferred is not interrupted.
+ */
+export function RunContextNotice({ usage, traceHref }: { usage?: ContextUsage | null; traceHref?: string }) {
+  const { t } = useLocale();
+  const reduction = usage?.reduction;
+  if (!reduction || reduction.outcome === "DEFERRED" || reduction.outcome === "NO_PROGRESS") return null;
+  const compact = (value: number) => new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  const failed = reduction.outcome === "EXHAUSTED";
+  const folded = reduction.foldedRounds > 0
+    ? t(`${reduction.foldedRounds} tool steps folded`, `折叠 ${reduction.foldedRounds} 步工具输出`) : "";
+  const summarized = reduction.summarizedTurns > 0 ? t("earlier turns summarized", "归纳较早对话") : "";
+  const parts = [folded, summarized].filter(Boolean).join(t(", ", "，"));
+  const text = failed
+    ? t(`Context is still over the model limit (${reduction.errorCode ?? "unknown"}); the oversized request was not sent.`,
+      `整理后仍超出模型可用范围（${reduction.errorCode ?? "未知原因"}），超限请求未发送。`)
+    : t(`${parts || "Content trimmed"}: ${compact(reduction.beforeTokens ?? 0)} → ${compact(reduction.afterTokens)} tokens (estimate).`,
+      `${parts || "已精简内容"}：估算 ${compact(reduction.beforeTokens ?? 0)} → ${compact(reduction.afterTokens)} tokens。`);
+  const href = traceHref && reduction.spanId ? `${traceHref}?span=${encodeURIComponent(reduction.spanId)}` : traceHref;
+  return <p data-runtime-context-notice className={`flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl px-3 py-2 text-xs leading-5 ${failed ? "bg-amber-50 text-amber-800" : "bg-stone-100 text-stone-700"}`}>
+    <span className="font-medium">{failed ? t("Context still too large", "上下文仍超限") : t("Context organized", "上下文已整理")}</span>
+    <span className="min-w-0">{text}</span>
+    {href && <Link href={href} className="ml-auto shrink-0 underline opacity-80 hover:opacity-100">{t("View span", "查看轨迹")}</Link>}
+  </p>;
+}
+
 export function ContextUsageIndicator({ usage: snapshot, selectedModel }: { usage?: ContextUsage | null; selectedModel?: string }) {
   const usage = selectedModel && snapshot?.model !== selectedModel ? null : snapshot;
   const { t } = useLocale();
@@ -73,7 +107,7 @@ export function ContextUsageIndicator({ usage: snapshot, selectedModel }: { usag
     window.addEventListener("scroll", reactToViewport, true);
     return () => { window.removeEventListener("resize", reactToViewport); window.removeEventListener("scroll", reactToViewport, true); };
   }, [position]);
-  const working = usage?.state === "PREPARING" || usage?.state === "COMPACTING";
+  const working = usage?.state === "PREPARING" || usage?.state === "COMPACTING" || usage?.state === "RUN_COMPACTING";
   const count = usage?.estimatedTokens;
   const known = typeof count === "number" && Number.isFinite(count) && count >= 0;
   const windowSize = usage?.modelWindowTokens;
@@ -83,6 +117,7 @@ export function ContextUsageIndicator({ usage: snapshot, selectedModel }: { usag
   const fill = fraction == null ? 0 : Math.max(0, Math.min(1, fraction));
   const compact = (value: number) => new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
   const label = usage?.state === "COMPACTING" ? t("Summarizing earlier messages", "正在归纳较早的对话")
+    : usage?.state === "RUN_COMPACTING" ? t("Organizing context for this run", "正在整理上下文")
     : working ? t("Preparing context", "正在整理上下文")
     : usage?.state === "COMPACTION_FAILED" ? t("History summary failed; every message was kept", "未能归纳历史，保留全部原文")
     : t("Context", "上下文");

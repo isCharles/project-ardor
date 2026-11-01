@@ -53,7 +53,8 @@ system prompt
   batch target never marks an omitted suffix covered; an oversized first message stays whole.
 - rejects generated summaries over 4,000 UTF-16 code units instead of saving a truncated result.
   On rejection, previous coverage remains unchanged and uncovered messages stay in the prompt;
-  the hard input fence may reject the request if that complete history still exceeds capacity.
+  if that complete history still exceeds capacity, the in-run ladder below reduces it at the next
+  model-call boundary and only refuses after the ladder runs out.
   This prevents application-side truncation from silently dropping the end of a summary, but does
   not prove a provider returned a complete or semantically faithful summary.
 
@@ -108,6 +109,86 @@ app:
       max-raw-messages: 24
       max-history-tokens: 200000
 ```
+
+## Inside a run
+
+The sections above describe the durable summary written **before** a run starts. A long run does not
+wait for it: the tool loop keeps appending results, and the only place that sees the complete outgoing
+request — system prompt, memory, tool schemas, summary, recent turns, current input, references,
+images and the results that just arrived — is the model-call boundary. `RuntimeContextGovernor` sits
+there, wrapping the model that `LangChainModelFactory` hands to `AiServices` for both the sync and the
+streaming entry, after reduction and before the capacity guard, so a request refused locally never
+spends provider budget.
+
+At each boundary the request is measured against the same `AgentContextBudgetPolicy` figures the
+pre-run path uses:
+
+- below the soft threshold, nothing happens and no state is published;
+- over the soft threshold but with room for one more round, the boundary is deferred (at most
+  `defer-boundaries` times), so a run does not pay for a rewrite it does not need yet;
+- otherwise the ladder runs and the UI shows `RUN_COMPACTING` — the wait is the reduction, not the
+  model response, and the recorded span covers only the reduction.
+
+The ladder is deterministic first, model-backed last, and a step is kept only when it measurably
+shrank the request **and** `ToolRoundDigest.keepsProtocol` still holds:
+
+1. `fold-duplicate-results` — the existing exact-duplicate read reduction;
+2. `bound-tool-results` — a single result larger than `result-ceiling-chars` keeps its head and tail
+   plus a note naming the tool, the call ID and the original size, and tells the model to re-read a
+   narrower range instead of claiming to have seen the omitted part. `ApprovedAgentTools` applies the
+   same bound on the way out of the tool, so an oversized result never has to enter the prompt at all;
+3. `fold-tool-rounds` — the payload of an older complete round is replaced by one factual line that
+   names the call, its arguments, the outcome, the original size and the call ID. Rounds are folded
+   oldest first and the newest round always stays verbatim. Nothing is removed: dropping a tool round
+   breaks the call/result pairing, and a completed write that vanishes from the prompt is a write the
+   model performs twice;
+4. `summarize-run-text` — only when the deterministic steps failed and the run is being observed: the
+   oldest narration/user text of this run is summarized through the shared `ContextSummarizer` kernel,
+   capped by `max-run-summaries` per run, keeping the opening goal and the newest turns verbatim.
+
+Folded and summarized text is fenced as untrusted data. It grants nothing, cannot become a system
+instruction, and states that the recorded operations already finished. Only the outgoing copy is
+rewritten: `ChatMemory`, `AgentExecutionAuditStore` rows, plan evidence and the trace keep the original
+payload, and a full tool result stays readable in its tool span.
+
+When the ladder cannot produce a request that fits, the run reports it instead of pretending:
+`CONTEXT_IRREDUCIBLE` when nothing was safely foldable (one pasted document or one image has no
+shorter form) and `CONTEXT_RECOVERY_EXHAUSTED` when every permitted step ran and the estimate still
+exceeds the allowance. Both keep the durable history intact, so the next run starts from the original
+messages. An unknown model window never produces a local refusal — there is nothing to prove overflow
+against — so it only ever reduces toward the soft target.
+
+If the provider itself refuses the length, `AgentContextRefusals` recognizes the combination of a 4xx
+status and context-length wording, and one bounded retry is made per model instance aiming 10% below
+the local allowance. A streaming response that already began is never re-sent: an answer in flight is
+the answer. Generic network, 5xx and authentication failures are deliberately not treated as context
+problems.
+
+```yaml
+app:
+  agent:
+    context:
+      result-ceiling-chars: 16000
+      max-folded-rounds-per-boundary: 8
+      defer-boundaries: 1
+      max-run-summaries: 2
+      keep-recent-text-turns: 2
+      summary-input-chars: 12000
+      summary-output-chars: 4000
+```
+
+`RuntimeContextGovernorTests`, `ToolRoundDigestTests`, `AgentToolResultBudgetTests`,
+`AgentContextRefusalsTests` and `ContextSummarizerTests` cover the arithmetic, the protocol rules and
+the recovery bounds. `RuntimeContextRunContinuationTests` is the end-to-end case: one run whose third
+and fourth rounds overflow, are folded at the boundary, keep calling tools, execute each read exactly
+once, and still finish the goal — asserted against the requests the transport actually received, with
+the run's own memory holding the untouched originals. All of them use scripted models; none spends
+provider quota.
+
+Not proven here: provider tokenizer agreement (every figure is an estimate), whether a real model
+re-summarizes faithfully, and whether a folded-away payload is always the part the model did not
+need. What is enforced locally is the pairing, the bound on work per boundary, and the rule that no
+step is kept unless it actually reduced the request.
 
 ## Context comparison experiment
 
