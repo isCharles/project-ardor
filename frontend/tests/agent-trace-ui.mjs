@@ -32,6 +32,7 @@ try {
     runId: "fixture-run",
     conversationId: "fixture-conv",
     status: "COMPLETED",
+    recordState: "RECORDED",
     durationMs: 2400,
     totals: { llmCalls: 3, toolCalls: 1, loopRounds: 1, inputTokens: 12500, outputTokens: 230,
       cacheReadInputTokens: 9200, cacheCreationInputTokens: 640, cacheUsageMissingCalls: 1 },
@@ -85,6 +86,15 @@ try {
     else if (path === "/api/auth/csrf") body = { token: "fixture", headerName: "X-CSRF-TOKEN" };
     else if (path === "/api/profile/sidebar") body = { userId: "trace-fixture", hrefs: ["/app"], revision: 1, configured: true };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
+    else if (path === "/api/agent/runs/absent-trace/trace") {
+      // A finished run with no spans is its own fact: 200 with a state, not a 404 to retry. The counts
+      // come from the run record, so they are not zero and not a projection of spans that never existed.
+      body = { runId: "absent-trace", conversationId: "fixture-conv", status: "COMPLETED", recordState: "NOT_RECORDED",
+        durationMs: 9500, totals: { llmCalls: 3, assistantCalls: -1, summaryCalls: -1, toolCalls: 2,
+          requestedToolCalls: -1, executedToolCalls: -1, loopRounds: 2, inputTokens: 1250, outputTokens: 460,
+          cacheReadInputTokens: null, cacheCreationInputTokens: null, cacheUsageMissingCalls: -1,
+          usageMissingCalls: -1, source: "RUN_RECORD", complete: false }, spans: [] };
+    }
     else if (path === "/api/agent/runs/fixture-run/trace") {
       if (++traceRequests === 1) return route.fulfill({ status: 404, json: { message: "Trace is starting" } });
       body = trace;
@@ -268,8 +278,23 @@ try {
   await page.waitForFunction(() => document.querySelector("[data-trace-timeline]")?.getAttribute("data-timeline-turns") === "1");
   assert.equal(await page.locator("[data-trace-lane]").count(), 2, "Completed children remain visible before the root finishes");
   assert.equal(await page.locator("[data-trace-timeline]").getAttribute("data-timeline-duration-ms"), "900");
+  // A run with no recorded spans says so plainly, instead of looking like a missing record being retried.
+  await page.goto(`${origin}/app/agent-runs/absent-trace`);
+  const absent = page.getByText("No detailed trace was recorded for this run", { exact: false }).first();
+  await absent.waitFor();
+  assert.match(await absent.innerText(), /disproves a step|这不表示步骤没有执行/);
+  assert.equal(await page.getByText("Trace is not ready yet", { exact: false }).count(), 0,
+    "An absent trace is stated once, not reported as a load failure");
+  // The run's own figures stay on the page: an absent trace is not an absent run.
+  const summary = await page.locator("section").filter({ hasText: /Model calls|模型调用/ }).first().innerText();
+  assert.match(summary, /3/, "Model calls counted by the run are still shown");
+  assert.match(summary, /2/, "Tool calls counted by the run are still shown");
+  const inputTokens = await page.getByText(/Input tokens|输入 Token/).first().innerText();
+  assert.match(inputTokens, /1250/, "Provider input reported by the run is still shown");
+  assert.equal(await page.getByText("UNKNOWN", { exact: true }).count(), 0,
+    "A completed run is never shown as unknown status");
   await context.close();
-  console.log("Agent trace UI: graph nodes, metadata selection, inspector, timeline, multi-turn trace passed.");
+  console.log("Agent trace UI: graph nodes, metadata selection, inspector, timeline, multi-turn trace and absent-trace wording passed.");
 } finally {
   await browser?.close();
   server.kill();
