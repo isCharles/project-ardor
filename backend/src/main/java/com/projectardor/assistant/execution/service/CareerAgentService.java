@@ -325,13 +325,15 @@ public class CareerAgentService {
                     traceListener == null ? java.util.List.of() : java.util.List.of(traceListener);
 
             CareerAssistant assistant = AiServices.builder(CareerAssistant.class)
-                    .chatModel(modelFactory.create(userId, runtimeConfig, depth, listeners))
+                    .chatModel(modelFactory.create(userId, runtimeConfig, depth, listeners,
+                            runtimeContextObserver(null, null, tracer, runtimeConfig.model()),
+                            contextCallListeners(tracer, runtimeConfig.model())))
                     .systemMessage(systemMessage)
                     .chatMemory(memory)
                     // A synchronous retry keeps the logical request but is a new tool-call attempt.
                     // Reusing requestId as the run ID would make regenerated arguments create a second slot.
                     .tools(ApprovedAgentTools.wrap(bound, userId, null, toolApprovals, message, permissionGrants,
-                            hiddenUserMessage, tracer))
+                            hiddenUserMessage, tracer, modelFactory.toolResultCeilingChars()))
                     .maxToolCallingRoundTrips(8)
                     .maxSequentialToolsInvocations(12)
                     .toolExecutionErrorHandler(new AgentToolFailureHandler())
@@ -528,9 +530,10 @@ public class CareerAgentService {
             var latestContext = new java.util.concurrent.atomic.AtomicReference<AgentContextUsage>();
             java.util.function.Consumer<AgentContextUsage> contextObserver = usage -> {
                 if (finished.get() || lease.stopped()) return;
-                latestContext.set(usage);
-                streamProgress.context(progressId, usage);
-                sink.send(AgentStreamEvent.context(usage));
+                var carried = carryReduction(usage, latestContext.get());
+                latestContext.set(carried);
+                streamProgress.context(progressId, carried);
+                sink.send(AgentStreamEvent.context(carried));
             };
             contextObserver.accept(AgentContextUsage.preparing(runtimeConfig.model()));
             UUID contextSpan = tracer == null ? null : tracer.startChild("CONTEXT", "context.load",
@@ -581,11 +584,13 @@ public class CareerAgentService {
                     : new PlanningAgentTools(userId, requestId, conversation.getId(), planner, planStore, tracer);
             planningRef.set(planning);
             StreamingCareerAssistant assistant = AiServices.builder(StreamingCareerAssistant.class)
-                    .streamingChatModel(modelFactory.createStreaming(userId, runtimeConfig, depth, lease, listeners))
+                    .streamingChatModel(modelFactory.createStreaming(userId, runtimeConfig, depth, lease, listeners,
+                            runtimeContextObserver(contextObserver, latestContext, tracer, runtimeConfig.model()),
+                            contextCallListeners(tracer, runtimeConfig.model())))
                     .systemMessage(systemMessage).chatMemory(memory)
                     .tools(ApprovedAgentTools.wrap(bound, userId, requestId, toolApprovals, lease, toolTimings,
                             sink::waitingForApproval, message, permissionGrants, executionAudit,
-                            conversation.getId(), false, tracer, planning))
+                            conversation.getId(), false, tracer, planning, modelFactory.toolResultCeilingChars()))
                     .maxToolCallingRoundTrips(8).maxSequentialToolsInvocations(12)
                     .toolExecutionErrorHandler(new AgentToolFailureHandler())
                     .toolArgumentsErrorHandler(new AgentToolArgumentsErrorHandler()).build();
@@ -939,6 +944,94 @@ public class CareerAgentService {
             log.warn("Could not serialize agent run trace: {}", exception.getMessage());
             return null;
         }
+    }
+
+    /**
+     * The listeners for the short calls a run makes to tidy its own context. They are deliberately not the
+     * run's model listeners: the call is paid for and must reach the ledger and the trace, but it belongs
+     * to compaction rather to another assistant turn, and its prompt is not the run's context — measuring
+     * it as if it were would move the ring and anchor the wrong number.
+     */
+    private java.util.List<dev.langchain4j.model.chat.listener.ChatModelListener> contextCallListeners(
+            AgentRunTracer tracer, String model) {
+        if (tracer == null) return java.util.List.of();
+        return java.util.List.of(new AgentModelTraceListener(tracer, model, "CONTEXT_COMPACTION", null));
+    }
+
+    /**
+     * A later request or response is not a new context decision, so it keeps the run's last one attached.
+     * Without that, the next model call would republish the usage without the reduction that produced it
+     * and the notice would disappear before the run record was written. While the run is organizing its
+     * context, the previous action is not the current news, so that state carries none.
+     */
+    static AgentContextUsage carryReduction(AgentContextUsage usage, AgentContextUsage previous) {
+        if (usage.reduction() != null || previous == null || previous.reduction() == null
+                || "RUN_COMPACTING".equals(usage.state())) return usage;
+        return new AgentContextUsage(usage.state(), usage.model(), usage.estimatedTokens(),
+                usage.compressionBudgetTokens(), usage.modelWindowTokens(), usage.summaryVersion(),
+                usage.compactedMessages(), usage.compaction(), usage.authoritative(), usage.conversationAnchor(),
+                previous.reduction());
+    }
+
+    /**
+     * Reports what the run did to stay inside the window, at the boundary where it happened.
+     *
+     * <p>The span covers the reduction alone, never the model wait after it, so a slow provider cannot be
+     * read as expensive context management. The figures are Ardor's own estimates: the provider's counts
+     * arrive separately on the response and stay marked as authoritative there.</p>
+     */
+    private RuntimeContextGovernor.Observer runtimeContextObserver(
+            java.util.function.Consumer<AgentContextUsage> contextObserver,
+            java.util.concurrent.atomic.AtomicReference<AgentContextUsage> latestContext,
+            AgentRunTracer tracer, String model) {
+        return new RuntimeContextGovernor.Observer() {
+            private long startedAt;
+
+            @Override public void onState(String state) {
+                startedAt = System.nanoTime();
+                if (contextObserver == null) return;
+                var base = latestContext == null ? null : latestContext.get();
+                if (base == null) return;
+                contextObserver.accept(new AgentContextUsage(state, base.model(), base.estimatedTokens(),
+                        base.compressionBudgetTokens(), base.modelWindowTokens(), base.summaryVersion(),
+                        base.compactedMessages(), base.compaction(), false, false, null));
+            }
+
+            @Override public void onReduction(RuntimeContextGovernor.Reduction reduction) {
+                long nanos = startedAt == 0 ? 0 : Math.max(0, System.nanoTime() - startedAt);
+                startedAt = 0;
+                agentMetrics.recordRuntimeReduction(reduction.outcome(), reduction.method(), nanos);
+                if ("DEFERRED".equals(reduction.outcome()) || contextObserver == null) return;
+                String spanId = null;
+                if (tracer != null) {
+                    java.util.Map<String, Object> attributes = new java.util.LinkedHashMap<>();
+                    attributes.put("scope", "RUN");
+                    attributes.put("outcome", reduction.outcome());
+                    attributes.put("method", reduction.method());
+                    attributes.put("estimatedTokensBefore", reduction.beforeTokens());
+                    attributes.put("estimatedTokensAfter", reduction.afterTokens());
+                    attributes.put("allowanceTokens", reduction.allowanceTokens());
+                    attributes.put("softThresholdTokens", reduction.softThresholdTokens());
+                    attributes.put("foldedRounds", reduction.foldedRounds());
+                    attributes.put("summarizedTurns", reduction.summarizedTurns());
+                    attributes.put("attempts", reduction.attempts());
+                    attributes.put("reductionNanos", nanos);
+                    UUID span = tracer.startChild("COMPACTION", "context.runtime", attributes);
+                    tracer.finishChild(span, "EXHAUSTED".equals(reduction.outcome()) ? "FAILED" : "COMPLETED",
+                            reduction.errorCode(), model, null, null, attributes);
+                    spanId = span == null ? null : span.toString();
+                }
+                var base = latestContext == null ? null : latestContext.get();
+                if (base == null) return;
+                contextObserver.accept(new AgentContextUsage("READY", base.model(), reduction.afterTokens(),
+                        base.compressionBudgetTokens(), base.modelWindowTokens(), base.summaryVersion(),
+                        base.compactedMessages(), base.compaction(), false, false,
+                        new AgentContextUsage.RuntimeReduction(reduction.outcome(), reduction.method(),
+                                reduction.beforeTokens(), reduction.afterTokens(), reduction.allowanceTokens(),
+                                reduction.softThresholdTokens(), reduction.foldedRounds(), reduction.summarizedTurns(),
+                                reduction.attempts(), true, reduction.errorCode(), spanId)));
+            }
+        };
     }
 
     private record RunTrace(long elapsedMs, String status, List<RunStep> steps,

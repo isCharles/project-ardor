@@ -41,7 +41,8 @@ class AgentContextCompactorTests {
         var prepared = compactor.prepare(f.user(), f.conversation(), "system", config(), ReasoningDepth.AUTO);
         assertThat(prepared.recentMessages()).containsExactlyElementsOf(f.messages());
         assertThat(prepared.compactedMessages()).isZero();
-        verify(f.factory(), org.mockito.Mockito.never()).create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
+        verify(f.factory(), org.mockito.Mockito.never()).createForSummarization(any(),
+                any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
     }
 
     @Test void toolDefinitionsCanTriggerBudgetCompactionEvenWhenHistoryAloneIsSmall() {
@@ -83,7 +84,8 @@ class AgentContextCompactorTests {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> compactor.prepare(f.user(), f.conversation(), "system", config(),
                 ReasoningDepth.AUTO, List.of(), () -> true, "reference ".repeat(5000)))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("减少引用");
-        verify(f.factory(), org.mockito.Mockito.never()).create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
+        verify(f.factory(), org.mockito.Mockito.never()).createForSummarization(any(),
+                any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList());
         verify(f.summaries(), org.mockito.Mockito.never()).save(any(), any(), anyInt(), any(), anyInt(), anyString(), anyInt(), any());
     }
 
@@ -138,7 +140,8 @@ class AgentContextCompactorTests {
         var model = mock(ChatModel.class);
         when(model.chat(any(ChatRequest.class))).thenReturn(response("Preserved short-turn summary"));
         var factory = mock(LangChainModelFactory.class);
-        when(factory.create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList())).thenReturn(model);
+        when(factory.createForSummarization(any(), any(LlmConfigService.LlmRuntimeConfig.class),
+                any(ReasoningDepth.class), anyList())).thenReturn(model);
         var compactor = new AgentContextCompactor(store, summaries, factory, 4, 24, 1000);
         var config = new LlmConfigService.LlmRuntimeConfig(LlmProvider.ANTHROPIC_COMPATIBLE, "https://example.invalid", "synthetic", "synthetic-only");
         var result = compactor.prepare(user, conversation, "system", config, ReasoningDepth.AUTO, List.of(), () -> true, "reference ".repeat(500));
@@ -170,7 +173,8 @@ class AgentContextCompactorTests {
         ChatModel model = mock(ChatModel.class);
         when(model.chat(any(ChatRequest.class))).thenReturn(response("用户目标：找 Java 后端实习；未完成：补 MySQL。"));
         LangChainModelFactory factory = mock(LangChainModelFactory.class);
-        when(factory.create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList())).thenReturn(model);
+        when(factory.createForSummarization(any(), any(LlmConfigService.LlmRuntimeConfig.class),
+                any(ReasoningDepth.class), anyList())).thenReturn(model);
 
         AgentContextCompactor compactor = new AgentContextCompactor(conversations, summaries, factory, 4, 8, 1000);
         var prepared = compactor.prepare(userId, conversationId, "system", config(), ReasoningDepth.AUTO);
@@ -449,7 +453,8 @@ class AgentContextCompactorTests {
         ChatModel model = mock(ChatModel.class);
         when(model.chat(any(ChatRequest.class))).thenReturn(response("synthetic summary"));
         LangChainModelFactory factory = mock(LangChainModelFactory.class);
-        when(factory.create(any(), any(LlmConfigService.LlmRuntimeConfig.class), any(ReasoningDepth.class), anyList())).thenReturn(model);
+        when(factory.createForSummarization(any(), any(LlmConfigService.LlmRuntimeConfig.class),
+                any(ReasoningDepth.class), anyList())).thenReturn(model);
         return new Fixture(user, conversation, messages, summaries, model,
                 new AgentContextCompactor(store, summaries, factory, 4, 24, 1000), store, factory);
     }

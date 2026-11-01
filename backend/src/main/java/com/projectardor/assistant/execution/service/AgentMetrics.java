@@ -232,6 +232,25 @@ public final class AgentMetrics {
         } catch (RuntimeException ignored) { }
     }
 
+    /**
+     * One mid-run context decision. Timed separately from the model call that follows, so the dashboard
+     * never reads provider latency as context management latency, and counted by outcome because a run
+     * that keeps deferring or makes no progress is a different problem from one that reduced.
+     */
+    public void recordRuntimeReduction(String outcome, String method, long durationNanos) {
+        try {
+            Counter.builder("ardor.agent.context.runtime.reductions")
+                    .description("Mid-run context decisions at a model-call boundary, by outcome")
+                    .tag("outcome", outcome == null ? "unknown" : outcome)
+                    .register(registry).increment();
+            Timer.builder("ardor.agent.context.runtime.duration")
+                    .description("Time spent reducing a run's outgoing request, excluding the model call")
+                    .tag("method", method == null || method.isBlank() ? "none" : method)
+                    .publishPercentileHistogram()
+                    .register(registry).record(java.time.Duration.ofNanos(Math.max(0, durationNanos)));
+        } catch (RuntimeException ignored) { }
+    }
+
     public void recordJobCompletion(String jobType, String status) {
         try {
             Counter.builder("ardor.agent.job.completions")
