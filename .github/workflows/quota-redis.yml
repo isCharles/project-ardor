@@ -1,4 +1,4 @@
-name: Redis quota script
+name: Redis rate and quota scripts
 
 on:
   pull_request:
@@ -6,7 +6,10 @@ on:
       - "backend/src/main/java/com/projectardor/platform/usage/QuotaBurstWindow.java"
       - "backend/src/main/resources/redis/quota-burst-consume.lua"
       - "backend/src/main/resources/redis/quota-burst-refund.lua"
+      - "backend/src/main/resources/redis/model-rate-admit.lua"
+      - "backend/src/main/resources/redis/model-rate-refund.lua"
       - "backend/src/test/resources/redis/quota-burst-test.sh"
+      - "backend/src/test/resources/redis/model-rate-test.sh"
       - ".github/workflows/quota-redis.yml"
   workflow_dispatch:
 
@@ -16,7 +19,7 @@ permissions:
 jobs:
   quota:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - name: Execute production burst scripts against isolated Redis
@@ -30,3 +33,16 @@ jobs:
           docker cp backend/src/main/resources/redis/quota-burst-refund.lua ardor-quota-check:/tmp/quota-burst-refund.lua
           docker cp backend/src/test/resources/redis/quota-burst-test.sh ardor-quota-check:/tmp/quota-burst-test.sh
           docker exec ardor-quota-check sh /tmp/quota-burst-test.sh
+      # The rate buckets are GCRA arithmetic in microseconds, which a JVM unit test can only pin the
+      # argument shape of. Whether a late refund erases somebody else's wait is decided Redis-side.
+      - name: Execute production model rate scripts against isolated Redis
+        run: |
+          docker run --detach --rm --name ardor-rate-check redis:7
+          for attempt in {1..20}; do
+            if docker exec ardor-rate-check redis-cli ping | grep -qx PONG; then break; fi
+            sleep 1
+          done
+          docker cp backend/src/main/resources/redis/model-rate-admit.lua ardor-rate-check:/tmp/model-rate-admit.lua
+          docker cp backend/src/main/resources/redis/model-rate-refund.lua ardor-rate-check:/tmp/model-rate-refund.lua
+          docker cp backend/src/test/resources/redis/model-rate-test.sh ardor-rate-check:/tmp/model-rate-test.sh
+          docker exec ardor-rate-check sh /tmp/model-rate-test.sh

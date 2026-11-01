@@ -34,10 +34,24 @@ import org.springframework.stereotype.Component;
 public class SlidingRateWindow {
     public enum Decision { ALLOWED, LIMITED, UNAVAILABLE }
 
-    /** One bucket inside a single credential group. */
-    public record Bucket(String key, String dimension, long emissionMicros, long weight) {
+    /**
+     * One bucket inside a single credential group.
+     *
+     * @param horizonMicros when the debt this call wrote clears; only a charge whose horizon is still in
+     *                      the future can be given back, so a charge that has already drained cannot
+     *                      shorten the wait a later call paid for
+     */
+    public record Bucket(String key, String dimension, long emissionMicros, long weight, long horizonMicros) {
+        Bucket(String key, String dimension, long emissionMicros, long weight) {
+            this(key, dimension, emissionMicros, weight, 0);
+        }
+
         long creditMicros() {
             return weight * emissionMicros;
+        }
+
+        Bucket chargedUntil(long horizon) {
+            return new Bucket(key, dimension, emissionMicros, weight, horizon);
         }
     }
 
@@ -126,7 +140,7 @@ public class SlidingRateWindow {
                     arguments.toArray(String[]::new));
             if (result == null || result.size() < 3) return unavailable(buckets);
             if (asLong(result.get(0)) == 1) {
-                return new Outcome(Decision.ALLOWED, 0, null, buckets);
+                return new Outcome(Decision.ALLOWED, 0, null, charged(buckets, result, nowMicros));
             }
             long wait = asLong(result.get(1));
             int index = (int) asLong(result.get(2));
@@ -145,10 +159,13 @@ public class SlidingRateWindow {
         if (!enabled() || admitted == null || admitted.charged().isEmpty()) return;
         long nowMicros = micros(now);
         List<String> keys = new ArrayList<>(admitted.charged().size());
-        List<String> arguments = new ArrayList<>(admitted.charged().size() + 2);
+        List<String> arguments = new ArrayList<>(admitted.charged().size() * 2 + 2);
         for (Bucket bucket : admitted.charged()) {
             keys.add(bucket.key());
             arguments.add(String.valueOf(bucket.creditMicros()));
+        }
+        for (Bucket bucket : admitted.charged()) {
+            arguments.add(String.valueOf(bucket.horizonMicros()));
         }
         arguments.add(String.valueOf(nowMicros));
         arguments.add(String.valueOf(ttlMillis(admitted.charged())));
@@ -158,6 +175,22 @@ public class SlidingRateWindow {
             log.warn("Model rate refund failed; the bucket drains on its own: {}",
                     failure.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * Pair each bucket this call paid into with the horizon its write left behind, in the order the
+     * script answered. A reply that stops short of the horizons falls back to the least this call could
+     * have owed, so an early refund still gives the capacity back and a late one gives nothing back.
+     */
+    private List<Bucket> charged(List<Bucket> buckets, List<?> result, long nowMicros) {
+        List<Bucket> charged = new ArrayList<>(buckets.size());
+        for (int index = 0; index < buckets.size(); index++) {
+            Bucket bucket = buckets.get(index);
+            long horizon = index + 3 < result.size() ? asLong(result.get(index + 3))
+                    : nowMicros + bucket.creditMicros();
+            charged.add(bucket.chargedUntil(horizon));
+        }
+        return charged;
     }
 
     private List<Bucket> buckets(UUID userId, ModelRateGroup group, long tokens) {

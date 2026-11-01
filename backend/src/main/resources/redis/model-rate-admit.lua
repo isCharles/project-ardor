@@ -2,7 +2,9 @@
 -- ARGV: for every bucket three values (emission microseconds per unit, weight, burst microseconds),
 --       then "now" in microseconds and the key TTL in milliseconds.
 -- A zero emission disables that bucket. Returns {admitted, wait microseconds, bucket index} where the
--- index (1-based) names the bucket that forced the wait, or 0 when the call is admitted.
+-- index (1-based) names the bucket that forced the wait, or 0 when the call is admitted. An admitted
+-- call appends one horizon per bucket: the moment each bucket's debt clears, which model-rate-refund.lua
+-- needs to tell a refundable charge from one that has already drained.
 -- This is a generic GCRA token bucket: capacity replenishes continuously, so unlike a calendar-minute
 -- counter it cannot be doubled by straddling a window edge, and every bucket is judged before any is
 -- written, so a denial leaves no partial debt behind.
@@ -31,9 +33,11 @@ for index = 1, buckets do
   end
 end
 if wait > 0 then return {0, math.floor(wait + 0.5), worst} end
+local answer = {1, 0, 0}
 for index = 1, buckets do
   if horizon[index] > 0 then
     redis.call('SET', KEYS[index], string.format("%.0f", horizon[index]), 'PX', ttl)
+    answer[#answer + 1] = horizon[index]
   end
 end
-return {1, 0, 0}
+return answer

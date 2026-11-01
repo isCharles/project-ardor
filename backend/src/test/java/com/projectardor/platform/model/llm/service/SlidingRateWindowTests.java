@@ -152,7 +152,9 @@ class SlidingRateWindowTests {
     @Test
     void aRefundGivesBackOneCreditPerChargedBucketAndNeverThrows() {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
-        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenReturn(List.of(1L, 0L, 0L));
+        long nowMicros = now.getEpochSecond() * 1_000_000L;
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
+                .thenReturn(List.of(1L, 0L, 0L, nowMicros + 1_000_000L, nowMicros + 400_000L));
         var window = new SlidingRateWindow(60, 60_000, 0, 0, 0, Duration.ofSeconds(1), redis);
         var admitted = window.admit(user, group, 400, now);
 
@@ -162,17 +164,36 @@ class SlidingRateWindowTests {
         ArgumentCaptor<String[]> arguments = ArgumentCaptor.forClass(String[].class);
         verify(redis, org.mockito.Mockito.times(2)).execute(any(RedisScript.class), keys.capture(), arguments.capture());
         List<String> refund = List.of(arguments.getAllValues().get(1));
-        assertThat(refund).hasSize(admitted.charged().size() + 2);
+        assertThat(refund).hasSize(admitted.charged().size() * 2 + 2);
         // One request slot (60/min = 1,000,000 microseconds), then the estimate at 60,000 tokens per
         // minute = 1,000 microseconds each, so a 400-token call owes 400,000.
         assertThat(refund).startsWith("1000000", "400000");
-        assertThat(refund.get(refund.size() - 2)).isEqualTo(String.valueOf(now.getEpochSecond() * 1_000_000L));
+        // Then the horizon each charge wrote: the script answers with it, and a refund that arrives after
+        // that horizon has passed is a no-op instead of a gift that erases somebody else's wait.
+        assertThat(refund).containsExactly("1000000", "400000",
+                String.valueOf(nowMicros + 1_000_000L), String.valueOf(nowMicros + 400_000L),
+                String.valueOf(nowMicros), refund.get(refund.size() - 1));
+        assertThat(Long.parseLong(refund.get(refund.size() - 1))).isBetween(60_000L, Duration.ofDays(1).toMillis());
 
         StringRedisTemplate broken = mock(StringRedisTemplate.class);
         when(broken.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenThrow(new IllegalStateException("connection reset"));
         var guarded = new SlidingRateWindow(60, 0, 0, 0, 0, Duration.ofSeconds(1), broken);
         guarded.refund(guarded.admit(user, group, 10, now), now);
+    }
+
+    @Test
+    void aChargeWithoutAnAnsweredHorizonIsRefundedAsTheLeastItCouldHaveOwed() {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        // The reply an older script would give: admitted, with no per-bucket horizon to refund against.
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenReturn(List.of(1L, 0L, 0L));
+        var window = new SlidingRateWindow(60, 0, 0, 0, 0, Duration.ofSeconds(1), redis);
+
+        var admitted = window.admit(user, group, 0, now);
+
+        assertThat(admitted.charged()).hasSize(1);
+        assertThat(admitted.charged().getFirst().horizonMicros())
+                .isEqualTo(now.getEpochSecond() * 1_000_000L + 1_000_000L);
     }
 
     @Test

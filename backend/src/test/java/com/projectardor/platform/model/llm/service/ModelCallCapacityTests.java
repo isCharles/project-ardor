@@ -42,7 +42,6 @@ class ModelCallCapacityTests {
     @Test
     void rateDenialNamesItsDimensionAndSaysHowLongToWait() {
         var window = mock(SlidingRateWindow.class);
-        var bucket = new SlidingRateWindow.Bucket("ardor:model:rate:{a}:requests", "account-qpm", 60_000, 1);
         when(window.admit(any(), any(), org.mockito.ArgumentMatchers.anyLong(), any()))
                 .thenReturn(new SlidingRateWindow.Outcome(SlidingRateWindow.Decision.LIMITED, 2_500,
                         "account-qpm", List.of()));
@@ -72,13 +71,18 @@ class ModelCallCapacityTests {
         when(window.admit(any(), any(), org.mockito.ArgumentMatchers.anyLong(), any())).thenReturn(admitted);
         var capacity = new ModelCallCapacity(1, registry, window);
 
+        var started = Instant.now();
         assertThat(capacity.tryAcquire("agent", user, group, 500).acquired()).isTrue();
         // The only slot is now held, so the next call is refused for capacity — after the budget was paid.
         var second = capacity.tryAcquire("job", user, group, 500);
 
         assertThat(second.acquired()).isFalse();
         assertThat(second.reason()).isEqualTo("capacity");
-        verify(window).refund(admitted, Instant.now());
+        // The refund instant comes from inside the guard, so it is captured rather than re-read here:
+        // two Instant.now() calls are not equal, and asserting on that would tie this test to the clock.
+        var refundedAt = org.mockito.ArgumentCaptor.forClass(Instant.class);
+        verify(window).refund(org.mockito.ArgumentMatchers.eq(admitted), refundedAt.capture());
+        assertThat(refundedAt.getValue()).isBetween(started, Instant.now());
         // Rate first, then the local count: holding a permit while a provider budget drains would starve
         // the online chat of the few slots a background job is already using.
         verify(window, org.mockito.Mockito.times(2)).admit(any(), any(), org.mockito.ArgumentMatchers.anyLong(), any());
