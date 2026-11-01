@@ -33,6 +33,7 @@ Redis 与 PostgreSQL 之间**没有**分布式事务，也不需要：崩溃后�
 - **重复 `requestId` 只扣一次，且跨实例、跨重启成立。** 幂等标记是主键 `(user_id, feature, request_id)`，保留 40 天后由 `purgeStaleMarks` 清理。
 - **依赖不可用不会静默放行。** Redis 突发窗口或 PostgreSQL 计数无法回答时返回 `GUARD_UNAVAILABLE`（HTTP 503 + `Retry-After`），错误码仍是 `QUOTA_EXCEEDED`，前端沿用既有额度文案。
 - **周期口径唯一。** 月 = UTC 自然月，周 = 周一 00:00 UTC 起（键就是那个周一的日期），重置时间与展示时间由同一个 `QuotaPeriods` 计算，不再出现「按周编号键、按周一重置」的错配。
+- **供应商速率桶要么整笔扣、要么整笔不扣。** 一次 Lua 判定同一凭据的全部桶（账户/模型 × 请求/Token，外加每用户请求），任一桶不足就一个都不写；拿到许可但被后续层拒绝的调用会把扣掉的容量退回（`model-rate-refund.lua`）。Redis 无法回答时不再放行，而是 `LLM_GUARD_UNAVAILABLE`（503 + `Retry-After`），因为一个看不见的限流器比一次可见的重试更坏。
 
 ## 估算与误差边界
 
@@ -49,11 +50,19 @@ Redis 与 PostgreSQL 之间**没有**分布式事务，也不需要：崩溃后�
 
 ## Redis 拓扑约束
 
-所有 Lua 脚本**每次只碰一个键**（`quota-burst-consume.lua`、`quota-burst-refund.lua`）。原 `quota-consume.lua` 一次操作 5 个键且没有 hash tag，在 Redis Cluster 上会因 CROSSSLOT 直接失败——那会让每个受额度保护的接口报错。当前部署是单机 Redis（`spring.data.redis.host/port`，未配置 cluster），但这条约束写进代码注释与测试，避免以后换拓扑时踩雷。
+Lua 脚本**每次只碰一个键，或者把全部键放进同一个 hash tag**。`quota-burst-consume.lua`、
+`quota-burst-refund.lua` 与 `model-rate-refund.lua` 都是单键；`model-rate-admit.lua` 一次检查同一凭据的
+多个桶，因此每个键都带 `{account}` 标签——它们必然落在同一个 slot，跨 slot 的原子判定在 Cluster 上根本
+不允许存在。原 `quota-consume.lua` 一次操作 5 个键且没有 hash tag，在 Redis Cluster 上会因 CROSSSLOT
+直接失败——那会让每个受额度保护的接口报错。当前部署是单机 Redis（`spring.data.redis.host/port`，未配置
+cluster），但这条约束写进代码注释与测试，避免以后换拓扑时踩雷。
 
 ## 尚未实现（本清单的诚实边界）
 
-1. **供应商 QPM/TPM 仍是固定 UTC 分钟键，且按模型名分桶。** 官方口径是账户/组织级、Anthropic 为持续补充的令牌桶、Kimi 按 `max_completion_tokens` 预留、DeepSeek 与智谱只公布并发。需要改为按凭据分桶的严格滚动窗口/令牌桶，并区分输入与输出预算。
+1. **供应商 QPM/TPM 已改为按凭据分桶的连续补充令牌桶**（`SlidingRateWindow` + `model-rate-admit.lua`）：
+   跨分钟边界不再能拿到 2× 每分钟上限，同一凭据下的不同模型名共用账户级预算。仍未做的部分：
+   Token 维度用的是发送前估算（输入估算 + 预留输出），不是供应商回传值；供应商真实返回的
+   `Retry-After` 头没有被解析回填，等待时间来自本地桶的排空估计；桶状态只在 Redis，清库即清零债务。
 2. **并发许可仍是进程内信号量。** 多实例部署时实际上限是 `实例数 × max-concurrent-calls`，且流式调用若拿不到终态回调会一直占着许可。需要带 TTL 与 fencing token 的 Redis 租约。
 3. **Token 只有结算、没有预占。** 且只有 Agent 路径写账本：简历分析、面经整理、学习计划、语音、嵌入等 JSON 网关调用不记账，供应商返回的 `usage` 被丢弃。
 4. **未被额度覆盖的入口：** 模型列表探测（`/api/settings/llm/models`）、后台嵌入回填调度器、Tavily 抓取。

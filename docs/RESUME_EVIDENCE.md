@@ -77,7 +77,7 @@
 | 失联恢复 | 心跳；超过 5 分钟无心跳按 `max_attempts` 回到 `QUEUED` 或死信；未知派发标记 `INTERRUPTED` 不盲重放 |
 | 用户任务顺序 | 按 `sequence` 串行，同一用户同一时刻只有一个运行；审批等待释放槽位但不破坏顺序；失败暂停后续消息，显式 resume 才继续 |
 | 队列观测 | `ardor_agent_queue_depth`、`ardor_agent_queue_oldest_queued_seconds`、`ardor_agent_queue_claims`、`ardor_agent_queue_failures`、`ardor_ai_jobs_depth`、`ardor_ai_jobs_oldest_queued_seconds{priority}`、job wait 与完成/重试/死信计数（PR #251） |
-| 必要模型准入 | 进程内共享 `ARDOR_MODEL_MAX_CONCURRENT_CALLS`（默认 8）；可选 Redis 分钟窗口 `ARDOR_MODEL_QPM` / `ARDOR_MODEL_TPM` / `ARDOR_MODEL_USER_QPM`（默认 0 关闭）跨实例限制每模型请求、估算 token 与每用户请求；触顶返回 `LLM_BUSY`，后台按既有退避重排；供应商 429 同样分类 |
+| 必要模型准入 | 进程内共享 `ARDOR_MODEL_MAX_CONCURRENT_CALLS`（默认 8）；可选 Redis 凭据级 GCRA 令牌桶 `ARDOR_MODEL_RATE_ACCOUNT_QPM` / `_ACCOUNT_TPM` / `_MODEL_QPM` / `_MODEL_TPM` / `_USER_QPM`（默认 0 关闭）跨实例限制请求与估算 token，同一 API Key 下的不同模型共用账户预算；一次 Lua 判定全部维度，任一不足则整笔不扣，被并发层拒绝的调用退回已扣容量；触顶返回带 `Retry-After` 的可重试 `LLM_BUSY`，Redis 无法回答时是 `LLM_GUARD_UNAVAILABLE`（503）而不是放行；供应商 429 同样分类 |
 
 **可写边界**：这是进程内并发护栏加可选的 Redis 分钟窗口，不是供应商配额的精确复刻；QPM/TPM 默认关闭，token 使用发送前估算而非供应商实际用量，分钟边界允许短时双倍突发。聊天队列已按会员优先级与 60 秒老化排序（V76），但多副本压力下的公平与吞吐仍待实测。不要写“精确分布式配额”“与供应商限额一致”或“绝不丢任务”。
 
