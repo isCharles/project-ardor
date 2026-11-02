@@ -91,7 +91,16 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(LlmCallException.class)
     ResponseEntity<ApiError> llmCall(LlmCallException exception) {
-        return error(HttpStatus.BAD_GATEWAY, new ApiError(exception.getCode(), exception.getMessage(), exception.isRetryable()));
+        // A guard that could not decide is our outage, not the provider's; every other code keeps the
+        // existing status so clients that branch on 502 or 429 continue to behave as before.
+        HttpStatus status = "LLM_GUARD_UNAVAILABLE".equals(exception.getCode())
+                ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON);
+        if (exception.getRetryAfterSeconds() != null) {
+            response = response.header("Retry-After", String.valueOf(exception.getRetryAfterSeconds()));
+        }
+        return response.body(new ApiError(exception.getCode(), exception.getMessage(), exception.isRetryable()));
     }
 
     @ExceptionHandler(SpeechCallException.class)

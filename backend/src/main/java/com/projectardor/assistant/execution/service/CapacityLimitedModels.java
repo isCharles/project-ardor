@@ -6,6 +6,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.projectardor.platform.model.llm.service.ModelCallCapacity;
+import com.projectardor.platform.model.llm.service.ModelRateGroup;
 
 import dev.langchain4j.model.ModelProvider;
 import dev.langchain4j.model.TokenCountEstimator;
@@ -21,8 +22,8 @@ import dev.langchain4j.model.chat.response.*;
 final class CapacityLimitedModels {
     private CapacityLimitedModels() {}
 
-    /** Identifies who and which model a call is charged to for the optional rate window. */
-    record CallScope(String surface, UUID userId, String modelKey, long reservedTokens,
+    /** Identifies whose call this is and which provider budget it spends. */
+    record CallScope(String surface, UUID userId, ModelRateGroup group, long reservedTokens,
             TokenCountEstimator estimator) {
         long tokens(ChatRequest request) {
             return Math.max(0, AgentRequestTokens.estimate(request, estimator))
@@ -37,7 +38,8 @@ final class CapacityLimitedModels {
     static ChatModel chat(ChatModel delegate, ModelCallCapacity capacity, CallScope scope) {
         return new ChatModel() {
             @Override public ChatResponse doChat(ChatRequest request) {
-                if (!acquire(capacity, scope, request)) throw capacity.busy();
+                var admission = acquire(capacity, scope, request);
+                if (!admission.acquired()) throw capacity.busy(admission);
                 try {
                     return delegate.doChat(request);
                 } finally {
@@ -58,8 +60,9 @@ final class CapacityLimitedModels {
     static StreamingChatModel streaming(StreamingChatModel delegate, ModelCallCapacity capacity, CallScope scope) {
         return new StreamingChatModel() {
             @Override public void doChat(ChatRequest request, StreamingChatResponseHandler downstream) {
-                if (!acquire(capacity, scope, request)) {
-                    downstream.onError(capacity.busy());
+                var admission = acquire(capacity, scope, request);
+                if (!admission.acquired()) {
+                    downstream.onError(capacity.busy(admission));
                     return;
                 }
                 AtomicBoolean released = new AtomicBoolean();
@@ -98,8 +101,9 @@ final class CapacityLimitedModels {
         };
     }
 
-    private static boolean acquire(ModelCallCapacity capacity, CallScope scope, ChatRequest request) {
-        if (scope == null) return capacity.tryAcquire("agent");
-        return capacity.tryAcquire(scope.surface(), scope.userId(), scope.modelKey(), scope.tokens(request));
+    private static ModelCallCapacity.Admission acquire(ModelCallCapacity capacity, CallScope scope,
+            ChatRequest request) {
+        if (scope == null) return capacity.acquireProcessSlot("agent");
+        return capacity.tryAcquire(scope.surface(), scope.userId(), scope.group(), scope.tokens(request));
     }
 }

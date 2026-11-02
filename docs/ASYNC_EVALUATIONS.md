@@ -60,14 +60,13 @@ V33 新增 PostgreSQL `ai_jobs` 表，原提交及状态持久化。Worker 使�
 | `ardor_agent_job_completions{type,status}`、`ardor_agent_job_retries`、`ardor_agent_job_dead_letters` | 后台任务吞吐、失败、重试与死信 |
 | `ardor_agent_job_wait{type}` | 后台任务从入队到被领取的等待时间 |
 | `ardor_model_capacity_in_use`、`ardor_model_capacity_rejections{surface}` | 共享模型槽位占用与因容量已满被拒绝的调用数 |
-| `ardor_model_rate_rejections{reason}` | 因模型分钟窗口被拒绝的调用；`reason` 为 `qpm`/`tpm`/`user-qpm` |
-| `ardor_model_rate_degraded` | Redis 不可用或返回未知结果而放行的调用数 |
+| `ardor_model_rate_rejections{reason}` | 因凭据速率桶被拒绝的调用；`reason` 为桶维度 `account-qpm`/`account-tpm`/`model-qpm`/`model-tpm`/`user-qpm`，或 `guard-unavailable` |
 
 聊天消息在入队时快照会员优先级（免费 0、付费 1）。领取顺序按 `priority + 等待秒数 / 60` 降序，再按 `sequence`：付费消息先走一级，但每条免费消息每等待 60 秒增加一级，持续到达的付费消息不能无限期饿死免费消息。优先级只在入队时计算，排队期间升级套餐不会改变已排队消息；这是聊天队列的公平护栏，不是完整的 QPM/TPM 配额。后台 AI 任务同样按会员优先级区分，低优先级年龄持续增长才说明饥饿。`GET /api/agent/queue` 为 QUEUED 消息返回 `queuePosition`：按同一排序计算的用户内名次，1 为下一条，包含该用户其他会话；它是顺序名次，不是预计等待时间，前端在没有吞吐样本时不猜 ETA。
 
 在线聊天流式调用、摘要/标题等辅助对话和后台 JSON 评估共用同一进程内的模型并发上限：`app.model.max-concurrent-calls`（环境变量 `ARDOR_MODEL_MAX_CONCURRENT_CALLS`，默认 8）。容量满时立即以可重试的 `LLM_BUSY` 拒绝，不排队等待：在线请求表现为可重试的 `AGENT_TEMPORARILY_UNAVAILABLE`，由浏览器显式重试；后台任务按 30 秒起步、指数增长的退避重新排队，达到 `max_attempts` 后进入死信。供应商返回的 429 也归类为同一可重试错误，走相同退避。AI 任务与后台任务的预计时长不再填固定的 30–120 秒：没有足够历史样本时接口返回未知（`null`），前端只显示已用时，不把猜测当预计时间。
 
-该并发上限只覆盖单个进程。可另行开启跨实例的分钟窗口准入：`app.model.qpm`（每模型每分钟请求数）、`app.model.tpm`（每模型每分钟估算 token 数）、`app.model.user-qpm`（每用户每分钟请求数），环境变量 `ARDOR_MODEL_QPM`、`ARDOR_MODEL_TPM`、`ARDOR_MODEL_USER_QPM`，默认 0 表示关闭。计数器在 Redis 固定 UTC 分钟窗口内原子检查，共享缓存的实例看到同一预算；模型维度按 provider + Base URL + model 指纹，token 维度采用发送前估算的输入加预留输出（后台 JSON 调用只有输入估算），不采用供应商回传的实际用量。任一维度触顶时与并发满一样返回可重试的 `LLM_BUSY`，在线由浏览器重试、后台按既有退避重排。Redis 不可用时放行并增加 `ardor_model_rate_degraded`，避免限速设施故障中断对话。窗口在分钟边界允许短时双倍突发；该层不是计费或供应商配额的精确复刻，也不覆盖语音等其他供应商调用。TPM 必须高于允许的最大单次请求估算，否则该请求会在任何窗口下都被拒绝。
+该并发上限只覆盖单个进程。可另行开启跨实例的速率准入：`app.model.rate.account-qpm`、`account-tpm`（凭据级）、`model-qpm`、`model-tpm`（凭据 + 模型）、`user-qpm`（凭据 + 用户）与 `burst`（默认 `1s`），环境变量 `ARDOR_MODEL_RATE_ACCOUNT_QPM`、`ARDOR_MODEL_RATE_ACCOUNT_TPM`、`ARDOR_MODEL_RATE_MODEL_QPM`、`ARDOR_MODEL_RATE_MODEL_TPM`、`ARDOR_MODEL_RATE_USER_QPM`、`ARDOR_MODEL_RATE_BURST`，默认 0 表示该桶关闭。桶的键是 provider + 规范化 Base URL + API Key 摘要 + 模型名摘要：供应商按账户/组织计量，同一凭据下的不同模型共用账户桶，改名或新增模型名不能绕过账户预算；键与指标标签都只带截断摘要，不含密钥或主机明文。每个桶是 GCRA 令牌桶，容量按时间连续补充，因此跨分钟边界不再出现 2× 突发；`burst` 是容忍下限而不是上限——每个桶至少容忍「本次调用自身的成本」，否则慢速率（如 30 次/分，单次成本 2 秒）会连空桶的第一次调用都永远拒绝。准入是一次 Lua 判定同一凭据的全部桶，任一桶不足则一个都不写，返回等待最久的那个桶作为拒绝维度；先过速率再过进程内并发，拿不到并发许可时把已扣容量退回（`model-rate-refund.lua`），因为扣了却没发出去的调用不该占着供应商预算。同一凭据的所有键共用一个 hash tag，脚本因此在 Cluster 下仍落在同一 slot。Redis 无法回答时不再放行：返回可重试的 `LLM_GUARD_UNAVAILABLE`（HTTP 503 + `Retry-After`），一个看不见的限流器比一次可见的重试更坏。拒绝都带 `Retry-After`：速率拒绝取该桶排空所需秒数（向上取整，至少 1 秒），本地并发满取 1 秒；SSE 事件里不重复携带该秒数，浏览器仍按既有重试交互提示。Token 维度用的是发送前估算的输入加预留输出（后台 JSON 调用只有输入估算），不采用供应商回传的实际用量，也不覆盖语音等其他供应商调用。旧的 `app.model.qpm`/`tpm`/`user-qpm` 固定 UTC 分钟键与 `model-rate-consume.lua` 已下线；日常部署与 CI 都未给它们配置非零值（只按变量名核对运行中容器的环境，未读取任何值），因此改名不会静默关掉已生效的限流。
 
 Anthropic 兼容接口可启用提示缓存：`app.model.prompt-cache.enabled`（环境变量 `ARDOR_PROMPT_CACHE_ENABLED`，默认关闭）与 `app.model.prompt-cache.tools`（`ARDOR_PROMPT_CACHE_TOOLS`，默认开启）。开启后只在最后一个工具定义上放 `cache_control: {type: "ephemeral"}` 断点；系统提示当前含每秒变化的基准时间与用户长期记忆，属于动态内容，因此不缓存，也不为提升命中率而移动或删减这些内容。工具定义是所有用户共享的同一段 JSON Schema，缓存命中不会跨账户返回他人的私有正文，私有上下文仍在消息部分，不在缓存前缀内。
 

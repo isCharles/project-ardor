@@ -77,6 +77,22 @@ class ApiErrorNegotiationTests {
     }
 
     @Test
+    void aModelRateDenialSaysHowLongToWaitAndAnUnconfirmedGuardIsAnOutage() throws Exception {
+        mvc.perform(get("/json/LLM_BUSY").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("LLM_BUSY"))
+                .andExpect(jsonPath("$.retryable").value(true))
+                .andExpect(header().string("Retry-After", "7"));
+        // The guard could not decide, which is Ardor's own outage rather than the provider being at
+        // fault; the code still travels in the body so clients that branch on it keep working.
+        mvc.perform(get("/json/GUARD").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("LLM_GUARD_UNAVAILABLE"))
+                .andExpect(jsonPath("$.retryable").value(true))
+                .andExpect(header().string("Retry-After", "1"));
+    }
+
+    @Test
     void bodyValidationAlsoReturnsJsonToStrictSseClients() throws Exception {
         mvc.perform(post("/probe/body").accept(MediaType.TEXT_EVENT_STREAM).contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isBadRequest()).andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -115,6 +131,8 @@ class ApiErrorNegotiationTests {
                 case "state" -> throw new IllegalStateException("Fixture conflict");
                 case "dns" -> throw new ExternalHostResolutionException("Fixture DNS", null);
                 case "llm" -> throw new LlmCallException("LLM_TIMEOUT", "Fixture timeout", true, null);
+                case "LLM_BUSY" -> throw new LlmCallException("LLM_BUSY", "Fixture busy", true, 7, null);
+                case "GUARD" -> throw new LlmCallException("LLM_GUARD_UNAVAILABLE", "Fixture guard", true, 1, null);
                 case "speech" -> throw new SpeechCallException("ASR_INVALID_RESPONSE", "Fixture invalid", false, null);
                 default -> "data: {\"type\":\"done\"}\n\n";
             };

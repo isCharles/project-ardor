@@ -134,9 +134,17 @@ app:
       enabled: ${ARDOR_PROMPT_CACHE_ENABLED:false}
       tools: ${ARDOR_PROMPT_CACHE_TOOLS:true}
     max-concurrent-calls: ${ARDOR_MODEL_MAX_CONCURRENT_CALLS:8}
-    qpm: ${ARDOR_MODEL_QPM:0}
-    tpm: ${ARDOR_MODEL_TPM:0}
-    user-qpm: ${ARDOR_MODEL_USER_QPM:0}
+    # Cross-instance admission against the rate the provider publishes. Every bucket is a GCRA token
+    # bucket, so a call cannot double its budget by straddling a minute edge. Zero disables a bucket;
+    # all zero (the default) leaves only the process-local concurrency bound. A credential with more
+    # than one model behind it shares the account buckets, so adding a model name cannot bypass them.
+    rate:
+      account-qpm: ${ARDOR_MODEL_RATE_ACCOUNT_QPM:0}
+      account-tpm: ${ARDOR_MODEL_RATE_ACCOUNT_TPM:0}
+      model-qpm: ${ARDOR_MODEL_RATE_MODEL_QPM:0}
+      model-tpm: ${ARDOR_MODEL_RATE_MODEL_TPM:0}
+      user-qpm: ${ARDOR_MODEL_RATE_USER_QPM:0}
+      burst: ${ARDOR_MODEL_RATE_BURST:1s}
   observability:
     queue-sample-interval: ${ARDOR_QUEUE_SAMPLE_INTERVAL:15s}
     otel:
