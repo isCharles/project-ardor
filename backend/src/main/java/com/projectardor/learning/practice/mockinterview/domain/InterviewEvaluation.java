@@ -35,20 +35,26 @@ public class InterviewEvaluation {
 
     private InterviewEvaluation(
             UUID userId, UUID sessionId, BigDecimal score,
-            Map<String, Object> evaluation, String modelName) {
+            Map<String, Object> evaluation, String modelName, String promptVersion) {
         this.id = UUID.randomUUID();
         this.userId = userId;
         this.interviewSessionId = sessionId;
         this.overallScore = score;
         this.evaluation = new LinkedHashMap<>(evaluation);
         this.modelName = modelName;
-        this.promptVersion = "interview-evaluation-v1";
+        this.promptVersion = promptVersion;
     }
 
     public static InterviewEvaluation create(
             UUID userId, UUID sessionId, BigDecimal score,
             Map<String, Object> evaluation, String modelName) {
-        return new InterviewEvaluation(userId, sessionId, score, evaluation, modelName);
+        return create(userId, sessionId, score, evaluation, modelName, "interview-evaluation-v1");
+    }
+
+    public static InterviewEvaluation create(
+            UUID userId, UUID sessionId, BigDecimal score,
+            Map<String, Object> evaluation, String modelName, String promptVersion) {
+        return new InterviewEvaluation(userId, sessionId, score, evaluation, modelName, promptVersion);
     }
 
     @PrePersist void onCreate() { Instant now = Instant.now(); createdAt = now; updatedAt = now; }

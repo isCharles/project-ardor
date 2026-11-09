@@ -19,6 +19,7 @@ import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewAnswer;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewEvaluation;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewModality;
+import com.projectardor.learning.practice.mockinterview.domain.InterviewMode;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewQuestion;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewSession;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewStatus;
@@ -279,7 +280,9 @@ public class InterviewService {
 
     @Transactional(readOnly = true)
     public List<InterviewSession> list(UUID userId) {
-        return sessionRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
+        return sessionRepository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
+                .filter(session -> session.getMode() == InterviewMode.CLASSIC)
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -288,9 +291,17 @@ public class InterviewService {
                 .orElseThrow(() -> new ResourceNotFoundException("模拟面试不存在"));
     }
 
+    /** The fixed-paper path must never write an adaptive session's state: its turns are scored and scheduled elsewhere. */
+    private static void requireClassic(InterviewSession session) {
+        if (session.getMode() != InterviewMode.CLASSIC) {
+            throw new IllegalStateException("自适应面试请使用自适应面试接口");
+        }
+    }
+
     @Transactional(readOnly = true)
     public InterviewProgress getNextQuestion(UUID userId, UUID sessionId) {
         InterviewSession session = get(userId, sessionId);
+        requireClassic(session);
         List<InterviewQuestion> questions = questions(userId, sessionId);
         Map<UUID, InterviewAnswer> answers = answers(userId, sessionId).stream()
                 .collect(Collectors.toMap(InterviewAnswer::getInterviewQuestionId, Function.identity()));
@@ -320,6 +331,7 @@ public class InterviewService {
         if (session.getStatus() != InterviewStatus.IN_PROGRESS) {
             throw new IllegalStateException("当前面试不能提交答案");
         }
+        requireClassic(session);
         InterviewQuestion question = questionRepository
                 .findByIdAndUserIdAndInterviewSessionId(questionId, userId, sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("面试题不存在"));
@@ -359,6 +371,7 @@ public class InterviewService {
         if (session.getStatus() != InterviewStatus.IN_PROGRESS) {
             throw new IllegalStateException("当前面试不能结束");
         }
+        requireClassic(session);
         List<InterviewQuestion> questions = questions(userId, sessionId);
         Map<UUID, InterviewAnswer> answers = answers(userId, sessionId).stream()
                 .collect(Collectors.toMap(InterviewAnswer::getInterviewQuestionId, Function.identity()));

@@ -19,6 +19,8 @@ public class InterviewAnswer {
     @Column(name = "interview_question_id", nullable = false, unique = true) private UUID interviewQuestionId;
     @Column(name = "answer_text", nullable = false, columnDefinition = "text") private String answerText;
     @Column(name = "duration_seconds") private Integer durationSeconds;
+    @Column(name = "evaluation_attempts", nullable = false) private short evaluationAttempts;
+    @Column(name = "evaluation_error", length = 64) private String evaluationError;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
@@ -44,7 +46,22 @@ public class InterviewAnswer {
     @PrePersist void onCreate() { Instant now = Instant.now(); createdAt = now; updatedAt = now; }
     @PreUpdate void onUpdate() { updatedAt = Instant.now(); }
 
+    /** The answer survives a failed scoring call so the turn can be retried instead of lost. */
+    public void recordEvaluationFailure(String errorCode) {
+        evaluationAttempts++;
+        evaluationError = errorCode;
+    }
+
+    public void clearEvaluationFailure() {
+        evaluationError = null;
+    }
+
+    public UUID getId() { return id; }
+    public UUID getUserId() { return userId; }
+    public UUID getInterviewSessionId() { return interviewSessionId; }
     public UUID getInterviewQuestionId() { return interviewQuestionId; }
     public String getAnswerText() { return answerText; }
     public Integer getDurationSeconds() { return durationSeconds; }
+    public int getEvaluationAttempts() { return evaluationAttempts; }
+    public String getEvaluationError() { return evaluationError; }
 }
