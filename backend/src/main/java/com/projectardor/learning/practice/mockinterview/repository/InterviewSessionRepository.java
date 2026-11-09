@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
+import com.projectardor.learning.practice.mockinterview.domain.InterviewMode;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewSession;
 
 public interface InterviewSessionRepository extends JpaRepository<InterviewSession, UUID> {
@@ -18,4 +19,5 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
     @Query("select s from InterviewSession s where s.id = :id and s.userId = :userId")
     Optional<InterviewSession> findOwnedForUpdate(@Param("id") UUID id, @Param("userId") UUID userId);
     List<InterviewSession> findAllByUserIdOrderByCreatedAtDesc(UUID userId);
+    List<InterviewSession> findAllByUserIdAndModeOrderByCreatedAtDesc(UUID userId, InterviewMode mode);
 }
