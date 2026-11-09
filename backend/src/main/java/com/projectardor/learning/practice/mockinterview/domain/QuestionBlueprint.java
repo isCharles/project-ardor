@@ -15,6 +15,6 @@ public record QuestionBlueprint(String competency, String knowledgePoint, int di
         if (origin == null) throw new IllegalArgumentException("题目来源不能为空");
         competency = competency.strip();
         knowledgePoint = knowledgePoint.strip();
-        rubric = Map.copyOf(rubric);
+        rubric = RubricSnapshot.of(rubric);
     }
 }
