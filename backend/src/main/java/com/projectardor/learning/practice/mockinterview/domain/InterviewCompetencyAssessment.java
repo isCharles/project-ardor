@@ -26,7 +26,7 @@ public class InterviewCompetencyAssessment {
     @Column(name = "user_id", nullable = false) private UUID userId;
     @Column(name = "interview_session_id", nullable = false) private UUID interviewSessionId;
     @Column(nullable = false, length = 160) private String competency;
-    @Column(name = "jd_priority", nullable = false) private short jdPriority;
+    @Column(name = "jd_priority", nullable = false) private int jdPriority;
     @Column(name = "estimated_level") private Integer estimatedLevel;
     @Column(nullable = false, precision = 3, scale = 2) private BigDecimal confidence;
     @Column(name = "evidence_count", nullable = false) private int evidenceCount;
@@ -42,7 +42,7 @@ public class InterviewCompetencyAssessment {
 
     protected InterviewCompetencyAssessment() {}
 
-    private InterviewCompetencyAssessment(UUID userId, UUID sessionId, String competency, short jdPriority) {
+    private InterviewCompetencyAssessment(UUID userId, UUID sessionId, String competency, int jdPriority) {
         this.id = UUID.randomUUID();
         this.userId = userId;
         this.interviewSessionId = sessionId;
@@ -56,7 +56,7 @@ public class InterviewCompetencyAssessment {
     public static InterviewCompetencyAssessment create(UUID userId, UUID sessionId, String competency, int jdPriority) {
         if (competency == null || competency.isBlank()) throw new IllegalArgumentException("能力维度不能为空");
         if (jdPriority < 1 || jdPriority > 5) throw new IllegalArgumentException("JD 优先级必须在 1 到 5 之间");
-        return new InterviewCompetencyAssessment(userId, sessionId, competency.strip(), (short) jdPriority);
+        return new InterviewCompetencyAssessment(userId, sessionId, competency.strip(), jdPriority);
     }
 
     /** An untested competency keeps a null level: only evidence may fill it in. */

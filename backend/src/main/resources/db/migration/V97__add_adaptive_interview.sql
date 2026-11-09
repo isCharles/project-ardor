@@ -18,7 +18,7 @@ ALTER TABLE interview_sessions
 ALTER TABLE interview_questions
     ADD COLUMN competency VARCHAR(160),
     ADD COLUMN knowledge_point VARCHAR(200),
-    ADD COLUMN difficulty SMALLINT,
+    ADD COLUMN difficulty INTEGER,
     ADD COLUMN rubric JSONB,
     ADD COLUMN origin VARCHAR(24),
     ADD COLUMN parent_question_id UUID,
@@ -37,7 +37,7 @@ CREATE INDEX ix_interview_questions_competency
 -- An answer that could not be scored stays recoverable: the next state read retries it
 -- until the attempt ceiling, instead of losing the turn or blocking the session.
 ALTER TABLE interview_answers
-    ADD COLUMN evaluation_attempts SMALLINT NOT NULL DEFAULT 0,
+    ADD COLUMN evaluation_attempts INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN evaluation_error VARCHAR(64);
 ALTER TABLE interview_answers
     ADD CONSTRAINT ck_interview_answers_attempts CHECK (evaluation_attempts >= 0);
@@ -69,7 +69,7 @@ CREATE TABLE interview_turn_evaluations (
     interview_question_id UUID NOT NULL,
     interview_answer_id UUID NOT NULL,
     answer_kind VARCHAR(24) NOT NULL,
-    score SMALLINT,
+    score INTEGER,
     confidence NUMERIC(3, 2),
     evaluation JSONB,
     model_name VARCHAR(120),
@@ -130,8 +130,8 @@ CREATE TABLE interview_competency_assessments (
     user_id UUID NOT NULL,
     interview_session_id UUID NOT NULL,
     competency VARCHAR(160) NOT NULL,
-    jd_priority SMALLINT NOT NULL DEFAULT 3,
-    estimated_level SMALLINT,
+    jd_priority INTEGER NOT NULL DEFAULT 3,
+    estimated_level INTEGER,
     confidence NUMERIC(3, 2) NOT NULL DEFAULT 0,
     evidence_count INTEGER NOT NULL DEFAULT 0,
     state VARCHAR(16) NOT NULL DEFAULT 'UNVERIFIED',

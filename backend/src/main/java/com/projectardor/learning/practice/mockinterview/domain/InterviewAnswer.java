@@ -19,7 +19,7 @@ public class InterviewAnswer {
     @Column(name = "interview_question_id", nullable = false, unique = true) private UUID interviewQuestionId;
     @Column(name = "answer_text", nullable = false, columnDefinition = "text") private String answerText;
     @Column(name = "duration_seconds") private Integer durationSeconds;
-    @Column(name = "evaluation_attempts", nullable = false) private short evaluationAttempts;
+    @Column(name = "evaluation_attempts", nullable = false) private int evaluationAttempts;
     @Column(name = "evaluation_error", length = 64) private String evaluationError;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
