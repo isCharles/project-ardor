@@ -4,8 +4,11 @@ package com.projectardor.platform.model.llm.service;
 public interface JsonModelProtocol extends ModelProtocol {
     LlmGateway.LlmResult complete(LlmConfigService.LlmRuntimeConfig config,String systemPrompt,String userPrompt) throws Exception;
     static LlmGateway.LlmResult result(String content,String model) {
+        return result(content, model, null);
+    }
+    static LlmGateway.LlmResult result(String content,String model,LlmGateway.Usage usage) {
         if(content==null || content.isBlank())
             throw new LlmCallException("LLM_EMPTY_RESPONSE","LLM 返回中没有可用内容",false,null);
-        return new LlmGateway.LlmResult(content,model);
+        return new LlmGateway.LlmResult(content,model,usage);
     }
 }

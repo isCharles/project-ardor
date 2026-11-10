@@ -23,6 +23,10 @@ public class OpenAiJsonModelProtocol implements JsonModelProtocol {
         if("length".equals(root.path("choices").path(0).path("finish_reason").asText()))
             throw new LlmCallException("LLM_OUTPUT_TRUNCATED","模型输出达到长度上限，未保存不完整结果",false,null);
         return JsonModelProtocol.result(root.path("choices").path(0).path("message").path("content").asText(),
-                root.path("model").asText(config.model()));
+                root.path("model").asText(config.model()), usage(root.path("usage")));
+    }
+    private static LlmGateway.Usage usage(tools.jackson.databind.JsonNode usage) {
+        if (!usage.isObject()) return null;
+        return new LlmGateway.Usage(usage.path("prompt_tokens").asInt(0), usage.path("completion_tokens").asInt(0));
     }
 }

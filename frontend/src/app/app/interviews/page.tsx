@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { AdaptiveInterviewPanel } from "@/components/interview/adaptive-interview-panel";
 import { VoiceAnswerRecorder } from "@/components/interview/voice-answer-recorder";
 import { VoiceInterviewCreator, type VoiceInterviewDraft } from "@/components/interview/voice-interview-creator";
 import { ApiError, api } from "@/lib/api";
@@ -58,6 +59,7 @@ export default function InterviewsPage() {
     BEHAVIORAL: t("Behavioral", "行为经历"), CODING: t("Coding", "编程题"),
   };
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
+  const [mode, setMode] = useState<"CLASSIC" | "ADAPTIVE">("CLASSIC");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
@@ -266,7 +268,18 @@ export default function InterviewsPage() {
 
       {error && <div className="mx-auto mb-6 max-w-6xl rounded-2xl bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
 
-      <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+      <div className="mx-auto mb-6 flex max-w-6xl gap-2" role="tablist" aria-label={t("Interview mode", "面试模式")}>
+        {([["CLASSIC", "Fixed paper", "固定题目"], ["ADAPTIVE", "Adaptive", "自适应"]] as const).map(([value, english, chinese]) => (
+          <button key={value} role="tab" type="button" aria-selected={mode === value} onClick={() => setMode(value)}
+            className={`rounded-full border px-5 py-2 text-sm font-medium transition ${mode === value ? "border-violet-400 bg-violet-50 text-violet-800" : "hover:bg-muted"}`}>
+            {locale === "en" ? english : chinese}
+          </button>
+        ))}
+      </div>
+
+      {mode === "ADAPTIVE" && <AdaptiveInterviewPanel />}
+
+      {mode === "CLASSIC" && <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[0.8fr_1.2fr]">
         <div className="space-y-6">
           <section className="ardor-panel rounded-[2rem] p-6 md:p-8">
             <div className="flex items-center gap-3"><Play className="size-5 text-primary" /><h2 className="text-xl font-semibold">{t("New mock interview", "创建模拟面试")}</h2></div>
@@ -326,7 +339,7 @@ export default function InterviewsPage() {
           {progress?.readyToFinish && <div className="mt-7 rounded-2xl bg-emerald-50 p-6"><div className="flex items-center gap-2 font-semibold text-emerald-800"><CheckCircle2 className="size-5" />{t("All questions answered", "全部题目已回答")}</div><p className="mt-2 text-sm text-emerald-800">{t("Your evaluation will run in the background.", "评价会在后台生成，可以稍后回来查看。")}</p><Button className="mt-5" disabled={busy || jobPending(assessment.job)} onClick={finishInterview}>{busy ? t("Submitting…", "正在提交…") : jobPending(assessment.job) ? t("Submitted for assessment", "已提交后台评估") : t("Finish and evaluate", "结束面试并生成评价")}</Button></div>}
           {evaluation && <div className="mt-7"><div className="rounded-2xl bg-primary p-6 text-primary-foreground"><p className="text-sm opacity-80">{t("Overall score", "综合得分")}</p><p className="mt-1 text-5xl font-semibold">{evaluation.overallScore}</p></div><div className="mt-6 space-y-5">{Object.entries(evaluation.evaluation).map(([key, value]) => <div key={key}><h3 className="font-semibold">{evaluationLabels[key] ?? key}</h3><pre className="mt-2 whitespace-pre-wrap rounded-2xl bg-muted p-4 text-sm leading-6">{JSON.stringify(value, null, 2)}</pre></div>)}</div></div>}
         </section>
-      </div>
+      </div>}
     </main>
   );
 }

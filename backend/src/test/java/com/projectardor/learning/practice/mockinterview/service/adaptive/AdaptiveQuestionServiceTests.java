@@ -16,6 +16,7 @@ import com.projectardor.learning.practice.mockinterview.domain.InterviewQuestion
 import com.projectardor.learning.practice.mockinterview.domain.QuestionOrigin;
 import com.projectardor.learning.practice.mockinterview.domain.QuestionTarget;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewQuestionRepository;
+import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
 import com.projectardor.learning.practice.mockinterview.service.LeetCodeHot100;
 import com.projectardor.platform.model.llm.service.LlmGateway;
 
@@ -32,8 +33,11 @@ class AdaptiveQuestionServiceTests {
     private final LlmGateway llm = mock(LlmGateway.class);
     private final InterviewQuestionRepository questions = mock(InterviewQuestionRepository.class);
     private final LeetCodeHot100 hot100 = new LeetCodeHot100();
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
     private final AdaptiveQuestionService service =
-            new AdaptiveQuestionService(llm, new LlmJsonParser(mapper), questions, hot100);
+            new AdaptiveQuestionService(llm, new LlmJsonParser(mapper), questions, hot100,
+                    new InterviewMetrics(registry));
 
     private QuestionTarget target(QuestionOrigin origin, UUID parent) {
         return new QuestionTarget("数据库", "索引失效", 3, "TECHNICAL", origin, parent);
@@ -163,5 +167,22 @@ class AdaptiveQuestionServiceTests {
         assertThat(entity.getDifficulty()).isEqualTo(3);
         assertThat(entity.getRubric()).containsKey("scoreBands");
         assertThat(entity.getOrigin()).isEqualTo(QuestionOrigin.PLAN);
+    }
+
+    @Test void questionLatencySeparatesTheBankFromTheModelAndRecordsTheChosenDifficulty() {
+        when(llm.completeJson(eq(owner), anyString(), anyString())).thenReturn(new LlmGateway.LlmResult(
+                GOOD_QUESTION, "test-model", new LlmGateway.Usage(900, 120)));
+        var coding = new QuestionTarget("算法", "哈希", 4, "CODING", QuestionOrigin.PLAN, null);
+
+        service.generate(owner, session, target(QuestionOrigin.FOLLOW_UP, null));
+        service.generate(owner, session, coding);
+
+        assertThat(registry.get("ardor.interview.question.duration")
+                .tags("type", "TECHNICAL", "origin", "FOLLOW_UP").timer().count()).isEqualTo(1);
+        assertThat(registry.get("ardor.interview.question.duration")
+                .tags("type", "CODING", "origin", "PLAN").timer().count()).isEqualTo(1);
+        assertThat(registry.get("ardor.interview.questions").tag("difficulty", "4").counter().count()).isEqualTo(1);
+        assertThat(registry.get("ardor.interview.llm.tokens.input").tag("stage", "question")
+                .counter().count()).isEqualTo(900);
     }
 }

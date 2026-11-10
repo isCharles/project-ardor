@@ -98,6 +98,36 @@ class ModelProtocolContractTests {
             });
         }
     }
+    @Test void bothProtocolsReportTheTokensTheProviderActuallyBilled() {
+        var open=fixture(LlmProvider.OPENAI_COMPATIBLE);
+        open.server.expect(requestTo(endpoint(LlmProvider.OPENAI_COMPATIBLE))).andRespond(withSuccess("""
+                {"model":"fixture-model","choices":[{"message":{"content":"{\\"score\\":85}"}}],
+                 "usage":{"prompt_tokens":1500,"completion_tokens":400,"total_tokens":1900}}
+                """, MediaType.APPLICATION_JSON));
+        assertThat(open.gateway.completeJson(config(LlmProvider.OPENAI_COMPATIBLE),"system","user").usage())
+                .isEqualTo(new LlmGateway.Usage(1500,400));
+        open.server.verify();
+
+        var anthropic=fixture(LlmProvider.ANTHROPIC_COMPATIBLE);
+        anthropic.server.expect(requestTo(endpoint(LlmProvider.ANTHROPIC_COMPATIBLE))).andRespond(withSuccess("""
+                {"model":"fixture-model","content":[{"type":"text","text":"{\\"score\\":85}"}],
+                 "usage":{"input_tokens":900,"output_tokens":250}}
+                """, MediaType.APPLICATION_JSON));
+        assertThat(anthropic.gateway.completeJson(config(LlmProvider.ANTHROPIC_COMPATIBLE),"system","user").usage())
+                .isEqualTo(new LlmGateway.Usage(900,250));
+        anthropic.server.verify();
+    }
+    @Test void anAbsentOrUnusableUsageBlockStaysUnknownRatherThanClaimingZeroTokens() {
+        for(var provider:LlmProvider.values()) for(String usage:List.of("","\"usage\":null,","\"usage\":\"private-detail\",")) {
+            var fixture=fixture(provider);
+            String body=provider==LlmProvider.OPENAI_COMPATIBLE
+                    ? "{"+usage+"\"choices\":[{\"message\":{\"content\":\"ok\"}}]}"
+                    : "{"+usage+"\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}";
+            fixture.server.expect(requestTo(endpoint(provider))).andRespond(withSuccess(body,MediaType.APPLICATION_JSON));
+            assertThat(fixture.gateway.completeJson(config(provider),"system","user").usage()).isNull();
+            fixture.server.verify();
+        }
+    }
     private Fixture fixture(LlmProvider provider) {
         var builder=RestClient.builder();var server=MockRestServiceServer.bindTo(builder).build();var mapper=new ObjectMapper();
         return new Fixture(new CompatibleLlmGateway(mock(LlmConfigService.class),

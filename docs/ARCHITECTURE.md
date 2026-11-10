@@ -35,6 +35,7 @@ CareerAgentService ─> LangChain4j AI Services + Chat Memory + Tools
 - `CareerAgentService` 是当前 Agent 运行时边界；LangChain4j 类型不扩散到业务 Service。
 - Agent 负责理解意图、发现信息缺口、选择 Tool 和组织回复。
 - `ResumeService`、`OpportunityService`（真实面试）、`InterviewService`（模拟面试）、`LearningPlanService` 与日程等应用 Service 承担校验、授权、事务与业务状态转换。
+- 模拟面试分两种模式：固定题目走 `InterviewService`，自适应面试由 `AdaptiveInterviewOrchestrator` 编排，难度、调度与终止全在 Java，模型只负责规划、出题、评分字段与报告文字；详见 [自适应模拟面试引擎](INTERVIEW_ADAPTIVE_ENGINE.md)。
 - 真实面试通过 `InterviewProcessCommands` 与不可变 `InterviewProcessView` 提供应用合同，HTTP 和 Agent 各做边界适配；旧 `Opportunity` API 和实体身份保留。其他领域仍需逐步清理，不能据此声称全站已脱离 Web DTO。
 - Agent Tool 只是薄适配器，不能复制或绕过 Service 逻辑。
 - 平台层（`llm`、`usage`、`aijobs`、`background`）不得导入业务域 Service/Tool/Repository；模型连接测试如需 Agent 能力，通过 `ToolCallingProbe` 等接口由业务层实现。架构边界测试见 `ArchitectureBoundaryTests`。
