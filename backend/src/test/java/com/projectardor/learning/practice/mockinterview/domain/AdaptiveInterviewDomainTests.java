@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class AdaptiveInterviewDomainTests {
     private final UUID owner = UUID.randomUUID();
@@ -74,14 +75,50 @@ class AdaptiveInterviewDomainTests {
     }
 
     @Test void editingTheCallersRubricCannotRewriteWhatTheQuestionWasAskedWith() {
+        List<Object> points = new ArrayList<>(List.of("分代假设"));
+        Map<String, Object> criteria = new LinkedHashMap<>();
+        criteria.put("mustHavePoints", points);
         Map<String, Object> rubric = new LinkedHashMap<>();
-        rubric.put("mustHavePoints", List.of("分代假设"));
+        rubric.put("criteria", criteria);
         var blueprint = new QuestionBlueprint("JVM", "GC", 3, rubric, QuestionOrigin.PLAN, null);
-        rubric.put("mustHavePoints", List.of("something else"));
+
+        points.add("late addition");
+        criteria.put("mustHavePoints", List.of("something else"));
         rubric.put("lateAddition", "x");
-        assertThat(blueprint.rubric()).containsOnlyKeys("mustHavePoints");
-        assertThat(blueprint.rubric().get("mustHavePoints")).isEqualTo(List.of("分代假设"));
+
+        assertThat(blueprint.rubric()).containsOnlyKeys("criteria");
+        assertThat(blueprint.rubric().get("criteria")).isEqualTo(Map.of("mustHavePoints", List.of("分代假设")));
         assertThatThrownBy(() -> blueprint.rubric().clear()).isInstanceOf(UnsupportedOperationException.class);
+        Map<?, ?> frozenCriteria = (Map<?, ?>) blueprint.rubric().get("criteria");
+        assertThatThrownBy(() -> frozenCriteria.remove("mustHavePoints")).isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> ((List<?>) frozenCriteria.get("mustHavePoints")).clear())
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test void aRubricReadBackFromJsonbIsHandedOutFrozen() {
+        var question = InterviewQuestion.createAdaptive(owner, session, 1, "Q", "TECHNICAL", List.of(),
+                blueprint(3), null);
+        List<Object> points = new ArrayList<>(List.of("分代假设", "停顿与吞吐权衡"));
+        Map<String, Object> loaded = new LinkedHashMap<>();
+        loaded.put("mustHavePoints", points);
+        ReflectionTestUtils.setField(question, "rubric", loaded);
+
+        Map<String, Object> handedOut = question.getRubric();
+        assertThatThrownBy(() -> handedOut.clear()).isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> ((List<?>) handedOut.get("mustHavePoints")).clear())
+                .isInstanceOf(UnsupportedOperationException.class);
+
+        points.add("rewritten after reading");
+        assertThat(handedOut.get("mustHavePoints")).isEqualTo(List.of("分代假设", "停顿与吞吐权衡"));
+    }
+
+    @Test void aRubricKeepsItsKeyOrderSoTheSameRubricRendersTheSamePrompt() {
+        Map<String, Object> rubric = new LinkedHashMap<>();
+        rubric.put("knowledgePoint", "GC");
+        rubric.put("difficulty", 3);
+        rubric.put("expectedPoints", List.of("分代假设"));
+        var blueprint = new QuestionBlueprint("JVM", "GC", 3, rubric, QuestionOrigin.PLAN, null);
+        assertThat(blueprint.rubric().keySet()).containsExactly("knowledgePoint", "difficulty", "expectedPoints");
     }
 
     @Test void anAdaptiveQuestionKeepsItsBlueprintAndFollowUpParent() {

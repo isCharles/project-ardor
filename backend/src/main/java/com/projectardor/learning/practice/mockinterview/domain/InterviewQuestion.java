@@ -105,7 +105,7 @@ public class InterviewQuestion {
     public String getCompetency() { return competency; }
     public String getKnowledgePoint() { return knowledgePoint; }
     public Integer getDifficulty() { return difficulty; }
-    public Map<String, Object> getRubric() { return rubric == null ? null : Map.copyOf(rubric); }
+    public Map<String, Object> getRubric() { return rubric == null ? null : RubricSnapshot.of(rubric); }
     public QuestionOrigin getOrigin() { return origin; }
     public UUID getParentQuestionId() { return parentQuestionId; }
     public DifficultyFeedback getDifficultyFeedback() { return difficultyFeedback; }

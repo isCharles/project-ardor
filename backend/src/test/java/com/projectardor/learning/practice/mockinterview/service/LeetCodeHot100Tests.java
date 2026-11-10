@@ -35,4 +35,34 @@ class LeetCodeHot100Tests {
         assertThat(LeetCodeHot100.find(null)).isEmpty();
         assertThat(LeetCodeHot100.find("not-a-problem")).isEmpty();
     }
+
+    @Test
+    void everyProblemBelongsToExactlyOneTopic() {
+        LeetCodeHot100 hot100 = new LeetCodeHot100();
+        Set<String> grouped = new HashSet<>();
+        for (LeetCodeHot100.Topic topic : LeetCodeHot100.TOPICS) {
+            assertThat(topic.name()).isNotBlank();
+            assertThat(topic.slugs()).isNotEmpty().doesNotHaveDuplicates();
+            for (String slug : topic.slugs()) {
+                assertThat(grouped.add(slug)).as("题目只属于一个分组：%s", slug).isTrue();
+                assertThat(hot100.byTopic(topic.name())).contains(LeetCodeHot100.find(slug).orElseThrow());
+            }
+        }
+        assertThat(grouped).containsExactlyInAnyOrderElementsOf(
+                LeetCodeHot100.PROBLEMS.stream().map(LeetCodeHot100.Problem::slug).toList());
+        assertThat(hot100.byTopic(null)).isEmpty();
+        assertThat(hot100.byTopic("不存在的分组")).isEmpty();
+    }
+
+    @Test
+    void aCodingTopicHoldsEnoughProblemsToOutlastThePerPointTurnBudget() {
+        LeetCodeHot100 hot100 = new LeetCodeHot100();
+        assertThat(LeetCodeHot100.CODING_TOPICS).isNotEmpty().doesNotHaveDuplicates();
+        for (String topic : LeetCodeHot100.CODING_TOPICS) {
+            assertThat(hot100.byTopic(topic)).hasSizeGreaterThanOrEqualTo(3);
+        }
+        // 滑动窗口 only holds two problems, so it cannot sustain three turns without a repeat.
+        assertThat(LeetCodeHot100.CODING_TOPICS).doesNotContain("滑动窗口");
+        assertThat(hot100.byTopic("滑动窗口")).hasSize(2);
+    }
 }
