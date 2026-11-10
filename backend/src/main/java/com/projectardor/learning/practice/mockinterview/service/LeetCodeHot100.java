@@ -123,8 +123,77 @@ public class LeetCodeHot100 {
     private static final Map<String, Problem> BY_SLUG = PROBLEMS.stream()
             .collect(Collectors.toUnmodifiableMap(Problem::slug, Function.identity()));
 
+    /** The published Hot 100 grouping. Every problem belongs to exactly one topic. */
+    public record Topic(String name, List<String> slugs) {
+        public Topic {
+            slugs = List.copyOf(slugs);
+        }
+    }
+
+    public static final List<Topic> TOPICS = List.of(
+            new Topic("哈希", List.of("two-sum", "group-anagrams", "longest-consecutive-sequence")),
+            new Topic("双指针", List.of("move-zeroes", "container-with-most-water", "3sum", "trapping-rain-water")),
+            new Topic("滑动窗口", List.of("longest-substring-without-repeating-characters",
+                    "find-all-anagrams-in-a-string")),
+            new Topic("子串", List.of("subarray-sum-equals-k", "sliding-window-maximum", "minimum-window-substring")),
+            new Topic("普通数组", List.of("maximum-subarray", "merge-intervals", "rotate-array",
+                    "product-of-array-except-self", "first-missing-positive")),
+            new Topic("矩阵", List.of("set-matrix-zeroes", "spiral-matrix", "rotate-image", "search-a-2d-matrix-ii")),
+            new Topic("链表", List.of("intersection-of-two-linked-lists", "reverse-linked-list", "palindrome-linked-list",
+                    "linked-list-cycle", "linked-list-cycle-ii", "merge-two-sorted-lists", "add-two-numbers",
+                    "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs", "reverse-nodes-in-k-group",
+                    "copy-list-with-random-pointer", "sort-list", "merge-k-sorted-lists", "lru-cache")),
+            new Topic("二叉树", List.of("binary-tree-inorder-traversal", "maximum-depth-of-binary-tree",
+                    "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree",
+                    "binary-tree-level-order-traversal", "convert-sorted-array-to-binary-search-tree",
+                    "validate-binary-search-tree", "kth-smallest-element-in-a-bst", "binary-tree-right-side-view",
+                    "flatten-binary-tree-to-linked-list", "construct-binary-tree-from-preorder-and-inorder-traversal",
+                    "path-sum-iii", "lowest-common-ancestor-of-a-binary-tree", "binary-tree-maximum-path-sum")),
+            new Topic("图论", List.of("number-of-islands", "rotting-oranges", "course-schedule",
+                    "implement-trie-prefix-tree")),
+            new Topic("回溯", List.of("permutations", "subsets", "letter-combinations-of-a-phone-number",
+                    "combination-sum", "generate-parentheses", "word-search", "palindrome-partitioning", "n-queens")),
+            new Topic("二分查找", List.of("search-insert-position", "search-a-2d-matrix",
+                    "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array",
+                    "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays")),
+            new Topic("栈", List.of("valid-parentheses", "min-stack", "decode-string", "daily-temperatures",
+                    "largest-rectangle-in-histogram")),
+            new Topic("堆", List.of("kth-largest-element-in-an-array", "top-k-frequent-elements",
+                    "find-median-from-data-stream")),
+            new Topic("贪心算法", List.of("best-time-to-buy-and-sell-stock", "jump-game", "jump-game-ii",
+                    "partition-labels")),
+            new Topic("动态规划", List.of("climbing-stairs", "pascals-triangle", "house-robber", "perfect-squares",
+                    "coin-change", "word-break", "longest-increasing-subsequence", "maximum-product-subarray",
+                    "partition-equal-subset-sum", "longest-valid-parentheses")),
+            new Topic("多维动态规划", List.of("unique-paths", "minimum-path-sum", "longest-palindromic-substring",
+                    "longest-common-subsequence", "edit-distance")),
+            new Topic("技巧", List.of("single-number", "majority-element", "sort-colors", "next-permutation",
+                    "find-the-duplicate-number")));
+
+    private static final Map<String, List<Problem>> BY_TOPIC = TOPICS.stream()
+            .collect(Collectors.toUnmodifiableMap(Topic::name, topic -> topic.slugs().stream()
+                    .map(slug -> find(slug).orElseThrow(
+                            () -> new IllegalStateException("题库分组引用了不存在的题目：" + slug)))
+                    .toList()));
+
+    /**
+     * A topic is offered as an adaptive coding knowledge point only when it holds enough problems to
+     * outlast the per-point turn budget, so the rubric's label always matches the problem actually
+     * asked and no problem has to be repeated.
+     */
+    private static final int MIN_PROBLEMS_PER_TOPIC = 3;
+
+    public static final List<String> CODING_TOPICS = TOPICS.stream()
+            .filter(topic -> topic.slugs().size() >= MIN_PROBLEMS_PER_TOPIC)
+            .map(Topic::name)
+            .toList();
+
     public static Optional<Problem> find(String slug) {
         return slug == null ? Optional.empty() : Optional.ofNullable(BY_SLUG.get(slug));
+    }
+
+    public List<Problem> byTopic(String topic) {
+        return topic == null ? List.of() : BY_TOPIC.getOrDefault(topic, List.of());
     }
 
     public Problem random() {
