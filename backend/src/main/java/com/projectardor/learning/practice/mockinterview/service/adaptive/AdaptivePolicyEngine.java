@@ -37,8 +37,13 @@ public class AdaptivePolicyEngine {
     public static final int MAX_TURNS_PER_COMPETENCY = 4;
     public static final int MAX_QUESTIONS = 30;
 
+    /**
+     * {@code history} carries only scored turns, because an answer the evaluator could not read is not
+     * evidence. {@code askedCount} carries every question actually persisted, so a run of scoring
+     * failures still consumes the question budget instead of asking for free.
+     */
     public record Context(List<InterviewPlanner.CompetencyTarget> competencies, List<EvaluatedTurn> history,
-            boolean deepDive, Integer durationMinutes, Instant startedAt, Instant now) {
+            int askedCount, boolean deepDive, Integer durationMinutes, Instant startedAt, Instant now) {
         public Context {
             if (competencies == null || competencies.isEmpty()) {
                 throw new IllegalArgumentException("能力规划不能为空");
@@ -52,15 +57,17 @@ public class AdaptivePolicyEngine {
     public record Decision(PolicyAction action, QuestionTarget target, String reason) {}
 
     public Decision decide(Context context) {
-        if (context.history().isEmpty()) return open(context);
-        EvaluatedTurn last = context.history().get(context.history().size() - 1);
-
+        // Both limits are checked before the opening move: a session whose answers all failed to score
+        // has an empty history, and must still stop when its time or question budget is gone.
         if (outOfTime(context)) {
             return terminate("已达面试时长 " + context.durationMinutes() + " 分钟，剩余维度留待下次");
         }
-        if (context.history().size() >= MAX_QUESTIONS) {
+        if (context.askedCount() >= MAX_QUESTIONS) {
             return terminate("已达单场题目上限 " + MAX_QUESTIONS + " 题");
         }
+        if (context.history().isEmpty()) return open(context);
+        EvaluatedTurn last = context.history().get(context.history().size() - 1);
+
         // Rotating knowledge points can otherwise keep one competency busy past its budget, most
         // easily in deep-dive mode where the consecutive-follow-up limit does not apply.
         if (turnCount(context.history(), last.competency()) >= MAX_TURNS_PER_COMPETENCY) {

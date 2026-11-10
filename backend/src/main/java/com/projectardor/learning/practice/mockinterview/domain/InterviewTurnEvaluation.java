@@ -2,6 +2,7 @@ package com.projectardor.learning.practice.mockinterview.domain;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -85,7 +86,10 @@ public class InterviewTurnEvaluation {
     public AnswerKind getAnswerKind() { return answerKind; }
     public Integer getScore() { return score; }
     public BigDecimal getConfidence() { return confidence; }
-    public Map<String, Object> getEvaluation() { return evaluation == null ? Map.of() : Map.copyOf(evaluation); }
+    public Map<String, Object> getEvaluation() {
+        // A clarification stores null score and confidence on purpose; Map.copyOf rejects null values.
+        return evaluation == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(evaluation));
+    }
     public String getModelName() { return modelName; }
     public String getPromptVersion() { return promptVersion; }
     public Instant getCreatedAt() { return createdAt; }
