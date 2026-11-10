@@ -171,6 +171,48 @@ class AdaptivePolicyEngineTests {
         assertThat(decision.reason()).contains("不再追问");
     }
 
+    @Test void rotatingKnowledgePointsCannotKeepADeepDivePastTheCompetencyCeiling() {
+        List<EvaluatedTurn> history = new ArrayList<>();
+        String[] points = {"GC 选型", "内存模型"};
+        for (int index = 0; index < AdaptivePolicyEngine.MAX_TURNS_PER_COMPETENCY; index++) {
+            history.add(answered("JVM", points[index % points.length], 3 + index % 3,
+                    index == 0 ? QuestionOrigin.PLAN : QuestionOrigin.FOLLOW_UP, 4, "0.90"));
+        }
+        Decision decision = engine.decide(new Context(List.of(jvm, spring), history, true, null, null, null));
+        assertThat(decision.action()).isEqualTo(PolicyAction.SWITCH);
+        assertThat(decision.target().competency()).isEqualTo("Spring");
+        assertThat(decision.reason()).contains("单维度上限");
+    }
+
+    @Test void returningToACompetencySkipsTheKnowledgePointThatUsedUpItsBudget() {
+        Decision decision = engine.decide(context(
+                answered("Spring", "Bean 生命周期", 2, QuestionOrigin.PLAN, 3, "0.90"),
+                answered("Spring", "Bean 生命周期", 2, QuestionOrigin.FOLLOW_UP, 2, "0.90"),
+                answered("Spring", "Bean 生命周期", 2, QuestionOrigin.FOLLOW_UP, 2, "0.90"),
+                answered("JVM", "GC 选型", 3, QuestionOrigin.PLAN, 3, "0.90"),
+                answered("JVM", "内存模型", 4, QuestionOrigin.FOLLOW_UP, 3, "0.90"),
+                answered("JVM", "GC 选型", 5, QuestionOrigin.FOLLOW_UP, 3, "0.90")));
+        assertThat(decision.action()).isEqualTo(PolicyAction.SWITCH);
+        assertThat(decision.target().competency()).isEqualTo("Spring");
+        assertThat(decision.target().knowledgePoint()).isEqualTo("事务传播");
+        assertThat(decision.target().origin()).isEqualTo(QuestionOrigin.PLAN);
+    }
+
+    @Test void aCompetencyWithNoEligiblePointLeftIsNotASwitchDestination() {
+        CompetencyTarget redis = competency("Redis", 4, 2, "持久化");
+        Decision decision = engine.decide(new Context(List.of(jvm, redis), List.of(
+                answered("Redis", "持久化", 2, QuestionOrigin.PLAN, 3, "0.90"),
+                answered("Redis", "持久化", 2, QuestionOrigin.FOLLOW_UP, 2, "0.90"),
+                answered("Redis", "持久化", 2, QuestionOrigin.FOLLOW_UP, 2, "0.90"),
+                answered("JVM", "GC 选型", 3, QuestionOrigin.PLAN, 3, "0.90"),
+                answered("JVM", "内存模型", 4, QuestionOrigin.FOLLOW_UP, 3, "0.90"),
+                answered("JVM", "GC 选型", 5, QuestionOrigin.FOLLOW_UP, 3, "0.90")),
+                false, null, null, null));
+        assertThat(decision.action()).isEqualTo(PolicyAction.TERMINATE);
+        assertThat(decision.target()).isNull();
+        assertThat(decision.reason()).contains("所有维度都已问到上限");
+    }
+
     @Test void difficultyStaysOnTheScaleAndSaysSoAtTheCeiling() {
         Decision decision = engine.decide(context(answered("JVM", "内存模型", 5, QuestionOrigin.PLAN, 4, "0.90")));
         assertThat(decision.target().difficulty()).isEqualTo(5);

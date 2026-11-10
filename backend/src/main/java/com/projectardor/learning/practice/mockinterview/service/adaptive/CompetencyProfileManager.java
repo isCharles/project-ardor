@@ -85,9 +85,12 @@ public class CompetencyProfileManager {
     }
 
     private static List<String> gapDetails(EvaluatedTurn turn) {
-        if (!turn.knowledgeGaps().isEmpty()) return turn.knowledgeGaps();
-        if (turn.score() == 2 && !turn.missingPoints().isEmpty()) return turn.missingPoints();
-        return List.of(turn.knowledgePoint());
+        // A partial answer names both what the model judged missing and what the rubric still
+        // expects; keeping only one of them would drop evidence the report needs to cite.
+        LinkedHashSet<String> details = new LinkedHashSet<>(turn.knowledgeGaps());
+        if (turn.score() == 2) details.addAll(turn.missingPoints());
+        if (details.isEmpty()) details.add(turn.knowledgePoint());
+        return List.copyOf(details);
     }
 
     private static BigDecimal spread(int difficulties) {

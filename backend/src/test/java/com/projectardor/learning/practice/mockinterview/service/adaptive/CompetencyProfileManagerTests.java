@@ -131,6 +131,27 @@ class CompetencyProfileManagerTests {
                 Map.of("knowledgePoint", "GC 选型", "difficulty", 3, "detail", "停顿预测"));
     }
 
+    @Test void aPartialAnswerKeepsTheMissingRubricPointsAlongsideTheJudgedGaps() {
+        EvaluatedTurn partial = new EvaluatedTurn("JVM", "GC 选型", 3, QuestionOrigin.PLAN, AnswerKind.ANSWER, 2,
+                new BigDecimal("0.90"), List.of("分代假设"), List.of("停顿预测", "并发标记"),
+                List.of("回收器取舍"), null, UUID.randomUUID());
+        Snapshot profile = profiles.summarize("JVM", 5, List.of(partial));
+        assertThat(profile.state()).isEqualTo(CompetencyState.UNVERIFIED);
+        assertThat(profile.knowledgeGaps()).containsExactly(
+                Map.of("knowledgePoint", "GC 选型", "difficulty", 3, "detail", "回收器取舍"),
+                Map.of("knowledgePoint", "GC 选型", "difficulty", 3, "detail", "停顿预测"),
+                Map.of("knowledgePoint", "GC 选型", "difficulty", 3, "detail", "并发标记"));
+    }
+
+    @Test void aPointNamedByBothTheRubricAndTheJudgeIsRecordedOnce() {
+        EvaluatedTurn partial = new EvaluatedTurn("JVM", "GC 选型", 3, QuestionOrigin.PLAN, AnswerKind.ANSWER, 2,
+                new BigDecimal("0.90"), List.of(), List.of("停顿预测"), List.of("停顿预测", "回收器取舍"),
+                null, UUID.randomUUID());
+        assertThat(profiles.summarize("JVM", 5, List.of(partial)).knowledgeGaps()).containsExactly(
+                Map.of("knowledgePoint", "GC 选型", "difficulty", 3, "detail", "停顿预测"),
+                Map.of("knowledgePoint", "GC 选型", "difficulty", 3, "detail", "回收器取舍"));
+    }
+
     @Test void turnsFromOtherCompetenciesAreIgnored() {
         Snapshot profile = profiles.summarize("JVM", 5, List.of(
                 passed("GC 选型", 3, "0.90"),

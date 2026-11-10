@@ -61,6 +61,12 @@ public class AdaptivePolicyEngine {
         if (context.history().size() >= MAX_QUESTIONS) {
             return terminate("已达单场题目上限 " + MAX_QUESTIONS + " 题");
         }
+        // Rotating knowledge points can otherwise keep one competency busy past its budget, most
+        // easily in deep-dive mode where the consecutive-follow-up limit does not apply.
+        if (turnCount(context.history(), last.competency()) >= MAX_TURNS_PER_COMPETENCY) {
+            return switchCompetency(context, last, "「" + last.competency() + "」已问 "
+                    + MAX_TURNS_PER_COMPETENCY + " 题，达到单维度上限，转向其他维度");
+        }
         if (last.kind() == AnswerKind.CLARIFICATION) return clarify(context, last);
         if (last.kind() == AnswerKind.OFF_TOPIC) {
             return alternate(context, last, "回答未针对题目，换个角度重问，不计入能力判断");
@@ -119,7 +125,11 @@ public class AdaptivePolicyEngine {
         PolicyAction action = difficulty > last.difficulty() ? PolicyAction.RAISE
                 : difficulty < last.difficulty() ? PolicyAction.LOWER : PolicyAction.HOLD;
         boolean deeper = last.isPass() && difficulty >= last.difficulty();
-        String point = deeper ? nextKnowledgePoint(competency, last.knowledgePoint()) : last.knowledgePoint();
+        // The current point still has budget here, so it is the fallback when every other point
+        // in this competency has been asked out.
+        String point = deeper
+                ? eligiblePoint(context.history(), competency, last.knowledgePoint()).orElse(last.knowledgePoint())
+                : last.knowledgePoint();
         if (deeper && !point.equals(last.knowledgePoint())) reason += "「" + point + "」";
         return new Decision(action,
                 new QuestionTarget(competency.skill(), point, difficulty, competency.questionType(),
@@ -161,14 +171,16 @@ public class AdaptivePolicyEngine {
         Optional<InterviewPlanner.CompetencyTarget> next = context.competencies().stream()
                 .filter(competency -> !competency.skill().equals(last.competency()))
                 .filter(competency -> turnCount(context.history(), competency.skill()) < MAX_TURNS_PER_COMPETENCY)
+                .filter(competency -> eligiblePoint(context.history(), competency, null).isPresent())
                 .min(Comparator.comparingLong((InterviewPlanner.CompetencyTarget competency) ->
                         turnCount(context.history(), competency.skill())));
         if (next.isEmpty()) return terminate(reason + "；所有维度都已问到上限，结束本场");
         InterviewPlanner.CompetencyTarget competency = next.get();
+        // Returning to a competency must not reopen a point that already used up its turn budget.
+        String point = eligiblePoint(context.history(), competency, null).orElseThrow();
         // A new competency restarts its own scale; this is not a jump inside the previous one.
         return new Decision(PolicyAction.SWITCH,
-                target(competency, competency.knowledgePoints().get(0), competency.initialDifficulty(),
-                        QuestionOrigin.PLAN),
+                target(competency, point, competency.initialDifficulty(), QuestionOrigin.PLAN),
                 reason + "；转到「" + competency.skill() + "」，按其初始难度 " + competency.initialDifficulty() + " 重新开始");
     }
 
@@ -224,10 +236,16 @@ public class AdaptivePolicyEngine {
         return Math.max(1, Math.min(5, bounded));
     }
 
-    private static String nextKnowledgePoint(InterviewPlanner.CompetencyTarget competency, String current) {
+    /** Rotates from {@code after}, skipping points that already used up their turn budget. */
+    private static Optional<String> eligiblePoint(List<EvaluatedTurn> history,
+            InterviewPlanner.CompetencyTarget competency, String after) {
         List<String> points = competency.knowledgePoints();
-        int index = points.indexOf(current);
-        return points.get((index + 1) % points.size());
+        int start = after == null ? 0 : (points.indexOf(after) + 1) % points.size();
+        for (int offset = 0; offset < points.size(); offset++) {
+            String point = points.get((start + offset) % points.size());
+            if (turnsOnPoint(history, point) < MAX_TURNS_PER_POINT) return Optional.of(point);
+        }
+        return Optional.empty();
     }
 
     private static QuestionTarget target(InterviewPlanner.CompetencyTarget competency, String point,
