@@ -31,7 +31,7 @@ class AdaptiveQuestionServiceTests {
     private final UUID session = UUID.randomUUID();
     private final LlmGateway llm = mock(LlmGateway.class);
     private final InterviewQuestionRepository questions = mock(InterviewQuestionRepository.class);
-    private final LeetCodeHot100 hot100 = mock(LeetCodeHot100.class);
+    private final LeetCodeHot100 hot100 = new LeetCodeHot100();
     private final AdaptiveQuestionService service =
             new AdaptiveQuestionService(llm, new LlmJsonParser(mapper), questions, hot100);
 
@@ -107,23 +107,52 @@ class AdaptiveQuestionServiceTests {
     @Test void aCodingQuestionComesFromTheBankWithoutSpendingAModelCall() {
         when(questions.findAllByUserIdAndInterviewSessionIdOrderBySequenceNumber(owner, session))
                 .thenReturn(List.of());
-        when(hot100.random()).thenReturn(new LeetCodeHot100.Problem(146, "lru-cache", "LRU Cache", "LRU 缓存"));
-        var coding = new QuestionTarget("算法", "缓存淘汰策略", 3, "CODING", QuestionOrigin.PLAN, null);
+        var coding = new QuestionTarget("算法", "链表", 3, "CODING", QuestionOrigin.PLAN, null);
         var generated = service.generate(owner, session, coding);
         assertThat(generated.questionType()).isEqualTo("CODING");
-        assertThat(generated.leetcodeSlug()).isEqualTo("lru-cache");
-        assertThat(generated.questionText()).contains("146").contains("LRU 缓存");
+        assertThat(generated.blueprint().knowledgePoint()).isEqualTo("链表");
+        assertThat(generated.questionText()).contains("LeetCode").contains("思路、时间与空间复杂度");
         assertThat(AdaptiveRubric.fromMap(generated.blueprint().rubric()).expectedPoints()).isNotEmpty();
+        verifyNoInteractions(llm);
+    }
+
+    @Test void aCodingQuestionOnlyEverPicksAProblemInsideTheTargetedTopic() {
+        when(questions.findAllByUserIdAndInterviewSessionIdOrderBySequenceNumber(owner, session))
+                .thenReturn(List.of());
+        var coding = new QuestionTarget("算法", "链表", 3, "CODING", QuestionOrigin.PLAN, null);
+        List<String> allowed = hot100.byTopic("链表").stream().map(LeetCodeHot100.Problem::slug).toList();
+        for (int attempt = 0; attempt < 50; attempt++) {
+            assertThat(allowed).contains(service.generate(owner, session, coding).leetcodeSlug());
+        }
+    }
+
+    @Test void aCodingTargetTheBankCannotServeIsRefusedInsteadOfMislabelled() {
+        var coding = new QuestionTarget("算法", "缓存淘汰策略", 3, "CODING", QuestionOrigin.PLAN, null);
+        assertThatThrownBy(() -> service.generate(owner, session, coding))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("不在题库范围内");
         verifyNoInteractions(llm);
     }
 
     @Test void aCodingQuestionDoesNotRepeatAProblemAlreadyAskedInTheSession() {
         var used = InterviewQuestion.create(owner, session, 1, "旧编程题", "CODING", List.of("正确"), "two-sum");
+        var alsoUsed = InterviewQuestion.create(owner, session, 2, "旧编程题", "CODING", List.of("正确"),
+                "group-anagrams");
         when(questions.findAllByUserIdAndInterviewSessionIdOrderBySequenceNumber(owner, session))
-                .thenReturn(List.of(used));
-        when(hot100.random()).thenReturn(LeetCodeHot100.PROBLEMS.get(0));
-        var coding = new QuestionTarget("算法", "哈希查找", 3, "CODING", QuestionOrigin.PLAN, null);
-        assertThat(service.generate(owner, session, coding).leetcodeSlug()).isNotEqualTo("two-sum");
+                .thenReturn(List.of(used, alsoUsed));
+        var coding = new QuestionTarget("算法", "哈希", 3, "CODING", QuestionOrigin.PLAN, null);
+        assertThat(service.generate(owner, session, coding).leetcodeSlug())
+                .isEqualTo("longest-consecutive-sequence");
+    }
+
+    @Test void aTopicWithNoProblemLeftIsRefusedRatherThanRepeatingOne() {
+        List<InterviewQuestion> used = hot100.byTopic("哈希").stream()
+                .map(problem -> InterviewQuestion.create(owner, session, 1, "旧编程题", "CODING",
+                        List.of("正确"), problem.slug()))
+                .toList();
+        when(questions.findAllByUserIdAndInterviewSessionIdOrderBySequenceNumber(owner, session)).thenReturn(used);
+        var coding = new QuestionTarget("算法", "哈希", 3, "CODING", QuestionOrigin.PLAN, null);
+        assertThatThrownBy(() -> service.generate(owner, session, coding))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("已全部问过");
     }
 
     @Test void aGeneratedQuestionBecomesAnEntityThatCarriesItsRubric() {
