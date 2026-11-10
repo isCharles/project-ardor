@@ -155,7 +155,7 @@ class AdaptivePolicyEngineTests {
                 answered("JVM", "GC 选型", 3, QuestionOrigin.PLAN, 3, "0.90"),
                 answered("JVM", "内存模型", 4, QuestionOrigin.FOLLOW_UP, 3, "0.90"),
                 answered("JVM", "GC 选型", 5, QuestionOrigin.FOLLOW_UP, 2, "0.90"));
-        Decision decision = engine.decide(new Context(List.of(jvm, spring), history, true, null, null, null));
+        Decision decision = engine.decide(new Context(List.of(jvm, spring), history, history.size(), true, null, null, null));
         assertThat(decision.action()).isEqualTo(PolicyAction.HOLD);
         assertThat(decision.target().competency()).isEqualTo("JVM");
     }
@@ -165,10 +165,52 @@ class AdaptivePolicyEngineTests {
                 answered("JVM", "GC 选型", 3, QuestionOrigin.PLAN, 2, "0.90"),
                 answered("JVM", "GC 选型", 3, QuestionOrigin.FOLLOW_UP, 2, "0.90"),
                 answered("JVM", "GC 选型", 3, QuestionOrigin.FOLLOW_UP, 2, "0.90"));
-        Decision decision = engine.decide(new Context(List.of(jvm, spring), history, true, null, null, null));
+        Decision decision = engine.decide(new Context(List.of(jvm, spring), history, history.size(), true, null, null, null));
         assertThat(decision.action()).isEqualTo(PolicyAction.SWITCH);
         assertThat(decision.target().competency()).isEqualTo("Spring");
         assertThat(decision.reason()).contains("不再追问");
+    }
+
+    @Test void rotatingKnowledgePointsCannotKeepADeepDivePastTheCompetencyCeiling() {
+        List<EvaluatedTurn> history = new ArrayList<>();
+        String[] points = {"GC 选型", "内存模型"};
+        for (int index = 0; index < AdaptivePolicyEngine.MAX_TURNS_PER_COMPETENCY; index++) {
+            history.add(answered("JVM", points[index % points.length], 3 + index % 3,
+                    index == 0 ? QuestionOrigin.PLAN : QuestionOrigin.FOLLOW_UP, 4, "0.90"));
+        }
+        Decision decision = engine.decide(new Context(List.of(jvm, spring), history, history.size(), true, null, null, null));
+        assertThat(decision.action()).isEqualTo(PolicyAction.SWITCH);
+        assertThat(decision.target().competency()).isEqualTo("Spring");
+        assertThat(decision.reason()).contains("单维度上限");
+    }
+
+    @Test void returningToACompetencySkipsTheKnowledgePointThatUsedUpItsBudget() {
+        Decision decision = engine.decide(context(
+                answered("Spring", "Bean 生命周期", 2, QuestionOrigin.PLAN, 3, "0.90"),
+                answered("Spring", "Bean 生命周期", 2, QuestionOrigin.FOLLOW_UP, 2, "0.90"),
+                answered("Spring", "Bean 生命周期", 2, QuestionOrigin.FOLLOW_UP, 2, "0.90"),
+                answered("JVM", "GC 选型", 3, QuestionOrigin.PLAN, 3, "0.90"),
+                answered("JVM", "内存模型", 4, QuestionOrigin.FOLLOW_UP, 3, "0.90"),
+                answered("JVM", "GC 选型", 5, QuestionOrigin.FOLLOW_UP, 3, "0.90")));
+        assertThat(decision.action()).isEqualTo(PolicyAction.SWITCH);
+        assertThat(decision.target().competency()).isEqualTo("Spring");
+        assertThat(decision.target().knowledgePoint()).isEqualTo("事务传播");
+        assertThat(decision.target().origin()).isEqualTo(QuestionOrigin.PLAN);
+    }
+
+    @Test void aCompetencyWithNoEligiblePointLeftIsNotASwitchDestination() {
+        CompetencyTarget redis = competency("Redis", 4, 2, "持久化");
+        Decision decision = engine.decide(new Context(List.of(jvm, redis), List.of(
+                answered("Redis", "持久化", 2, QuestionOrigin.PLAN, 3, "0.90"),
+                answered("Redis", "持久化", 2, QuestionOrigin.FOLLOW_UP, 2, "0.90"),
+                answered("Redis", "持久化", 2, QuestionOrigin.FOLLOW_UP, 2, "0.90"),
+                answered("JVM", "GC 选型", 3, QuestionOrigin.PLAN, 3, "0.90"),
+                answered("JVM", "内存模型", 4, QuestionOrigin.FOLLOW_UP, 3, "0.90"),
+                answered("JVM", "GC 选型", 5, QuestionOrigin.FOLLOW_UP, 3, "0.90")),
+                6, false, null, null, null));
+        assertThat(decision.action()).isEqualTo(PolicyAction.TERMINATE);
+        assertThat(decision.target()).isNull();
+        assertThat(decision.reason()).contains("所有维度都已问到上限");
     }
 
     @Test void difficultyStaysOnTheScaleAndSaysSoAtTheCeiling() {
@@ -223,7 +265,7 @@ class AdaptivePolicyEngineTests {
         Instant now = Instant.parse("2026-11-09T10:00:00Z");
         Context timed = new Context(List.of(jvm, spring),
                 List.of(answered("JVM", "GC 选型", 3, QuestionOrigin.PLAN, 3, "0.90")),
-                false, 30, now.minusSeconds(31 * 60), now);
+                1, false, 30, now.minusSeconds(31 * 60), now);
         Decision decision = engine.decide(timed);
         assertThat(decision.action()).isEqualTo(PolicyAction.TERMINATE);
         assertThat(decision.target()).isNull();
@@ -234,7 +276,7 @@ class AdaptivePolicyEngineTests {
         Instant now = Instant.parse("2026-11-09T10:00:00Z");
         Context untimed = new Context(List.of(jvm, spring),
                 List.of(answered("JVM", "GC 选型", 3, QuestionOrigin.PLAN, 3, "0.90")),
-                false, null, now.minusSeconds(120 * 60), now);
+                1, false, null, now.minusSeconds(120 * 60), now);
         assertThat(engine.decide(untimed).action()).isEqualTo(PolicyAction.RAISE);
     }
 
@@ -243,9 +285,30 @@ class AdaptivePolicyEngineTests {
         for (int index = 0; index < AdaptivePolicyEngine.MAX_QUESTIONS; index++) {
             history.add(answered("JVM", "GC 选型", 3, QuestionOrigin.PLAN, 3, "0.90"));
         }
-        Decision decision = engine.decide(new Context(List.of(jvm, spring), history, false, null, null, null));
+        Decision decision = engine.decide(new Context(List.of(jvm, spring), history, history.size(), false, null, null, null));
         assertThat(decision.action()).isEqualTo(PolicyAction.TERMINATE);
         assertThat(decision.reason()).contains("题目上限");
+    }
+
+    @Test void questionsThatCouldNotBeScoredStillConsumeTheQuestionBudget() {
+        Decision decision = engine.decide(new Context(List.of(jvm, spring), List.of(),
+                AdaptivePolicyEngine.MAX_QUESTIONS, false, null, null, null));
+        assertThat(decision.action()).isEqualTo(PolicyAction.TERMINATE);
+        assertThat(decision.reason()).contains("题目上限");
+    }
+
+    @Test void anInterviewWhoseAnswersAllFailedScoringStillEndsWhenItsTimeIsUp() {
+        Instant now = Instant.parse("2026-11-09T10:00:00Z");
+        Decision decision = engine.decide(new Context(List.of(jvm, spring), List.of(), 5,
+                false, 30, now.minusSeconds(31 * 60), now));
+        assertThat(decision.action()).isEqualTo(PolicyAction.TERMINATE);
+        assertThat(decision.reason()).contains("30");
+    }
+
+    @Test void unscoredQuestionsBelowBothLimitsStillLeaveRoomToKeepAsking() {
+        Decision decision = engine.decide(new Context(List.of(jvm, spring), List.of(), 2, false, null, null, null));
+        assertThat(decision.action()).isEqualTo(PolicyAction.OPEN);
+        assertThat(decision.target().competency()).isEqualTo("JVM");
     }
 
     @Test void aSessionEndsWhenEveryCompetencyReachedItsTurnCeiling() {
@@ -258,7 +321,7 @@ class AdaptivePolicyEngineTests {
             history.add(answered("JVM", "GC 选型", 3,
                     index == 0 ? QuestionOrigin.PLAN : QuestionOrigin.FOLLOW_UP, 3, "0.90"));
         }
-        Decision decision = engine.decide(new Context(List.of(jvm, spring), history, false, null, null, null));
+        Decision decision = engine.decide(new Context(List.of(jvm, spring), history, history.size(), false, null, null, null));
         assertThat(decision.action()).isEqualTo(PolicyAction.TERMINATE);
         assertThat(decision.reason()).contains("上限");
     }
@@ -276,12 +339,12 @@ class AdaptivePolicyEngineTests {
     }
 
     @Test void anEmptyPlanIsRejected() {
-        assertThatThrownBy(() -> new Context(List.of(), List.of(), false, null, null, null))
+        assertThatThrownBy(() -> new Context(List.of(), List.of(), 0, false, null, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     private Context context(EvaluatedTurn... history) {
-        return new Context(List.of(jvm, spring), List.of(history), false, null, null, null);
+        return new Context(List.of(jvm, spring), List.of(history), history.length, false, null, null, null);
     }
 
     private static CompetencyTarget competency(String skill, int priority, int difficulty, String... points) {

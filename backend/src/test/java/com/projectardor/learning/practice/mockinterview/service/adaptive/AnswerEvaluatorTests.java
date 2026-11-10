@@ -151,7 +151,7 @@ class AnswerEvaluatorTests {
         when(llm.completeJson(eq(owner), anyString(), anyString())).thenReturn(new LlmGateway.LlmResult("""
                 {"answerKind":"ANSWER","score":3,"confidence":0.9,
                  "covered":[{"point":0,"quote":"最左前缀原则"},{"point":1,"quote":"回表代价"}],
-                 "knowledgeGaps":[]}
+                 "misconceptions":[],"knowledgeGaps":[]}
                 """, "test-model", new LlmGateway.Usage(1200, 80)));
 
         evaluator.evaluate(owner, question(rubric()), ANSWER);

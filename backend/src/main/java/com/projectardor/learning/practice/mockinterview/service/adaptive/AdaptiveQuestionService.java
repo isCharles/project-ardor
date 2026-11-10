@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.stereotype.Service;
 
@@ -106,9 +107,11 @@ public class AdaptiveQuestionService {
 
     /** Coding questions come from the curated bank, so the statement and the rubric are both known-good. */
     private GeneratedQuestion coding(UUID userId, UUID sessionId, QuestionTarget target) {
-        LeetCodeHot100.Problem problem = unusedProblem(userId, sessionId);
+        LeetCodeHot100.Problem problem = unusedProblem(userId, sessionId, target.knowledgePoint());
         String text = "LeetCode " + problem.id() + ". " + problem.titleZh() + "（" + problem.titleEn() + "）："
                 + "请在 LeetCode 完成这道题，然后把代码贴回来，并说明思路、时间与空间复杂度。";
+        // For coding, difficulty is the depth the explanation has to reach, not the problem's own
+        // rating; the rubric below scales its depth markers with it.
         AdaptiveRubric rubric = AdaptiveRubric.create(target.knowledgePoint(), target.difficulty(),
                 List.of("代码正确且覆盖边界情况", "说清解法选择的依据与整体思路", "给出准确的时间与空间复杂度"),
                 target.difficulty() >= 4
@@ -119,20 +122,20 @@ public class AdaptiveQuestionService {
                 problem.slug());
     }
 
-    private LeetCodeHot100.Problem unusedProblem(UUID userId, UUID sessionId) {
+    /** Only problems inside the targeted topic, so the rubric never labels one topic and asks another. */
+    private LeetCodeHot100.Problem unusedProblem(UUID userId, UUID sessionId, String topic) {
+        List<LeetCodeHot100.Problem> pool = hot100.byTopic(topic);
+        if (pool.isEmpty()) throw new IllegalStateException("编程题知识点不在题库范围内：" + topic);
         Set<String> used = new HashSet<>();
         for (InterviewQuestion question : questions
                 .findAllByUserIdAndInterviewSessionIdOrderBySequenceNumber(userId, sessionId)) {
             if (question.getLeetcodeSlug() != null) used.add(question.getLeetcodeSlug());
         }
-        for (int attempt = 0; attempt < 8; attempt++) {
-            LeetCodeHot100.Problem candidate = hot100.random();
-            if (!used.contains(candidate.slug())) return candidate;
-        }
-        return LeetCodeHot100.PROBLEMS.stream()
+        List<LeetCodeHot100.Problem> unused = pool.stream()
                 .filter(problem -> !used.contains(problem.slug()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("题库已用尽，无法再出编程题"));
+                .toList();
+        if (unused.isEmpty()) throw new IllegalStateException("「" + topic + "」的编程题已全部问过");
+        return unused.get(ThreadLocalRandom.current().nextInt(unused.size()));
     }
 
     private GeneratedQuestion parse(JsonNode root, QuestionTarget target) {

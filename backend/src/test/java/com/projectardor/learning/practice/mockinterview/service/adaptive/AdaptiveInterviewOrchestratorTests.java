@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -445,6 +446,87 @@ class AdaptiveInterviewOrchestratorTests {
         assertThat(answerRows.get(0).getEvaluationError()).isEqualTo("LLM_INVALID_RESPONSE");
     }
 
+    @Test void aCandidateWhoAsksWhatTheQuestionMeansIsClarifiedInsteadOfScored() {
+        ask();
+        when(evaluator.evaluate(eq(owner), any(InterviewQuestion.class), anyString()))
+                .thenReturn(new AnswerEvaluator.Evaluation(AnswerKind.CLARIFICATION, null, null,
+                        List.of(), List.of(), List.of(), List.of(), "", "test-model",
+                        AnswerEvaluator.PROMPT_VERSION));
+
+        var state = answer("这道题问的是选型还是调优？");
+
+        assertThat(turnRows).hasSize(1);
+        assertThat(turnRows.get(0).getAnswerKind()).isEqualTo(AnswerKind.CLARIFICATION);
+        assertThat(turnRows.get(0).getEvaluation()).containsEntry("score", null).containsEntry("confidence", null);
+        assertThat(state.currentQuestion().origin()).isEqualTo(QuestionOrigin.CLARIFICATION);
+        assertThat(state.currentQuestion().difficulty()).isEqualTo(3);
+        assertThat(assessmentRows).filteredOn(row -> row.getCompetency().equals("JVM")).singleElement()
+                .satisfies(row -> {
+                    assertThat(row.getEvidenceCount()).isZero();
+                    assertThat(row.getState()).isEqualTo(CompetencyState.UNVERIFIED);
+                });
+    }
+
+    @Test void aQuestionGeneratedWhileAnotherRequestAlreadyAskedIsDiscarded() {
+        ask();
+        answerRows.add(InterviewAnswer.create(owner, sessionId, latestQuestion().getId(), "分代回收", 30));
+        AtomicBoolean interleaved = new AtomicBoolean();
+        when(questionService.generate(eq(owner), eq(sessionId), any(QuestionTarget.class))).thenAnswer(call -> {
+            // Generation holds no lock, so another recovery read can complete its own advance inside it.
+            if (interleaved.compareAndSet(false, true)) ask();
+            return generated(call.getArgument(2));
+        });
+
+        var state = ask();
+
+        assertThat(questionRows).hasSize(2);
+        assertThat(decisionRows).hasSize(2);
+        assertThat(state.askedCount()).isEqualTo(2);
+        assertThat(state.currentQuestion().id()).isEqualTo(latestQuestion().getId());
+    }
+
+    @Test void aScorePersistedByAnotherRequestDuringTheModelCallIsNotInsertedTwice() {
+        ask();
+        InterviewAnswer pending = InterviewAnswer.create(owner, sessionId, latestQuestion().getId(), "分代回收", 30);
+        answerRows.add(pending);
+        AtomicBoolean interleaved = new AtomicBoolean();
+        when(evaluator.evaluate(eq(owner), any(InterviewQuestion.class), anyString())).thenAnswer(call -> {
+            if (interleaved.compareAndSet(false, true)) {
+                turnRows.add(InterviewTurnEvaluation.createScored(owner, sessionId,
+                        pending.getInterviewQuestionId(), pending.getId(), AnswerKind.ANSWER, 3,
+                        new BigDecimal("0.90"), Map.of("answerKind", "ANSWER"), "test-model",
+                        AnswerEvaluator.PROMPT_VERSION));
+            }
+            return scored(3, "0.90");
+        });
+
+        ask();
+
+        assertThat(turnRows).hasSize(1);
+        var order = inOrder(sessions, turnEvaluations);
+        order.verify(sessions).findOwnedForUpdate(sessionId, owner);
+        order.verify(turnEvaluations, atLeastOnce()).findByInterviewAnswerIdAndUserId(pending.getId(), owner);
+    }
+
+    @Test void questionsThatNeverGotAScoreStillCountTowardTheSessionBudget() {
+        for (int sequence = 1; sequence <= AdaptivePolicyEngine.MAX_QUESTIONS; sequence++) {
+            QuestionTarget target = new QuestionTarget("JVM", "GC 选型", 3, "TECHNICAL", QuestionOrigin.PLAN, null);
+            InterviewQuestion row = questions.save(generated(target).toEntity(owner, sessionId, sequence));
+            InterviewAnswer saved = InterviewAnswer.create(owner, sessionId, row.getId(), "分代回收", 30);
+            for (int attempt = 0; attempt < AdaptiveInterviewOrchestrator.MAX_EVALUATION_ATTEMPTS; attempt++) {
+                saved.recordEvaluationFailure("LLM_TIMEOUT");
+            }
+            answerRows.add(saved);
+        }
+
+        var state = ask();
+
+        assertThat(questionRows).hasSize(AdaptivePolicyEngine.MAX_QUESTIONS);
+        assertThat(state.lastDecision().action()).isEqualTo(PolicyAction.TERMINATE);
+        assertThat(state.readyToFinish()).isTrue();
+        verifyNoInteractions(evaluator, questionService);
+    }
+
     @Test void aSessionInterruptedBeforeItsPlanRegeneratesItOnRead() {
         when(planner.plan(owner, sessionId)).thenReturn(plan());
 
@@ -544,6 +626,30 @@ class AdaptiveInterviewOrchestratorTests {
 
         assertThat(turnRows).hasSize(1);
         verify(evaluator, times(1)).evaluate(eq(owner), any(InterviewQuestion.class), anyString());
+    }
+
+    @Test void finishingSettlesPendingScoresWithoutAskingAQuestionNobodyWillAnswer() {
+        ask();
+        answerRows.add(InterviewAnswer.create(owner, sessionId, latestQuestion().getId(), "分代回收", 30));
+        clearInvocations(questionService);
+
+        orchestrator.finish(owner, sessionId);
+
+        assertThat(turnRows).hasSize(1);
+        assertThat(questionRows).hasSize(1);
+        verifyNoInteractions(questionService);
+    }
+
+    @Test void finishingStillWritesTheReportWhenTheNextQuestionCouldNotBeGenerated() {
+        ask();
+        answerRows.add(InterviewAnswer.create(owner, sessionId, latestQuestion().getId(), "分代回收", 30));
+        when(questionService.generate(eq(owner), eq(sessionId), any(QuestionTarget.class)))
+                .thenThrow(new LlmCallException("LLM_TIMEOUT", "fixture", true, null));
+
+        InterviewEvaluation report = orchestrator.finish(owner, sessionId);
+
+        assertThat(report.getOverallScore()).isEqualByComparingTo("72.00");
+        assertThat(session.getStatus()).isEqualTo(InterviewStatus.COMPLETED);
     }
 
     @Test void aSessionCancelledWhileTheReportWasBeingWrittenDoesNotSaveIt() {

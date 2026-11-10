@@ -23,6 +23,7 @@ import com.projectardor.learning.practice.mockinterview.domain.InterviewSession;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewPlanRepository;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewSessionRepository;
 import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
+import com.projectardor.learning.practice.mockinterview.service.LeetCodeHot100;
 import com.projectardor.materials.resume.service.ResumeService;
 import com.projectardor.platform.model.llm.service.LlmGateway;
 
@@ -51,8 +52,21 @@ class InterviewPlannerTests {
         session = InterviewSession.createAdaptive(owner, null, "Acme", "后端工程师", null,
                 "MID", 30, false, "负责高并发后端");
         when(sessions.findByIdAndUserId(session.getId(), owner)).thenReturn(Optional.of(session));
+        when(sessions.findOwnedForUpdate(session.getId(), owner)).thenReturn(Optional.of(session));
         when(plans.findByInterviewSessionIdAndUserId(session.getId(), owner)).thenReturn(Optional.empty());
         when(plans.save(any(InterviewPlan.class))).thenAnswer(call -> call.getArgument(0));
+    }
+
+    private InterviewPlan storedPlan(String modelName) {
+        return InterviewPlan.create(owner, session.getId(),
+                Map.of("competencies", List.of(
+                        Map.of("skill", "数据库", "jdPriority", 5, "initialDifficulty", 3,
+                                "knowledgePoints", List.of("索引")),
+                        Map.of("skill", "并发", "jdPriority", 4, "initialDifficulty", 3,
+                                "knowledgePoints", List.of("锁")),
+                        Map.of("skill", "网络", "jdPriority", 3, "initialDifficulty", 2,
+                                "knowledgePoints", List.of("TCP")))),
+                modelName, InterviewPlanner.PROMPT_VERSION);
     }
 
     private LlmGateway.LlmResult result(String json) {
@@ -145,21 +159,81 @@ class InterviewPlannerTests {
 
     @Test void anInterruptedInterviewReloadsItsPlanWithoutPayingForAnotherOne() {
         givenAdaptiveSession();
-        var stored = InterviewPlan.create(owner, session.getId(),
-                Map.of("competencies", List.of(
-                        Map.of("skill", "数据库", "jdPriority", 5, "initialDifficulty", 3,
-                                "knowledgePoints", List.of("索引")),
-                        Map.of("skill", "并发", "jdPriority", 4, "initialDifficulty", 3,
-                                "knowledgePoints", List.of("锁")),
-                        Map.of("skill", "网络", "jdPriority", 3, "initialDifficulty", 2,
-                                "knowledgePoints", List.of("TCP")))),
-                "earlier-model", InterviewPlanner.PROMPT_VERSION);
+        var stored = storedPlan("earlier-model");
         when(plans.findByInterviewSessionIdAndUserId(session.getId(), owner)).thenReturn(Optional.of(stored));
         var plan = planner.plan(owner, session.getId());
         assertThat(plan.competencies()).hasSize(3);
         assertThat(plan.modelName()).isEqualTo("earlier-model");
         verifyNoInteractions(llm);
         verify(plans, never()).save(any());
+    }
+
+    @Test void planCreationTakesTheSessionRowLockBeforeInserting() {
+        givenAdaptiveSession();
+        when(llm.completeJson(eq(owner), anyString(), anyString())).thenReturn(result(threeCompetencies()));
+        planner.plan(owner, session.getId());
+        var order = inOrder(sessions, plans);
+        order.verify(sessions).findByIdAndUserId(session.getId(), owner);
+        order.verify(sessions).findOwnedForUpdate(session.getId(), owner);
+        order.verify(plans).save(any(InterviewPlan.class));
+    }
+
+    @Test void aPlanStoredByAnOverlappingCallIsReturnedInsteadOfInsertedAgain() {
+        givenAdaptiveSession();
+        when(llm.completeJson(eq(owner), anyString(), anyString())).thenReturn(result(threeCompetencies()));
+        when(plans.findByInterviewSessionIdAndUserId(session.getId(), owner))
+                .thenReturn(Optional.empty(), Optional.of(storedPlan("other-model")));
+        assertThat(planner.plan(owner, session.getId()).modelName()).isEqualTo("other-model");
+        verify(sessions).findOwnedForUpdate(session.getId(), owner);
+        verify(plans, never()).save(any());
+    }
+
+    @Test void aNullCompetencyEntryGetsTheSameSingleRepairAsAnyOtherInvalidShape() {
+        givenAdaptiveSession();
+        when(llm.completeJson(eq(owner), anyString(), anyString()))
+                .thenReturn(result("{\"competencies\":[null,null,null]}"), result(threeCompetencies()));
+        assertThat(planner.plan(owner, session.getId()).competencies()).hasSize(3);
+        verify(llm, times(2)).completeJson(eq(owner), anyString(), anyString());
+    }
+
+    @Test void aScalarCompetencyEntryIsRepairedRatherThanCrashingTheConversion() {
+        givenAdaptiveSession();
+        when(llm.completeJson(eq(owner), anyString(), anyString()))
+                .thenReturn(result("{\"competencies\":[\"数据库\",42,[]]}"), result(threeCompetencies()));
+        assertThat(planner.plan(owner, session.getId()).competencies()).hasSize(3);
+        verify(llm, times(2)).completeJson(eq(owner), anyString(), anyString());
+    }
+
+    @Test void aSecondMalformedPlanFailsWithoutAThirdCall() {
+        givenAdaptiveSession();
+        var malformed = result("{\"competencies\":[null]}");
+        when(llm.completeJson(eq(owner), anyString(), anyString())).thenReturn(malformed, malformed);
+        assertThatThrownBy(() -> planner.plan(owner, session.getId()))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("JSON 对象");
+        verify(llm, times(2)).completeJson(eq(owner), anyString(), anyString());
+        verify(plans, never()).save(any());
+    }
+
+    @Test void codingKnowledgePointsComeFromTheBankNotFromTheModel() {
+        givenAdaptiveSession();
+        when(llm.completeJson(eq(owner), anyString(), anyString())).thenReturn(result(plan(
+                competency("数据库", 5, 3, "\"索引\""),
+                competency("并发", 4, 3, "\"锁\""),
+                competency("算法", 3, 3, "\"缓存淘汰策略\"").replace("\"TECHNICAL\"", "\"CODING\""))));
+        var coding = planner.plan(owner, session.getId()).competencies().stream()
+                .filter(target -> target.questionType().equals("CODING")).findFirst().orElseThrow();
+        assertThat(coding.knowledgePoints()).containsExactlyElementsOf(LeetCodeHot100.CODING_TOPICS);
+    }
+
+    @Test void aCodingCompetencySurvivesEvenWhenTheModelLeftItsKnowledgePointsEmpty() {
+        givenAdaptiveSession();
+        when(llm.completeJson(eq(owner), anyString(), anyString())).thenReturn(result(plan(
+                competency("数据库", 5, 3, "\"索引\""),
+                competency("并发", 4, 3, "\"锁\""),
+                competency("算法", 3, 3, "").replace("\"TECHNICAL\"", "\"CODING\""))));
+        assertThat(planner.plan(owner, session.getId()).competencies())
+                .extracting(InterviewPlanner.CompetencyTarget::skill)
+                .containsExactly("数据库", "并发", "算法");
     }
 
     @Test void aResumeMentionIsRecordedAsAHypothesisAndNothingElse() {
@@ -178,6 +252,7 @@ class InterviewPlannerTests {
         session = InterviewSession.createAdaptive(owner, null, "Acme", "后端工程师", UUID.randomUUID(),
                 "MID", 30, false, null);
         when(sessions.findByIdAndUserId(session.getId(), owner)).thenReturn(Optional.of(session));
+        when(sessions.findOwnedForUpdate(session.getId(), owner)).thenReturn(Optional.of(session));
         when(plans.findByInterviewSessionIdAndUserId(session.getId(), owner)).thenReturn(Optional.empty());
         when(plans.save(any(InterviewPlan.class))).thenAnswer(call -> call.getArgument(0));
         when(opportunities.detail(owner, session.getJobOpportunityId())).thenReturn(new InterviewProcessView(

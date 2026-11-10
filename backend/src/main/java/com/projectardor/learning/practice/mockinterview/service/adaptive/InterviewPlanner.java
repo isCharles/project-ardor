@@ -21,6 +21,7 @@ import com.projectardor.learning.practice.mockinterview.domain.InterviewSession;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewPlanRepository;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewSessionRepository;
 import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
+import com.projectardor.learning.practice.mockinterview.service.LeetCodeHot100;
 import com.projectardor.materials.resume.service.ResumeAnalysisSnapshot;
 import com.projectardor.materials.resume.service.ResumeService;
 import com.projectardor.platform.model.llm.service.LlmGateway;
@@ -53,6 +54,7 @@ public class InterviewPlanner {
             jdPriority：5 是岗位核心要求，1 是加分项。initialDifficulty：1 概念，2 机制，3 应用与常见问题，
             4 深层原理与取舍，5 复杂场景与系统设计。
             简历只能作为初始假设：简历写到某项技能时把 resumeMentioned 设为 true，但这不代表候选人已掌握。
+            questionType 为 CODING 时知识点由系统从题库指定，knowledgePoints 可以留空数组。
             不要编造简历里没有的经历，不要输出岗位描述之外的无关能力。
             """;
 
@@ -145,6 +147,10 @@ public class InterviewPlanner {
         stored.put("competencies", competencies.stream().map(CompetencyTarget::toMap).toList());
         String modelName = result.model();
         return transactions.execute(status -> {
+            // Serialize on the session row: overlapping retries must not both insert and let
+            // uq_interview_plans_session fail one of them instead of returning the stored plan.
+            sessions.findOwnedForUpdate(sessionId, userId)
+                    .orElseThrow(() -> new ResourceNotFoundException("模拟面试不存在"));
             var saved = plans.findByInterviewSessionIdAndUserId(sessionId, userId);
             if (saved.isPresent()) return read(saved.get());
             return read(plans.save(InterviewPlan.create(userId, sessionId, stored, modelName, PROMPT_VERSION)));
@@ -191,7 +197,14 @@ public class InterviewPlanner {
     private List<CompetencyTarget> parse(JsonNode root) {
         JsonNode nodes = root.path("competencies");
         if (!nodes.isArray()) throw new IllegalStateException("未返回能力维度数组");
-        return normalize(objectMapper.convertValue(nodes, new TypeReference<List<Map<String, Object>>>() {}));
+        List<Map<String, Object>> entries = new ArrayList<>();
+        for (JsonNode node : nodes) {
+            // A null or scalar element is a malformed answer, not a crash: it has to reach the
+            // same repair call as every other invalid shape.
+            if (!node.isObject()) throw new IllegalStateException("能力维度条目必须是 JSON 对象");
+            entries.add(objectMapper.convertValue(node, new TypeReference<>() {}));
+        }
+        return normalize(entries);
     }
 
     /** One normalizer for both the model's answer and the stored plan, so a reload cannot drift. */
@@ -202,12 +215,16 @@ public class InterviewPlanner {
             String skill = text(entry.get("skill"));
             if (skill.isBlank()) continue;
             if (!seen.add(skill.toLowerCase(Locale.ROOT).replaceAll("\\s+", " "))) continue;
-            List<String> points = knowledgePoints(entry.get("knowledgePoints"));
-            if (points.isEmpty()) continue;
             String type = text(entry.get("questionType")).toUpperCase(Locale.ROOT);
+            if (!QUESTION_TYPES.contains(type)) type = "TECHNICAL";
+            // The bank can only serve its own topics, so a model-invented coding knowledge point
+            // would label the question with something it never asked.
+            List<String> points = "CODING".equals(type)
+                    ? LeetCodeHot100.CODING_TOPICS
+                    : knowledgePoints(entry.get("knowledgePoints"));
+            if (points.isEmpty()) continue;
             targets.add(new CompetencyTarget(skill, clamp(entry.get("jdPriority")),
-                    clamp(entry.get("initialDifficulty")),
-                    QUESTION_TYPES.contains(type) ? type : "TECHNICAL",
+                    clamp(entry.get("initialDifficulty")), type,
                     points, Boolean.TRUE.equals(entry.get("resumeMentioned"))
                             || "true".equalsIgnoreCase(text(entry.get("resumeMentioned"))),
                     text(entry.get("rationale"))));
