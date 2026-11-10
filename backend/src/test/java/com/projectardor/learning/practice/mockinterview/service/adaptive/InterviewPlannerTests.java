@@ -22,6 +22,7 @@ import com.projectardor.learning.practice.mockinterview.domain.InterviewPlan;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewSession;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewPlanRepository;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewSessionRepository;
+import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
 import com.projectardor.materials.resume.service.ResumeService;
 import com.projectardor.platform.model.llm.service.LlmGateway;
 
@@ -41,6 +42,7 @@ class InterviewPlannerTests {
     private final LlmGateway llm = mock(LlmGateway.class);
     private final InterviewPlanner planner = new InterviewPlanner(sessions, plans,
             mock(ResumeService.class), opportunities, llm, new LlmJsonParser(mapper), mapper,
+            new InterviewMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()),
             mock(PlatformTransactionManager.class));
 
     private InterviewSession session;

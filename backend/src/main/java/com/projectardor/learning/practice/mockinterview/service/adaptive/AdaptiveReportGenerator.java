@@ -14,6 +14,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 import com.projectardor.common.json.LlmJsonParser;
+import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
 import com.projectardor.platform.model.llm.service.LlmGateway;
 
 import tools.jackson.core.JacksonException;
@@ -46,11 +47,14 @@ public class AdaptiveReportGenerator {
     private final LlmGateway llmGateway;
     private final LlmJsonParser jsonParser;
     private final ObjectMapper objectMapper;
+    private final InterviewMetrics metrics;
 
-    public AdaptiveReportGenerator(LlmGateway llmGateway, LlmJsonParser jsonParser, ObjectMapper objectMapper) {
+    public AdaptiveReportGenerator(LlmGateway llmGateway, LlmJsonParser jsonParser, ObjectMapper objectMapper,
+            InterviewMetrics metrics) {
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
         this.objectMapper = objectMapper;
+        this.metrics = metrics;
     }
 
     public record Input(String targetRole, String targetCompany, String seniority,
@@ -76,6 +80,7 @@ public class AdaptiveReportGenerator {
         String userPrompt = "请基于以下面试证据写报告：\n" + toJson(evidence);
 
         LlmGateway.LlmResult result = llmGateway.completeJson(userId, SYSTEM_PROMPT, userPrompt);
+        metrics.recordTokens("report", result.usage());
         Parsed parsed;
         try {
             parsed = parse(jsonParser.parseObject(result.content()), input.profiles());
@@ -83,6 +88,7 @@ public class AdaptiveReportGenerator {
             result = llmGateway.completeJson(userId,
                     SYSTEM_PROMPT + "\n上一次输出不合格，请重新输出完整合格的报告。",
                     userPrompt + "\n不合格原因：" + invalid.getMessage());
+            metrics.recordTokens("report", result.usage());
             parsed = parse(jsonParser.parseObject(result.content()), input.profiles());
         }
 

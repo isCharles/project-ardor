@@ -34,7 +34,12 @@ public class AnthropicJsonModelProtocol implements JsonModelProtocol {
                     root.path("model").asText(config.model()), root.path("stop_reason").asText(""),
                     blockTypes(root.path("content")));
         }
-        return JsonModelProtocol.result(content,root.path("model").asText(config.model()));
+        return JsonModelProtocol.result(content,root.path("model").asText(config.model()), usage(root.path("usage")));
+    }
+
+    private static LlmGateway.Usage usage(JsonNode usage) {
+        if (!usage.isObject()) return null;
+        return new LlmGateway.Usage(usage.path("input_tokens").asInt(0), usage.path("output_tokens").asInt(0));
     }
 
     private static String text(JsonNode content) {

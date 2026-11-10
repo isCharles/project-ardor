@@ -17,6 +17,7 @@ import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.learning.practice.mockinterview.domain.AdaptiveRubric;
 import com.projectardor.learning.practice.mockinterview.domain.AnswerKind;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewQuestion;
+import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
 import com.projectardor.platform.model.llm.service.LlmGateway;
 
 import tools.jackson.databind.JsonNode;
@@ -50,10 +51,12 @@ public class AnswerEvaluator {
 
     private final LlmGateway llmGateway;
     private final LlmJsonParser jsonParser;
+    private final InterviewMetrics metrics;
 
-    public AnswerEvaluator(LlmGateway llmGateway, LlmJsonParser jsonParser) {
+    public AnswerEvaluator(LlmGateway llmGateway, LlmJsonParser jsonParser, InterviewMetrics metrics) {
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
+        this.metrics = metrics;
     }
 
     public record PointEvidence(String point, String quote) {}
@@ -89,6 +92,19 @@ public class AnswerEvaluator {
     }
 
     public Evaluation evaluate(UUID userId, InterviewQuestion question, String answerText) {
+        long startedAt = System.nanoTime();
+        try {
+            Evaluation evaluation = score(userId, question, answerText);
+            metrics.recordEvaluation(evaluation.isClarification() ? "clarification" : "scored",
+                    System.nanoTime() - startedAt);
+            return evaluation;
+        } catch (RuntimeException failure) {
+            metrics.recordEvaluation("failed", System.nanoTime() - startedAt);
+            throw failure;
+        }
+    }
+
+    private Evaluation score(UUID userId, InterviewQuestion question, String answerText) {
         if (question.getRubric() == null) {
             throw new IllegalStateException("该题没有事先定义的评分标准，无法评分");
         }
@@ -96,12 +112,14 @@ public class AnswerEvaluator {
         if (answerText == null || answerText.isBlank()) throw new IllegalArgumentException("答案不能为空");
         String userPrompt = userPrompt(question, rubric, answerText);
         LlmGateway.LlmResult result = llmGateway.completeJson(userId, SYSTEM_PROMPT, userPrompt);
+        metrics.recordTokens("evaluate", result.usage());
         try {
             return parse(jsonParser.parseObject(result.content()), rubric, answerText, result.model());
         } catch (IllegalStateException | IllegalArgumentException invalid) {
             result = llmGateway.completeJson(userId,
                     SYSTEM_PROMPT + "\n上一次输出不合格，请重新评分。quote 必须逐字来自答案原文。",
                     userPrompt + "\n不合格原因：" + invalid.getMessage());
+            metrics.recordTokens("evaluate", result.usage());
             return parse(jsonParser.parseObject(result.content()), rubric, answerText, result.model());
         }
     }

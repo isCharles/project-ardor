@@ -42,6 +42,7 @@ import com.projectardor.learning.practice.mockinterview.repository.InterviewPoli
 import com.projectardor.learning.practice.mockinterview.repository.InterviewQuestionRepository;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewSessionRepository;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewTurnEvaluationRepository;
+import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
 import com.projectardor.platform.model.llm.service.LlmCallException;
 
 /**
@@ -74,6 +75,9 @@ class AdaptiveInterviewOrchestratorTests {
     private final AnswerEvaluator evaluator = mock(AnswerEvaluator.class);
     private final AdaptiveReportGenerator reports = mock(AdaptiveReportGenerator.class);
     private final OpportunityService opportunities = mock(OpportunityService.class);
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+    private final InterviewMetrics metrics = new InterviewMetrics(registry);
 
     private InterviewSession session;
     private AdaptiveInterviewOrchestrator orchestrator;
@@ -84,7 +88,8 @@ class AdaptiveInterviewOrchestratorTests {
         setSessionId(session, sessionId);
         orchestrator = new AdaptiveInterviewOrchestrator(sessions, questions, answers, turnEvaluations, decisions,
                 assessments, evaluations, planner, questionService, evaluator, new AdaptivePolicyEngine(),
-                new CompetencyProfileManager(), reports, opportunities, mock(PlatformTransactionManager.class));
+                new CompetencyProfileManager(), reports, opportunities, metrics,
+                mock(PlatformTransactionManager.class));
 
         when(sessions.findByIdAndUserId(sessionId, owner)).thenAnswer(call -> Optional.of(session));
         when(sessions.findOwnedForUpdate(sessionId, owner)).thenAnswer(call -> Optional.of(session));
@@ -613,7 +618,8 @@ class AdaptiveInterviewOrchestratorTests {
 
         var rebuilt = new AdaptiveInterviewOrchestrator(sessions, questions, answers, turnEvaluations, decisions,
                 assessments, evaluations, planner, questionService, evaluator, new AdaptivePolicyEngine(),
-                new CompetencyProfileManager(), reports, opportunities, mock(PlatformTransactionManager.class));
+                new CompetencyProfileManager(), reports, opportunities, metrics,
+                mock(PlatformTransactionManager.class));
         var after = rebuilt.state(owner, sessionId);
 
         assertThat(after.askedCount()).isEqualTo(before.askedCount());
@@ -626,5 +632,36 @@ class AdaptiveInterviewOrchestratorTests {
     @Test void theOpeningModeIsAdaptiveSoTheClassicListStaysUnchanged() {
         assertThat(session.getMode()).isEqualTo(InterviewMode.ADAPTIVE);
         assertThat(session.getModality()).isEqualTo(InterviewModality.TEXT);
+    }
+
+    @Test void aFinishedInterviewIsCountedOnceTogetherWithTheDomainsItActuallyReached() {
+        when(sessions.save(any(InterviewSession.class))).thenAnswer(call -> {
+            InterviewSession row = call.getArgument(0);
+            setSessionId(row, sessionId);
+            return row;
+        });
+
+        orchestrator.start(owner, null, "Acme", "后端工程师", null, "MID", 30, false, "JD");
+        answer("分代回收");
+        orchestrator.finish(owner, sessionId);
+
+        assertThat(registry.get("ardor.interview.sessions.started").counter().count()).isEqualTo(1);
+        assertThat(registry.get("ardor.interview.sessions.completed").counter().count()).isEqualTo(1);
+        assertThat(registry.get("ardor.interview.session.competencies").summary().count()).isEqualTo(1);
+        // Domain coverage is measured from the questions actually asked, not from what the plan hoped for.
+        assertThat(registry.get("ardor.interview.session.competencies").summary().totalAmount())
+                .isEqualTo(questionRows.stream().map(InterviewQuestion::getCompetency).distinct().count());
+    }
+
+    @Test void aCandidateDifficultyRatingIsCountedAgainstItsVerdict() {
+        ask();
+
+        orchestrator.submitAnswer(owner, sessionId, latestQuestion().getId(), "分代回收", 30,
+                DifficultyFeedback.TOO_EASY);
+
+        assertThat(registry.get("ardor.interview.difficulty.feedback").tag("feedback", "TOO_EASY")
+                .counter().count()).isEqualTo(1);
+        assertThat(registry.find("ardor.interview.difficulty.feedback").tag("feedback", "TOO_HARD")
+                .counter()).isNull();
     }
 }

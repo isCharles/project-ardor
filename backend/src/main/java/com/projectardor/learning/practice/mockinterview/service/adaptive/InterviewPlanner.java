@@ -20,6 +20,7 @@ import com.projectardor.learning.practice.mockinterview.domain.InterviewPlan;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewSession;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewPlanRepository;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewSessionRepository;
+import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
 import com.projectardor.materials.resume.service.ResumeAnalysisSnapshot;
 import com.projectardor.materials.resume.service.ResumeService;
 import com.projectardor.platform.model.llm.service.LlmGateway;
@@ -62,6 +63,7 @@ public class InterviewPlanner {
     private final LlmGateway llmGateway;
     private final LlmJsonParser jsonParser;
     private final ObjectMapper objectMapper;
+    private final InterviewMetrics metrics;
     private final TransactionTemplate transactions;
 
     public InterviewPlanner(
@@ -72,6 +74,7 @@ public class InterviewPlanner {
             LlmGateway llmGateway,
             LlmJsonParser jsonParser,
             ObjectMapper objectMapper,
+            InterviewMetrics metrics,
             org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.sessions = sessions;
         this.plans = plans;
@@ -80,6 +83,7 @@ public class InterviewPlanner {
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
         this.objectMapper = objectMapper;
+        this.metrics = metrics;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -126,6 +130,7 @@ public class InterviewPlanner {
                 "resumeAnalysis", resume == null || resume.analysis() == null ? Map.of() : resume.analysis()));
 
         LlmGateway.LlmResult result = llmGateway.completeJson(userId, SYSTEM_PROMPT, userPrompt);
+        metrics.recordTokens("plan", result.usage());
         List<CompetencyTarget> competencies;
         try {
             competencies = parse(jsonParser.parseObject(result.content()));
@@ -133,6 +138,7 @@ public class InterviewPlanner {
             result = llmGateway.completeJson(userId,
                     SYSTEM_PROMPT + "\n上一次输出不合格，请重新输出完整合格的能力规划。",
                     userPrompt + "\n不合格原因：" + invalid.getMessage());
+            metrics.recordTokens("plan", result.usage());
             competencies = parse(jsonParser.parseObject(result.content()));
         }
         Map<String, Object> stored = new LinkedHashMap<>();

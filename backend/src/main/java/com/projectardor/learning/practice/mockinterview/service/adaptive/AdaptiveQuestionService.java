@@ -14,6 +14,7 @@ import com.projectardor.learning.practice.mockinterview.domain.InterviewQuestion
 import com.projectardor.learning.practice.mockinterview.domain.QuestionBlueprint;
 import com.projectardor.learning.practice.mockinterview.domain.QuestionTarget;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewQuestionRepository;
+import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
 import com.projectardor.learning.practice.mockinterview.service.LeetCodeHot100;
 import com.projectardor.platform.model.llm.service.LlmGateway;
 
@@ -45,16 +46,19 @@ public class AdaptiveQuestionService {
     private final LlmJsonParser jsonParser;
     private final InterviewQuestionRepository questions;
     private final LeetCodeHot100 hot100;
+    private final InterviewMetrics metrics;
 
     public AdaptiveQuestionService(
             LlmGateway llmGateway,
             LlmJsonParser jsonParser,
             InterviewQuestionRepository questions,
-            LeetCodeHot100 hot100) {
+            LeetCodeHot100 hot100,
+            InterviewMetrics metrics) {
         this.llmGateway = llmGateway;
         this.jsonParser = jsonParser;
         this.questions = questions;
         this.hot100 = hot100;
+        this.metrics = metrics;
     }
 
     public record GeneratedQuestion(String questionText, String questionType, List<String> evaluationCriteria,
@@ -70,7 +74,16 @@ public class AdaptiveQuestionService {
     }
 
     public GeneratedQuestion generate(UUID userId, UUID sessionId, QuestionTarget target) {
-        if ("CODING".equals(target.questionType())) return coding(userId, sessionId, target);
+        long startedAt = System.nanoTime();
+        GeneratedQuestion generated = "CODING".equals(target.questionType())
+                ? coding(userId, sessionId, target)
+                : written(userId, target);
+        metrics.recordQuestion(target.questionType(), target.origin().name(), target.difficulty(),
+                System.nanoTime() - startedAt);
+        return generated;
+    }
+
+    private GeneratedQuestion written(UUID userId, QuestionTarget target) {
         String userPrompt = "请出一道题：\n"
                 + "能力维度：" + target.competency() + "\n"
                 + "知识点：" + target.knowledgePoint() + "\n"
@@ -79,16 +92,16 @@ public class AdaptiveQuestionService {
                 + "题型：" + target.questionType() + "\n"
                 + "来源：" + target.origin().name();
         LlmGateway.LlmResult result = llmGateway.completeJson(userId, SYSTEM_PROMPT, userPrompt);
-        GeneratedQuestion generated;
+        metrics.recordTokens("question", result.usage());
         try {
-            generated = parse(jsonParser.parseObject(result.content()), target);
+            return parse(jsonParser.parseObject(result.content()), target);
         } catch (IllegalStateException | IllegalArgumentException invalid) {
             result = llmGateway.completeJson(userId,
                     SYSTEM_PROMPT + "\n上一次输出不合格，请严格按出题目标重新输出。",
                     userPrompt + "\n不合格原因：" + invalid.getMessage());
-            generated = parse(jsonParser.parseObject(result.content()), target);
+            metrics.recordTokens("question", result.usage());
+            return parse(jsonParser.parseObject(result.content()), target);
         }
-        return generated;
     }
 
     /** Coding questions come from the curated bank, so the statement and the rubric are both known-good. */
