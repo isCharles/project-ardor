@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -168,8 +169,10 @@ public class AdaptiveInterviewOrchestrator {
         var existing = evaluations.findByInterviewSessionIdAndUserId(sessionId, userId);
         if (existing.isPresent()) return existing.get();
         if (session.getStatus() != InterviewStatus.IN_PROGRESS) throw new IllegalStateException("当前面试不能结束");
-        advance(userId, sessionId);
-        InterviewPlanner.CompetencyPlan plan = planner.require(userId, sessionId);
+        InterviewPlanner.CompetencyPlan plan = planner.plan(userId, sessionId);
+        // Finishing settles the answers already given. Advancing here would persist a question nobody
+        // will answer, and a failure generating it would block the report the candidate asked for.
+        scorePendingAnswers(userId, session, plan);
         List<EvaluatedTurn> history = history(userId, sessionId);
         List<CompetencyProfileManager.Snapshot> snapshots = plan.competencies().stream()
                 .map(competency -> profiles.summarize(competency.skill(), competency.jdPriority(), history))
@@ -197,26 +200,33 @@ public class AdaptiveInterviewOrchestrator {
         // plan() is idempotent: a session interrupted before its plan was saved regenerates it here.
         InterviewPlanner.CompetencyPlan plan = planner.plan(userId, sessionId);
         scorePendingAnswers(userId, session, plan);
-        List<InterviewQuestion> asked = asked(userId, sessionId);
-        Map<UUID, InterviewAnswer> answered = answered(userId, sessionId);
+        askNext(userId, session, plan);
+    }
+
+    private void askNext(UUID userId, InterviewSession session, InterviewPlanner.CompetencyPlan plan) {
+        List<InterviewQuestion> asked = asked(userId, session.getId());
+        Map<UUID, InterviewAnswer> answered = answered(userId, session.getId());
+        UUID predecessor = null;
         if (!asked.isEmpty()) {
-            InterviewAnswer latest = answered.get(asked.get(asked.size() - 1).getId());
-            if (latest == null) return;
+            InterviewQuestion latest = asked.get(asked.size() - 1);
+            predecessor = latest.getId();
+            InterviewAnswer latestAnswer = answered.get(predecessor);
+            if (latestAnswer == null) return;
             // Deciding around a turn that is still retrying would ask the next question without its
             // evidence, and that question cannot be taken back once the score finally lands.
-            if (stillRetryable(userId, latest)) return;
+            if (stillRetryable(userId, latestAnswer)) return;
         }
-        List<EvaluatedTurn> history = history(userId, sessionId);
+        List<EvaluatedTurn> history = history(userId, session.getId());
         AdaptivePolicyEngine.Decision decision = policy.decide(new AdaptivePolicyEngine.Context(
-                plan.competencies(), history, session.isDeepDive(), session.getDurationMinutes(),
+                plan.competencies(), history, asked.size(), session.isDeepDive(), session.getDurationMinutes(),
                 session.getStartedAt(), Instant.now()));
         if (decision.action() == PolicyAction.TERMINATE) {
-            recordDecision(userId, session, decision, history, null);
+            recordDecision(userId, session, decision, history, null, predecessor);
             return;
         }
         AdaptiveQuestionService.GeneratedQuestion generated =
-                questionService.generate(userId, sessionId, decision.target());
-        recordDecision(userId, session, decision, history, generated);
+                questionService.generate(userId, session.getId(), decision.target());
+        recordDecision(userId, session, decision, history, generated, predecessor);
     }
 
     private boolean stillRetryable(UUID userId, InterviewAnswer answer) {
@@ -246,6 +256,11 @@ public class AdaptiveInterviewOrchestrator {
     private void persistEvaluation(UUID userId, InterviewSession session, InterviewPlanner.CompetencyPlan plan,
             InterviewQuestion question, InterviewAnswer answer, AnswerEvaluator.Evaluation evaluation) {
         transactions.execute(status -> {
+            // Serialize on the session row before the existence check: two recoveries scoring the same
+            // answer would otherwise both insert and let the unique constraint fail a valid request.
+            InterviewSession locked = sessions.findOwnedForUpdate(session.getId(), userId)
+                    .orElseThrow(() -> new ResourceNotFoundException("模拟面试不存在"));
+            if (locked.getStatus() != InterviewStatus.IN_PROGRESS) return null;
             if (turnEvaluations.findByInterviewAnswerIdAndUserId(answer.getId(), userId).isPresent()) return null;
             InterviewAnswer current = answers.findAllByUserIdAndInterviewSessionId(userId, session.getId()).stream()
                     .filter(item -> item.getId().equals(answer.getId()))
@@ -283,7 +298,7 @@ public class AdaptiveInterviewOrchestrator {
 
     /** The question and the decision that produced it are one write, so a crash cannot orphan either. */
     private void recordDecision(UUID userId, InterviewSession session, AdaptivePolicyEngine.Decision decision,
-            List<EvaluatedTurn> history, AdaptiveQuestionService.GeneratedQuestion generated) {
+            List<EvaluatedTurn> history, AdaptiveQuestionService.GeneratedQuestion generated, UUID predecessor) {
         transactions.execute(status -> {
             InterviewSession current = sessions.findOwnedForUpdate(session.getId(), userId)
                     .orElseThrow(() -> new ResourceNotFoundException("模拟面试不存在"));
@@ -294,9 +309,12 @@ public class AdaptiveInterviewOrchestrator {
                     && existing.get(existing.size() - 1).getAction() == PolicyAction.TERMINATE) {
                 return null;
             }
-            int sequence = existing.size() + 1;
             List<InterviewQuestion> asked = asked(userId, session.getId());
-            if (generated != null && asked.size() >= sequence) return null;
+            UUID latest = asked.isEmpty() ? null : asked.get(asked.size() - 1).getId();
+            // Generation ran without a lock. If another request already asked the next question, this
+            // one came from stale history and would skip the question the candidate is looking at.
+            if (!Objects.equals(latest, predecessor)) return null;
+            int sequence = existing.size() + 1;
             UUID questionId = null;
             if (generated != null) {
                 questionId = questions.save(generated.toEntity(userId, session.getId(), sequence)).getId();
