@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildDatasetEvidence, loadEvaluationDataset, selectEvaluationCases } from "./agent-eval-dataset.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dataset = JSON.parse(fs.readFileSync(path.join(here, "agent-eval-cases.json"), "utf8"));
+const manifest = JSON.parse(fs.readFileSync(path.join(here, "agent-eval-split.json"), "utf8"));
 const cases = dataset.cases;
 
 const REQUIRED_CATEGORIES = ["read", "create", "modify", "clarification", "approval", "cancel",
@@ -38,6 +40,33 @@ test("a small hold-out set exists and is not the whole dataset", () => {
   const heldOut = cases.filter((item) => item.heldOut === true);
   assert.ok(heldOut.length >= 1);
   assert.ok(heldOut.length < cases.length / 2);
+});
+
+test("split manifest freezes all 30 cases and exactly four held-out ids", () => {
+  const evidence = buildDatasetEvidence(dataset, manifest);
+  assert.equal(evidence.caseCount, 30);
+  assert.deepEqual(evidence.tierCounts, { representative: 15, challenge: 15 });
+  assert.deepEqual(evidence.heldOutCaseIds, [
+    "business-error-not-masked", "cross-module-conflict-replan-capped",
+    "read-then-create-multistep", "write-executed-response-lost",
+  ]);
+  assert.match(evidence.datasetHash, /^[a-f0-9]{64}$/);
+  assert.match(evidence.splitHash, /^[a-f0-9]{64}$/);
+  assert.deepEqual(loadEvaluationDataset().split, evidence);
+});
+
+test("manual tuning defaults to development cases and held-out requires an explicit switch", () => {
+  assert.equal(selectEvaluationCases(dataset).length, 26);
+  assert.ok(selectEvaluationCases(dataset).every((item) => item.heldOut !== true));
+  assert.equal(selectEvaluationCases(dataset, { includeHeldOut: true }).length, 30);
+});
+
+test("split rejects flag, version and membership drift instead of silently re-freezing it", () => {
+  const changedFlag = structuredClone(dataset);
+  changedFlag.cases[0].heldOut = true;
+  assert.throws(() => buildDatasetEvidence(changedFlag, manifest), /Held-out split mismatch/);
+  assert.throws(() => buildDatasetEvidence(dataset, { ...manifest, datasetVersion: "changed" }), /does not match split/);
+  assert.throws(() => buildDatasetEvidence(dataset, { ...manifest, heldOutCaseIds: manifest.heldOutCaseIds.slice(1) }), /Held-out split mismatch/);
 });
 
 test("executed and forbidden tool sets never contradict each other", () => {

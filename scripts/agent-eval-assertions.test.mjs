@@ -152,6 +152,43 @@ test("a null trace is an environment error, not a scored business failure", () =
   assert.equal(result.errorKind, "TIMEOUT");
 });
 
+test("a persisted partial trace does not turn a transport failure into task success", () => {
+  const result = scoreCase({ id: "partial", expectedTools: ["list_calendar_tasks"] },
+    trace("FAILED", [executed("list_calendar_tasks")]), "partial", {
+    environmentError: true, errorKind: "TRANSPORT",
+  });
+  assert.equal(result.environmentError, true);
+  assert.equal(result.dimensions.taskSuccess, false);
+  assert.equal(result.dimensions.trajectorySuccess, null);
+  assert.equal(result.observed.tools[0].name, "list_calendar_tasks");
+});
+
+test("API zero placeholders do not become known usage or latency", () => {
+  const result = scoreCase({ id: "partial-usage" }, {
+    status: "FAILED", durationMs: 0, recordState: "RECORDED",
+    totals: { llmCalls: 1, inputTokens: 0, outputTokens: 0, usageMissingCalls: 1,
+      cacheReadInputTokens: null, cacheCreationInputTokens: null, cacheUsageMissingCalls: 1, complete: true },
+    spans: [],
+  }, "partial");
+  assert.equal(result.observed.usageMissing, true);
+  assert.equal(result.observed.inputTokens, null);
+  assert.equal(result.observed.outputTokens, null);
+  assert.equal(result.observed.durationMs, null);
+
+  const unknownSentinel = scoreCase({ id: "partial-usage" }, {
+    status: "COMPLETED", durationMs: 10,
+    totals: { llmCalls: 1, inputTokens: 0, outputTokens: 0, usageMissingCalls: -1,
+      cacheReadInputTokens: 0, cacheCreationInputTokens: 0, cacheUsageMissingCalls: -1, complete: true },
+    spans: [],
+  }, "partial");
+  assert.equal(unknownSentinel.observed.usageMissing, true);
+  assert.equal(unknownSentinel.observed.inputTokens, null);
+  assert.equal(unknownSentinel.observed.outputTokens, null);
+  assert.equal(unknownSentinel.observed.cacheUsageMissing, true);
+  assert.equal(unknownSentinel.observed.cacheReadInputTokens, null);
+  assert.equal(unknownSentinel.observed.cacheCreationInputTokens, null);
+});
+
 test("unknown usage stays unknown instead of becoming zero", () => {
   const result = scoreCase({ id: "u" }, { status: "COMPLETED", spans: [], totals: { llmCalls: 1 } }, "");
   assert.equal(result.observed.usageMissing, true);
@@ -174,6 +211,14 @@ test("cached tokens are read from totals and stay unknown when absent", () => {
   const plain = scoreCase({ id: "c" }, trace("COMPLETED", []), "");
   assert.equal(plain.observed.cacheReadInputTokens, null);
   assert.equal(plain.observed.cacheUsageMissing, true);
+
+  const partial = scoreCase({ id: "c" }, {
+    status: "COMPLETED", spans: [],
+    totals: { llmCalls: 1, inputTokens: 20, outputTokens: 5, cacheReadInputTokens: 0 },
+  }, "");
+  assert.equal(partial.observed.cacheUsageMissing, true);
+  assert.equal(partial.observed.cacheReadInputTokens, null);
+  assert.equal(partial.observed.cacheCreationInputTokens, null);
 });
 
 test("a declared tool allowlist catches every unexpected attempt, including refused writes", () => {

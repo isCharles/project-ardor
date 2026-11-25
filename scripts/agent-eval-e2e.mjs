@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { scoreCase } from "./agent-eval-assertions.mjs";
 import { judgeCase } from "./agent-eval-judge.mjs";
 import { buildReport } from "./agent-eval-report.mjs";
+import { loadEvaluationDataset } from "./agent-eval-dataset.mjs";
 import { SseParser } from "./agent-eval-sse.mjs";
 import { fetchCompleteTrace } from "./agent-eval-trace.mjs";
 
@@ -34,7 +35,7 @@ if (process.env.ARDOR_EVAL_E2E !== "true") {
 const base = (process.env.ARDOR_BASE_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
 const modelBase = (process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090").replace(/\/+$/, "");
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dataset = JSON.parse(fs.readFileSync(path.join(here, "agent-eval-cases.json"), "utf8"));
+const dataset = loadEvaluationDataset();
 const casesById = Object.fromEntries(dataset.cases.map((item) => [item.id, item]));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -153,6 +154,18 @@ async function drive(client, plan, timeoutMs = 60_000) {
           });
         }
       } catch { /* run may not be registered yet; retry until the stream settles */ }
+      try {
+        const pendingDeletions = await client.json(`/api/agent/runs/${requestId}/deletion-proposals`);
+        for (const proposal of pendingDeletions) {
+          if (plan.approval === "allow") {
+            await client.json(proposal.endpoint, { method: "DELETE", expected: 204 });
+          } else {
+            await client.json(`/api/agent/runs/${requestId}/deletion-proposals/${proposal.proposalId}/dismiss`, {
+              method: "POST", expected: 204,
+            });
+          }
+        }
+      } catch { /* a live deletion gate may not be registered yet */ }
       await sleep(250);
     }
   })();
@@ -295,7 +308,9 @@ function combinedResult(declaration, plan, outcome, before, after, foreignAfter)
 }
 
 const results = [];
-for (const [id, plan] of Object.entries(PLANS)) {
+const includeHeldOut = process.env.ARDOR_EVAL_INCLUDE_HELD_OUT === "true";
+const selectedPlans = Object.entries(PLANS).filter(([id]) => includeHeldOut || casesById[id].heldOut !== true);
+for (const [id, plan] of selectedPlans) {
   const declaration = casesById[id];
   if (!declaration) throw new Error(`dataset is missing case ${id}`);
   const client = await registerUser(id);
@@ -314,8 +329,10 @@ for (const [id, plan] of Object.entries(PLANS)) {
     foreignAfter = await listTasks(foreignClient);
     const after = await listTasks(client);
     results.push(combinedResult(declaration, plan, {
-      ...outcome, trace: traceData, environmentError: traceData == null,
-      errorKind: traceData == null ? (outcome.errorCode ?? "NO_TRACE") : null, state,
+      ...outcome, trace: traceData,
+      environmentError: traceData == null || outcome.streamError != null || outcome.errorCode != null,
+      errorKind: traceData == null ? (outcome.errorCode ?? "NO_TRACE")
+        : outcome.errorCode ?? (outcome.streamError ? "TRANSPORT" : null), state,
     }, before, after, foreignAfter));
     continue;
   }
@@ -324,8 +341,10 @@ for (const [id, plan] of Object.entries(PLANS)) {
   const traceData = await trace(client, outcome.requestId);
   const after = await listTasks(client);
   results.push(combinedResult(declaration, plan, {
-    ...outcome, trace: traceData, environmentError: traceData == null,
-    errorKind: traceData == null ? (outcome.errorCode ?? "NO_TRACE") : null, state,
+    ...outcome, trace: traceData,
+    environmentError: traceData == null || outcome.streamError != null || outcome.errorCode != null,
+    errorKind: traceData == null ? (outcome.errorCode ?? "NO_TRACE")
+      : outcome.errorCode ?? (outcome.streamError ? "TRANSPORT" : null), state,
   }, before, after, foreignAfter));
   // Fresh disposable users isolate rows; clean up the created task to honour the fixture contract.
   if (declaration.fixture?.cleanup?.includes("delete") && after.length === 1) await deleteTask(client, after[0].id).catch(() => {});
@@ -339,12 +358,13 @@ try {
 
 const report = buildReport({
   generatedAt: new Date().toISOString(), codeSha,
-  dataset: { ...dataset, cases: Object.keys(PLANS).map((id) => casesById[id]) },
-  toolSchema: null, model: "fake/eval-script-probe",
+  dataset,
+  evaluatedCaseIds: selectedPlans.map(([id]) => id),
+  split: dataset.split, toolSchema: null, model: "fake/eval-script-probe",
   effectiveParams: { reasoningDepth: "AUTO", isolation: "fresh user per case", driver: "eval-script-probe" },
   results,
 });
-report.scope = "e2e business subset (calendar create/modify/proposal/ownership/read-back)";
+report.scope = `e2e business subset (${selectedPlans.length} calendar cases; heldOut=${includeHeldOut})`;
 if (process.env.ARDOR_EVAL_REPORT) fs.writeFileSync(process.env.ARDOR_EVAL_REPORT, JSON.stringify(report, null, 2));
 
 for (const item of report.cases) {
@@ -352,4 +372,7 @@ for (const item of report.cases) {
   for (const failure of item.failures) console.log(`      ${failure}`);
 }
 console.log(JSON.stringify(report.metrics));
-if (report.cases.some((item) => item.status !== "PASS")) process.exitCode = 1;
+if (report.cases.some((item) => item.status !== "PASS")) {
+  console.error("E2E evaluation failed: one or more cases did not pass");
+  process.exit(1);
+}

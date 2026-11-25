@@ -18,10 +18,11 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { scoreCase } from "./agent-eval-assertions.mjs";
 import { buildReport } from "./agent-eval-report.mjs";
+import { loadEvaluationDataset } from "./agent-eval-dataset.mjs";
 import { diffReports, formatDiff } from "./agent-eval-diff.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dataset = JSON.parse(fs.readFileSync(path.join(here, "agent-eval-cases.json"), "utf8"));
+const dataset = loadEvaluationDataset();
 const outIndex = process.argv.indexOf("--out");
 const outDir = outIndex > -1 ? process.argv[outIndex + 1] : path.join(os.tmpdir(), "ardor-agent-eval-demo");
 
@@ -91,8 +92,9 @@ function expectedTrace(item) {
 
   return {
     status: item.expectedRunStatus ?? "COMPLETED",
+    durationMs: 1250,
     totals: { llmCalls: spans.length ? 2 : 1, toolCalls: spans.filter((span) => span.kind === "TOOL").length,
-      loopRounds: 1, inputTokens: 1200, outputTokens: 180 },
+      loopRounds: 1, inputTokens: 1200, outputTokens: 180, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
     spans,
   };
 }
@@ -115,8 +117,9 @@ function build(overrides) {
     return scoreCase(item, trace, override?.answer ?? answerFor(item));
   });
   return buildReport({
-    generatedAt: new Date().toISOString(), codeSha, dataset, toolSchema: TOOL_SCHEMA,
+    generatedAt: new Date().toISOString(), codeSha, dataset, split: dataset.split, toolSchema: TOOL_SCHEMA,
     model: "synthetic-fixture/no-model", effectiveParams: { temperature: 0, note: "contract demo only" },
+    cost: { currency: "USD", source: "synthetic-contract-v1", inputPricePerM: 1, outputPricePerM: 2 },
     results,
   });
 }
@@ -124,11 +127,11 @@ function build(overrides) {
 const baseline = build({});
 const current = build({
   // 1) A required write that only produced a confirmation card must fail.
-  "create-calendar-approved": { mutate: () => ({ status: "COMPLETED", totals: { llmCalls: 1, toolCalls: 1, loopRounds: 1, inputTokens: 900, outputTokens: 90 }, spans: [proposal("create_calendar_task")] }) },
+  "create-calendar-approved": { mutate: () => ({ status: "COMPLETED", totals: { llmCalls: 1, toolCalls: 1, loopRounds: 1, inputTokens: 900, outputTokens: 90, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }, spans: [proposal("create_calendar_task")] }) },
   // 2) A forbidden side effect (write executed on a read-only request) must fail.
   "read-only-no-write": { mutate: (trace) => ({ ...trace, spans: [...trace.spans, executed("create_calendar_task")] }) },
   // 3) A business error masked as success must fail.
-  "business-error-not-masked": { mutate: () => ({ status: "COMPLETED", totals: { llmCalls: 1, toolCalls: 1, loopRounds: 1, inputTokens: 800, outputTokens: 60 }, spans: [executed("create_calendar_task")] }), answer: "已成功创建日程。" },
+  "business-error-not-masked": { mutate: () => ({ status: "COMPLETED", totals: { llmCalls: 1, toolCalls: 1, loopRounds: 1, inputTokens: 800, outputTokens: 60, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }, spans: [executed("create_calendar_task")] }), answer: "已成功创建日程。" },
   // 4) A duplicated write after a lost response must fail.
   "write-executed-response-lost": { mutate: (trace) => ({ ...trace, spans: [...trace.spans, executed("create_calendar_task")] }) },
   // 5) A run that produced no trace is an environment error, not a task failure.
@@ -139,6 +142,7 @@ const diff = diffReports(baseline, current);
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(path.join(outDir, "baseline.json"), JSON.stringify(baseline, null, 2));
 fs.writeFileSync(path.join(outDir, "current.json"), JSON.stringify(current, null, 2));
+fs.writeFileSync(path.join(outDir, "tool-schema.json"), JSON.stringify(TOOL_SCHEMA, null, 2));
 
 console.log("== baseline (synthetic fixtures, no model) ==");
 console.log(JSON.stringify(baseline.metrics));

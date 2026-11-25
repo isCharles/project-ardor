@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { scoreCase } from "./agent-eval-assertions.mjs";
-import { buildReport, hashOf, stableStringify } from "./agent-eval-report.mjs";
+import { buildReport, calculateCost, hashOf, stableStringify } from "./agent-eval-report.mjs";
 
 const tool = (name, status, attributes = {}, errorCode = null) => ({ kind: "TOOL", name, status, attributes, errorCode });
 const executed = (name) => tool(name, "COMPLETED", { executed: true, approvalSource: "CONFIRMED" });
-const trace = (status, spans, totals = { llmCalls: 1, inputTokens: 100, outputTokens: 20 }) => ({ status, spans, totals });
+const trace = (status, spans, totals = { llmCalls: 1, inputTokens: 100, outputTokens: 20, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }) => ({ status, spans, totals });
 
 const cases = [
   { id: "ok-read", prompt: "read", expectedTools: ["list_calendar_tasks"] },
@@ -76,4 +76,82 @@ test("hashes are order-independent and change with the dataset", () => {
   });
   assert.notEqual(first.hashes.dataset, changed.hashes.dataset);
   assert.notEqual(first.hashes.prompt, changed.hashes.prompt);
+});
+
+test("execution, latency and split evidence are independent of task success", () => {
+  const split = { manifestVersion: 1, datasetVersion: "test", splitHash: "a".repeat(64), heldOutCaseIds: ["held-out"] };
+  const success = scoreCase(cases[0], { ...trace("COMPLETED", [executed("list_calendar_tasks")]), durationMs: 100 }, "ok");
+  const failed = scoreCase(cases[1], { ...trace("FAILED", []), durationMs: 300 }, "not done");
+  const environment = { ...scoreCase(cases[3], null, undefined, { environmentError: true, errorKind: "TIMEOUT" }), costUsd: 0.5 };
+  const report = buildReport({
+    generatedAt: "t", codeSha: "abc123", dataset: { cases }, split, toolSchema: null,
+    cost: { currency: "USD", source: "test-price-v1", inputPricePerM: 1, outputPricePerM: 2 },
+    results: [success, failed, environment],
+  });
+  assert.deepEqual(report.metrics.executionSuccess, { pass: 2, denominator: 3, rate: 0.6667 });
+  assert.deepEqual(report.metrics.runCompleted, { pass: 1, denominator: 3, rate: 0.3333 });
+  assert.deepEqual(report.latency, { known: 2, missing: 1, p50Ms: 100, p95Ms: 300 });
+  assert.equal(report.hashes.split, split.splitHash);
+  assert.deepEqual(report.split, split);
+  assert.equal(report.cases[0].durationMs, 100);
+  assert.equal(report.cases[2].durationMs, null);
+  assert.equal(report.cases[2].costUsd, 0.5);
+  assert.deepEqual(report.cost, {
+    currency: "USD",
+    pricing: { currency: "USD", source: "test-price-v1", inputPricePerM: 1, outputPricePerM: 2 },
+    knownCaseCount: 3, missingCaseCount: 0, knownTotalUsd: 0.50028, totalCostUsd: 0.50028,
+    successfulTaskCostUsd: 0.00014, failedTaskCostUsd: 0.00014, environmentErrorCostUsd: 0.5,
+    costPerSuccessfulTaskUsd: 0.50028,
+  });
+});
+
+test("missing prices or cache usage keep cost unknown instead of inventing zero", () => {
+  const result = scoreCase(cases[0], trace("COMPLETED", [executed("list_calendar_tasks")],
+    { llmCalls: 1, inputTokens: 100, outputTokens: 20, cacheReadInputTokens: 5, cacheCreationInputTokens: 0 }), "ok");
+  const report = buildReport({
+    generatedAt: "t", codeSha: "abc123", dataset: { cases }, toolSchema: null,
+    cost: { currency: "USD", source: "test-price-v1", inputPricePerM: 1, outputPricePerM: 2 },
+    results: [result],
+  });
+  assert.equal(report.cases[0].costUsd, null);
+  assert.equal(report.cases[0].costMissing, true);
+  assert.equal(report.cost.missingCaseCount, 1);
+  assert.equal(report.cost.totalCostUsd, null);
+  assert.equal(report.cost.costPerSuccessfulTaskUsd, null);
+  assert.equal(calculateCost({ inputTokens: 10, outputTokens: 5 }, null), null);
+  assert.equal(calculateCost({ inputTokens: 10, outputTokens: 5, usageMissing: true },
+    { currency: "USD", source: "test", inputPricePerM: 1, outputPricePerM: 2 }), null);
+  assert.equal(calculateCost({ inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 5, cacheCreationInputTokens: 0 },
+    { currency: "USD", source: "test", inputPricePerM: 1, outputPricePerM: 2, cacheReadInputPricePerM: 0, cacheCreationInputPricePerM: 0 }), 0.00002);
+});
+
+test("unknown usage sentinels cannot be priced as zero", () => {
+  const result = scoreCase({ id: "unknown" }, {
+    status: "COMPLETED", durationMs: 10, spans: [],
+    totals: { llmCalls: 1, inputTokens: 0, outputTokens: 0, usageMissingCalls: -1,
+      cacheReadInputTokens: 0, cacheCreationInputTokens: 0, cacheUsageMissingCalls: -1 },
+  }, "");
+  assert.equal(calculateCost(result.observed,
+    { currency: "USD", source: "test", inputPricePerM: 1, outputPricePerM: 2 }), null);
+});
+
+test("zero samples and zero successful tasks have null rates and per-success cost", () => {
+  const empty = buildReport({ generatedAt: "t", codeSha: "abc123", dataset: { cases }, results: [] });
+  assert.equal(empty.samples, 0);
+  assert.equal(empty.metrics.taskSuccess.rate, null);
+  assert.equal(empty.latency.p50Ms, null);
+  assert.equal(empty.cost.costPerSuccessfulTaskUsd, null);
+  const failed = buildReport({
+    generatedAt: "t", codeSha: "abc123", dataset: { cases }, results: [scoreCase(cases[1], trace("COMPLETED", []), "no")],
+    cost: { currency: "USD", source: "test-price-v1", inputPricePerM: 1, outputPricePerM: 2 },
+  });
+  assert.equal(failed.cost.totalCostUsd, 0.00014);
+  assert.equal(failed.cost.costPerSuccessfulTaskUsd, null);
+});
+
+test("answer failures do not rewrite a compliant trajectory", () => {
+  const item = { ...cases[0], mustContain: "required phrase" };
+  const result = scoreCase(item, trace("COMPLETED", [executed("list_calendar_tasks")]), "missing");
+  assert.equal(result.dimensions.taskSuccess, false);
+  assert.equal(result.dimensions.trajectorySuccess, true);
 });
