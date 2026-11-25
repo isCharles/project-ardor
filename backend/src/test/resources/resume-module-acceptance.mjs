@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { syntheticResumePdf } from "./acceptance-fixtures.mjs";
+import { syntheticResumePdf, consumeSse } from "./acceptance-fixtures.mjs";
 
 if (process.env.ARDOR_ACCEPTANCE_DISPOSABLE_DB !== "true") throw new Error("Disposable database required");
 const base = process.env.ARDOR_ACCEPTANCE_API_BASE ?? "http://127.0.0.1:8080";
 const model = process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090";
 class Client {
   cookies = new Map();
-  async request(path, { method = "GET", body, expected = 200, raw = false, binary = false } = {}) {
+  async request(path, { method = "GET", body, expected = 200, raw = false, binary = false, onEvent } = {}) {
     const headers = {};
     if (method !== "GET") { const csrf = await this.request("/api/auth/csrf"); headers[csrf.headerName] = csrf.token; }
     headers.Cookie = [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
@@ -17,7 +17,7 @@ class Client {
       body: body ? form ? body : JSON.stringify(body) : undefined, signal: AbortSignal.timeout(45000) });
     for (const line of response.headers.getSetCookie()) { const pair = line.split(";")[0], at = pair.indexOf("="); this.cookies.set(pair.slice(0, at), pair.slice(at + 1)); }
     if (binary) { assert.equal(response.status, expected, `${method} ${path}`); return Buffer.from(await response.arrayBuffer()); }
-    const text = await response.text(); assert.equal(response.status, expected, `${method} ${path}: ${text.slice(0, 180)}`);
+    const text = onEvent && response.ok ? await consumeSse(response, onEvent) : await response.text(); assert.equal(response.status, expected, `${method} ${path}: ${text.slice(0, 180)}`);
     return raw ? text : text ? JSON.parse(text) : null;
   }
 }
@@ -103,9 +103,9 @@ const cleared = await owner.request("/api/resumes");
 assert.equal(cleared.find(item => item.id === first.id).displayAnalysisId, null);
 assert.ok(cleared.every(item => Object.keys(item).sort().join() === fields.join()));
 assert.ok(!ownList.some(item => item.id === theirs.id));
-async function turn(message) {
+async function turn(message, onEvent) {
   const conversation = await owner.request("/api/agent/conversations", { method: "POST", expected: 201 });
-  const stream = await owner.request("/api/agent/messages/stream", { method: "POST", raw: true,
+  const stream = await owner.request("/api/agent/messages/stream", { method: "POST", raw: true, onEvent,
     body: { conversationId: conversation.id, requestId: randomUUID(), message, reasoningDepth: "AUTO" } });
   const events = stream.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => JSON.parse(line.slice(5).trim()));
   assert.equal(events.filter(event => event.type === "done").length, 1, stream.slice(-1200));
@@ -117,14 +117,17 @@ await turn(`查询这份简历的分析状态 ${first.id} resume-probe-status`);
 await turn(`读取这份简历的分析 ${first.id} resume-probe-report`);
 await owner.request("/api/agent/permissions/*", { method: "PUT", expected: 204, body: { level: 3 } });
 await turn(`分析这份简历 ${first.id} resume-probe-analyze`);
-const events = await turn(`删除这份简历 ${first.id} resume-probe-delete`);
-const confirmation = events.find(event => event.type === "confirm")?.confirmation;
+let confirmation;
+await turn(`删除这份简历 ${first.id} resume-probe-delete`, async event => {
+  if (event.type !== "confirm") return;
+  confirmation = event.confirmation;
+  assert.ok((await owner.request("/api/resumes")).some(item => item.id === first.id), "Agent may only propose deletion");
+  assert.equal((await owner.request(`/api/resumes/${first.id}/analysis`)).id, report.id);
+  await owner.request(confirmation.endpoint, { method: "DELETE", expected: 204 });
+});
 assert.equal(confirmation?.targetId, first.id);
 assert.equal(confirmation?.label, first.originalFilename);
 assert.equal(confirmation?.endpoint, `/api/resumes/${first.id}`);
-assert.ok((await owner.request("/api/resumes")).some(item => item.id === first.id), "Agent may only propose deletion");
-assert.equal((await owner.request(`/api/resumes/${first.id}/analysis`)).id, report.id);
-await owner.request(confirmation.endpoint, { method: "DELETE", expected: 204 });
 assert.ok(!(await owner.request("/api/resumes")).some(item => item.id === first.id));
 assert.ok((await owner.request("/api/resumes")).some(item => item.id === second.id));
 assert.ok((await foreign.request("/api/resumes")).some(item => item.id === theirs.id));

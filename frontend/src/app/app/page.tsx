@@ -229,8 +229,13 @@ export default function AgentHomePage() {
     `ardor:conversation-draft:${reasoningAccount.current ?? "unavailable"}:${conversationId ?? "new"}`, []);
   const deletionResolutionKey = useCallback((item: AgentConfirmation, conversationId: string | null) =>
     `ardor:deletion-result:${reasoningAccount.current}:${conversationId}:${proposalSources.current.get(item.sourceMessageId ?? "") ?? item.sourceMessageId ?? "live"}:${confirmationKey(item)}`, []);
+  const deletionDecisionKey = useCallback((item: AgentConfirmation, conversationId: string | null) =>
+    `ardor:deletion-result:${reasoningAccount.current}:${conversationId}:proposal:${confirmationKey(item)}`, []);
   function rememberDeletion(item: AgentConfirmation, resolution: "DONE" | "DISMISSED" | "ACCEPTED") {
-    try { window.localStorage.setItem(deletionResolutionKey(item, state?.conversationId ?? null), resolution); } catch { /* Snapshot-bound APIs remain safe when local storage is unavailable. */ }
+    try {
+      window.localStorage.setItem(deletionResolutionKey(item, state?.conversationId ?? null), resolution);
+      window.localStorage.setItem(deletionDecisionKey(item, state?.conversationId ?? null), resolution);
+    } catch { /* Snapshot-bound APIs remain safe when local storage is unavailable. */ }
     const source = proposalSources.current.get(item.sourceMessageId ?? "") ?? item.sourceMessageId;
     if (source) void api<void>(`/api/agent/messages/${encodeURIComponent(source)}/proposal-resolution`, {
       method: "PUT", body: JSON.stringify({ key: confirmationKey(item), resolution }),
@@ -614,7 +619,10 @@ export default function AgentHomePage() {
       try {
         resolution = window.localStorage.getItem(deletionResolutionKey(item, result.conversationId))
           ?? (legacyResolutionKey === resolutionKey ? null
-            : window.localStorage.getItem(deletionResolutionKey(legacyItem, result.conversationId)));
+            : window.localStorage.getItem(deletionResolutionKey(legacyItem, result.conversationId)))
+          ?? window.localStorage.getItem(deletionDecisionKey(item, result.conversationId))
+          ?? (legacyResolutionKey === resolutionKey ? null
+            : window.localStorage.getItem(deletionDecisionKey(legacyItem, result.conversationId)));
       } catch { /* No automatic permission. */ }
       const source = result.messages.find(message => message.id === item.sourceMessageId);
       resolution = source?.proposalResolutions?.[resolutionKey]
@@ -663,7 +671,7 @@ export default function AgentHomePage() {
     const serviceId = window.sessionStorage.getItem(`${draftStorageKey(result.conversationId)}:service:${reasoningAccount.current}`);
     const feature = featuresRef.current.find((item) => item.id === serviceId);
     setSelectedContexts([...readDraftReferences(result.conversationId), ...(feature ? [{ type: "SERVICE" as const, id: feature.id, label: feature.label }] : [])].slice(-5));
-  }, [draftStorageKey, readSavedDraft, readDraftReferences, deletionResolutionKey]);
+  }, [draftStorageKey, readSavedDraft, readDraftReferences, deletionResolutionKey, deletionDecisionKey]);
 
   const load = useCallback(async (conversationId?: string | null) => {
     const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "";
@@ -786,7 +794,10 @@ export default function AgentHomePage() {
           const recovered: AgentMessage = outgoing && matchesRun ? outgoing : {
             id: `pending-user-message-${run.id}`, conversationId, role: "USER", content: run.message, createdAt: run.createdAt,
           };
-          setMessages((current) => current.some((item) => item.id === recovered.id) ? current : [...current, recovered]);
+          setMessages((current) => current.some((item) => item.id === recovered.id
+            || item.role === "USER" && !!recovered.requestId && item.requestId === recovered.requestId
+            || item.role === "USER" && item.content === recovered.content && item.createdAt === recovered.createdAt)
+            ? current : [...current, recovered]);
           previousStatus = "RUNNING";
           try {
             const progress = await api<StreamProgress>(`/api/agent/runs/${encodeURIComponent(run.id)}/progress`);
@@ -795,6 +806,20 @@ export default function AgentHomePage() {
               setRunThinking(progress.thinkingOutput);
             }
           } catch { /* Older servers or a restarted worker may not retain live output. Keep polling the durable run. */ }
+          try {
+            const pending = await api<AgentConfirmation[]>(`/api/agent/runs/${encodeURIComponent(run.id)}/deletion-proposals`);
+            if (!stopped) {
+              const liveKeys = new Set(pending.map(confirmationKey));
+              setConfirmations((current) => {
+                const retained = current.filter((item) => item.sourceMessageId !== run.id
+                  || !["PENDING", "DELETING"].includes(item.state) || liveKeys.has(confirmationKey(item)));
+                const known = new Set(retained.map(confirmationKey));
+                return [...retained, ...pending.filter((item) => !known.has(confirmationKey(item))).map((item) => ({
+                  ...item, sourceMessageId: run.id, state: "PENDING" as const,
+                }))];
+              });
+            }
+          } catch { /* A run without a live deletion gate has nothing to restore. */ }
           timer = window.setTimeout(() => void check(), 3000);
         } else {
           setRunningRun(null);

@@ -129,6 +129,24 @@ class AgentDeletionConfirmationsTests {
     }
 
     @Test
+    void pendingDeletionCardsAreScopedToTheirOwnerAndRun() throws Exception {
+        PendingConfirmation proposal = proposal(target, null);
+        java.util.concurrent.CountDownLatch registered = new java.util.concurrent.CountDownLatch(1);
+        CompletableFuture<Boolean> waiting = CompletableFuture.supplyAsync(
+                () -> confirmations.await(user, run, proposal, registered::countDown));
+        try {
+            assertThat(registered.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(confirmations.pending(user, run)).containsExactly(proposal);
+            assertThat(confirmations.pending(UUID.randomUUID(), run)).isEmpty();
+            assertThat(confirmations.pending(user, UUID.randomUUID())).isEmpty();
+        } finally {
+            confirmations.dismiss(user, run, proposal.proposalId());
+        }
+        assertThat(waiting.join()).isFalse();
+        assertThat(confirmations.pending(user, run)).isEmpty();
+    }
+
+    @Test
     void filterReleasesOnlyAfterAnAuthenticatedSuccessfulDelete() throws Exception {
         PendingConfirmation proposal = proposal(target, null);
         CompletableFuture<Boolean> waiting = start(proposal);

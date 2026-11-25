@@ -1,5 +1,6 @@
 package com.projectardor.assistant.execution.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -15,6 +16,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -31,7 +35,9 @@ import org.springframework.web.context.support.AnnotationConfigWebApplicationCon
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import com.projectardor.assistant.execution.service.AgentExecutionAuditStore;
+import com.projectardor.assistant.execution.service.AgentDeletionConfirmations;
 import com.projectardor.assistant.execution.service.AgentRunStore;
+import com.projectardor.assistant.tools.CareerAgentTools.PendingConfirmation;
 import com.projectardor.platform.identity.auth.domain.UserAccount;
 import com.projectardor.platform.identity.auth.domain.UserRole;
 import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
@@ -48,6 +54,7 @@ class AgentExecutionAuditControllerTests {
     private static MockMvc mvc;
     private static AgentRunStore runs;
     private static AgentExecutionAuditStore audit;
+    private static AgentDeletionConfirmations deletionConfirmations;
 
     private final UUID owner = UUID.randomUUID();
     private final ArdorPrincipal principal = new ArdorPrincipal(owner, "audit@ardor.invalid", "", true, UserRole.USER);
@@ -61,6 +68,7 @@ class AgentExecutionAuditControllerTests {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
         runs = context.getBean(AgentRunStore.class);
         audit = context.getBean(AgentExecutionAuditStore.class);
+        deletionConfirmations = context.getBean(AgentDeletionConfirmations.class);
     }
 
     @AfterAll
@@ -100,6 +108,32 @@ class AgentExecutionAuditControllerTests {
     }
 
     @Test
+    void ownerCanRestoreALiveDeletionCardAfterReconnect() throws Exception {
+        UUID requestId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        UUID proposalId = UUID.randomUUID();
+        when(runs.get(owner, requestId)).thenReturn(run(requestId, null));
+        PendingConfirmation proposal = new PendingConfirmation("memory_card", targetId, "Fixture card",
+                "Delete only this fixture", "/api/memory-cards/" + targetId, null, null, proposalId);
+        CountDownLatch registered = new CountDownLatch(1);
+        CompletableFuture<Boolean> waiting = CompletableFuture.supplyAsync(
+                () -> deletionConfirmations.await(owner, requestId, proposal, registered::countDown));
+        try {
+            assertThat(registered.await(1, TimeUnit.SECONDS)).isTrue();
+            mvc.perform(get("/api/agent/runs/{requestId}/deletion-proposals", requestId).with(user(principal)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].proposalId").value(proposalId.toString()))
+                    .andExpect(jsonPath("$[0].targetId").value(targetId.toString()))
+                    .andExpect(jsonPath("$[0].label").value("Fixture card"))
+                    .andExpect(jsonPath("$[0].detail").value("Delete only this fixture"))
+                    .andExpect(jsonPath("$[0].endpoint").value(proposal.endpoint()));
+        } finally {
+            deletionConfirmations.dismiss(owner, requestId, proposalId);
+        }
+        assertThat(waiting.join()).isFalse();
+    }
+
+    @Test
     void unknownOrForeignRunStays404WithoutReadingAuditRows() throws Exception {
         UUID requestId = UUID.randomUUID();
         when(runs.get(owner, requestId)).thenThrow(new ResourceNotFoundException("请求记录不存在"));
@@ -108,6 +142,8 @@ class AgentExecutionAuditControllerTests {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
         mvc.perform(get("/api/agent/runs/{requestId}/audit", requestId).with(user(principal)))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/agent/runs/{requestId}/deletion-proposals", requestId).with(user(principal)))
                 .andExpect(status().isNotFound());
 
         // Ownership is checked before any audit read, so a foreign run leaks no row counts.
@@ -128,8 +164,8 @@ class AgentExecutionAuditControllerTests {
     static class TestWebConfig {
 
         @Bean
-        AgentExecutionAuditController agentExecutionAuditController() {
-            return new AgentExecutionAuditController(runs(), executionAuditStore());
+        AgentExecutionAuditController agentExecutionAuditController(AgentDeletionConfirmations deletionConfirmations) {
+            return new AgentExecutionAuditController(runs(), executionAuditStore(), deletionConfirmations);
         }
 
         @Bean

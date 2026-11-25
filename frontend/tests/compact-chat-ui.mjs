@@ -26,6 +26,7 @@ const deletionServer = createServer((request, response) => {
     }
     const body = JSON.parse(payload);
     streamRequests.push(body);
+    deletionRunId = body.requestId;
     response.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -34,7 +35,11 @@ const deletionServer = createServer((request, response) => {
     const send = event => response.write(`data: ${JSON.stringify(event)}\n\n`);
     send({ type: "tool_start", toolName: "delete_memory_card", label: "Delete card", elapsedMs: 1 });
     send({ type: "confirm", confirmation: deletionProposal });
+    deletionPending = true;
+    deletionRunStatus = "RUNNING";
     releaseDeletion = () => {
+      deletionPending = false;
+      deletionRunStatus = "COMPLETED";
       const content = "The fixture card was deleted. Continuing automatically.";
       send({ type: "delta", content });
       send({ type: "done", content, conversationId: body.conversationId, messageId: "deletion-answer", elapsedMs: 100 });
@@ -46,7 +51,7 @@ const answer = "北京晴 4~16℃，本周投递 30~40 份。~~旧安排~~";
 const longUserMessage = `UnbrokenMessage${"x".repeat(240)}`.repeat(12);
 const deletionProposal = { kind: "memory_card", targetId: "deletion-fixture", label: "Fixture card",
   detail: "Delete only this fixture card", endpoint: "/api/memory-cards/deletion-fixture", proposalId: "deletion-proposal" };
-let logs = "", browser, empty = false, imageUploads = 0, deletionMode = false, releaseDeletion, restoredHistory = null;
+let logs = "", browser, empty = false, imageUploads = 0, deletionMode = false, deletionPending = false, deletionRunStatus = "RUNNING", deletionRunId = "", releaseDeletion, restoredHistory = null;
 const streamRequests = [], deletionRequests = [], legacyResolutionWrites = [];
 server.stdout.on("data", chunk => logs += chunk); server.stderr.on("data", chunk => logs += chunk);
 await new Promise((resolve, reject) => {
@@ -78,6 +83,9 @@ try {
       legacyResolutionWrites.push(route.request().postDataJSON());
       return route.fulfill({ status: 204, body: "" });
     }
+    if (path === `/api/agent/messages/${deletionRunId}/proposal-resolution` && route.request().method() === "PUT") {
+      return route.fulfill({ status: 204, body: "" });
+    }
     if (path === "/api/agent/images" && route.request().method() === "POST") {
       imageUploads++; body = { id: `pasted-image-${imageUploads}`, mediaType: "image/png" };
     }
@@ -91,7 +99,16 @@ try {
     else if (path === "/api/profile/sidebar") body = { userId: "compact-owner", hrefs: ["/app"], configured: true, revision: 0 };
     else if (path === "/api/background-tasks/summary") body = { activeCount: 0, unreadByModule: {} };
     else if (path === "/api/agent") body = restoredHistory ?? { conversationId: conversations[0].id, llmConfigured: true, memory: { content: "" }, conversations, archivedConversations: [], messages: empty ? [] : [{ id: "compact-user", role: "USER", content: longUserMessage, createdAt: date }, { id: "compact-answer", role: "ASSISTANT", content: answer, createdAt: date }] };
-    else if (path === "/api/agent/runs/latest") return route.fulfill({ status: 204 });
+    else if (path === "/api/agent/runs/latest") {
+      if (!deletionMode) return route.fulfill({ status: 204 });
+      return route.fulfill({ json: { id: deletionRunId, conversationId: conversations[0].id,
+        message: "Delete the fixture card", status: deletionRunStatus, label: deletionRunStatus === "RUNNING" ? "Running" : "Completed",
+        errorCode: null, errorMessage: null, retryable: false, createdAt: date, updatedAt: date } });
+    }
+    else if (path === `/api/agent/runs/${deletionRunId}/progress`) body = { phase: "TOOL", label: "Waiting for deletion confirmation",
+      thinkingOutput: "", answerPartial: "", firstThinkingMs: null, firstOutputMs: null, silentSeconds: 0, truncated: false,
+      steps: [], elapsedMs: 1000, contextUsage: null, conversationContextUsage: null };
+    else if (path === `/api/agent/runs/${deletionRunId}/deletion-proposals`) body = deletionPending ? [deletionProposal] : [];
     else if (path === "/api/agent/models") body = [{ id: "PRIMARY", label: `claude-opus-5-5-${"long-name-".repeat(12)}`, provider: "ANTHROPIC_COMPATIBLE", available: true, nativeControl: true, imageInput: true }];
     else if (path === "/api/agent/permissions") body = { mode: "AUTO", globalLevel: 2, modules: [] };
     else if (path === "/api/settings/llm") body = { configured: true };
@@ -266,11 +283,24 @@ try {
   await page.getByRole("button", { name: "Confirm deletion", exact: true }).waitFor();
   await page.screenshot({ path: ".next/compact-chat-deletion-blocked.png", fullPage: true });
   assert.equal(streamRequests.length, 1, "The run must still be on its original request while confirmation is pending");
+  await page.reload();
+  await page.getByRole("button", { name: "Confirm deletion", exact: true }).waitFor();
+  await page.screenshot({ path: ".next/compact-chat-deletion-recovered.png", fullPage: true });
+  assert.equal(await page.locator("[data-user-message]").filter({ hasText: "Delete the fixture card" }).count(), 1,
+    "Refreshing must not duplicate the recovered user message");
+  assert.equal(streamRequests.length, 1, "Refreshing must restore the live gate without starting another run");
   const deleted = page.waitForResponse(response => new URL(response.url()).pathname === "/api/memory-cards/deletion-fixture" && response.request().method() === "DELETE");
   await page.getByRole("button", { name: "Confirm deletion", exact: true }).click();
   await deleted;
+  restoredHistory = { conversationId: conversations[0].id, llmConfigured: true, memory: { content: "" }, conversations,
+    archivedConversations: [], messages: [
+      { id: "deletion-user", role: "USER", content: "Delete the fixture card", createdAt: date },
+      { id: "deletion-answer", role: "ASSISTANT", content: "The fixture card was deleted. Continuing automatically.", createdAt: date,
+        runTrace: JSON.stringify({ proposals: [deletionProposal] }) },
+    ] };
   releaseDeletion();
   await page.getByText("The fixture card was deleted. Continuing automatically.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Confirm deletion", exact: true }).waitFor({ state: "hidden" });
   assert.equal(deletionRequests.length, 1);
   assert.equal(streamRequests.length, 1, "Confirmed deletion must continue the same stream without a synthetic follow-up message");
   assert.equal(streamRequests[0].message, "Delete the fixture card");
@@ -296,7 +326,7 @@ try {
   await page.getByText("Deleted on another device.", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Confirm deletion", exact: true }).waitFor({ state: "hidden" });
   assert.deepEqual(legacyResolutionWrites.at(-1), { key: deletionProposal.proposalId, resolution: "DONE" });
-  console.log("Compact chat UI: image/text paste, long-message bounds, blocked deletion with automatic same-run continuation, legacy resolution recovery, history density, row actions, new/existing composers and six controls passed at six widths.");
+  console.log("Compact chat UI: image/text paste, long-message bounds, blocked deletion with refresh recovery and automatic same-run continuation, legacy resolution recovery, history density, row actions, new/existing composers and six controls passed at six widths.");
 } finally {
   await browser?.close(); server.kill();
   deletionServer.closeAllConnections();

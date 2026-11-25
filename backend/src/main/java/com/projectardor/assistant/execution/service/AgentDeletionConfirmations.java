@@ -1,6 +1,7 @@
 package com.projectardor.assistant.execution.service;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -73,6 +74,13 @@ public class AgentDeletionConfirmations {
         pending.forEach((key, gate) -> {
             if (key.userId().equals(userId) && key.runId().equals(runId)) dismiss(userId, runId, key.proposalId());
         });
+    }
+
+    public List<PendingConfirmation> pending(UUID userId, UUID runId) {
+        return pending.entrySet().stream()
+                .filter(entry -> entry.getKey().userId().equals(userId) && entry.getKey().runId().equals(runId))
+                .map(entry -> entry.getValue().confirmation)
+                .toList();
     }
 
     public void completeDeletion(UUID userId, String requestUri, Set<UUID> targetIds) {

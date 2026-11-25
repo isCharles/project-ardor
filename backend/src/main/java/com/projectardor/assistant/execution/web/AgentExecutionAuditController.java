@@ -10,7 +10,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.projectardor.assistant.execution.service.AgentExecutionAuditStore;
+import com.projectardor.assistant.execution.service.AgentDeletionConfirmations;
 import com.projectardor.assistant.execution.service.AgentRunStore;
+import com.projectardor.assistant.tools.CareerAgentTools.PendingConfirmation;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.assistant.proposal.web.AgentProposalAuditResponse;
 
@@ -18,8 +20,9 @@ import com.projectardor.assistant.proposal.web.AgentProposalAuditResponse;
  * Read-only execution/audit views for one owned agent run.
  *
  * <p>Ownership is resolved from the authenticated principal and checked through the durable run
- * row first, so another user's run is a 404. The rows carry only digests and bounded references;
- * they never grant permission and never prove a business mutation succeeded.
+ * row first, so another user's run is a 404. Audit rows carry only digests and bounded references;
+ * the live deletion view returns only the card already generated for that owned run. Neither view
+ * grants permission or proves that a business mutation succeeded.
  */
 @RestController
 @RequestMapping("/api/agent/runs")
@@ -27,10 +30,13 @@ public class AgentExecutionAuditController {
 
     private final AgentRunStore runs;
     private final AgentExecutionAuditStore executionAudit;
+    private final AgentDeletionConfirmations deletionConfirmations;
 
-    public AgentExecutionAuditController(AgentRunStore runs, AgentExecutionAuditStore executionAudit) {
+    public AgentExecutionAuditController(AgentRunStore runs, AgentExecutionAuditStore executionAudit,
+            AgentDeletionConfirmations deletionConfirmations) {
         this.runs = runs;
         this.executionAudit = executionAudit;
+        this.deletionConfirmations = deletionConfirmations;
     }
 
     @GetMapping("/{requestId}/tool-calls")
@@ -39,6 +45,14 @@ public class AgentExecutionAuditController {
         AgentRunStore.AgentRun run = ownedRun(principal, requestId);
         return executionAudit.toolCalls(principal.userId(), run.id()).stream()
                 .map(AgentToolCallResponse::from).toList();
+    }
+
+    @GetMapping("/{requestId}/deletion-proposals")
+    public List<AgentDeletionProposalResponse> deletionProposals(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable UUID requestId) {
+        ownedRun(principal, requestId);
+        return deletionConfirmations.pending(principal.userId(), requestId).stream()
+                .map(AgentDeletionProposalResponse::from).toList();
     }
 
     @GetMapping("/{requestId}/audit")
@@ -57,5 +71,14 @@ public class AgentExecutionAuditController {
     private AgentRunStore.AgentRun ownedRun(ArdorPrincipal principal, UUID requestId) {
         // Throws 404 for an unknown or foreign run without revealing which case it was.
         return runs.get(principal.userId(), requestId);
+    }
+
+    public record AgentDeletionProposalResponse(String kind, UUID targetId, String label, String detail,
+            String endpoint, List<UUID> targetIds, UUID proposalId) {
+        static AgentDeletionProposalResponse from(PendingConfirmation confirmation) {
+            return new AgentDeletionProposalResponse(confirmation.kind(), confirmation.targetId(),
+                    confirmation.label(), confirmation.detail(), confirmation.endpoint(),
+                    confirmation.targetIds(), confirmation.proposalId());
+        }
     }
 }
