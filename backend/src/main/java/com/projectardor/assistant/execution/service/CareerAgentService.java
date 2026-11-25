@@ -61,6 +61,7 @@ public class CareerAgentService {
     private final ObjectMapper objectMapper;
     private final AgentStreamProgress streamProgress;
     private final AgentToolApprovals toolApprovals;
+    private final AgentDeletionConfirmations deletionConfirmations;
     private final AgentPermissionGrants permissionGrants;
     private final AgentExecutionAuditStore executionAudit;
     private final AgentTraceStore traceStore;
@@ -97,6 +98,7 @@ public class CareerAgentService {
             ProfileService profileService,
             ObjectMapper objectMapper,
             AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals,
+            AgentDeletionConfirmations deletionConfirmations,
             AgentPermissionGrants permissionGrants, AgentExecutionAuditStore executionAudit,
             AgentTraceStore traceStore, AgentModelCatalogService modelCatalog,
             com.projectardor.assistant.conversation.service.ChatImageService images,
@@ -106,7 +108,7 @@ public class CareerAgentService {
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.silence-timeout:90s}") java.time.Duration silenceTimeout,
             @org.springframework.beans.factory.annotation.Value("${app.agent.stream.total-timeout:10m}") java.time.Duration totalTimeout) {
         this(store, runStore, modelFactory, tools, llmConfigService, memoryService, contextBuilder,
-                profileService, objectMapper, streamProgress, toolApprovals, permissionGrants, executionAudit,
+                profileService, objectMapper, streamProgress, toolApprovals, deletionConfirmations, permissionGrants, executionAudit,
                 traceStore, modelCatalog, images, usageTokens, agentMetrics, planner, planStore,
                 com.projectardor.platform.observability.TechnicalTracing.disabled(), silenceTimeout, totalTimeout);
     }
@@ -123,6 +125,7 @@ public class CareerAgentService {
             ProfileService profileService,
             ObjectMapper objectMapper,
             AgentStreamProgress streamProgress, AgentToolApprovals toolApprovals,
+            AgentDeletionConfirmations deletionConfirmations,
             AgentPermissionGrants permissionGrants, AgentExecutionAuditStore executionAudit,
             AgentTraceStore traceStore, AgentModelCatalogService modelCatalog,
             com.projectardor.assistant.conversation.service.ChatImageService images,
@@ -143,6 +146,7 @@ public class CareerAgentService {
         this.objectMapper = objectMapper;
         this.streamProgress = streamProgress;
         this.toolApprovals = toolApprovals;
+        this.deletionConfirmations = deletionConfirmations;
         this.permissionGrants = permissionGrants;
         this.executionAudit = executionAudit;
         this.traceStore = traceStore;
@@ -155,6 +159,11 @@ public class CareerAgentService {
         this.technicalTracing = technicalTracing;
         if (silenceTimeout.isNegative() || silenceTimeout.isZero() || totalTimeout.isNegative() || totalTimeout.isZero()) throw new IllegalArgumentException("Agent 运行期限必须大于零");
         this.silenceTimeout = silenceTimeout; this.totalTimeout = totalTimeout;
+    }
+
+    private void closeApprovals(UUID userId, UUID requestId) {
+        toolApprovals.close(userId, requestId);
+        deletionConfirmations.close(userId, requestId);
     }
 
     public AgentStateResponse state(UUID userId, UUID requestedConversationId) {
@@ -477,7 +486,7 @@ public class CareerAgentService {
                 if (interruptedTrace != null) interruptedTrace.fail(errorCode);
                 recordAgentUsage(userId, requestId, interruptedTrace, runtimeConfig.model());
                 recordRunEndOnce(runEnded, startedAt, false, errorCode);
-                toolApprovals.close(userId, requestId);
+                closeApprovals(userId, requestId);
                 streamProgress.finish(progressId, true);
                 try {
                     sendStreamError(sink, new LlmCallException(errorCode,
@@ -514,7 +523,7 @@ public class CareerAgentService {
                     runStore.fail(userId, requestId, "AGENT_RUN_CANCELLED",
                             "已停止本轮，后续工具不会执行。已经开始的操作可能仍在完成，请检查结果。", false);
                     streamProgress.finish(progressId, true);
-                    toolApprovals.close(userId, requestId);
+                    closeApprovals(userId, requestId);
                     return;
                 }
             } else if (finished.get()) {
@@ -566,7 +575,7 @@ public class CareerAgentService {
             toolApprovals.begin(userId, requestId);
             if (finished.get()) {
                 streamProgress.finish(progressId, true);
-                toolApprovals.close(userId, requestId);
+                closeApprovals(userId, requestId);
                 return;
             }
             List<RunStep> persistedSteps = new CopyOnWriteArrayList<>();
@@ -576,8 +585,20 @@ public class CareerAgentService {
             AtomicLong lastHeartbeatAt = new AtomicLong(System.nanoTime());
             // Held rather than inlined: after the run it is asked which deletions
             // the agent proposed, so each becomes a button in the transcript.
+            Set<UUID> emittedDeletionProposals = ConcurrentHashMap.newKeySet();
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId)
-                    .withConversationId(conversation.getId());
+                    .withConversationId(conversation.getId())
+                    .withDeletionGate(confirmation -> {
+                        if (confirmation.proposalId() == null
+                                || !emittedDeletionProposals.add(confirmation.proposalId())) return false;
+                        sink.waitingForApproval(true);
+                        try {
+                            return deletionConfirmations.await(userId, requestId, confirmation,
+                                    () -> sink.send(AgentStreamEvent.confirm(confirmation)));
+                        } finally {
+                            sink.waitingForApproval(false);
+                        }
+                    });
             // A plan is only meaningful for a persisted run: its steps are the resume guard, and the
             // trace is where the verification of each step is recorded.
             PlanningAgentTools planning = requestId == null ? null
@@ -599,7 +620,7 @@ public class CareerAgentService {
                 if (tracer != null) tracer.fail("AGENT_RUN_CANCELLED");
                 recordAgentUsage(userId, requestId, tracer, runtimeConfig.model());
                 streamProgress.finish(progressId, true);
-                toolApprovals.close(userId, requestId);
+                closeApprovals(userId, requestId);
                 return;
             }
             sink.send(AgentStreamEvent.status("等待模型输出", elapsedMs(startedAt)));
@@ -707,8 +728,10 @@ public class CareerAgentService {
                             recordRunEndOnce(runEnded, startedAt, true, null);
                             log.info("Agent stream completed: userId={}, conversationId={}, partialChunks={}, firstPartialMs={}, totalMs={}",
                                     userId, conversation.getId(), partialChunks.get(), firstPartialMs, elapsedMs(startedAt));
-                            bound.pendingConfirmations().forEach(
-                                    pending -> sink.send(AgentStreamEvent.confirm(pending)));
+                            bound.pendingConfirmations().stream()
+                                    .filter(pending -> pending.learningPlan() != null
+                                            || !emittedDeletionProposals.contains(pending.proposalId()))
+                                    .forEach(pending -> sink.send(AgentStreamEvent.confirm(pending)));
                             sink.send(AgentStreamEvent.done(AgentMessageResponse.from(saved.get(1)), elapsedMs(startedAt)));
                             sink.complete();
                         } catch (RuntimeException exception) {
@@ -723,7 +746,7 @@ public class CareerAgentService {
                             MDC.remove("userId");
                             MDC.remove("traceId");
                             MDC.remove("spanId");
-                            toolApprovals.close(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
+                            closeApprovals(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
                     })
                     .onError(exception -> {
                         if (!finished.compareAndSet(false, true)) return;
@@ -745,7 +768,7 @@ public class CareerAgentService {
                             MDC.remove("userId");
                             MDC.remove("traceId");
                             MDC.remove("spanId");
-                            toolApprovals.close(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
+                            closeApprovals(userId, requestId); lease.stop(() -> { activeStreams.remove(progressId); lock.release(); }); }
                     });
             if (!finished.get()) stream.start();
         } catch (RuntimeException exception) {
@@ -759,7 +782,7 @@ public class CareerAgentService {
                 } finally {
                     MDC.remove("runId");
                     MDC.remove("userId");
-                    toolApprovals.close(userId, persistedRun.get());
+                    closeApprovals(userId, persistedRun.get());
                     if (leaseRef.get() != null) {
                         streamProgress.finish(progressId, true);
                         leaseRef.get().stop(() -> { activeStreams.remove(progressId); lock.release(); });

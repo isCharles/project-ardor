@@ -3,7 +3,7 @@
 import { ShieldAlert } from "lucide-react";
 import { useLocale } from "@/lib/locale";
 
-type Deletion = { kind: string; endpoint: string; label: string; detail: string; state: string; error?: string };
+type Deletion = { kind: string; endpoint: string; proposalId?: string; label: string; detail: string; state: string; error?: string };
 
 /** Real business proposals only: no model-authored permission description or automatic approval. */
 export function DeletionPermissions<T extends Deletion>({ items, onKeep, onDelete }: {
@@ -12,7 +12,7 @@ export function DeletionPermissions<T extends Deletion>({ items, onKeep, onDelet
   const { t } = useLocale();
   if (!items.length) return null;
   return <section aria-label={t("Deletion confirmation", "删除确认")} className="ardor-composer-enter mx-auto mb-3 max-h-[40dvh] w-full max-w-3xl space-y-2 overflow-y-auto rounded-2xl border border-rose-200/80 bg-white/95 p-4 shadow-[0_12px_40px_rgba(42,35,27,0.12)] backdrop-blur-xl motion-reduce:animate-none">
-    {items.map((item) => <div key={`${item.kind}:${item.endpoint}`} className="flex items-start gap-3">
+    {items.map((item) => <div key={item.proposalId ?? `${item.kind}:${item.endpoint}`} className="flex items-start gap-3">
       <ShieldAlert className="mt-0.5 size-5 shrink-0 text-rose-500" />
       <div className="min-w-0 flex-1">
         <p className="break-words text-sm font-medium text-stone-800">{t(`Delete “${item.label}”?`, `删除「${item.label}」？`)}</p>

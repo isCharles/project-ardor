@@ -34,7 +34,10 @@ try {
     status: "REJECTED", updatedAt: "2026-09-01T01:00:00Z",
     rounds: [{ id: "round-new", roundNumber: 1, stage: "FINAL", scheduledAt: "2026-12-01T01:00:00Z",
       occurredAt: null, durationMinutes: 45, note: null }] });
+  opportunities[0].platform = "Microsoft Teams";
+  opportunities[2].platform = "Microsoft Teams";
   let slowJob = false, jobPolls = 0;
+  const roundPatches = [];
   await context.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/interview-recaps/final-minutes/slow-job" && slowJob) {
@@ -42,6 +45,17 @@ try {
       if (jobPolls === 3) recaps.push({ ...recaps[0], id: "slow", title: "Slow completed notes" });
       return route.fulfill({ json: { jobId: "slow-job", minutes: "Saved final minutes fixture", errorMessage: null,
         status: jobPolls < 3 ? "RUNNING" : "COMPLETED", recapId: jobPolls < 3 ? null : "slow" } });
+    }
+    if (path.startsWith("/api/opportunities/") && path.includes("/rounds/") && route.request().method() === "PATCH") {
+      const [, , , opportunityId, , roundId] = path.split("/");
+      const item = opportunities.find(value => value.id === opportunityId);
+      const round = item?.rounds.find(value => value.id === roundId);
+      if (!item || !round) return route.fulfill({ status: 404, json: { message: "Round not found" } });
+      Object.assign(round, route.request().postDataJSON());
+      item.rounds.sort((a, b) => a.roundNumber - b.roundNumber);
+      item.currentRound = Math.max(...item.rounds.map(value => value.roundNumber));
+      roundPatches.push({ opportunityId, roundId, body: route.request().postDataJSON() });
+      return route.fulfill({ json: item });
     }
     const body = path === "/api/auth/me" ? { id: "pipeline-fixture", email: "pipeline@ardor.invalid", admin: false }
       : path === "/api/auth/csrf" ? { token: "fixture", headerName: "X-CSRF-TOKEN" }
@@ -124,6 +138,19 @@ try {
     .getByRole("button", { name: "Backend intern", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: "Round notes", exact: true }).count(), 0, "Round notes no longer sit as a row chip");
   assert.equal(await page.getByRole("link", { name: "Notes", exact: true }).count(), 0, "Interview notes no longer sit as a row chip");
+  await page.getByRole("button", { name: "Edit round 1", exact: true }).click();
+  const roundDialog = page.getByRole("dialog", { name: "Edit round", exact: true });
+  await roundDialog.getByLabel("Round number", { exact: true }).fill("2");
+  await roundDialog.locator('select[name="stage"]').selectOption("OA");
+  assert.equal(await roundDialog.getByRole("option", { name: "OA", exact: true }).count(), 1);
+  await roundDialog.getByRole("button", { name: "Save", exact: true }).click();
+  await roundDialog.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Edit round 2", exact: true }).waitFor();
+  assert.equal(roundPatches.length, 1);
+  assert.equal(roundPatches[0].opportunityId, "process-one");
+  assert.equal(roundPatches[0].roundId, "round-one");
+  assert.equal(roundPatches[0].body.roundNumber, 2);
+  assert.equal(roundPatches[0].body.stage, "OA");
   const recapRow = page.locator('table a[href="/app/recaps?selected=linked"]');
   await recapRow.waitFor();
   const cardsLink = page.getByRole("link", { name: "Flashcards 2", exact: true });
@@ -166,13 +193,18 @@ try {
           return control.left >= cell.left && control.right <= cell.right;
         }),
         titles: titles.map(span => ({ ellipsis: getComputedStyle(span).textOverflow, clipped: span.scrollWidth > span.clientWidth,
-          fits: span.getBoundingClientRect().right <= rect.right + 1 })) };
+          fits: span.getBoundingClientRect().right <= rect.right + 1 })),
+        platforms: [...table.querySelectorAll("td span[title]")].map(span => ({ text: span.textContent,
+          height: span.getBoundingClientRect().height, fits: span.getBoundingClientRect().right <= span.closest("td").getBoundingClientRect().right })) };
     });
     assert.ok(geometry.tableWidth <= Math.max(860, geometry.containerWidth) + 2, `Long association expanded table at ${width}px`);
     assert.ok(geometry.documentWidth <= geometry.viewportWidth + 1, `Long content expanded viewport at ${width}px`);
     assert.ok(geometry.controlsFit, `Result control overlaps another cell at ${width}px`);
     assert.ok(geometry.titles.length >= 1 && geometry.titles.every(title => title.ellipsis === "ellipsis" && title.clipped && title.fits),
       `Recap titles did not truncate at ${width}px`);
+    const platforms = geometry.platforms.filter(value => value.text === "Microsoft Teams");
+    assert.equal(platforms.length, 2);
+    assert.ok(platforms.every(value => value.height <= 24 && value.fits), `Long platform wrapped or overflowed at ${width}px`);
     await otherButton.click();
     const otherGeometry = await otherDialog.evaluate(dialog => ({
       fits: dialog.getBoundingClientRect().right <= window.innerWidth + 1,
@@ -215,7 +247,7 @@ try {
   assert.doesNotMatch(await chineseCourses.innerText(), /来源于此|COMPLETED|IN_PROGRESS/);
   await page.screenshot({ path: ".next/pipeline-course-zh.png", fullPage: true });
   assert.deepEqual(errors, []);
-  console.log("Pipeline UI: notes navigation, final-minutes polling, source/target course picker, compact associations and count-only cards passed at desktop/tablet/mobile widths.");
+  console.log("Pipeline UI: notes navigation, final-minutes polling, round renumbering/OA, long platforms, source/target course picker and compact associations passed at desktop/tablet/mobile widths.");
 } catch (error) {
   await browser?.contexts()[0]?.pages()[0]?.screenshot({ path: ".next/pipeline-failure.png", fullPage: true }).catch(() => {});
   throw error;

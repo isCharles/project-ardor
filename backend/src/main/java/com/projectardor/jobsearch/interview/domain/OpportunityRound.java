@@ -65,9 +65,18 @@ public class OpportunityRound {
 
     public void update(RoundStage stage, Instant scheduledAt, Instant occurredAt, Integer durationMinutes,
             String note) {
+        update(null, stage, scheduledAt, occurredAt, durationMinutes, note);
+    }
+
+    public void update(Integer roundNumber, RoundStage stage, Instant scheduledAt, Instant occurredAt,
+            Integer durationMinutes, String note) {
+        if (roundNumber != null && roundNumber < 1) {
+            throw new IllegalArgumentException("轮次必须从 1 开始");
+        }
         if (durationMinutes != null && (durationMinutes < 1 || durationMinutes > 480)) {
             throw new IllegalArgumentException("面试时长须在 1 到 480 分钟之间");
         }
+        if (roundNumber != null) this.roundNumber = roundNumber;
         if (stage != null) this.stage = stage;
         this.scheduledAt = scheduledAt;
         this.occurredAt = occurredAt;

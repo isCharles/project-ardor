@@ -39,6 +39,7 @@ import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.common.web.ApiExceptionHandler;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.config.SecurityConfig;
+import com.projectardor.config.SecurityFilterTestConfig;
 
 /** HTTP contract for the read-only run tool-call/audit views: owner 200, foreign/unknown 404. */
 class AgentExecutionAuditControllerTests {
@@ -123,7 +124,7 @@ class AgentExecutionAuditControllerTests {
     @Configuration
     @EnableWebMvc
     @EnableWebSecurity
-    @Import(SecurityConfig.class)
+    @Import({SecurityConfig.class, SecurityFilterTestConfig.class})
     static class TestWebConfig {
 
         @Bean

@@ -117,6 +117,62 @@ class CareerAgentRuntimeIntegrationTests {
         assertThat(trace.getValue()).contains("COMMENTARY", "I'll inspect the resumes.").doesNotContain("Final result.");
     }
 
+    @Test void deletionConfirmationBlocksTheSameRunUntilBusinessDeletionCompletes() throws Exception {
+        var f = new Fixture(Duration.ofSeconds(5));
+        UUID target = UUID.randomUUID();
+        var proposal = new CareerAgentTools.PendingConfirmation("memory_card", target, "Fixture card", "Fixture detail",
+                "/api/memory-cards/" + target, null, null, UUID.randomUUID());
+        var gate = new java.util.concurrent.atomic.AtomicReference<java.util.function.Predicate<CareerAgentTools.PendingConfirmation>>();
+        doAnswer(call -> { gate.set(call.getArgument(0)); return f.bound; }).when(f.bound).withDeletionGate(any());
+        when(f.bound.pendingConfirmations()).thenReturn(List.of(proposal));
+        var deletionTool = new DeletionTool(proposal, gate);
+        when(f.bound.toolObjects()).thenReturn(List.of(deletionTool));
+        f.reply = (request, handler) -> {
+            if (request.messages().stream().noneMatch(message -> message instanceof dev.langchain4j.data.message.ToolExecutionResultMessage)) {
+                var call = dev.langchain4j.agent.tool.ToolExecutionRequest.builder().id("delete-1").name("delete_memory_card")
+                        .arguments("{\"targetId\":\"" + target + "\"}").build();
+                handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from(List.of(call))).build());
+            } else {
+                assertThat(request.messages().toString()).contains("DELETED");
+                handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from("Deleted and continued.")).build());
+            }
+        };
+
+        when(f.runs.begin(eq(f.user), any(), eq(f.conversation.getId()), anyString(), isNull(), isNull(), anyList(), any(), any(), anyList(), anyList())).thenReturn(true);
+        when(f.runs.complete(eq(f.user), any(), eq(f.conversation), anyString(), anyString(), anyString(), anyList(), anyList())).thenAnswer(call -> List.of(
+                ConversationMessage.user(f.user, f.conversation.getId(), call.getArgument(3)),
+                ConversationMessage.assistant(f.user, f.conversation.getId(), call.getArgument(4))));
+        var execution = java.util.concurrent.CompletableFuture.runAsync(() -> f.run("Delete the fixture card", UUID.randomUUID()));
+        for (int i = 0; i < 200 && f.events.stream().noneMatch(event -> "confirm".equals(event.type())); i++) Thread.sleep(5);
+        assertThat(f.events.stream().filter(event -> "confirm".equals(event.type())))
+                .as(f.events.toString()).hasSize(1);
+        assertThat(f.events).noneMatch(event -> "done".equals(event.type()));
+        verify(f.runs, never()).complete(any(), any(), any(), anyString(), anyString(), anyString(), anyList(), anyList());
+
+        f.deletions.completeDeletion(f.user, proposal.endpoint(), null);
+        execution.get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertThat(f.requests).hasSize(2);
+        assertThat(f.events.stream().filter(event -> "confirm".equals(event.type()))).hasSize(1);
+        assertThat(f.events.stream().filter(event -> "done".equals(event.type())))
+                .singleElement().satisfies(event -> assertThat(event.content()).isEqualTo("Deleted and continued."));
+    }
+
+    public static class DeletionTool {
+        private final CareerAgentTools.PendingConfirmation proposal;
+        private final java.util.concurrent.atomic.AtomicReference<java.util.function.Predicate<CareerAgentTools.PendingConfirmation>> gate;
+        DeletionTool(CareerAgentTools.PendingConfirmation proposal,
+                java.util.concurrent.atomic.AtomicReference<java.util.function.Predicate<CareerAgentTools.PendingConfirmation>> gate) {
+            this.proposal = proposal;
+            this.gate = gate;
+        }
+        @dev.langchain4j.agent.tool.Tool(name = "delete_memory_card", value = "Synthetic deletion proposal")
+        public Map<String, Object> deleteMemoryCard(@dev.langchain4j.agent.tool.P("Target UUID") String targetId) {
+            boolean deleted = gate.get().test(proposal);
+            return Map.of("status", deleted ? "DELETED" : "DELETION_NOT_COMPLETED");
+        }
+    }
+
     @Test void ordinaryToolLoopPreservesReadsWithoutTheOldThreeToolGraphLimit() {
         var f = new Fixture();
         f.reply = (request, handler) -> {
@@ -378,6 +434,9 @@ class CareerAgentRuntimeIntegrationTests {
         final Conversation conversation = Conversation.create(user, "Synthetic runtime");
         final AgentConversationStore conversations = mock(AgentConversationStore.class);
         final AgentRunStore runs = mock(AgentRunStore.class);
+        final AgentDeletionConfirmations deletions;
+        final CareerAgentTools tools = mock(CareerAgentTools.class);
+        final CareerAgentTools.BoundCareerTools bound = mock(CareerAgentTools.BoundCareerTools.class, RETURNS_SELF);
         final AgentStreamProgress progress = new AgentStreamProgress();
         final AgentContextCompactor compactor = mock(AgentContextCompactor.class);
         final LangChainModelFactory factory = mock(LangChainModelFactory.class);
@@ -401,13 +460,12 @@ class CareerAgentRuntimeIntegrationTests {
         final CareerAgentService service;
         Fixture() { this(Duration.ofMinutes(10)); }
         Fixture(Duration timeout) {
+            deletions = new AgentDeletionConfirmations(timeout);
             var config = new LlmConfigService.LlmRuntimeConfig(LlmProvider.OPENAI_COMPATIBLE, "https://example.invalid", "fixture-model", "synthetic-only");
             when(catalog.resolve(eq(user), any())).thenReturn(new AgentModelCatalogService.Resolved("PRIMARY", config));
             when(conversations.requireActive(user, conversation.getId())).thenReturn(conversation);
             when(conversations.appendExchange(any(), any(), anyString(), anyString(), anyString(), anyList(), eq(false), anyList())).thenAnswer(call -> List.of(
                     ConversationMessage.user(user, conversation.getId(), call.getArgument(2)), ConversationMessage.assistant(user, conversation.getId(), call.getArgument(3))));
-            var tools = mock(CareerAgentTools.class);
-            var bound = mock(CareerAgentTools.BoundCareerTools.class, RETURNS_SELF);
             when(tools.bind(eq(user), anyString(), any(), any())).thenReturn(bound);
             when(bound.toolObjects()).thenReturn(List.of(bound, resumeReads));
             var embedding = mock(MemoryEmbeddingService.class); when(embedding.context(eq(user), any())).thenReturn(MemoryEmbeddingService.Context.none());
@@ -416,11 +474,13 @@ class CareerAgentRuntimeIntegrationTests {
             when(compactor.prepare(eq(user), eq(conversation.getId()), anyString(), eq(config), any(), anyList(), any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any())).thenAnswer(call ->
                     new AgentContextCompactor.Prepared(call.getArgument(2), List.of(ConversationMessage.user(user, conversation.getId(), "Earlier user instruction")), 0, 0, 10, null, summary));
             when(factory.createStreaming(any(), eq(config), any(ReasoningDepth.class), any(), anyList(), any(), anyList())).thenReturn(model);
-            var approvals = mock(AgentToolApprovals.class); when(approvals.canRead(eq(user), any())).thenReturn(true);
+            var approvals = mock(AgentToolApprovals.class);
+            when(approvals.canRead(eq(user), any())).thenReturn(true);
+            when(approvals.canPropose(eq(user), any())).thenReturn(true);
             service = new CareerAgentService(conversations, runs, factory, tools, mock(LlmConfigService.class), mock(AgentMemoryService.class),
                     new AgentContextBuilder(embedding, compactor, profiles, tools,
                             new ModelContextCapacity(new org.springframework.core.env.StandardEnvironment()), images),
-                    profiles, JsonMapper.builder().build(), progress, approvals,
+                    profiles, JsonMapper.builder().build(), progress, approvals, deletions,
                     mock(AgentPermissionGrants.class), mock(AgentExecutionAuditStore.class), traces, catalog, images,
                     mock(com.projectardor.platform.usage.UsageTokenStore.class), metrics,
                     new AgentPlanner(JsonMapper.builder().build()), mock(AgentPlanStore.class),
@@ -429,5 +489,9 @@ class CareerAgentRuntimeIntegrationTests {
         void run(String message) { service.chatStream(user, conversation.getId(), message, null, null, new CareerAgentService.StreamSink() {
             public void send(AgentStreamEvent event) { events.add(event); } public void complete() {}
         }); }
+        void run(String message, UUID requestId) { service.chatStream(user, conversation.getId(), message, null, null, List.of(), requestId,
+                new CareerAgentService.StreamSink() {
+                    public void send(AgentStreamEvent event) { events.add(event); } public void complete() {}
+                }); }
     }
 }

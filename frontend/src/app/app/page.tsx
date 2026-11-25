@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, KeyboardEvent, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { ClipboardEvent, FormEvent, KeyboardEvent, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { markdownPlugins } from "@/lib/markdown-plugins";
 import { type AiJob } from "@/lib/ai-jobs";
@@ -50,7 +50,7 @@ type AgentRun = { id: string; conversationId: string; message: string; status: "
    button, and pressing it is an ordinary authenticated DELETE from here — the
    model never gets to destroy anything on its own say-so. */
 type LearningPlanProposal = PlanContext & { concept: string; reason: string | null; scheduledAt: string | null; requestId: string };
-type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; targetIds?: string[] | null; sourceMessageId?: string; learningPlan?: LearningPlanProposal | null };
+type AgentConfirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; targetIds?: string[] | null; proposalId?: string; sourceMessageId?: string; learningPlan?: LearningPlanProposal | null };
 type PendingConfirmation = AgentConfirmation & { state: "PENDING" | "DELETING" | "GENERATING" | "DONE" | "DISMISSED" | "FAILED" | "EXPIRED" | "REMOVED"; error?: string; createdPlanId?: string };
 type RunStep = ToolMeasurement & { key: string; label: string; elapsedMs: number; done: boolean };
 type ResumeOption = { id: string; originalFilename: string };
@@ -94,7 +94,7 @@ function liveContextState(usage?: ContextUsage | null) {
 }
 
 function confirmationKey(value: AgentConfirmation) {
-  return value.learningPlan?.requestId ?? `${value.kind}:${value.endpoint}`;
+  return value.learningPlan?.requestId ?? value.proposalId ?? `${value.kind}:${value.endpoint}`;
 }
 
 function dismissedProposalKey(value: AgentConfirmation) {
@@ -865,6 +865,15 @@ export default function AgentHomePage() {
     if (!window.matchMedia("(min-width: 768px)").matches) setSidebarOpen(false);
   }
 
+  function dismissDeletion(pending: PendingConfirmation) {
+    rememberDeletion(pending, "DISMISSED");
+    if (pending.proposalId && pending.sourceMessageId) {
+      void api<void>(`/api/agent/runs/${encodeURIComponent(pending.sourceMessageId)}/deletion-proposals/${encodeURIComponent(pending.proposalId)}/dismiss`,
+        { method: "POST" }).catch(() => undefined);
+    }
+    setConfirmations((current) => current.map((item) => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item));
+  }
+
   /* The button calls the same REST endpoint the corresponding page would call.
      No agent round trip, no confirmation phrase to retype. */
   async function confirmDeletion(pending: PendingConfirmation) {
@@ -1289,6 +1298,23 @@ export default function AgentHomePage() {
     if (image) clearSentChatImages([image]);
   }
 
+  function pasteChatContent(event: ClipboardEvent<HTMLFormElement>) {
+    const images = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (!images.length) return;
+    event.preventDefault();
+    const text = event.clipboardData.getData("text/plain");
+    const input = event.currentTarget.querySelector("textarea");
+    if (text && input) {
+      const start = input.selectionStart, end = input.selectionEnd;
+      updateDraft(draft.slice(0, start) + text + draft.slice(end));
+      requestAnimationFrame(() => input.setSelectionRange(start + text.length, start + text.length));
+    }
+    void uploadChatImages(images);
+  }
+
   async function uploadChatImages(files: File[]) {
     if (!files.length) return;
     if (!imageInputSupported) { setError(IMAGE_MODEL_ERROR); return; }
@@ -1517,7 +1543,7 @@ export default function AgentHomePage() {
   const selected = conversations.find((item) => item.id === state?.conversationId);
   const dockedDeletions = confirmations.filter((item) => item.kind !== "learning_plan" && ["PENDING", "FAILED", "DELETING"].includes(item.state));
   const deletionDock = <DeletionPermissions items={dockedDeletions}
-    onKeep={(pending) => { rememberDeletion(pending, "DISMISSED"); setConfirmations((current) => current.map((item) => confirmationKey(item) === confirmationKey(pending) ? { ...item, state: "DISMISSED" } : item)); }}
+    onKeep={dismissDeletion}
     onDelete={(pending) => void confirmDeletion(pending)} />;
   // A terminal reason must remain visible even when its work record is collapsed.
   const visibleError = error && (!busy || !retryFailures.some((failure) =>
@@ -1640,7 +1666,7 @@ export default function AgentHomePage() {
                   {runningRun && <div role="status" className="mx-auto mt-5 max-w-2xl rounded-2xl border border-violet-100 bg-white/75 px-4 py-3 text-left text-sm text-violet-700">{t(`Ardor is working on your last message · ${runningRun.label}. It will appear when ready.`, `Ardor 正在处理上一条消息 · ${runningRun.label}。完成后会自动显示。`)}</div>}
                   {liveTrace}
                   {(visibleError || visibleRetryFailures.length > 0) && <div role="alert" className="mx-auto mt-5 max-w-2xl rounded-2xl bg-red-50/90 px-4 py-3 text-left text-sm text-red-700 shadow-sm">{visibleError && <p>{visibleError}</p>}{visibleRetryFailures.length > 0 && <ul className={visibleError ? "mt-2 space-y-1 text-xs text-red-600" : "space-y-1 text-xs text-red-600"}>{visibleRetryFailures.map((failure, index) => <li key={`${failure.label}-${index}`}>{failure.label}：{failure.detail}</li>)}</ul>}</div>}
-                  <form onSubmit={submit} className="mx-auto mt-8 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
+                  <form onSubmit={submit} onPaste={pasteChatContent} className="mx-auto mt-8 rounded-[1.75rem] border border-white/70 bg-white/88 p-2 text-left shadow-[0_20px_70px_rgba(42,35,27,0.16)] backdrop-blur-xl transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/80 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.18),0_0_0_4px_rgba(255,255,255,0.42)]">
                     {chatImagePreviews()}
                     {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label={t("Remove attachment", "移除资料")} onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
@@ -1657,7 +1683,7 @@ export default function AgentHomePage() {
                 {messages.map((message) => (
                   <article key={message.id} className={`flex gap-3 ${message.role === "USER" ? "justify-end" : "justify-start"}`}>
                     {message.role === "USER" ? (
-                      <div className="flex max-w-[86%] flex-col items-end"><div className="rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7"><MessageImages imageIds={message.imageIds} alt={t("Attached chat image", "聊天图片")} />{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" />{context.type === "SERVICE" ? <Link href={featureHref(features.find((feature) => feature.id === context.id)?.key)} className="truncate text-violet-700 underline underline-offset-2">{locale === "en" ? features.find((feature) => feature.id === context.id)?.englishLabel ?? context.label : context.label}</Link> : <span className="truncate">{context.label}</span>}</span>)}</div>}<div className="whitespace-pre-wrap">{message.content}</div></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 px-1 text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time></div>
+                      <div className="flex min-w-0 max-w-[86%] flex-col items-end"><div data-user-message className="min-w-0 max-w-full rounded-3xl bg-stone-200/65 px-5 py-3 text-sm leading-7 [overflow-wrap:anywhere]"><MessageImages imageIds={message.imageIds} alt={t("Attached chat image", "聊天图片")} />{message.contextReferences && message.contextReferences.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{message.contextReferences.map((context) => <span key={`${context.type}-${context.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[11px] text-stone-600"><Paperclip className="size-3" />{context.type === "SERVICE" ? <Link href={featureHref(features.find((feature) => feature.id === context.id)?.key)} className="truncate text-violet-700 underline underline-offset-2">{locale === "en" ? features.find((feature) => feature.id === context.id)?.englishLabel ?? context.label : context.label}</Link> : <span className="truncate">{context.label}</span>}</span>)}</div>}<div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{message.content}</div></div><time dateTime={message.createdAt} title={fullMessageTimestamp(message.createdAt, locale)} className="mt-1 px-1 text-[10px] text-stone-400">{formatMessageTimestamp(message.createdAt, locale)}</time></div>
                     ) : (
                       <div className="max-w-full py-0.5 text-sm leading-7 text-stone-800">
                         {message === liveAssistant && <>
@@ -1697,7 +1723,7 @@ export default function AgentHomePage() {
               onConfirm={pending => void confirmLearning(pending)} />
             </div>
             {visibleError && <div role="alert" className="mx-auto mb-3 max-w-3xl rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 shadow-sm"><p>{visibleError}</p></div>}
-            <form onSubmit={submit} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
+            <form onSubmit={submit} onPaste={pasteChatContent} className="mx-auto max-w-3xl rounded-[1.75rem] border border-stone-200/80 bg-white p-2 shadow-[0_20px_70px_rgba(42,35,27,0.14)] transition-[border-color,box-shadow] duration-200 focus-within:border-stone-300/90 focus-within:shadow-[0_22px_76px_rgba(42,35,27,0.16),0_0_0_4px_rgba(255,255,255,0.38)]">
               {chatImagePreviews()}
               {selectedContexts.some((context) => context.type !== "SERVICE") && <div className="mx-3 mt-2 flex flex-wrap gap-1.5">{selectedContexts.filter((context) => context.type !== "SERVICE").map((context) => <div key={`${context.type}-${context.id}`} className="inline-flex max-w-[90%] items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs text-violet-700"><Paperclip className="size-3.5 shrink-0" /><span className="truncate">{context.label}</span><button type="button" aria-label="移除资料" onClick={() => toggleContext(context)}><X className="size-3.5" /></button></div>)}</div>}
               {servicePicker()}
