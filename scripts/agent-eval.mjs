@@ -188,7 +188,9 @@ async function runCase(item) {
     return { ...scoreCase(item, null, undefined, { environmentError: true, errorKind: kind }), requestId, costUsd: null };
   }
   const done = events.find((event) => event.type === "done");
-  const result = scoreCase(item, trace, done?.content);
+  const failureKind = timedOut ? "TIMEOUT" : runError ? classifyFailure(runError) : null;
+  const result = scoreCase(item, trace, done?.content, failureKind
+    ? { environmentError: true, errorKind: failureKind } : {});
   const input = trace.totals?.inputTokens;
   const output = trace.totals?.outputTokens;
   const cost = calculateCost({

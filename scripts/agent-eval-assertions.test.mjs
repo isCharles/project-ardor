@@ -152,6 +152,17 @@ test("a null trace is an environment error, not a scored business failure", () =
   assert.equal(result.errorKind, "TIMEOUT");
 });
 
+test("a persisted partial trace does not turn a transport failure into task success", () => {
+  const result = scoreCase({ id: "partial", expectedTools: ["list_calendar_tasks"] },
+    trace("FAILED", [executed("list_calendar_tasks")]), "partial", {
+    environmentError: true, errorKind: "TRANSPORT",
+  });
+  assert.equal(result.environmentError, true);
+  assert.equal(result.dimensions.taskSuccess, false);
+  assert.equal(result.dimensions.trajectorySuccess, null);
+  assert.equal(result.observed.tools[0].name, "list_calendar_tasks");
+});
+
 test("unknown usage stays unknown instead of becoming zero", () => {
   const result = scoreCase({ id: "u" }, { status: "COMPLETED", spans: [], totals: { llmCalls: 1 } }, "");
   assert.equal(result.observed.usageMissing, true);

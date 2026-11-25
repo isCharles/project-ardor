@@ -154,6 +154,18 @@ async function drive(client, plan, timeoutMs = 60_000) {
           });
         }
       } catch { /* run may not be registered yet; retry until the stream settles */ }
+      try {
+        const pendingDeletions = await client.json(`/api/agent/runs/${requestId}/deletion-proposals`);
+        for (const proposal of pendingDeletions) {
+          if (plan.approval === "allow") {
+            await client.json(proposal.endpoint, { method: "DELETE", expected: 204 });
+          } else {
+            await client.json(`/api/agent/runs/${requestId}/deletion-proposals/${proposal.proposalId}/dismiss`, {
+              method: "POST", expected: 204,
+            });
+          }
+        }
+      } catch { /* a live deletion gate may not be registered yet */ }
       await sleep(250);
     }
   })();
@@ -315,8 +327,10 @@ for (const [id, plan] of Object.entries(PLANS)) {
     foreignAfter = await listTasks(foreignClient);
     const after = await listTasks(client);
     results.push(combinedResult(declaration, plan, {
-      ...outcome, trace: traceData, environmentError: traceData == null,
-      errorKind: traceData == null ? (outcome.errorCode ?? "NO_TRACE") : null, state,
+      ...outcome, trace: traceData,
+      environmentError: traceData == null || outcome.streamError != null || outcome.errorCode != null,
+      errorKind: traceData == null ? (outcome.errorCode ?? "NO_TRACE")
+        : outcome.errorCode ?? (outcome.streamError ? "TRANSPORT" : null), state,
     }, before, after, foreignAfter));
     continue;
   }
@@ -325,8 +339,10 @@ for (const [id, plan] of Object.entries(PLANS)) {
   const traceData = await trace(client, outcome.requestId);
   const after = await listTasks(client);
   results.push(combinedResult(declaration, plan, {
-    ...outcome, trace: traceData, environmentError: traceData == null,
-    errorKind: traceData == null ? (outcome.errorCode ?? "NO_TRACE") : null, state,
+    ...outcome, trace: traceData,
+    environmentError: traceData == null || outcome.streamError != null || outcome.errorCode != null,
+    errorKind: traceData == null ? (outcome.errorCode ?? "NO_TRACE")
+      : outcome.errorCode ?? (outcome.streamError ? "TRANSPORT" : null), state,
   }, before, after, foreignAfter));
   // Fresh disposable users isolate rows; clean up the created task to honour the fixture contract.
   if (declaration.fixture?.cleanup?.includes("delete") && after.length === 1) await deleteTask(client, after[0].id).catch(() => {});
@@ -353,4 +369,7 @@ for (const item of report.cases) {
   for (const failure of item.failures) console.log(`      ${failure}`);
 }
 console.log(JSON.stringify(report.metrics));
-if (report.cases.some((item) => item.status !== "PASS")) process.exitCode = 1;
+if (report.cases.some((item) => item.status !== "PASS")) {
+  console.error("E2E evaluation failed: one or more cases did not pass");
+  process.exit(1);
+}

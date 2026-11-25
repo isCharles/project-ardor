@@ -122,10 +122,11 @@ node scripts/agent-eval.mjs
 注册全新用户（真实数据隔离，不是换会话），通过 REST 播种初态，驱动真实 Agent 运行时，
 处理写入审批，运行结束后通过 REST 读回业务终态，再同时判定轨迹与数据库状态。覆盖读取、
 创建、修改、删除仅提案、澄清、错误参数、只读无写入、跨用户资源归属和先读后写多步。
+删除提案通过 owner/run/proposal 维度的驳回接口释放；只有 fixture 明确允许删除时才调用业务 DELETE。
 
 fake 模型新增 `eval-script-probe`：从用户消息中的 `eval-tools` 指令按轮次发出工具调用，
 最后返回 `eval-answer`。CI 在配额放宽后运行该驱动；本机一次性栈验证 9/9 通过：
-taskSuccess 9/9、paramValid 6/7（错误参数案例按预期为 false）、toolExecuted 3/3、
+taskSuccess 9/9、executionSuccess 9/9、trajectory 9/9、paramValid 6/7（错误参数案例按预期为 false）、toolExecuted 3/3、
 safeRejection 2/2、环境错误 0/9。
 
 该驱动暴露了一个真实口径问题：工具校验/业务错误以文本结果返回时，轨迹仍记为
