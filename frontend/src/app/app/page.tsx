@@ -607,13 +607,21 @@ export default function AgentHomePage() {
     const proposals = [...new Map<string, AgentConfirmation>(result.messages.flatMap((message) => (savedRunTrace(message.runTrace)?.proposals ?? []).map(item => ({ ...item, sourceMessageId: message.id })))
       .map((item): [string, AgentConfirmation] => [confirmationKey(item), item])).values()].slice(-50);
     const restored = proposals.map((item) => {
+      const resolutionKey = confirmationKey(item);
+      const legacyItem = { ...item, proposalId: undefined };
+      const legacyResolutionKey = confirmationKey(legacyItem);
       let resolution: string | null = null;
-      try { resolution = window.localStorage.getItem(deletionResolutionKey(item, result.conversationId)); } catch { /* No automatic permission. */ }
+      try {
+        resolution = window.localStorage.getItem(deletionResolutionKey(item, result.conversationId))
+          ?? (legacyResolutionKey === resolutionKey ? null
+            : window.localStorage.getItem(deletionResolutionKey(legacyItem, result.conversationId)));
+      } catch { /* No automatic permission. */ }
       const source = result.messages.find(message => message.id === item.sourceMessageId);
-      resolution = source?.proposalResolutions?.[confirmationKey(item)] ?? resolution;
+      resolution = source?.proposalResolutions?.[resolutionKey]
+        ?? source?.proposalResolutions?.[legacyResolutionKey] ?? resolution;
       if (resolution === "DONE" || resolution === "DISMISSED" || resolution === "ACCEPTED") {
         void api<void>(`/api/agent/messages/${encodeURIComponent(item.sourceMessageId!)}/proposal-resolution`, {
-          method: "PUT", body: JSON.stringify({ key: confirmationKey(item), resolution }),
+          method: "PUT", body: JSON.stringify({ key: resolutionKey, resolution }),
         }).catch(() => undefined);
       }
       const unsafeLegacyBulk = ["all_memories", "all_memory_cards"].includes(item.kind) && !Array.isArray(item.targetIds);

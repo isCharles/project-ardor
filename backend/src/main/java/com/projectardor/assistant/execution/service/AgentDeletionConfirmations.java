@@ -33,12 +33,25 @@ public class AgentDeletionConfirmations {
     }
 
     public boolean await(UUID userId, UUID runId, PendingConfirmation confirmation, Runnable onRegistered) {
+        return await(userId, runId, confirmation, onRegistered, () -> true);
+    }
+
+    public boolean await(UUID userId, UUID runId, PendingConfirmation confirmation, Runnable onRegistered,
+            java.util.function.BooleanSupplier active) {
         if (userId == null || runId == null || confirmation == null || confirmation.proposalId() == null) return false;
         Key key = new Key(userId, runId, confirmation.proposalId());
         Pending gate = new Pending(confirmation);
         if (pending.putIfAbsent(key, gate) != null) return false;
         try {
+            if (!active.getAsBoolean()) {
+                dismiss(userId, runId, confirmation.proposalId());
+                return gate.decision.join();
+            }
             onRegistered.run();
+            if (!active.getAsBoolean()) {
+                dismiss(userId, runId, confirmation.proposalId());
+                return gate.decision.join();
+            }
             return gate.decision.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();

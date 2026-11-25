@@ -76,6 +76,7 @@ public class AgentMessageQueueWorker {
                 agent.chatStream(item.userId(), request.conversationId(), request.message(), request.contextType(),
                         request.contextId(), request.contextReferences(), request.requestId(), request.reasoningDepth(),
                         request.modelChoice(), request.imageIds(), new CareerAgentService.StreamSink() {
+                            @Override public boolean supportsDeletionGate() { return false; }
                             @Override public void waitingForApproval(boolean waiting) {
                                 if (waiting) slot.pause(); else slot.resume();
                             }

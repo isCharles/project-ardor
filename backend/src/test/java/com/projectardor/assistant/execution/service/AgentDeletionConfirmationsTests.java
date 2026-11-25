@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -102,6 +103,29 @@ class AgentDeletionConfirmationsTests {
         CompletableFuture<Boolean> closed = start(proposal(target, null));
         confirmations.close(user, run);
         assertThat(closed.join()).isFalse();
+    }
+
+    @Test
+    void closedRunCannotRegisterALateDeletionWait() {
+        PendingConfirmation proposal = proposal(target, null);
+        AtomicBoolean active = new AtomicBoolean();
+        AtomicBoolean emitted = new AtomicBoolean();
+        confirmations.close(user, run);
+
+        boolean deleted = confirmations.await(user, run, proposal, () -> emitted.set(true), active::get);
+
+        assertThat(deleted).isFalse();
+        assertThat(emitted).isFalse();
+    }
+
+    @Test
+    void runStoppedDuringRegistrationDoesNotLeaveAWait() {
+        PendingConfirmation proposal = proposal(target, null);
+        AtomicBoolean active = new AtomicBoolean(true);
+
+        boolean deleted = confirmations.await(user, run, proposal, () -> active.set(false), active::get);
+
+        assertThat(deleted).isFalse();
     }
 
     @Test

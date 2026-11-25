@@ -158,6 +158,25 @@ class CareerAgentRuntimeIntegrationTests {
                 .singleElement().satisfies(event -> assertThat(event.content()).isEqualTo("Deleted and continued."));
     }
 
+    @Test void nonInteractiveSinkCommitsDeletionProposalWithoutWaitingForAButton() {
+        var f = new Fixture();
+        UUID target = UUID.randomUUID();
+        var proposal = new CareerAgentTools.PendingConfirmation("memory_card", target, "Fixture card", "Fixture detail",
+                "/api/memory-cards/" + target, null, null, UUID.randomUUID());
+        when(f.bound.pendingConfirmations()).thenReturn(List.of(proposal));
+
+        f.service.chatStream(f.user, f.conversation.getId(), "Delete the fixture card", null, null,
+                new CareerAgentService.StreamSink() {
+                    @Override public boolean supportsDeletionGate() { return false; }
+                    public void send(AgentStreamEvent event) { f.events.add(event); }
+                    public void complete() {}
+                });
+
+        verify(f.bound, never()).withDeletionGate(any());
+        assertThat(f.events.stream().filter(event -> "confirm".equals(event.type()))).hasSize(1);
+        assertThat(f.events.stream().filter(event -> "done".equals(event.type()))).hasSize(1);
+    }
+
     public static class DeletionTool {
         private final CareerAgentTools.PendingConfirmation proposal;
         private final java.util.concurrent.atomic.AtomicReference<java.util.function.Predicate<CareerAgentTools.PendingConfirmation>> gate;

@@ -587,18 +587,21 @@ public class CareerAgentService {
             // the agent proposed, so each becomes a button in the transcript.
             Set<UUID> emittedDeletionProposals = ConcurrentHashMap.newKeySet();
             CareerAgentTools.BoundCareerTools bound = tools.bind(userId, message, logicalActionId, requestId)
-                    .withConversationId(conversation.getId())
-                    .withDeletionGate(confirmation -> {
-                        if (confirmation.proposalId() == null
-                                || !emittedDeletionProposals.add(confirmation.proposalId())) return false;
-                        sink.waitingForApproval(true);
-                        try {
-                            return deletionConfirmations.await(userId, requestId, confirmation,
-                                    () -> sink.send(AgentStreamEvent.confirm(confirmation)));
-                        } finally {
-                            sink.waitingForApproval(false);
-                        }
-                    });
+                    .withConversationId(conversation.getId());
+            if (sink.supportsDeletionGate()) {
+                bound.withDeletionGate(confirmation -> {
+                    if (confirmation.proposalId() == null
+                            || !emittedDeletionProposals.add(confirmation.proposalId())) return false;
+                    sink.waitingForApproval(true);
+                    try {
+                        return deletionConfirmations.await(userId, requestId, confirmation,
+                                () -> sink.send(AgentStreamEvent.confirm(confirmation)),
+                                () -> !finished.get() && !lease.stopped());
+                    } finally {
+                        sink.waitingForApproval(false);
+                    }
+                });
+            }
             // A plan is only meaningful for a persisted run: its steps are the resume guard, and the
             // trace is where the verification of each step is recorded.
             PlanningAgentTools planning = requestId == null ? null
@@ -1293,5 +1296,6 @@ public class CareerAgentService {
         void send(AgentStreamEvent event);
         void complete();
         default void waitingForApproval(boolean waiting) {}
+        default boolean supportsDeletionGate() { return true; }
     }
 }
