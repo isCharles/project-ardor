@@ -333,6 +333,7 @@ jobs:
           path: |
             ${{ runner.temp }}/ardor-agent-eval-demo/baseline.json
             ${{ runner.temp }}/ardor-agent-eval-demo/current.json
+            ${{ runner.temp }}/ardor-agent-eval-demo/tool-schema.json
             ${{ runner.temp }}/agent-eval-e2e.json
           retention-days: 90
           if-no-files-found: warn

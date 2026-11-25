@@ -89,7 +89,7 @@ Token/缺失标记、时长、成本、rubric）。哈希基于稳定序列化�
 Golden Path 将 demo 的 baseline/current 与 E2E 报告上传为 `agent-evaluation-evidence` artifact，
 保留 90 天，并用 `agent-eval-contract.mjs` 重算 split、dataset/prompt 哈希、逐 case 成本、指标分母、延迟与成本汇总。
 报告声明 tool-schema 哈希时必须同时提供 `ARDOR_EVAL_TOOL_SCHEMA_FILE` 指向的真实快照；CI 使用 demo 输出的
-`tool-schema.json`，E2E 未导出 schema 时保持 `null`。
+`tool-schema.json`，E2E 未导出 schema 时保持 `null`。schema 快照与报告一起保留，下载 artifact 后可独立复验。
 
 ## 手动真实模型评测
 
