@@ -292,6 +292,10 @@ final class ApprovedAgentTools {
                         // The lease refused a late call after cancel/deadline: it never ran.
                         outcome = "NOT_EXECUTED";
                         errorCode = "RUN_STOPPED";
+                    } else if (proposal && destructive && complete.contains("\"status\":\"DELETED\"")) {
+                        outcome = "COMPLETED";
+                        auditResult = complete;
+                        recordLegacyAudit(executionAudit, userId, requestId, tool, request.arguments(), approvalSource);
                     } else if (proposal) {
                         // The adapter only prepared a confirmation card; no business mutation happened.
                         outcome = "PROPOSED";

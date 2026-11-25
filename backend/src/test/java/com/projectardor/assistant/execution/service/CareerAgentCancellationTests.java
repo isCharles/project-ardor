@@ -34,7 +34,7 @@ class CareerAgentCancellationTests {
             mock(AgentConversationStore.class), runs, mock(LangChainModelFactory.class),
             mock(CareerAgentTools.class), mock(LlmConfigService.class), mock(AgentMemoryService.class),
             mock(AgentContextBuilder.class), mock(ProfileService.class), mock(ObjectMapper.class),
-            mock(AgentStreamProgress.class), mock(AgentToolApprovals.class), mock(AgentPermissionGrants.class),
+            mock(AgentStreamProgress.class), mock(AgentToolApprovals.class), new AgentDeletionConfirmations(), mock(AgentPermissionGrants.class),
             mock(AgentExecutionAuditStore.class), mock(AgentTraceStore.class), mock(AgentModelCatalogService.class),
             mock(ChatImageService.class), mock(com.projectardor.platform.usage.UsageTokenStore.class), mock(AgentMetrics.class),
             mock(AgentPlanner.class), mock(AgentPlanStore.class),

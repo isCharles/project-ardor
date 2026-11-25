@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { consumeSse } from "./acceptance-fixtures.mjs";
 if (process.env.ARDOR_ACCEPTANCE_DISPOSABLE_DB !== "true") throw new Error("Disposable database required");
 const base = process.env.ARDOR_ACCEPTANCE_API_BASE ?? "http://127.0.0.1:8080";
 const model = process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090";
 class Client {
   cookies = new Map();
-  async request(path, { method = "GET", body, expected = 200, raw = false } = {}) {
+  async request(path, { method = "GET", body, expected = 200, raw = false, onEvent } = {}) {
     const headers = {};
     if (method !== "GET") { const csrf = await this.request("/api/auth/csrf"); headers[csrf.headerName] = csrf.token; }
     headers.Cookie = [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
     if (body) headers["Content-Type"] = "application/json";
     const response = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(45000) });
     for (const line of response.headers.getSetCookie()) { const pair = line.split(";")[0], at = pair.indexOf("="); this.cookies.set(pair.slice(0, at), pair.slice(at + 1)); }
-    const text = await response.text(); assert.equal(response.status, expected, `${method} ${path}: ${text.slice(0, 180)}`);
+    const text = onEvent && response.ok ? await consumeSse(response, onEvent) : await response.text(); assert.equal(response.status, expected, `${method} ${path}: ${text.slice(0, 180)}`);
     return raw ? text : text ? JSON.parse(text) : null;
   }
 }
@@ -34,9 +35,9 @@ for (const method of ["GET", "PATCH", "DELETE"]) await foreign.request(`/api/aut
   method, expected: 404, ...(method === "PATCH" ? { body: { enabled: false } } : {}) });
 assert.equal((await owner.request(`/api/automations/${own.id}`)).enabled, true);
 await owner.request("/api/settings/llm", { method: "PUT", body: { provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "automation-module-probe", apiKey: "fake-only" } });
-async function turn(message, client = owner) {
+async function turn(message, client = owner, onEvent) {
   const conversation = await client.request("/api/agent/conversations", { method: "POST", expected: 201 });
-  const text = await client.request("/api/agent/messages/stream", { method: "POST", raw: true,
+  const text = await client.request("/api/agent/messages/stream", { method: "POST", raw: true, onEvent,
     body: { conversationId: conversation.id, requestId: randomUUID(), message, reasoningDepth: "AUTO" } });
   const events = text.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => JSON.parse(line.slice(5).trim()));
   assert.equal(events.filter(event => event.type === "done").length, 1, text.slice(-1200));
@@ -52,13 +53,16 @@ assert.deepEqual(Object.keys(updated).sort(), keys);
 assert.equal(updated.enabled, false);
 assert.equal(updated.prompt, own.prompt);
 assert.equal(updated.nextRunAt, null);
-const events = await turn(`删除这个自动化任务 ${own.id} automation-probe-delete`);
-const confirmation = events.find(event => event.type === "confirm")?.confirmation;
+let confirmation;
+await turn(`删除这个自动化任务 ${own.id} automation-probe-delete`, owner, async event => {
+  if (event.type !== "confirm") return;
+  confirmation = event.confirmation;
+  assert.equal((await owner.request(`/api/automations/${own.id}`)).id, own.id, "Agent deletion must only propose");
+  await owner.request(confirmation.endpoint, { method: "DELETE", expected: 204 });
+});
 assert.equal(confirmation?.targetId, own.id);
 assert.equal(confirmation?.label, own.title);
 assert.equal(confirmation?.endpoint, `/api/automations/${own.id}`);
-assert.equal((await owner.request(`/api/automations/${own.id}`)).id, own.id, "Agent deletion must only propose");
-await owner.request(confirmation.endpoint, { method: "DELETE", expected: 204 }); // Authenticated test-user confirmation.
 await owner.request(`/api/automations/${own.id}`, { expected: 404 });
 assert.equal((await foreign.request(`/api/automations/${theirs.id}`)).enabled, true);
 await foreign.request(`/api/automations/${theirs.id}`, { method: "DELETE", expected: 204 });
@@ -80,13 +84,16 @@ const savedAdvice = await adviceOwner.request("/api/calendar/advice");
 assert.deepEqual(Object.keys(savedAdvice).sort(), ["headline", "days", "weeks", "months", "updatedAt"].sort());
 assert.equal(savedAdvice.headline, "Updated owner advice fixture");
 assert.deepEqual(savedAdvice.days, ["Updated action"]);
-const adviceEvents = await turn("清除我的日历建议 advice-probe-delete", adviceOwner);
-const adviceConfirmation = adviceEvents.find(event => event.type === "confirm")?.confirmation;
+let adviceConfirmation;
+await turn("清除我的日历建议 advice-probe-delete", adviceOwner, async event => {
+  if (event.type !== "confirm") return;
+  adviceConfirmation = event.confirmation;
+  assert.equal((await adviceOwner.request("/api/calendar/advice")).headline, savedAdvice.headline,
+    "Agent deletion must only propose, including user-scoped singleton resources");
+  await adviceOwner.request(adviceConfirmation.endpoint, { method: "DELETE", expected: 204 });
+});
 assert.equal(adviceConfirmation?.endpoint, "/api/calendar/advice");
 assert.equal(adviceConfirmation?.label, "日历建议");
-assert.equal((await adviceOwner.request("/api/calendar/advice")).headline, savedAdvice.headline,
-  "Agent deletion must only propose, including user-scoped singleton resources");
-await adviceOwner.request(adviceConfirmation.endpoint, { method: "DELETE", expected: 204 });
 assert.deepEqual(await adviceOwner.request("/api/calendar/advice"), {
   headline: null, days: [], weeks: [], months: [], updatedAt: null });
 assert.equal((await foreign.request("/api/calendar/advice")).headline, "Foreign advice fixture");

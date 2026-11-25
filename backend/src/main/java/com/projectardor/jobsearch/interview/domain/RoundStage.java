@@ -7,5 +7,6 @@ public enum RoundStage {
     MANAGER,
     CROSS,
     FINAL,
+    OA,
     OTHER
 }

@@ -41,6 +41,7 @@ type LearningPlanRef = PlanContext & { id: string; concept: string; status: stri
 type RelatedPlan = LearningPlanRef & { relation: "TARGET" | "SOURCE" };
 
 const STATUSES = ["SCHEDULED", "AWAITING_RESULT", "NEXT_ROUND", "REJECTED"];
+const STAGES = ["HR", "TECHNICAL", "OA", "MANAGER", "CROSS", "FINAL", "OTHER"];
 
 const COURSE_STATUS: Record<string, { en: string; zh: string; row: string; badge: string }> = {
   COMPLETED: { en: "Completed", zh: "已完成", row: "bg-emerald-50 text-emerald-900 hover:bg-emerald-100", badge: "bg-emerald-100 text-emerald-700" },
@@ -73,7 +74,7 @@ function latestRound(item: Opportunity): Round | null {
 
 const STAGE_LABEL: Record<string, [string, string]> = {
   HR: ["HR", "HR"], TECHNICAL: ["Technical", "技术"], MANAGER: ["Manager", "主管"],
-  CROSS: ["Cross-functional", "交叉"], FINAL: ["Final", "终面"], OTHER: ["Other", "其他"],
+  OA: ["OA", "笔试"], CROSS: ["Cross-functional", "交叉"], FINAL: ["Final", "终面"], OTHER: ["Other", "其他"],
 };
 
 function stageLabel(stage: string, en: boolean) {
@@ -97,6 +98,8 @@ export default function OpportunitiesPage() {
   const [details, setDetails] = useState<{ item: Opportunity } | null>(null);
   const [planPicker, setPlanPicker] = useState<RelatedPlan[] | null>(null);
   const [editing, setEditing] = useState<Opportunity | null>(null);
+  const [editingRound, setEditingRound] = useState<{ opportunityId: string; round: Round } | null>(null);
+  const [roundError, setRoundError] = useState("");
   const newMenuRef = useDismiss<HTMLDivElement>(newMenuOpen, () => setNewMenuOpen(false));
   const [sortAscending, setSortAscending] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
@@ -220,6 +223,40 @@ export default function OpportunitiesPage() {
     finally { setBusy(""); }
   }
 
+  async function saveRound(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingRound) return;
+    const { opportunityId, round } = editingRound;
+    const data = new FormData(event.currentTarget);
+    const scheduledAt = String(data.get("scheduledAt") ?? "");
+    const occurredAt = String(data.get("occurredAt") ?? "");
+    const duration = Number(data.get("durationMinutes") ?? 0);
+    const busyKey = `round:${round.id}`;
+    setBusy(busyKey); setRoundError("");
+    try {
+      const updated = await api<Opportunity>(`/api/opportunities/${opportunityId}/rounds/${round.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          roundNumber: Number(data.get("roundNumber")),
+          stage: String(data.get("stage") ?? ""),
+          scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+          occurredAt: occurredAt ? new Date(occurredAt).toISOString() : null,
+          durationMinutes: Number.isFinite(duration) && duration > 0 ? duration : null,
+          note: String(data.get("note") ?? ""),
+        }),
+      });
+      setItems((items) => items.map((item) => item.id === opportunityId ? updated : item));
+      setEditingRound(null);
+    } catch (reason) { setRoundError(reason instanceof Error ? reason.message : t("Could not save the round", "保存轮次失败")); }
+    finally { setBusy(""); }
+  }
+
+  function localDateTime(value: string | null) {
+    if (!value) return "";
+    const date = new Date(value);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  }
+
   async function setStatus(item: Opportunity, status: string) {    if (status === item.status) return;
     setBusy(item.id); setError("");
     try {
@@ -321,7 +358,7 @@ export default function OpportunitiesPage() {
             </label>
             <label className="text-sm font-medium">{t("Round type", "本轮环节")}
               <select name="stage" defaultValue="OTHER" className="field mt-2">
-                {["HR", "TECHNICAL", "MANAGER", "CROSS", "FINAL", "OTHER"].map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+                {STAGES.map((stage) => <option key={stage} value={stage}>{stageLabel(stage, en)}</option>)}
               </select>
             </label>
             <label className="text-sm font-medium md:col-span-2">{t("JD (optional)", "JD（可选）")}
@@ -386,7 +423,7 @@ export default function OpportunitiesPage() {
                       <td className="px-4 py-3 text-stone-600">{item.currentRound || "—"}</td></>}
                       <td className="truncate px-4 py-3 text-stone-600" title={item.company}>{item.company}</td>
                       <td className="px-4 py-3">
-                        {item.platform ? <span className="rounded-lg bg-stone-100 px-2 py-0.5 text-xs text-stone-600">{item.platform}</span> : "—"}
+                        {item.platform ? <span className="block truncate rounded-lg bg-stone-100 px-2 py-0.5 text-xs text-stone-600" title={item.platform}>{item.platform}</span> : "—"}
                       </td>
                       <td className="px-4 py-3 text-stone-600">{round?.durationMinutes ? `${round.durationMinutes}` : "—"}</td>
                       <td className="px-4 py-3 text-right">
@@ -404,6 +441,17 @@ export default function OpportunitiesPage() {
                       <tr key={`${item.id}-detail`} className="border-b border-stone-100 bg-stone-50/60">
                         <td colSpan={presentationMode ? 5 : 8} className="px-6 py-5">
                           <div className="min-w-0 space-y-2">
+                            {item.rounds.length > 0 && <section aria-label={t("Rounds", "轮次")} className="space-y-1">
+                              {item.rounds.map((entry) => <button key={entry.id} type="button"
+                                aria-label={t(`Edit round ${entry.roundNumber}`, `编辑第 ${entry.roundNumber} 轮`)}
+                                onClick={() => { setRoundError(""); setEditingRound({ opportunityId: item.id, round: entry }); }}
+                                className="flex w-full min-w-0 items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-left text-sm transition hover:border-violet-200 hover:bg-violet-50/40">
+                                <span className="shrink-0 font-medium text-stone-700">{t(`Round ${entry.roundNumber}`, `第 ${entry.roundNumber} 轮`)}</span>
+                                <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">{stageLabel(entry.stage, en)}</span>
+                                <span className="min-w-0 flex-1 truncate text-stone-500">{formatDate(entry.occurredAt ?? entry.scheduledAt)}{entry.durationMinutes ? ` · ${entry.durationMinutes} min` : ""}</span>
+                                <Pencil className="size-3.5 shrink-0 text-stone-400" />
+                              </button>)}
+                            </section>}
                             {(recapsFor(item).length > 0 || plansFor(item).length > 0) && (
                               <Link href={"/app/learning/progress?sourceInterviewId=" + item.id}
                                 className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-violet-50 px-4 py-2.5 text-sm text-violet-900 transition hover:bg-violet-100">
@@ -499,6 +547,41 @@ export default function OpportunitiesPage() {
               </section>
             ))}
           </div>
+        </AppDialog>
+      )}
+      {editingRound && (
+        <AppDialog title={t("Edit round", "编辑轮次")} onClose={() => setEditingRound(null)}>
+          <form onSubmit={saveRound} className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <label htmlFor="round-number" className="block font-medium">{t("Round number", "轮次编号")}
+                <input id="round-number" name="roundNumber" type="number" min={1} required defaultValue={editingRound.round.roundNumber} className="field mt-1" />
+              </label>
+              <label htmlFor="round-stage" className="block font-medium">{t("Round type", "本轮环节")}
+                <select id="round-stage" name="stage" defaultValue={editingRound.round.stage} className="field mt-1">
+                  {STAGES.map((stage) => <option key={stage} value={stage}>{stageLabel(stage, en)}</option>)}
+                </select>
+              </label>
+            </div>
+            <label className="block font-medium">{t("Scheduled time", "约定时间")}
+              <input name="scheduledAt" type="datetime-local" defaultValue={localDateTime(editingRound.round.scheduledAt)} className="field mt-1" />
+            </label>
+            <label className="block font-medium">{t("Actual time", "实际时间")}
+              <input name="occurredAt" type="datetime-local" defaultValue={localDateTime(editingRound.round.occurredAt)} className="field mt-1" />
+            </label>
+            <label className="block font-medium">{t("Duration (minutes)", "时长（分钟）")}
+              <input name="durationMinutes" type="number" min={1} max={480} defaultValue={editingRound.round.durationMinutes ?? ""} className="field mt-1" />
+            </label>
+            <label className="block font-medium">{t("Round notes", "轮次备注")}
+              <textarea name="note" rows={4} maxLength={2000} defaultValue={editingRound.round.note ?? ""} className="field mt-1 resize-y" />
+            </label>
+            {roundError && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-red-700">{roundError}</p>}
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setEditingRound(null)} className="rounded-full border border-stone-300 px-4 py-2">{t("Cancel", "取消")}</button>
+              <button disabled={busy === `round:${editingRound.round.id}`} className="rounded-full bg-stone-950 px-4 py-2 text-white disabled:opacity-50">
+                {busy === `round:${editingRound.round.id}` ? t("Saving…", "保存中…") : t("Save", "保存")}
+              </button>
+            </div>
+          </form>
         </AppDialog>
       )}
       {editing && (

@@ -14,7 +14,7 @@ export function InterviewContextFields({ opportunities }: { opportunities: Inter
   const [processId, setProcessId] = useState(opportunities[0]?.id ?? "");
   const selected = opportunities.find(item => item.id === processId);
   const stageLabels: Record<string, string> = {
-    HR: t("HR", "HR 面试"), TECHNICAL: t("Technical", "技术面试"), MANAGER: t("Manager", "主管面试"),
+    HR: t("HR", "HR 面试"), TECHNICAL: t("Technical", "技术面试"), OA: t("OA", "笔试"), MANAGER: t("Manager", "主管面试"),
     CROSS: t("Cross-functional", "交叉面试"), FINAL: t("Final", "终面"), OTHER: t("Other", "其他环节"),
   };
   return <>

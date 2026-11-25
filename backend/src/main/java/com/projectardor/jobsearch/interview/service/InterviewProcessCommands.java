@@ -11,7 +11,7 @@ public final class InterviewProcessCommands {
     /** Null fields are omitted; empty optional text explicitly clears the previous value. */
     public record Update(String company, String targetRole, String platform, String jdContent,
             String inviteContent, String status) {}
-    /** Creating a round can omit its number; updating cannot change the existing number. */
+    /** Creating a round can omit its number; updates validate a supplied replacement. */
     public record Round(Integer roundNumber, String stage, Instant scheduledAt, Instant occurredAt,
             Integer durationMinutes, String note) {}
 }

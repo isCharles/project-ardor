@@ -14,6 +14,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
@@ -24,12 +25,15 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
 import com.projectardor.platform.identity.auth.security.CredentialFreshnessFilter;
+import com.projectardor.assistant.execution.service.AgentDeletionConfirmations;
+import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class SecurityConfig {
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, UserAccountRepository users,
+            AgentDeletionConfirmations deletionConfirmations, ObjectMapper objectMapper,
             @Value("${SESSION_COOKIE_SECURE:false}") boolean secureCookies) throws Exception {
         CookieCsrfTokenRepository csrfRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         csrfRepository.setCookiePath("/");
@@ -42,6 +46,8 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                         .sessionFixation(fixation -> fixation.changeSessionId()))
                 .addFilterAfter(new CredentialFreshnessFilter(users), SecurityContextHolderFilter.class)
+                .addFilterAfter(new AgentDeletionConfirmations.CompletionFilter(deletionConfirmations, objectMapper),
+                        AuthorizationFilter.class)
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health", "/api/health", "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()

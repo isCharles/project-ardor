@@ -63,6 +63,28 @@ class OpportunityRoundTests {
     }
 
     @Test
+    void updateCanChangeStageAndRoundNumber() {
+        OpportunityRound round = OpportunityRound.create(USER, OPPORTUNITY, 1,
+                RoundStage.HR, null, null, null);
+
+        round.update(3, RoundStage.OA, null, null, null, null);
+
+        assertThat(round.getRoundNumber()).isEqualTo(3);
+        assertThat(round.getStage()).isEqualTo(RoundStage.OA);
+    }
+
+    @Test
+    void updateRejectsInvalidRoundNumberBeforeChangingFields() {
+        OpportunityRound round = OpportunityRound.create(USER, OPPORTUNITY, 1,
+                RoundStage.HR, null, null, null);
+
+        assertThatThrownBy(() -> round.update(0, RoundStage.OA, null, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(round.getRoundNumber()).isEqualTo(1);
+        assertThat(round.getStage()).isEqualTo(RoundStage.HR);
+    }
+
+    @Test
     void updateCanChangeStage() {
         OpportunityRound round = OpportunityRound.create(USER, OPPORTUNITY, 1,
                 RoundStage.HR, null, null, null);

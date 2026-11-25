@@ -118,9 +118,12 @@ public class OpportunityService {
                 .filter(item -> item.getOpportunityId().equals(opportunityId))
                 .orElseThrow(() -> new ResourceNotFoundException("面试轮次不存在"));
         if (request.roundNumber() != null && request.roundNumber() != round.getRoundNumber()) {
-            throw new IllegalArgumentException("轮次编号不能通过修改变更，请删除后重建");
+            if (rounds.existsByUserIdAndOpportunityIdAndRoundNumber(
+                    userId, opportunityId, request.roundNumber())) {
+                throw new IllegalArgumentException("第 " + request.roundNumber() + " 轮已存在");
+            }
         }
-        round.update(parseStage(request.stage()), request.scheduledAt(), request.occurredAt(),
+        round.update(request.roundNumber(), parseStage(request.stage()), request.scheduledAt(), request.occurredAt(),
                 request.durationMinutes(), blankToNull(request.note()));
         rounds.save(round);
         return detail(userId, opportunityId);

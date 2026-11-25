@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { consumeSse } from "./acceptance-fixtures.mjs";
 if (process.env.ARDOR_ACCEPTANCE_DISPOSABLE_DB !== "true") throw new Error("Disposable database required");
 const base = process.env.ARDOR_ACCEPTANCE_API_BASE ?? "http://127.0.0.1:8080";
 const model = process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090";
 class Client {
   cookies = new Map();
-  async request(path, { method = "GET", body, expected = 200, raw = false } = {}) {
+  async request(path, { method = "GET", body, expected = 200, raw = false, onEvent } = {}) {
     const headers = {};
     if (method !== "GET") { const csrf = await this.request("/api/auth/csrf"); headers[csrf.headerName] = csrf.token; }
     headers.Cookie = [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
     if (body) headers["Content-Type"] = "application/json";
     const response = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(45000) });
     for (const line of response.headers.getSetCookie()) { const pair = line.split(";")[0], at = pair.indexOf("="); this.cookies.set(pair.slice(0, at), pair.slice(at + 1)); }
-    const text = await response.text(); assert.equal(response.status, expected, `${method} ${path}: ${text.slice(0, 150)}`);
+    const text = onEvent && response.ok ? await consumeSse(response, onEvent) : await response.text(); assert.equal(response.status, expected, `${method} ${path}: ${text.slice(0, 150)}`);
     return raw ? text : text ? JSON.parse(text) : null;
   }
 }
@@ -47,9 +48,9 @@ await foreign.request(`/api/calendar/tasks/${task.id}`, { method: "DELETE", expe
 await foreign.request(`/api/calendar/series/${rule.id}`, { method: "DELETE", expected: 404 });
 await owner.request("/api/settings/llm", { method: "PUT", body: {
   provider: "OPENAI_COMPATIBLE", baseUrl: model, model: "profile-calendar-probe", apiKey: "fake-only" } });
-async function turn(message) {
+async function turn(message, onEvent) {
   const conversation = await owner.request("/api/agent/conversations", { method: "POST", expected: 201 });
-  const stream = await owner.request("/api/agent/messages/stream", { method: "POST", raw: true,
+  const stream = await owner.request("/api/agent/messages/stream", { method: "POST", raw: true, onEvent,
     body: { conversationId: conversation.id, requestId: randomUUID(), message, reasoningDepth: "AUTO" } });
   const events = stream.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => JSON.parse(line.slice(5).trim()));
   assert.equal(events.filter(event => event.type === "done").length, 1, stream.slice(-1200));
@@ -80,19 +81,25 @@ assert.deepEqual(revisedOccurrences.map(item => item.id).sort(), agentOccurrence
 assert.ok(revisedOccurrences.every(item => item.title === "Revised agent rule" && new Date(item.dueAt).getUTCHours() === 11));
 await foreign.request(`/api/calendar/tasks/${agentTask.id}`, { method: "PUT", expected: 404,
   body: { title: "Foreign overwrite", description: "", dueAt: revisedTask.dueAt, priority: "LOW", status: "TODO" } });
-const taskEvents = await turn(`删除这个日程 ${task.id} profile-calendar-task`);
-const taskCard = taskEvents.find(event => event.type === "confirm")?.confirmation;
+let taskCard;
+await turn(`删除这个日程 ${task.id} profile-calendar-task`, async event => {
+  if (event.type !== "confirm") return;
+  taskCard = event.confirmation;
+  assert.ok((await owner.request("/api/calendar/tasks")).some(item => item.id === task.id));
+  await owner.request(taskCard.endpoint, { method: "DELETE", expected: 204 });
+});
 assert.equal(taskCard?.label, task.title); assert.equal(taskCard?.detail, "未安排时间");
 assert.equal(taskCard?.endpoint, `/api/calendar/tasks/${task.id}`);
-assert.ok((await owner.request("/api/calendar/tasks")).some(item => item.id === task.id));
-await owner.request(taskCard.endpoint, { method: "DELETE", expected: 204 });
-const ruleEvents = await turn(`取消这个重复安排 ${rule.id} profile-calendar-rule`);
-const ruleCard = ruleEvents.find(event => event.type === "confirm")?.confirmation;
+let ruleCard, cancelled;
+await turn(`取消这个重复安排 ${rule.id} profile-calendar-rule`, async event => {
+  if (event.type !== "confirm") return;
+  ruleCard = event.confirmation;
+  assert.equal((await owner.request("/api/calendar/series")).find(item => item.id === rule.id).status, "ACTIVE");
+  assert.equal((await owner.request("/api/calendar/tasks")).filter(item => item.seriesId === rule.id).length, 3);
+  cancelled = await owner.request(ruleCard.endpoint, { method: "DELETE" });
+});
 assert.equal(ruleCard?.label, `${rule.title}（${rule.summary}）`);
 assert.equal(ruleCard?.endpoint, `/api/calendar/series/${rule.id}`);
-assert.equal((await owner.request("/api/calendar/series")).find(item => item.id === rule.id).status, "ACTIVE");
-assert.equal((await owner.request("/api/calendar/tasks")).filter(item => item.seriesId === rule.id).length, 3);
-const cancelled = await owner.request(ruleCard.endpoint, { method: "DELETE" });
 assert.equal(cancelled.cancelled, true); assert.equal(cancelled.withdrawnOccurrences, 2);
 tasks = await owner.request("/api/calendar/tasks");
 assert.ok(!tasks.some(item => item.id === task.id));

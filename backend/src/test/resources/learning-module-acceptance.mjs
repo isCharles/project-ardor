@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { consumeSse } from "./acceptance-fixtures.mjs";
 
 // Creates synthetic users and writes real records. Never run against daily data.
 if (process.env.ARDOR_ACCEPTANCE_DISPOSABLE_DB !== "true") throw new Error("Disposable database required");
@@ -7,14 +8,14 @@ const base = process.env.ARDOR_ACCEPTANCE_API_BASE ?? "http://127.0.0.1:8080";
 const model = process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090";
 class Client {
   cookies = new Map();
-  async request(path, { method = "GET", body, expected = 200, raw = false } = {}) {
+  async request(path, { method = "GET", body, expected = 200, raw = false, onEvent } = {}) {
     const headers = {};
     if (method !== "GET") { const csrf = await this.request("/api/auth/csrf"); headers[csrf.headerName] = csrf.token; }
     headers.Cookie = [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
     if (body) headers["Content-Type"] = "application/json";
     const response = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(45000) });
     for (const line of response.headers.getSetCookie()) { const pair = line.split(";")[0], at = pair.indexOf("="); this.cookies.set(pair.slice(0, at), pair.slice(at + 1)); }
-    const text = await response.text(); assert.equal(response.status, expected, `${method} ${path}: ${text.slice(0, 250)}`);
+    const text = onEvent && response.ok ? await consumeSse(response, onEvent) : await response.text(); assert.equal(response.status, expected, `${method} ${path}: ${text.slice(0, 250)}`);
     return raw ? text : text ? JSON.parse(text) : null;
   }
 }
@@ -27,11 +28,11 @@ const createPlan = (client, concept) => client.request("/api/learning-plans", { 
   body: { concept, requestId: randomUUID(), sourceType: "MANUAL" } });
 const plan = await createPlan(owner, "Owned learning fixture"), foreignPlan = await createPlan(foreign, "Foreign learning fixture");
 await owner.request("/api/agent/permissions/*", { method: "PUT", expected: 204, body: { level: 3 } });
-async function turn(mode, args = {}, client = owner) {
+async function turn(mode, args = {}, client = owner, onEvent) {
   const conversation = await client.request("/api/agent/conversations", { method: "POST", expected: 201 });
   const requestId = randomUUID();
   const verb = { list: "查看学习计划", get: "查看学习计划", create: "建议学习计划", update: "修改学习计划日期", begin: "开始学习计划", delete: "删除学习计划" }[mode];
-  const stream = await client.request("/api/agent/messages/stream", { method: "POST", raw: true,
+  const stream = await client.request("/api/agent/messages/stream", { method: "POST", raw: true, onEvent,
     body: { conversationId: conversation.id, requestId, message: `${verb} learning-call:${mode} learning-args:${JSON.stringify(args)}`, reasoningDepth: "AUTO" } });
   const events = stream.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => JSON.parse(line.slice(5).trim()));
   assert.equal(events.filter(event => event.type === "done").length, 1, stream.slice(-1000));
@@ -81,12 +82,15 @@ const foreignRead = await turn("get", { planId: plan.id }, foreign);
 assert.ok(!foreignRead.stream.includes("Owned learning fixture"));
 const rejected = await turn("delete", { planId: plan.id }, foreign);
 assert.ok(!rejected.events.some(event => event.type === "confirm"), "Foreign target cannot produce a deletion card");
-const deleted = await turn("delete", { planId: plan.id });
-const deletion = deleted.events.find(event => event.type === "confirm")?.confirmation;
+let deletion;
+await turn("delete", { planId: plan.id }, owner, async event => {
+  if (event.type !== "confirm") return;
+  deletion = event.confirmation;
+  await owner.request(`/api/learning-plans/${plan.id}`);
+  await owner.request(deletion.endpoint, { method: "DELETE", expected: 204 });
+});
 assert.equal(deletion?.targetId, plan.id); assert.equal(deletion?.label, plan.concept);
 assert.equal(deletion.endpoint, `/api/learning-plans/${plan.id}`);
-await owner.request(`/api/learning-plans/${plan.id}`);
-await owner.request(deletion.endpoint, { method: "DELETE", expected: 204 });
 await owner.request(`/api/learning-plans/${plan.id}`, { expected: 404 });
 assert.equal((await foreign.request(`/api/learning-plans/${foreignPlan.id}`)).concept, foreignPlan.concept);
 console.log("Learning module: six wrapped tools, owned snapshots/updates, independent target, proposal-only creation/deletion, idempotent confirmation and cross-user isolation passed.");

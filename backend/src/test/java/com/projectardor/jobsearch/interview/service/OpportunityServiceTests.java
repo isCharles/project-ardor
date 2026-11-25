@@ -210,7 +210,50 @@ class OpportunityServiceTests {
     }
 
     @Test
-    void updateRoundRejectsRenumbering() {
+    void updateRoundCanRenumberAndChangeStageToOA() {
+        UUID userId = UUID.randomUUID();
+        UUID processId = UUID.randomUUID();
+        UUID roundId = UUID.randomUUID();
+        when(opportunities.findByIdAndUserId(processId, userId))
+                .thenReturn(Optional.of(JobOpportunity.create(userId, "Shopee", "后端", null, null)));
+        OpportunityRound round = OpportunityRound.create(userId, processId, 1, RoundStage.HR, null, null, null);
+        when(rounds.findByIdAndUserId(roundId, userId)).thenReturn(Optional.of(round));
+        when(rounds.existsByUserIdAndOpportunityIdAndRoundNumber(userId, processId, 3)).thenReturn(false);
+        when(rounds.findAllByUserIdAndOpportunityIdOrderByRoundNumberAsc(eq(userId), any()))
+                .thenReturn(List.of(round));
+        saveReturnsArguments();
+
+        InterviewProcessView result = service.updateRound(userId, processId, roundId,
+                new InterviewProcessCommands.Round(3, "OA", null, null, null, null));
+
+        assertThat(round.getRoundNumber()).isEqualTo(3);
+        assertThat(round.getStage()).isEqualTo(RoundStage.OA);
+        assertThat(result.rounds().getFirst().roundNumber()).isEqualTo(3);
+        assertThat(result.rounds().getFirst().stage()).isEqualTo("OA");
+        verify(rounds).save(round);
+    }
+
+    @Test
+    void updateRoundRejectsADuplicateRoundNumber() {
+        UUID userId = UUID.randomUUID();
+        UUID processId = UUID.randomUUID();
+        UUID roundId = UUID.randomUUID();
+        when(opportunities.findByIdAndUserId(processId, userId))
+                .thenReturn(Optional.of(JobOpportunity.create(userId, "Shopee", "后端", null, null)));
+        OpportunityRound round = OpportunityRound.create(userId, processId, 1, RoundStage.HR, null, null, null);
+        when(rounds.findByIdAndUserId(roundId, userId)).thenReturn(Optional.of(round));
+        when(rounds.existsByUserIdAndOpportunityIdAndRoundNumber(userId, processId, 2)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.updateRound(userId, processId, roundId,
+                new InterviewProcessCommands.Round(2, null, null, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("已存在");
+        assertThat(round.getRoundNumber()).isEqualTo(1);
+        verify(rounds, never()).save(any());
+    }
+
+    @Test
+    void updateRoundRejectsNonPositiveRoundNumber() {
         UUID userId = UUID.randomUUID();
         UUID processId = UUID.randomUUID();
         UUID roundId = UUID.randomUUID();
@@ -220,8 +263,9 @@ class OpportunityServiceTests {
         when(rounds.findByIdAndUserId(roundId, userId)).thenReturn(Optional.of(round));
 
         assertThatThrownBy(() -> service.updateRound(userId, processId, roundId,
-                new InterviewProcessCommands.Round(2, null, null, null, null, null)))
+                new InterviewProcessCommands.Round(0, null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("轮次编号不能");
+                .hasMessageContaining("轮次必须从 1 开始");
+        verify(rounds, never()).save(any());
     }
 }

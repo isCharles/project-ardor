@@ -322,7 +322,7 @@ http.createServer((request, response) => {
       if (hasToolResult) {
         try { const result = JSON.parse(output);
           valid &&= mode === "profile" ? Object.keys(result).length === 3 && result.displayName === "Owner Profile Fixture" && !output.includes("Foreign Profile Fixture")
-            : ["task", "rule"].includes(mode) ? result.status === "CONFIRMATION_REQUIRED"
+            : ["task", "rule"].includes(mode) ? result.status === "DELETED"
             : mode.startsWith("list-") ? Array.isArray(result)
             : mode === "update-rule" ? result.updatedOccurrences === 3 && result.preservedOccurrences === 0
             : typeof result.id === "string" && !result.status?.includes("PERMITTED");
@@ -351,7 +351,7 @@ http.createServer((request, response) => {
           valid &&= mode === "list" ? Array.isArray(result) && result.length === 2 && result.every(item => Object.keys(item).length === 7)
               && output.includes("Owner resume fixture.pdf") && !output.includes("Foreign resume fixture.pdf")
             : mode === "report" ? Object.keys(result).length === 4 && result.resumeId === id && !!result.analysisId && !!result.analysis
-            : mode === "delete" ? result.status === "CONFIRMATION_REQUIRED"
+            : mode === "delete" ? result.status === "DELETED"
             : Object.keys(result).length === 7 && result.resumeId === id && result.status === "COMPLETED";
         } catch { valid = false; }
       }
@@ -375,7 +375,7 @@ http.createServer((request, response) => {
       const output = String(payload.messages.filter(item => item.role === "tool").at(-1)?.content ?? "");
       if (new Set(names).size !== names.length || expected.some(name => !names.includes(name))
           || hasToolResult && (mode === "get" ? !output.includes("Owner advice fixture") || output.includes("Foreign advice fixture")
-            : mode === "update" ? !output.includes("Updated owner advice fixture") : !output.includes("CONFIRMATION_REQUIRED"))) {
+            : mode === "update" ? !output.includes("Updated owner advice fixture") : !output.includes('"status":"DELETED"'))) {
         response.writeHead(400, { "content-type": "application/json" });
         response.end(JSON.stringify({ error: { message: "Calendar advice contract or owner isolation failed" } })); return;
       }
@@ -399,7 +399,7 @@ http.createServer((request, response) => {
       const output = String(payload.messages.filter(item => item.role === "tool").at(-1)?.content ?? "");
       if (new Set(names).size !== names.length || expected.some(name => !names.includes(name))
           || hasToolResult && (mode === "list" ? !output.includes("Automation owner fixture") || output.includes("Automation foreign fixture")
-            : mode === "update" ? !output.includes('"enabled":false') : !output.includes("CONFIRMATION_REQUIRED"))) {
+            : mode === "update" ? !output.includes('"enabled":false') : !output.includes('"status":"DELETED"'))) {
         response.writeHead(400, { "content-type": "application/json" });
         response.end(JSON.stringify({ error: { message: "Automation module contract or owner isolation failed" } })); return;
       }
