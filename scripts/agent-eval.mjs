@@ -81,6 +81,7 @@ try {
 let tokensUsed = 0;
 let costUsed = 0;
 let usageMissingCases = 0;
+let costMissingCases = 0;
 let stopped = false;
 
 function positiveInt(name, fallback) {
@@ -184,6 +185,8 @@ async function runCase(item) {
   // A failed or timed-out run still gets its trace so partial execution is visible.
   const trace = await fetchTrace(requestId);
   if (!trace) {
+    usageMissingCases += 1;
+    costMissingCases += 1;
     const kind = timedOut ? "TIMEOUT" : classifyFailure(runError);
     return { ...scoreCase(item, null, undefined, { environmentError: true, errorKind: kind }), requestId, costUsd: null };
   }
@@ -191,16 +194,20 @@ async function runCase(item) {
   const failureKind = timedOut ? "TIMEOUT" : runError ? classifyFailure(runError) : null;
   const result = scoreCase(item, trace, done?.content, failureKind
     ? { environmentError: true, errorKind: failureKind } : {});
-  const input = trace.totals?.inputTokens;
-  const output = trace.totals?.outputTokens;
+  const observed = result.observed;
   const cost = calculateCost({
-    inputTokens: input, outputTokens: output,
-    cacheReadInputTokens: trace.totals?.cacheReadInputTokens,
-    cacheCreationInputTokens: trace.totals?.cacheCreationInputTokens,
+    inputTokens: observed.inputTokens,
+    outputTokens: observed.outputTokens,
+    cacheReadInputTokens: observed.cacheReadInputTokens,
+    cacheCreationInputTokens: observed.cacheCreationInputTokens,
+    usageMissing: observed.usageMissing,
+    cacheUsageMissing: observed.cacheUsageMissing,
   }, pricing);
   // Unknown usage is never added as zero; it is counted so the budget boundary is explicit.
-  if (input == null || output == null) usageMissingCases += 1;
-  else { tokensUsed += input + output; if (cost != null) costUsed += cost; }
+  if (observed.usageMissing) usageMissingCases += 1;
+  else tokensUsed += observed.inputTokens + observed.outputTokens;
+  if (cost == null) costMissingCases += 1;
+  else costUsed += cost;
   return { ...result, requestId, costUsd: cost };
 }
 
@@ -215,7 +222,7 @@ function classifyFailure(error) {
 
 async function worker(queue, results) {
   while (queue.length > 0 && !stopped) {
-    if (tokensUsed >= maxTokens || costUsed >= maxCost) { stopped = true; break; }
+    if (tokensUsed >= maxTokens || costUsed >= maxCost || costMissingCases > 0) { stopped = true; break; }
     const item = queue.shift();
     if (!item) break;
     results.push(await runCase(item));
@@ -236,8 +243,8 @@ const report = buildReport({
 report.budget = {
   maxCases, concurrency, maxTokens, maxCost, inputPrice, outputPrice, timeoutMs,
   knownTokens: tokensUsed, knownCostUsd: Number(costUsed.toFixed(6)),
-  usageMissingCases, costMissingCases: report.cost.missingCaseCount, stopped,
-  note: "Token/cost caps only account for cases that reported usage; missing usage or required cache pricing stays unknown, so real spend may exceed knownCostUsd.",
+  usageMissingCases, costMissingCases, stopped,
+  note: "Token/cost caps only account for cases that reported usage; missing usage or required cache pricing stays unknown and stops further scheduling, so real spend may exceed knownCostUsd.",
 };
 if (process.env.ARDOR_EVAL_REPORT) fs.writeFileSync(process.env.ARDOR_EVAL_REPORT, JSON.stringify(report, null, 2));
 
@@ -254,4 +261,4 @@ if (process.env.ARDOR_EVAL_BASELINE) {
   console.log(formatDiff(diff));
   if (diff.hasRegression) process.exitCode = 1;
 }
-if (report.cases.some((item) => item.status !== "PASS") || stopped || usageMissingCases > 0) process.exitCode = 1;
+if (report.cases.some((item) => item.status !== "PASS") || stopped || usageMissingCases > 0 || costMissingCases > 0) process.exitCode = 1;

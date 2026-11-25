@@ -95,6 +95,13 @@ export function scoreCase(item, trace, answer, options = {}) {
   const environmentError = options.environmentError === true || trace == null;
   const text = String(answer ?? "");
 
+  const totals = trace?.totals ?? {};
+  const usageMissing = trace != null && ((totals.usageMissingCalls != null && totals.usageMissingCalls !== 0)
+    || totals.inputTokens == null || totals.outputTokens == null);
+  const cacheUsageMissing = trace != null && ((totals.cacheUsageMissingCalls != null && totals.cacheUsageMissingCalls !== 0)
+    || totals.cacheReadInputTokens == null || totals.cacheCreationInputTokens == null);
+  const durationKnown = trace?.durationMs != null && (trace.durationMs > 0
+    || (trace.recordState == null && trace.status !== "RUNNING"));
   const observed = {
     runStatus: trace?.status ?? "UNKNOWN",
     tools: spans.map((span) => ({
@@ -104,12 +111,16 @@ export function scoreCase(item, trace, answer, options = {}) {
       executed: isExecuted(span),
       errorCode: effectiveErrorCode(span),
     })),
-    llmCalls: trace?.totals?.llmCalls ?? null,
-    inputTokens: trace?.totals?.inputTokens ?? null,
-    outputTokens: trace?.totals?.outputTokens ?? null,
-    cacheReadInputTokens: trace?.totals?.cacheReadInputTokens ?? null,
-    cacheCreationInputTokens: trace?.totals?.cacheCreationInputTokens ?? null,
-    durationMs: trace?.durationMs ?? null,
+    llmCalls: totals.llmCalls ?? null,
+    inputTokens: usageMissing ? null : totals.inputTokens ?? null,
+    outputTokens: usageMissing ? null : totals.outputTokens ?? null,
+    cacheReadInputTokens: cacheUsageMissing ? null : totals.cacheReadInputTokens ?? null,
+    cacheCreationInputTokens: cacheUsageMissing ? null : totals.cacheCreationInputTokens ?? null,
+    durationMs: durationKnown ? trace.durationMs : null,
+    usageMissingCalls: totals.usageMissingCalls ?? null,
+    cacheUsageMissingCalls: totals.cacheUsageMissingCalls ?? null,
+    traceTotalsComplete: totals.complete ?? null,
+    recordState: trace?.recordState ?? null,
     plans: planSpans(trace).length,
     // A second plan span in the same run means the plan was revised; unbounded revising is the
     // failure mode this layer is supposed to prevent, so the scorer counts it explicitly.
@@ -117,9 +128,8 @@ export function scoreCase(item, trace, answer, options = {}) {
     planSteps: planStepSpans(trace).length,
     planStepsVerified: verifiedStepCount(trace),
     // Unknown usage must stay unknown, never coerced to zero.
-    usageMissing: trace != null && (trace?.totals?.inputTokens == null || trace?.totals?.outputTokens == null),
-    cacheUsageMissing: trace != null && trace?.totals?.cacheReadInputTokens == null
-        && trace?.totals?.cacheCreationInputTokens == null,
+    usageMissing,
+    cacheUsageMissing,
   };
 
   if (environmentError) {

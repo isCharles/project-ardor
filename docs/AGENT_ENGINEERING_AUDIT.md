@@ -103,7 +103,7 @@ Ardor 已具备较扎实的工程底座：模块化单体、统一 Agent 入口�
 | 单元/纯领域测试 | 1,387 个 `@Test`；策略、状态机、评分器、权限、取消竞态等 | 已实现 | 数量不能证明关键路径覆盖；无 JaCoCo 门禁 |
 | 组件/契约测试 | MockMvc、脚本契约、源码架构规则、fake-model SSE | 已实现 | 不少验证依赖源码字符串或合成轨迹，可能漏掉真实装配问题 |
 | 快速真实集成测试 | `AgentPlanFencePostgresTests`、`QuotaCounterStorePostgresTests` 等用独立 schema + Flyway + 真实 JDBC | 部分实现 | 多数由 `ARDOR_ACCEPTANCE_DISPOSABLE_DB=true` 显式启用；未形成每次后端测试默认运行的薄切片 |
-| E2E/验收 | Golden Path 启动真实 Spring、PostgreSQL/pgvector、Redis 与 fake 模型；驱动 REST/DB 读回 | 已实现 | 成本高、反馈慢；9 个日历 Outcome case 不能代表全部业务域 |
+| E2E/验收 | Golden Path 启动真实 Spring、PostgreSQL/pgvector、Redis 与 fake 模型；驱动 REST/DB 读回 | 已实现 | 成本高、反馈慢；默认 8 个、显式含 held-out 时 9 个日历 Outcome case 不能代表全部业务域 |
 | 浏览器回归 | 39 个独立脚本，含聊天、trace、恢复等 | 部分实现 | 缺少统一测试命令与稳定的环境/数据隔离说明 |
 | 真实模型质量评测 | `scripts/agent-eval.mjs` 手动授权入口 | 部分实现 | CI 不运行；无固定样本窗口、校准集和持续趋势 |
 | 安全测试 | 权限、归属、提案、出站策略、跨用户测试 | 部分实现 | 未见系统性依赖扫描/SAST/DAST 门禁与定期攻击面复核 |
@@ -116,7 +116,7 @@ Ardor 已具备较扎实的工程底座：模块化单体、统一 Agent 入口�
 | 维度 | 当前实现 | 状态 | 缺口 |
 | --- | --- | --- | --- |
 | Output：答案结构与质量 | `agent-eval-judge.mjs` 的 `rubric.v1` 检查非空、短语、禁止表述、工具与终态 | 部分实现 | 主要是词法/规则，未经人工校准，不能衡量语义正确性 |
-| Outcome：业务终态 | `agent-eval-e2e.mjs` 通过 REST 读回日历状态；另检查禁止副作用 | 部分实现 | 当前只覆盖 9 个日历相关案例；学习、面试、记忆、知识库缺少终态断言 |
+| Outcome：业务终态 | `agent-eval-e2e.mjs` 通过 REST 读回日历状态；另检查禁止副作用 | 部分实现 | 当前默认覆盖 8 个、显式含 held-out 时 9 个日历相关案例；学习、面试、记忆、知识库缺少终态断言 |
 | Trajectory：过程合规 | 期望/禁止工具、真实执行、提案、安全拒绝、参数、重复写、结果预览 | 已实现 | 仍是单次 trace 规则；没有长期样本分布、原因聚类与自动回流 |
 | Execution Success | 报告保存 `runStatus`、工具状态和环境错误 | 部分实现 | 尚无独立指标明确表达“运行机制按合同完成” |
 | Task Success | `metrics.taskSuccess` 排除环境错误后按业务断言评分 | 已实现 | 业务断言覆盖面窄；不能将执行失败与环境失败混为一类 |
@@ -328,18 +328,18 @@ Ardor 已具备较扎实的工程底座：模块化单体、统一 Agent 入口�
 
 - `scripts/agent-eval-split.json` / `agent-eval-dataset.mjs`：30 case、15/15 分层、4 held-out 的冻结 manifest；手动调参默认排除 held-out。
 - `scripts/agent-eval-assertions.mjs` / `agent-eval-report.mjs`：独立 Execution Success、Trajectory、时长、p50/p95、成本完整度、失败/环境错误成本与每成功任务成本。
-- `scripts/agent-eval-contract.mjs`：CI 报告 schema、哈希、分母、未知值和成本口径硬门禁。
+- `scripts/agent-eval-contract.mjs`：CI 报告 schema、固定 split、tool-schema 快照、逐 case 成本、哈希、分母、未知值和成本口径硬门禁。
 - `.github/workflows/golden-path-acceptance.yml`：真实 PostgreSQL 证据切片、demo/E2E 报告校验与 90 天 artifact。
 - `AgentExecutionEvidencePostgresTests`：真实数据库归属、trace、完成事务/回滚、取消终态。
 - `docs/ADR_AGENT_RUNTIME.md`：Runtime 职责、单实例保证与非目标。
 
 已验证：
 
-- 73 个评测脚本测试通过；零成本 demo 的 30 个基线案例通过，4 个植入回归和 1 个环境错误均被识别。
+- 79 个评测脚本测试通过；零成本 demo 的 30 个基线案例通过，4 个植入回归和 1 个环境错误均被识别。
 - 完整后端测试通过：1,481 个测试，0 失败、0 错误、75 个按环境跳过。首次本机运行受 DNS 合成 `.invalid` 影响；使用临时 `jdk.net.hosts.file` 隔离 DNS 后重跑通过，未改产品代码或测试。
-- 真实 PostgreSQL 17 + Flyway v98 集成切片 4/4 通过。
-- 一次性 Spring/PostgreSQL/Redis/fake-model 栈的 9 个日历业务读回案例全部通过；删除提案通过驳回接口释放，未执行业务删除。
+- 真实 PostgreSQL 17 + Flyway v98 集成切片 4/4 通过；真实 JPA 消息与 JDBC 运行更新在同一事务提交，audit link 失败时由独立数据库连接确认全部回滚。
+- 一次性 Spring/PostgreSQL/Redis/fake-model 栈的业务读回验证通过；默认 8 个开发案例，显式包含 held-out 时 9/9，删除提案通过驳回接口释放，未执行业务删除。
 - PR #328 已在 5 项 CI 全绿后合并为 `0612d1e`；未部署生产。
 
-尚未验证/未纳入本阶段：完整后端测试与 Golden Path CI、真实模型质量、负载性能、多副本 fencing、持久化续跑、生产反馈回流。文档和报告中的合成结果不冒充这些证据。
+尚未验证/未纳入本阶段：最新 head 的 Golden Path CI、真实模型质量、负载性能、多副本 fencing、持久化续跑、生产反馈回流。文档和报告中的合成结果不冒充这些证据。
 

@@ -197,6 +197,8 @@ jobs:
 
       - name: Validate Agent evaluation evidence contract
         if: always()
+        env:
+          ARDOR_EVAL_TOOL_SCHEMA_FILE: ${{ runner.temp }}/ardor-agent-eval-demo/tool-schema.json
         run: |
           node scripts/agent-eval-contract.mjs \
             "$RUNNER_TEMP/ardor-agent-eval-demo/baseline.json" \

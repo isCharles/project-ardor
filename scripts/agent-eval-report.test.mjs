@@ -5,7 +5,7 @@ import { buildReport, calculateCost, hashOf, stableStringify } from "./agent-eva
 
 const tool = (name, status, attributes = {}, errorCode = null) => ({ kind: "TOOL", name, status, attributes, errorCode });
 const executed = (name) => tool(name, "COMPLETED", { executed: true, approvalSource: "CONFIRMED" });
-const trace = (status, spans, totals = { llmCalls: 1, inputTokens: 100, outputTokens: 20 }) => ({ status, spans, totals });
+const trace = (status, spans, totals = { llmCalls: 1, inputTokens: 100, outputTokens: 20, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }) => ({ status, spans, totals });
 
 const cases = [
   { id: "ok-read", prompt: "read", expectedTools: ["list_calendar_tasks"] },
@@ -106,10 +106,11 @@ test("execution, latency and split evidence are independent of task success", ()
 });
 
 test("missing prices or cache usage keep cost unknown instead of inventing zero", () => {
-  const result = scoreCase(cases[0], trace("COMPLETED", [executed("list_calendar_tasks")]), "ok");
+  const result = scoreCase(cases[0], trace("COMPLETED", [executed("list_calendar_tasks")],
+    { llmCalls: 1, inputTokens: 100, outputTokens: 20, cacheReadInputTokens: 5, cacheCreationInputTokens: 0 }), "ok");
   const report = buildReport({
     generatedAt: "t", codeSha: "abc123", dataset: { cases }, toolSchema: null,
-    cost: { currency: "USD", source: "test-price-v1", inputPricePerM: 1, outputPricePerM: 2, cacheReadInputPricePerM: 0.1 },
+    cost: { currency: "USD", source: "test-price-v1", inputPricePerM: 1, outputPricePerM: 2 },
     results: [result],
   });
   assert.equal(report.cases[0].costUsd, null);
@@ -118,6 +119,20 @@ test("missing prices or cache usage keep cost unknown instead of inventing zero"
   assert.equal(report.cost.totalCostUsd, null);
   assert.equal(report.cost.costPerSuccessfulTaskUsd, null);
   assert.equal(calculateCost({ inputTokens: 10, outputTokens: 5 }, null), null);
+  assert.equal(calculateCost({ inputTokens: 10, outputTokens: 5, usageMissing: true },
+    { currency: "USD", source: "test", inputPricePerM: 1, outputPricePerM: 2 }), null);
+  assert.equal(calculateCost({ inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 5, cacheCreationInputTokens: 0 },
+    { currency: "USD", source: "test", inputPricePerM: 1, outputPricePerM: 2, cacheReadInputPricePerM: 0, cacheCreationInputPricePerM: 0 }), 0.00002);
+});
+
+test("unknown usage sentinels cannot be priced as zero", () => {
+  const result = scoreCase({ id: "unknown" }, {
+    status: "COMPLETED", durationMs: 10, spans: [],
+    totals: { llmCalls: 1, inputTokens: 0, outputTokens: 0, usageMissingCalls: -1,
+      cacheReadInputTokens: 0, cacheCreationInputTokens: 0, cacheUsageMissingCalls: -1 },
+  }, "");
+  assert.equal(calculateCost(result.observed,
+    { currency: "USD", source: "test", inputPricePerM: 1, outputPricePerM: 2 }), null);
 });
 
 test("zero samples and zero successful tasks have null rates and per-success cost", () => {

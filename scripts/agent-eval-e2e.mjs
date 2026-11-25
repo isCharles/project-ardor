@@ -308,7 +308,9 @@ function combinedResult(declaration, plan, outcome, before, after, foreignAfter)
 }
 
 const results = [];
-for (const [id, plan] of Object.entries(PLANS)) {
+const includeHeldOut = process.env.ARDOR_EVAL_INCLUDE_HELD_OUT === "true";
+const selectedPlans = Object.entries(PLANS).filter(([id]) => includeHeldOut || casesById[id].heldOut !== true);
+for (const [id, plan] of selectedPlans) {
   const declaration = casesById[id];
   if (!declaration) throw new Error(`dataset is missing case ${id}`);
   const client = await registerUser(id);
@@ -356,12 +358,13 @@ try {
 
 const report = buildReport({
   generatedAt: new Date().toISOString(), codeSha,
-  dataset: { ...dataset, cases: Object.keys(PLANS).map((id) => casesById[id]) },
+  dataset,
+  evaluatedCaseIds: selectedPlans.map(([id]) => id),
   split: dataset.split, toolSchema: null, model: "fake/eval-script-probe",
   effectiveParams: { reasoningDepth: "AUTO", isolation: "fresh user per case", driver: "eval-script-probe" },
   results,
 });
-report.scope = "e2e business subset (calendar create/modify/proposal/ownership/read-back)";
+report.scope = `e2e business subset (${selectedPlans.length} calendar cases; heldOut=${includeHeldOut})`;
 if (process.env.ARDOR_EVAL_REPORT) fs.writeFileSync(process.env.ARDOR_EVAL_REPORT, JSON.stringify(report, null, 2));
 
 for (const item of report.cases) {

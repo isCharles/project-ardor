@@ -42,17 +42,21 @@ function nonNegative(value) {
 
 export function calculateCost(observed = {}, pricing) {
   if (!pricing || pricing.currency !== "USD" || !nonNegative(pricing.inputPricePerM)
-      || !nonNegative(pricing.outputPricePerM) || !pricing.source) return null;
+      || !nonNegative(pricing.outputPricePerM) || !pricing.source || observed.usageMissing === true) return null;
   if (!nonNegative(observed.inputTokens) || !nonNegative(observed.outputTokens)) return null;
+  const cacheRead = observed.cacheReadInputTokens;
+  const cacheCreation = observed.cacheCreationInputTokens;
+  if ((observed.cacheUsageMissing === true || cacheRead > 0) && pricing.cacheReadInputPricePerM == null) return null;
+  if ((observed.cacheUsageMissing === true || cacheCreation > 0) && pricing.cacheCreationInputPricePerM == null) return null;
   let cost = (observed.inputTokens / 1_000_000) * pricing.inputPricePerM
     + (observed.outputTokens / 1_000_000) * pricing.outputPricePerM;
   if (pricing.cacheReadInputPricePerM != null) {
-    if (!nonNegative(pricing.cacheReadInputPricePerM) || !nonNegative(observed.cacheReadInputTokens)) return null;
-    cost += (observed.cacheReadInputTokens / 1_000_000) * pricing.cacheReadInputPricePerM;
+    if (!nonNegative(pricing.cacheReadInputPricePerM) || !nonNegative(cacheRead)) return null;
+    cost += (cacheRead / 1_000_000) * pricing.cacheReadInputPricePerM;
   }
   if (pricing.cacheCreationInputPricePerM != null) {
-    if (!nonNegative(pricing.cacheCreationInputPricePerM) || !nonNegative(observed.cacheCreationInputTokens)) return null;
-    cost += (observed.cacheCreationInputTokens / 1_000_000) * pricing.cacheCreationInputPricePerM;
+    if (!nonNegative(pricing.cacheCreationInputPricePerM) || !nonNegative(cacheCreation)) return null;
+    cost += (cacheCreation / 1_000_000) * pricing.cacheCreationInputPricePerM;
   }
   return Number(cost.toFixed(6));
 }
@@ -84,11 +88,14 @@ function caseRecord(result) {
     durationMs: nonNegative(observed.durationMs) ? observed.durationMs : null,
     // Unknown usage stays null; a missing total is not the same as zero tokens.
     usageMissing: observed.usageMissing === true,
-    inputTokens: observed.inputTokens ?? null,
-    outputTokens: observed.outputTokens ?? null,
-    cacheReadInputTokens: observed.cacheReadInputTokens ?? null,
-    cacheCreationInputTokens: observed.cacheCreationInputTokens ?? null,
+    usageMissingCalls: observed.usageMissingCalls ?? null,
+    inputTokens: observed.usageMissing === true ? null : observed.inputTokens ?? null,
+    outputTokens: observed.usageMissing === true ? null : observed.outputTokens ?? null,
+    cacheReadInputTokens: observed.cacheUsageMissing === true ? null : observed.cacheReadInputTokens ?? null,
+    cacheCreationInputTokens: observed.cacheUsageMissing === true ? null : observed.cacheCreationInputTokens ?? null,
     cacheUsageMissing: observed.cacheUsageMissing === true,
+    cacheUsageMissingCalls: observed.cacheUsageMissingCalls ?? null,
+    traceTotalsComplete: observed.traceTotalsComplete ?? null,
     llmCalls: observed.llmCalls ?? null,
     costUsd,
     costMissing: costUsd == null,
@@ -193,6 +200,7 @@ export function buildReport(input) {
     },
     model: input.model ?? null,
     effectiveParams: input.effectiveParams ?? {},
+    evaluatedCaseIds: input.evaluatedCaseIds ?? records.map((record) => record.id),
     samples: records.length,
     metrics,
     latency: latencySummary(records),
@@ -203,9 +211,9 @@ export function buildReport(input) {
     usageMissingCount: records.filter((record) => record.usageMissing).length,
     cacheUsageMissingCount: records.filter((record) => record.cacheUsageMissing).length,
     cacheUsage: {
-      readInputTokens: records.some((record) => record.cacheReadInputTokens != null)
+      readInputTokens: records.length > 0 && records.every((record) => !record.cacheUsageMissing)
           ? records.reduce((sum, record) => sum + (record.cacheReadInputTokens ?? 0), 0) : null,
-      creationInputTokens: records.some((record) => record.cacheCreationInputTokens != null)
+      creationInputTokens: records.length > 0 && records.every((record) => !record.cacheUsageMissing)
           ? records.reduce((sum, record) => sum + (record.cacheCreationInputTokens ?? 0), 0) : null,
     },
     cases: records,

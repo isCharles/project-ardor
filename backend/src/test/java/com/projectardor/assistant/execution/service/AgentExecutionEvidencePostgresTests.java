@@ -3,15 +3,11 @@ package com.projectardor.assistant.execution.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
 
 import java.sql.Timestamp;
 import java.util.List;
@@ -24,26 +20,34 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.jpa.repository.support.JpaRepositoryFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.orm.jpa.JpaTransactionManager;
+import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
+import org.springframework.orm.jpa.SharedEntityManagerCreator;
+import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 
 import com.projectardor.assistant.conversation.domain.Conversation;
 import com.projectardor.assistant.conversation.domain.ConversationMessage;
+import com.projectardor.assistant.conversation.repository.ConversationMessageRepository;
+import com.projectardor.assistant.conversation.repository.ConversationRepository;
 import com.projectardor.assistant.conversation.service.AgentConversationStore;
 import com.projectardor.common.web.ResourceNotFoundException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Real PostgreSQL evidence for the durable run/trace record and its transactional completion boundary.
- * Each test migrates a unique throwaway schema; only JPA message persistence and failure injection are
- * mocked, while every assertion about persisted execution state reads JDBC rows.
+ * Each test migrates a unique throwaway schema and runs real JPA message persistence in the same
+ * transaction as the JDBC run update; assertions about committed or rolled-back state read JDBC rows.
  */
 @EnabledIfEnvironmentVariable(named = "ARDOR_ACCEPTANCE_DISPOSABLE_DB", matches = "true")
 class AgentExecutionEvidencePostgresTests {
@@ -58,10 +62,12 @@ class AgentExecutionEvidencePostgresTests {
 
     private SingleConnectionDataSource dataSource;
     private JdbcTemplate jdbc;
+    private JdbcTemplate assertions;
     private String schema;
     private Conversation conversation;
     private AgentConversationStore conversations;
     private EntityManager entityManager;
+    private EntityManagerFactory entityManagerFactory;
     private AgentExecutionAuditStore audit;
     private AgentTraceStore traces;
     private AgentRunStore runs;
@@ -77,6 +83,7 @@ class AgentExecutionEvidencePostgresTests {
             String scopedUrl = url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema + ",public";
             dataSource = new SingleConnectionDataSource(scopedUrl, "ardor", "acceptance-only", true);
             jdbc = new JdbcTemplate(dataSource);
+            assertions = new JdbcTemplate(new DriverManagerDataSource(scopedUrl, "ardor", "acceptance-only"));
             Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).load().migrate();
             for (UUID user : List.of(owner, stranger)) {
                 jdbc.update("INSERT INTO users(id,email,password_hash) VALUES(?,?,?)",
@@ -85,12 +92,29 @@ class AgentExecutionEvidencePostgresTests {
             conversation = Conversation.create(owner, "合成执行证据会话");
             jdbc.update("INSERT INTO conversations(id,user_id,title) VALUES(?,?,?)",
                     conversation.getId(), owner, conversation.getTitle());
-            conversations = mock(AgentConversationStore.class);
-            entityManager = mock(EntityManager.class);
-            audit = mock(AgentExecutionAuditStore.class);
+
+            var factory = new LocalContainerEntityManagerFactoryBean();
+            factory.setDataSource(dataSource);
+            factory.setPackagesToScan("com.projectardor.assistant.conversation.domain");
+            factory.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
+            factory.setJpaPropertyMap(Map.of(
+                    "hibernate.hbm2ddl.auto", "none",
+                    "hibernate.physical_naming_strategy",
+                            "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy"));
+            factory.afterPropertiesSet();
+            entityManagerFactory = factory.getObject();
+            entityManager = SharedEntityManagerCreator.createSharedEntityManager(entityManagerFactory);
+            var repositories = new JpaRepositoryFactory(entityManager);
+            var conversationRepository = repositories.getRepository(ConversationRepository.class);
+            conversation = conversationRepository.findByIdAndUserId(conversation.getId(), owner).orElseThrow();
+            conversations = new AgentConversationStore(
+                    conversationRepository,
+                    repositories.getRepository(ConversationMessageRepository.class),
+                    mock(ApplicationEventPublisher.class), null);
+            audit = spy(new AgentExecutionAuditStore(jdbc));
             traces = new AgentTraceStore(jdbc, JsonMapper.builder().build(), null, true, 30);
             runs = runStore(audit);
-        } catch (RuntimeException failure) {
+        } catch (Exception failure) {
             root.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
             throw failure;
         }
@@ -99,9 +123,10 @@ class AgentExecutionEvidencePostgresTests {
     @AfterEach
     void cleanup() {
         try {
-            if (jdbc != null) {
-                jdbc.execute("SET search_path TO public");
-                jdbc.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+            if (entityManagerFactory != null) entityManagerFactory.close();
+            if (assertions != null) {
+                assertions.execute("SET search_path TO public");
+                assertions.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
             }
         } finally {
             if (dataSource != null) dataSource.destroy();
@@ -159,12 +184,14 @@ class AgentExecutionEvidencePostgresTests {
     @Test
     void completeCommitsTheRunAssistantLinkAndExchangeThroughTheTransactionProxy() {
         UUID run = beginRun();
-        runs = runStore(new AgentExecutionAuditStore(jdbc));
-        stubExchange();
 
         List<ConversationMessage> saved = runs.complete(owner, run, conversation, PROMPT, ANSWER, null, List.of());
 
         assertThat(saved).hasSize(2);
+        assertThat(assertions.queryForList("SELECT role FROM messages WHERE conversation_id=? ORDER BY created_at,id",
+                String.class, conversation.getId())).containsExactlyInAnyOrder("USER", "ASSISTANT");
+        assertThat(assertions.queryForList("SELECT content FROM messages WHERE conversation_id=? ORDER BY created_at,id",
+                String.class, conversation.getId())).containsExactlyInAnyOrder(PROMPT, ANSWER);
         assertThat(runs.get(owner, run)).satisfies(stored -> {
             assertThat(stored.status()).isEqualTo("COMPLETED");
             assertThat(stored.assistantMessageId()).isEqualTo(saved.get(1).getId());
@@ -174,24 +201,32 @@ class AgentExecutionEvidencePostgresTests {
         for (ConversationMessage message : saved) {
             assertThat(message.getRunId()).isEqualTo(run);
             assertThat(message.getRequestId()).isEqualTo(run);
-            assertThat(jdbc.queryForObject("SELECT run_id FROM messages WHERE id=?", UUID.class, message.getId()))
+            assertThat(assertions.queryForObject("SELECT run_id FROM messages WHERE id=?", UUID.class, message.getId()))
                     .isEqualTo(run);
-            assertThat(jdbc.queryForObject("SELECT request_id FROM messages WHERE id=?", UUID.class, message.getId()))
+            assertThat(assertions.queryForObject("SELECT request_id FROM messages WHERE id=?", UUID.class, message.getId()))
                     .isEqualTo(run);
         }
-        assertThat(jdbc.queryForObject("SELECT assistant_message_id FROM agent_runs WHERE id=?",
+        assertThat(assertions.queryForObject("SELECT assistant_message_id FROM agent_runs WHERE id=?",
                 UUID.class, run)).isEqualTo(saved.get(1).getId());
         assertThatThrownBy(() -> runs.get(stranger, run)).isInstanceOf(ResourceNotFoundException.class);
-        verify(entityManager).flush();
+        verify(audit).linkRunExchange(owner, run, saved.get(0).getId(), saved.get(1).getId());
     }
 
     @Test
     void auditLinkFailureRollsBackTheRealRunUpdateAndInsertedExchange() {
         UUID run = beginRun();
-        Map<String, Object> before = jdbc.queryForMap("SELECT * FROM agent_runs WHERE id=?", run);
-        stubExchange();
+        Map<String, Object> before = assertions.queryForMap("SELECT * FROM agent_runs WHERE id=?", run);
         doAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+            invocation.callRealMethod();
+            UUID userMessage = invocation.getArgument(2, UUID.class);
+            UUID assistantMessage = invocation.getArgument(3, UUID.class);
+            assertThat(jdbc.queryForObject("SELECT status FROM agent_runs WHERE id=?", String.class, run))
+                    .isEqualTo("COMPLETED");
+            for (UUID message : List.of(userMessage, assistantMessage)) {
+                assertThat(jdbc.queryForObject("SELECT run_id FROM messages WHERE id=?", UUID.class, message))
+                        .isEqualTo(run);
+            }
             throw new IllegalStateException("audit link failed");
         }).when(audit).linkRunExchange(eq(owner), eq(run), any(UUID.class), any(UUID.class));
 
@@ -199,11 +234,10 @@ class AgentExecutionEvidencePostgresTests {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("audit link failed");
 
-        assertThat(jdbc.queryForMap("SELECT * FROM agent_runs WHERE id=?", run)).isEqualTo(before);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM messages WHERE conversation_id=?",
+        assertThat(assertions.queryForMap("SELECT * FROM agent_runs WHERE id=?", run)).isEqualTo(before);
+        assertThat(assertions.queryForObject("SELECT count(*) FROM messages WHERE conversation_id=?",
                 Integer.class, conversation.getId())).isZero();
         assertThat(runs.get(owner, run).status()).isEqualTo("RUNNING");
-        verify(entityManager).flush();
     }
 
     @Test
@@ -231,8 +265,9 @@ class AgentExecutionEvidencePostgresTests {
         assertThatThrownBy(() -> runs.complete(owner, run, conversation, PROMPT, "迟到的回复", null, List.of()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("本轮已停止，不能保存迟到的回复");
-        assertThat(jdbc.queryForMap("SELECT * FROM agent_runs WHERE id=?", run)).isEqualTo(terminal);
-        verifyNoInteractions(conversations, entityManager);
+        assertThat(assertions.queryForMap("SELECT * FROM agent_runs WHERE id=?", run)).isEqualTo(terminal);
+        assertThat(assertions.queryForObject("SELECT count(*) FROM messages WHERE conversation_id=?",
+                Integer.class, conversation.getId())).isZero();
     }
 
     private UUID beginRun() {
@@ -241,29 +276,10 @@ class AgentExecutionEvidencePostgresTests {
         return run;
     }
 
-    /** The mocked JPA boundary inserts the IDs it returns, so JDBC rollback also covers message rows. */
-    private void stubExchange() {
-        when(conversations.appendExchange(eq(owner), eq(conversation), eq(PROMPT), eq(ANSWER),
-                isNull(), anyList(), eq(false), anyList())).thenAnswer(invocation -> {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
-            List<ConversationMessage> saved = List.of(
-                    ConversationMessage.user(owner, conversation.getId(), PROMPT, List.of()),
-                    ConversationMessage.assistant(owner, conversation.getId(), ANSWER, null));
-            for (ConversationMessage message : saved) {
-                jdbc.update("""
-                        INSERT INTO messages(id,user_id,conversation_id,role,content,created_at,updated_at)
-                        VALUES(?,?,?,?,?,?,?)
-                        """, message.getId(), owner, conversation.getId(), message.getRole(), message.getContent(),
-                        Timestamp.from(java.time.Instant.now()), Timestamp.from(java.time.Instant.now()));
-            }
-            return saved;
-        });
-    }
-
     private AgentRunStore runStore(AgentExecutionAuditStore executionAudit) {
         var target = new AgentRunStore(jdbc, conversations, entityManager, executionAudit);
         var interceptor = new TransactionInterceptor();
-        interceptor.setTransactionManager(new DataSourceTransactionManager(dataSource));
+        interceptor.setTransactionManager(new JpaTransactionManager(entityManagerFactory));
         interceptor.setTransactionAttributeSource(new AnnotationTransactionAttributeSource());
         var factory = new ProxyFactory(target);
         factory.setProxyTargetClass(true);
