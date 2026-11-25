@@ -24,6 +24,13 @@ public interface LlmGateway {
         return result;
     }
 
-    record LlmResult(String content, String model) {
+    record LlmResult(String content, String model, Usage usage) {
+        public LlmResult(String content, String model) {
+            this(content, model, null);
+        }
+    }
+
+    /** What the provider billed for this call. Null when the response carried no usage block. */
+    record Usage(int inputTokens, int outputTokens) {
     }
 }

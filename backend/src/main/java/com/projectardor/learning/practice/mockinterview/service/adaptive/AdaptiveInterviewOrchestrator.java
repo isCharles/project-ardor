@@ -36,7 +36,9 @@ import com.projectardor.learning.practice.mockinterview.repository.InterviewPoli
 import com.projectardor.learning.practice.mockinterview.repository.InterviewQuestionRepository;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewSessionRepository;
 import com.projectardor.learning.practice.mockinterview.repository.InterviewTurnEvaluationRepository;
+import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
 import com.projectardor.learning.practice.mockinterview.service.LeetCodeHot100;
+import com.projectardor.learning.practice.mockinterview.service.MockInterviewSessionView;
 import com.projectardor.platform.model.llm.service.LlmCallException;
 
 /**
@@ -69,6 +71,7 @@ public class AdaptiveInterviewOrchestrator {
     private final CompetencyProfileManager profiles;
     private final AdaptiveReportGenerator reports;
     private final OpportunityService opportunities;
+    private final InterviewMetrics metrics;
     private final TransactionTemplate transactions;
 
     public AdaptiveInterviewOrchestrator(
@@ -86,6 +89,7 @@ public class AdaptiveInterviewOrchestrator {
             CompetencyProfileManager profiles,
             AdaptiveReportGenerator reports,
             OpportunityService opportunities,
+            InterviewMetrics metrics,
             PlatformTransactionManager transactionManager) {
         this.sessions = sessions;
         this.questions = questions;
@@ -101,6 +105,7 @@ public class AdaptiveInterviewOrchestrator {
         this.profiles = profiles;
         this.reports = reports;
         this.opportunities = opportunities;
+        this.metrics = metrics;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -116,6 +121,7 @@ public class AdaptiveInterviewOrchestrator {
                 seniority == null || seniority.isBlank() ? null : seniority.strip(),
                 durationMinutes, deepDive,
                 jobDescription == null || jobDescription.isBlank() ? null : jobDescription.strip())));
+        metrics.recordStart();
         InterviewPlanner.CompetencyPlan plan = planner.plan(userId, session.getId());
         transactions.execute(status -> {
             refreshProfiles(userId, session.getId(), plan, List.of());
@@ -124,6 +130,12 @@ public class AdaptiveInterviewOrchestrator {
         advance(userId, session.getId());
         return sessions.findByIdAndUserId(session.getId(), userId)
                 .orElseThrow(() -> new ResourceNotFoundException("模拟面试不存在"));
+    }
+
+    public List<MockInterviewSessionView> list(UUID userId) {
+        return sessions.findAllByUserIdAndModeOrderByCreatedAtDesc(userId, InterviewMode.ADAPTIVE).stream()
+                .map(MockInterviewSessionView::from)
+                .toList();
     }
 
     /** Reading the state is also the recovery path: it finishes whatever a previous request left halfway. */
@@ -156,6 +168,7 @@ public class AdaptiveInterviewOrchestrator {
             if (feedback != null) {
                 question.recordDifficultyFeedback(feedback);
                 questions.save(question);
+                metrics.recordDifficultyFeedback(feedback);
             }
             answers.save(InterviewAnswer.create(userId, sessionId, questionId, normalized, durationSeconds));
             return null;
@@ -190,6 +203,8 @@ public class AdaptiveInterviewOrchestrator {
                     report.overallScore(), report.content(), report.modelName(), AdaptiveReportGenerator.PROMPT_VERSION));
             current.complete();
             sessions.save(current);
+            metrics.recordCompletion((int) asked(userId, sessionId).stream()
+                    .map(InterviewQuestion::getCompetency).filter(Objects::nonNull).distinct().count());
             return evaluation;
         });
     }

@@ -125,6 +125,8 @@ jobs:
         run: node tests/resume-library-preview-ui.mjs
       - name: Voice interview creation and hand-off UI regression (mock APIs)
         run: node tests/interview-voice-creation-ui.mjs
+      - name: Adaptive interview scheduling and report UI regression (mock APIs)
+        run: node tests/interview-adaptive-ui.mjs
       - name: Compact chat layout UI regression (mock APIs)
         run: node tests/compact-chat-ui.mjs
       - name: Learning feedback and status groups UI regression (mock APIs)

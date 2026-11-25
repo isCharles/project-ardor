@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 
 import com.projectardor.common.json.LlmJsonParser;
 import com.projectardor.learning.practice.mockinterview.domain.CompetencyState;
+import com.projectardor.learning.practice.mockinterview.service.InterviewMetrics;
 import com.projectardor.platform.model.llm.service.LlmGateway;
 
 import tools.jackson.databind.json.JsonMapper;
@@ -30,7 +31,8 @@ class AdaptiveReportGeneratorTests {
     private final UUID owner = UUID.randomUUID();
     private final LlmGateway llm = mock(LlmGateway.class);
     private final AdaptiveReportGenerator generator =
-            new AdaptiveReportGenerator(llm, new LlmJsonParser(mapper), mapper);
+            new AdaptiveReportGenerator(llm, new LlmJsonParser(mapper), mapper,
+                    new InterviewMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> entries(Object value) {
