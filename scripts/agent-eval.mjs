@@ -18,11 +18,15 @@
  *
  * Caps (checked before a new case starts; a running case is allowed to finish):
  *   ARDOR_EVAL_MAX_CASES=3
+ *   ARDOR_EVAL_INCLUDE_HELD_OUT=false
  *   ARDOR_EVAL_CONCURRENCY=1
  *   ARDOR_EVAL_MAX_TOKENS=1000000
  *   ARDOR_EVAL_MAX_COST_USD=1.00
  *   ARDOR_EVAL_INPUT_PRICE_PER_M=0.15
  *   ARDOR_EVAL_OUTPUT_PRICE_PER_M=0.60
+ *   ARDOR_EVAL_CACHE_READ_PRICE_PER_M=<optional>
+ *   ARDOR_EVAL_CACHE_CREATION_PRICE_PER_M=<optional>
+ *   ARDOR_EVAL_PRICE_SOURCE=<provider price sheet/version>
  *   ARDOR_EVAL_TIMEOUT_MS=120000
  *
  * Every case fetches the recorded trace even after a failure or timeout, cancels
@@ -35,7 +39,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { scoreCase } from "./agent-eval-assertions.mjs";
-import { buildReport } from "./agent-eval-report.mjs";
+import { buildReport, calculateCost } from "./agent-eval-report.mjs";
+import { loadEvaluationDataset, selectEvaluationCases } from "./agent-eval-dataset.mjs";
 import { diffReports, formatDiff } from "./agent-eval-diff.mjs";
 import { SseParser } from "./agent-eval-sse.mjs";
 import { fetchCompleteTrace } from "./agent-eval-trace.mjs";
@@ -48,16 +53,23 @@ const cookie = process.env.ARDOR_SESSION_COOKIE;
 if (!cookie) throw new Error("ARDOR_SESSION_COOKIE is required.");
 let cookieJar = cookie;
 const casesPath = process.env.ARDOR_EVAL_CASES ?? path.join(import.meta.dirname, "agent-eval-cases.json");
-const dataset = JSON.parse(fs.readFileSync(casesPath, "utf8"));
-const cases = dataset.cases ?? [];
+const dataset = loadEvaluationDataset(casesPath);
 const maxCases = positiveInt("ARDOR_EVAL_MAX_CASES", 3);
 const concurrency = positiveInt("ARDOR_EVAL_CONCURRENCY", 1);
 const maxTokens = positiveNumber("ARDOR_EVAL_MAX_TOKENS", 1_000_000);
 const maxCost = nonNegativeNumber("ARDOR_EVAL_MAX_COST_USD", 1);
 const inputPrice = nonNegativeNumber("ARDOR_EVAL_INPUT_PRICE_PER_M", 0.15);
 const outputPrice = nonNegativeNumber("ARDOR_EVAL_OUTPUT_PRICE_PER_M", 0.60);
+const cacheReadPrice = optionalNonNegativeNumber("ARDOR_EVAL_CACHE_READ_PRICE_PER_M");
+const cacheCreationPrice = optionalNonNegativeNumber("ARDOR_EVAL_CACHE_CREATION_PRICE_PER_M");
+const pricing = {
+  currency: "USD", source: process.env.ARDOR_EVAL_PRICE_SOURCE ?? "ARDOR_EVAL_* environment",
+  inputPricePerM: inputPrice, outputPricePerM: outputPrice,
+  cacheReadInputPricePerM: cacheReadPrice, cacheCreationInputPricePerM: cacheCreationPrice,
+};
 const timeoutMs = positiveInt("ARDOR_EVAL_TIMEOUT_MS", 120_000);
-const selected = cases.slice(0, maxCases);
+const selected = selectEvaluationCases(dataset, { includeHeldOut: process.env.ARDOR_EVAL_INCLUDE_HELD_OUT === "true" })
+  .slice(0, maxCases);
 const toolSchema = process.env.ARDOR_EVAL_TOOL_SCHEMA_FILE
   ? JSON.parse(fs.readFileSync(process.env.ARDOR_EVAL_TOOL_SCHEMA_FILE, "utf8"))
   : null;
@@ -83,6 +95,12 @@ function positiveNumber(name, fallback) {
 }
 function nonNegativeNumber(name, fallback) {
   const value = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be non-negative`);
+  return value;
+}
+function optionalNonNegativeNumber(name) {
+  if (process.env[name] == null || process.env[name] === "") return null;
+  const value = Number(process.env[name]);
   if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be non-negative`);
   return value;
 }
@@ -173,12 +191,14 @@ async function runCase(item) {
   const result = scoreCase(item, trace, done?.content);
   const input = trace.totals?.inputTokens;
   const output = trace.totals?.outputTokens;
-  const cost = input == null || output == null
-    ? null
-    : Number((((input / 1_000_000) * inputPrice) + ((output / 1_000_000) * outputPrice)).toFixed(6));
+  const cost = calculateCost({
+    inputTokens: input, outputTokens: output,
+    cacheReadInputTokens: trace.totals?.cacheReadInputTokens,
+    cacheCreationInputTokens: trace.totals?.cacheCreationInputTokens,
+  }, pricing);
   // Unknown usage is never added as zero; it is counted so the budget boundary is explicit.
   if (input == null || output == null) usageMissingCases += 1;
-  else { tokensUsed += input + output; costUsed += cost; }
+  else { tokensUsed += input + output; if (cost != null) costUsed += cost; }
   return { ...result, requestId, costUsd: cost };
 }
 
@@ -205,16 +225,17 @@ const results = [];
 await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, () => worker(queue, results)));
 
 const report = buildReport({
-  generatedAt: new Date().toISOString(), codeSha, dataset, toolSchema,
+  generatedAt: new Date().toISOString(), codeSha, dataset, split: dataset.split, toolSchema,
   model: process.env.ARDOR_EVAL_MODEL ?? "real-model",
   effectiveParams: { reasoningDepth: "AUTO", inputPricePerM: inputPrice, outputPricePerM: outputPrice, timeoutMs },
+  cost: pricing,
   results,
 });
 report.budget = {
   maxCases, concurrency, maxTokens, maxCost, inputPrice, outputPrice, timeoutMs,
   knownTokens: tokensUsed, knownCostUsd: Number(costUsed.toFixed(6)),
-  usageMissingCases, stopped,
-  note: "Token/cost caps only account for cases that reported usage; usageMissingCases were sent but cannot be priced, so real spend may exceed knownCostUsd.",
+  usageMissingCases, costMissingCases: report.cost.missingCaseCount, stopped,
+  note: "Token/cost caps only account for cases that reported usage; missing usage or required cache pricing stays unknown, so real spend may exceed knownCostUsd.",
 };
 if (process.env.ARDOR_EVAL_REPORT) fs.writeFileSync(process.env.ARDOR_EVAL_REPORT, JSON.stringify(report, null, 2));
 

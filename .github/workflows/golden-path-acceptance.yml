@@ -7,6 +7,7 @@ on:
       - "frontend/**"
       - "scripts/agent-eval*.mjs"
       - "scripts/agent-eval-cases.json"
+      - "scripts/agent-eval-split.json"
       - ".github/workflows/golden-path-acceptance.yml"
       - ".github/tests/recap-metadata-*.sql"
   workflow_dispatch:
@@ -43,7 +44,7 @@ jobs:
 
       - name: Check Agent evaluation harness
         run: |
-          node --test scripts/agent-eval-dataset.test.mjs scripts/agent-eval-assertions.test.mjs scripts/agent-eval-sse.test.mjs scripts/agent-eval-trace.test.mjs scripts/agent-eval-report.test.mjs scripts/agent-eval-diff.test.mjs scripts/agent-eval-judge.test.mjs
+          node --test scripts/agent-eval-dataset.test.mjs scripts/agent-eval-assertions.test.mjs scripts/agent-eval-sse.test.mjs scripts/agent-eval-trace.test.mjs scripts/agent-eval-report.test.mjs scripts/agent-eval-contract.test.mjs scripts/agent-eval-diff.test.mjs scripts/agent-eval-judge.test.mjs
           node scripts/agent-eval-demo.mjs --out "$RUNNER_TEMP/ardor-agent-eval-demo"
 
       - name: Start disposable database and Redis
@@ -73,6 +74,10 @@ jobs:
           echo "ARDOR_ACCEPTANCE_UI_SUFFIX=$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')" >> "$GITHUB_ENV"
           node src/test/resources/fake-llm-server.mjs > "$RUNNER_TEMP/fake-llm.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/fake-llm.pid"
+
+      - name: Verify Agent execution evidence against PostgreSQL
+        working-directory: backend
+        run: mvn -B -q -Dtest=AgentExecutionEvidencePostgresTests test
 
       - name: Verify fresh migration and populated V35 upgrade fixture
         shell: bash
@@ -189,6 +194,14 @@ jobs:
         run: |
           test "$ARDOR_ACCEPTANCE_DISPOSABLE_DB" = true
           node scripts/agent-eval-e2e.mjs
+
+      - name: Validate Agent evaluation evidence contract
+        if: always()
+        run: |
+          node scripts/agent-eval-contract.mjs \
+            "$RUNNER_TEMP/ardor-agent-eval-demo/baseline.json" \
+            "$RUNNER_TEMP/ardor-agent-eval-demo/current.json" \
+            "$RUNNER_TEMP/agent-eval-e2e.json"
 
       - name: Verify semantic recall with repeated compaction and the default budget
         env:
@@ -309,6 +322,18 @@ jobs:
           ARDOR_ACCEPTANCE_API_BASE: http://127.0.0.1:8080
           ARDOR_ACCEPTANCE_LLM_BASE: http://127.0.0.1:8090
         run: node tests/final-minutes-live.mjs
+
+      - name: Upload Agent evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-evaluation-evidence
+          path: |
+            ${{ runner.temp }}/ardor-agent-eval-demo/baseline.json
+            ${{ runner.temp }}/ardor-agent-eval-demo/current.json
+            ${{ runner.temp }}/agent-eval-e2e.json
+          retention-days: 90
+          if-no-files-found: warn
 
       - name: Upload browser screenshot on failure
         if: failure()

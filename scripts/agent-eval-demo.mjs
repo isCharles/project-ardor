@@ -18,10 +18,11 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { scoreCase } from "./agent-eval-assertions.mjs";
 import { buildReport } from "./agent-eval-report.mjs";
+import { loadEvaluationDataset } from "./agent-eval-dataset.mjs";
 import { diffReports, formatDiff } from "./agent-eval-diff.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dataset = JSON.parse(fs.readFileSync(path.join(here, "agent-eval-cases.json"), "utf8"));
+const dataset = loadEvaluationDataset();
 const outIndex = process.argv.indexOf("--out");
 const outDir = outIndex > -1 ? process.argv[outIndex + 1] : path.join(os.tmpdir(), "ardor-agent-eval-demo");
 
@@ -91,6 +92,7 @@ function expectedTrace(item) {
 
   return {
     status: item.expectedRunStatus ?? "COMPLETED",
+    durationMs: 1250,
     totals: { llmCalls: spans.length ? 2 : 1, toolCalls: spans.filter((span) => span.kind === "TOOL").length,
       loopRounds: 1, inputTokens: 1200, outputTokens: 180 },
     spans,
@@ -115,8 +117,9 @@ function build(overrides) {
     return scoreCase(item, trace, override?.answer ?? answerFor(item));
   });
   return buildReport({
-    generatedAt: new Date().toISOString(), codeSha, dataset, toolSchema: TOOL_SCHEMA,
+    generatedAt: new Date().toISOString(), codeSha, dataset, split: dataset.split, toolSchema: TOOL_SCHEMA,
     model: "synthetic-fixture/no-model", effectiveParams: { temperature: 0, note: "contract demo only" },
+    cost: { currency: "USD", source: "synthetic-contract-v1", inputPricePerM: 1, outputPricePerM: 2 },
     results,
   });
 }

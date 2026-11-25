@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { scoreCase } from "./agent-eval-assertions.mjs";
 import { judgeCase } from "./agent-eval-judge.mjs";
 import { buildReport } from "./agent-eval-report.mjs";
+import { loadEvaluationDataset } from "./agent-eval-dataset.mjs";
 import { SseParser } from "./agent-eval-sse.mjs";
 import { fetchCompleteTrace } from "./agent-eval-trace.mjs";
 
@@ -34,7 +35,7 @@ if (process.env.ARDOR_EVAL_E2E !== "true") {
 const base = (process.env.ARDOR_BASE_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
 const modelBase = (process.env.ARDOR_ACCEPTANCE_LLM_BASE ?? "http://127.0.0.1:8090").replace(/\/+$/, "");
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dataset = JSON.parse(fs.readFileSync(path.join(here, "agent-eval-cases.json"), "utf8"));
+const dataset = loadEvaluationDataset();
 const casesById = Object.fromEntries(dataset.cases.map((item) => [item.id, item]));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -340,7 +341,7 @@ try {
 const report = buildReport({
   generatedAt: new Date().toISOString(), codeSha,
   dataset: { ...dataset, cases: Object.keys(PLANS).map((id) => casesById[id]) },
-  toolSchema: null, model: "fake/eval-script-probe",
+  split: dataset.split, toolSchema: null, model: "fake/eval-script-probe",
   effectiveParams: { reasoningDepth: "AUTO", isolation: "fresh user per case", driver: "eval-script-probe" },
   results,
 });

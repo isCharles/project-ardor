@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 1,
+  "datasetVersion": "2026-10-28.agent-eval.v3",
+  "datasetFile": "agent-eval-cases.json",
+  "heldOutCaseIds": [
+    "business-error-not-masked",
+    "write-executed-response-lost",
+    "read-then-create-multistep",
+    "cross-module-conflict-replan-capped"
+  ],
+  "policy": {
+    "development": "representative 与 challenge 中未留出的案例用于日常调试和回归。",
+    "heldOut": "仅用于晋级评审；查看结果后不得据此调参，变更必须提升 datasetVersion 并记录原因。",
+    "changeRule": "案例内容、split 或评分合同变更时必须生成新版本与哈希。"
+  },
+  "changeNote": "2026-11-25 冻结当前 30 个案例与 4 个留出案例。"
+}
