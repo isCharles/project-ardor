@@ -39,6 +39,7 @@ class AgentMessageQueueWorkerTests {
         doAnswer(call -> {
             if (thrown) throw new IllegalStateException("Unknown outcome");
             CareerAgentService.StreamSink sink = call.getArgument(10);
+            assertThat(sink.supportsDeletionGate()).isFalse();
             sink.send(AgentStreamEvent.error(code, "Synthetic failure", false, 0));
             sink.complete();
             sink.complete(); // Duplicate transport callbacks cannot release slots or dispatch again.

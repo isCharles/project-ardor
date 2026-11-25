@@ -50,25 +50,29 @@ public class AgentController {
     private final AgentMemoryService memoryService;
     private final com.projectardor.assistant.execution.service.AgentMessageQueue queue;
     private final com.projectardor.assistant.execution.service.AgentPermissionGrants permissionGrants;
+    private final com.projectardor.assistant.execution.service.AgentDeletionConfirmations deletionConfirmations;
     private final com.projectardor.platform.observability.TechnicalTracing technicalTracing;
 
     public AgentController(CareerAgentService agentService, AgentMemoryService memoryService,
             com.projectardor.assistant.execution.service.AgentMessageQueue queue,
             com.projectardor.assistant.execution.service.AgentPermissionGrants permissionGrants) {
         this(agentService, memoryService, queue, permissionGrants,
-                com.projectardor.platform.observability.TechnicalTracing.disabled());
+                com.projectardor.platform.observability.TechnicalTracing.disabled(),
+                new com.projectardor.assistant.execution.service.AgentDeletionConfirmations());
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public AgentController(CareerAgentService agentService, AgentMemoryService memoryService,
             com.projectardor.assistant.execution.service.AgentMessageQueue queue,
             com.projectardor.assistant.execution.service.AgentPermissionGrants permissionGrants,
-            com.projectardor.platform.observability.TechnicalTracing technicalTracing) {
+            com.projectardor.platform.observability.TechnicalTracing technicalTracing,
+            com.projectardor.assistant.execution.service.AgentDeletionConfirmations deletionConfirmations) {
         this.agentService = agentService;
         this.memoryService = memoryService;
         this.queue = queue;
         this.permissionGrants = permissionGrants;
         this.technicalTracing = technicalTracing;
+        this.deletionConfirmations = deletionConfirmations;
     }
 
     @PostMapping("/queue")
@@ -252,6 +256,13 @@ public class AgentController {
         }
         permissionGrants.clearModuleLevel(principal.userId(),
                 com.projectardor.assistant.tools.capability.ToolModule.fromKey(module));
+    }
+
+    @PostMapping("/runs/{requestId}/deletion-proposals/{proposalId}/dismiss")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void dismissDeletion(@AuthenticationPrincipal ArdorPrincipal principal,
+            @PathVariable java.util.UUID requestId, @PathVariable java.util.UUID proposalId) {
+        deletionConfirmations.dismiss(principal.userId(), requestId, proposalId);
     }
 
     @PostMapping("/runs/{requestId}/approvals/{approvalId}")

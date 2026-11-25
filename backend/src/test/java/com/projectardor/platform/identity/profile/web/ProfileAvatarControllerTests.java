@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import com.projectardor.config.SecurityConfig;
+import com.projectardor.config.SecurityFilterTestConfig;
 import com.projectardor.common.web.ApiExceptionHandler;
 import com.projectardor.platform.identity.auth.domain.*;
 import com.projectardor.platform.identity.auth.repository.UserAccountRepository;
@@ -63,7 +64,7 @@ class ProfileAvatarControllerTests {
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"));
         verify(service).remove(owner, owner);
     }
-    @Configuration @EnableWebMvc @EnableWebSecurity @Import(SecurityConfig.class)
+    @Configuration @EnableWebMvc @EnableWebSecurity @Import({SecurityConfig.class, SecurityFilterTestConfig.class})
     static class Config {
         @Bean ProfileAvatarService service() { return mock(ProfileAvatarService.class); }
         @Bean ProfileAvatarController controller(ProfileAvatarService service) { return new ProfileAvatarController(service); }

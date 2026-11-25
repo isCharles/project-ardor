@@ -1,4 +1,26 @@
 // Synthetic material only. Shared by disposable-stack acceptance tests.
+export async function consumeSse(response, onEvent) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "", pending = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    text += chunk;
+    pending += chunk;
+    let newline;
+    while ((newline = pending.indexOf("\n")) !== -1) {
+      const line = pending.slice(0, newline).replace(/\r$/, "");
+      pending = pending.slice(newline + 1);
+      if (line.startsWith("data:")) await onEvent(JSON.parse(line.slice(5).trim()));
+    }
+  }
+  text += decoder.decode();
+  if (pending.startsWith("data:")) await onEvent(JSON.parse(pending.slice(5).trim()));
+  return text;
+}
+
 export function syntheticResumePdf() {
   const stream="BT /F1 12 Tf 40 740 Td (Java Spring Boot developer. Built a login service with PostgreSQL and Redis. Documented performance results and incident recovery.) Tj ET";
   const objects=["<< /Type /Catalog /Pages 2 0 R >>","<< /Type /Pages /Kids [3 0 R] /Count 1 >>",

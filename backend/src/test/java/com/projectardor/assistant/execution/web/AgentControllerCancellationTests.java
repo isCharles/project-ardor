@@ -41,6 +41,7 @@ import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.common.web.ApiExceptionHandler;
 import com.projectardor.common.web.ResourceNotFoundException;
 import com.projectardor.config.SecurityConfig;
+import com.projectardor.config.SecurityFilterTestConfig;
 
 /** HTTP contract for {@code POST /api/agent/runs/{requestId}/cancel}: 202 + truthful state, 404, idempotency. */
 class AgentControllerCancellationTests {
@@ -163,7 +164,7 @@ class AgentControllerCancellationTests {
     @Configuration
     @EnableWebMvc
     @EnableWebSecurity
-    @Import(SecurityConfig.class)
+    @Import({SecurityConfig.class, SecurityFilterTestConfig.class})
     static class TestWebConfig {
 
         @Bean

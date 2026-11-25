@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import org.springframework.stereotype.Component;
 import com.projectardor.assistant.tools.modules.AgentToolBundle;
@@ -309,6 +310,7 @@ public class CareerAgentTools {
            record it here; the caller of the run turns these into stream
            events, and nothing is removed until the person presses one. */
         private final List<PendingConfirmation> pending = new CopyOnWriteArrayList<>();
+        private Predicate<PendingConfirmation> deletionGate;
 
         private BoundCareerTools(UUID userId, String trustedUserRequest,
                 UUID logicalActionId, UUID runRequestId) {
@@ -329,6 +331,7 @@ public class CareerAgentTools {
         }
         /** The owned conversation this run belongs to; used only to persist proposal audit facts. */
         public BoundCareerTools withConversationId(UUID conversationId) { this.conversationId = conversationId; return this; }
+        public BoundCareerTools withDeletionGate(Predicate<PendingConfirmation> deletionGate) { this.deletionGate = deletionGate; return this; }
 
         /**
          * A deterministic per-run identity for a confirmation card. Re-reading the saved trace or
@@ -381,13 +384,24 @@ public class CareerAgentTools {
                     null, null, proposalId);
             pending.add(confirmation);
             recordProposal(confirmation, null);
+            if (deletionGate == null || runRequestId == null) {
+                return Map.of(
+                        "status", "CONFIRMATION_REQUIRED",
+                        "kind", kind,
+                        "target", label,
+                        "detail", detail == null ? "" : detail,
+                        "message", "确认按钮已经显示给用户。请用一句话说明将删除什么，并请对方点击按钮；"
+                                + "不要要求用户复述确认短语，也不要因为同一个对象重复调用本工具。");
+            }
+            boolean deleted = deletionGate.test(confirmation);
             return Map.of(
-                    "status", "CONFIRMATION_REQUIRED",
+                    "status", deleted ? "DELETED" : "DELETION_NOT_COMPLETED",
                     "kind", kind,
                     "target", label,
                     "detail", detail == null ? "" : detail,
-                    "message", "确认按钮已经显示给用户。请用一句话说明将删除什么，并请对方点击按钮；"
-                            + "不要要求用户复述确认短语，也不要因为同一个对象重复调用本工具。");
+                    "message", deleted
+                            ? "用户已点击确认，受鉴权的业务删除接口已成功删除该目标。不要重复调用本工具。"
+                            : "用户选择保留，或本次删除确认已结束。目标尚未删除；不要重复调用本工具或声称删除成功。");
         }
 
         private Map<String, Object> proposeSnapshot(String kind, String label, String detail, String endpoint, List<UUID> ids) {
@@ -397,7 +411,14 @@ public class CareerAgentTools {
                     List.copyOf(ids), proposalId);
             pending.add(confirmation);
             recordProposal(confirmation, null);
-            return Map.of("status", "CONFIRMATION_REQUIRED", "target", label, "message", "请用户点击已显示的确认按钮；尚未删除任何内容。");
+            if (deletionGate == null || runRequestId == null) {
+                return Map.of("status", "CONFIRMATION_REQUIRED", "target", label, "message", "请用户点击已显示的确认按钮；尚未删除任何内容。");
+            }
+            boolean deleted = deletionGate.test(confirmation);
+            return Map.of("status", deleted ? "DELETED" : "DELETION_NOT_COMPLETED", "target", label,
+                    "message", deleted
+                            ? "用户已确认，业务接口已成功删除这次列出的目标。不要重复调用本工具。"
+                            : "用户选择保留，或本次删除确认已结束。列出的目标尚未删除；不要重复调用本工具或声称删除成功。");
         }
 
         @Tool(name = "get_profile", value = "读取当前用户的称呼、当前定位和目标岗位")

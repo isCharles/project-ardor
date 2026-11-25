@@ -26,6 +26,7 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import com.projectardor.common.web.ApiExceptionHandler;
 import com.projectardor.config.SecurityConfig;
+import com.projectardor.config.SecurityFilterTestConfig;
 import com.projectardor.learning.practice.mockinterview.domain.DifficultyFeedback;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewEvaluation;
 import com.projectardor.learning.practice.mockinterview.domain.InterviewModality;
@@ -165,7 +166,7 @@ class AdaptiveInterviewControllerTests {
         verifyNoInteractions(orchestrator);
     }
 
-    @Configuration @EnableWebMvc @EnableWebSecurity @Import(SecurityConfig.class)
+    @Configuration @EnableWebMvc @EnableWebSecurity @Import({SecurityConfig.class, SecurityFilterTestConfig.class})
     static class Config {
         @Bean AdaptiveInterviewOrchestrator orchestrator() { return mock(AdaptiveInterviewOrchestrator.class); }
         @Bean InterviewService classics() { return mock(InterviewService.class); }

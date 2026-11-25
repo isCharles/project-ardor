@@ -24,6 +24,7 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import com.projectardor.platform.identity.auth.domain.UserRole;
 import com.projectardor.platform.identity.auth.security.ArdorPrincipal;
 import com.projectardor.config.SecurityConfig;
+import com.projectardor.config.SecurityFilterTestConfig;
 
 class UsageAdminAuthorizationTests {
     private static AnnotationConfigWebApplicationContext context;
@@ -88,7 +89,7 @@ class UsageAdminAuthorizationTests {
     @Configuration
     @EnableWebMvc
     @EnableWebSecurity
-    @org.springframework.context.annotation.Import(SecurityConfig.class)
+    @org.springframework.context.annotation.Import({SecurityConfig.class, SecurityFilterTestConfig.class})
     static class TestWebConfig {
         @Bean
         UsageController usageController() {

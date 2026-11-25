@@ -19,14 +19,14 @@ type ResumeItem = { id: string; originalFilename: string };
 type AgentMessage = { id: string; role: "USER" | "ASSISTANT"; content: string; createdAt: string };
 type ToolStep = { key: string; label: string; done: boolean };
 type ChatItem = AgentMessage & { tools?: ToolStep[]; pending?: boolean };
-type Confirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; targetIds?: string[] | null };
+type Confirmation = { kind: string; targetId: string | null; label: string; detail: string; endpoint: string; targetIds?: string[] | null; proposalId?: string; runId?: string };
 type PendingConfirmation = Confirmation & { state: "PENDING" | "DELETING" | "FAILED"; error?: string };
 type StreamEvent = { type: string; content: string | null; toolName: string | null; label: string | null; elapsedMs: number | null; messageId: string | null; conversationId: string | null; confirmation?: Confirmation | null };
 type AgentState = { messages: AgentMessage[] };
 
 const conversationKey = (projectId: string) => `ardor.latex.conversation.${projectId}`;
 const frozenKey = (projectId: string) => `ardor.latex.frozen.${projectId}`;
-const confirmationKey = (item: Confirmation) => `${item.kind}:${item.endpoint}`;
+const confirmationKey = (item: Confirmation) => item.proposalId ?? `${item.kind}:${item.endpoint}`;
 
 function resumeFileName(title: string, revision: number) {
   const safe = title.replace(/[\\/:*?"<>|]+/g, "-").trim().slice(0, 80) || "resume";
@@ -373,6 +373,14 @@ export default function LatexWorkspacePage() {
     await api<void>(`/api/agent/runs/${encodeURIComponent(requestId)}/cancel`, { method: "POST" }).catch(() => undefined);
   }
 
+  function dismissDeletion(pending: PendingConfirmation) {
+    if (pending.proposalId && pending.runId) {
+      void api<void>(`/api/agent/runs/${encodeURIComponent(pending.runId)}/deletion-proposals/${encodeURIComponent(pending.proposalId)}/dismiss`,
+        { method: "POST" }).catch(() => undefined);
+    }
+    setConfirmations((current) => current.filter((item) => confirmationKey(item) !== confirmationKey(pending)));
+  }
+
   /* Business confirmations arrive after the run; the button calls the same
      authenticated endpoint the corresponding page would call. */
   async function confirmDeletion(pending: PendingConfirmation) {
@@ -454,7 +462,7 @@ export default function LatexWorkspacePage() {
             return { ...item, tools };
           });
         } else if (event.type === "confirm" && event.confirmation && event.confirmation.kind !== "learning_plan") {
-          const proposal = event.confirmation;
+          const proposal = { ...event.confirmation, runId: requestRef.current ?? undefined };
           setConfirmations((current) => current.some((item) => confirmationKey(item) === confirmationKey(proposal))
             ? current
             : [...current, { ...proposal, state: "PENDING" }]);
@@ -584,7 +592,7 @@ export default function LatexWorkspacePage() {
 
         {confirmations.length > 0 && <div className="border-t border-stone-100 px-3 pt-3">
           <DeletionPermissions items={confirmations}
-            onKeep={(pending) => setConfirmations((current) => current.filter((item) => confirmationKey(item) !== confirmationKey(pending)))}
+            onKeep={dismissDeletion}
             onDelete={(pending) => void confirmDeletion(pending)} />
         </div>}
 
