@@ -276,9 +276,9 @@ run. This experiment makes no historical-improvement or universal-lossless claim
 
 ## Limitations
 
-- This first version compacts **text transcript**. Images, audio and video are not yet accepted
-  by `AgentMessageRequest`; multimodal assets need the separate reference-and-transcript design:
-  store an asset ID plus OCR/caption/ASR text, inject the asset only for the current turn.
+- Text transcript compaction is the current scope. Chat images are accepted as current-turn
+  multimodal references; they are not losslessly folded into the text summary. Audio and video
+  are not yet accepted by `AgentMessageRequest`.
 - Summary generation is synchronous when the threshold is crossed. A later version should run it
   in the background and swap the summary in when ready, matching Claude's background compaction.
 - The batch target is not a guarantee that the model's context limit can never be exceeded. On a
@@ -286,6 +286,7 @@ run. This experiment makes no historical-improvement or universal-lossless claim
   error must be reported honestly. Semantic summary quality is not proven by fake-model tests.
 - Summaries are prompt data, not a user-editable record. They are owner-scoped and cascade-delete
   with the conversation.
-- Tool observations are not currently persisted in `messages`; only final assistant answers are.
-  Exact deduplication above applies to the current request's tool loop, not durable cross-turn
-  evidence. Broader tool-evidence retrieval needs a separate owner-scoped evidence layer.
+- Tool observations are persisted in owner-scoped execution records and traces rather than
+  folded into summary text. Exact deduplication above applies to the current request's tool loop,
+  not durable cross-turn evidence. Broader tool-evidence retrieval needs a separate owner-scoped
+  evidence layer.

@@ -120,5 +120,6 @@ privacy allowlist, local Jaeger commands and rollback.
 - **OTLP as a source of truth**: spans are exported to OpenTelemetry for
   diagnosis only. The PostgreSQL trace stays authoritative and is complete even
   when the collector is down, sampling is off, or export drops spans.
-- **Evaluation persistence**: `scripts/agent-eval.mjs` reads trace data but
-  results are ephemeral JSON; historical eval dashboards are not yet built.
+- **Evaluation persistence**: `scripts/agent-eval.mjs` reads trace data;
+  Golden Path retains demo/E2E reports as a 90-day CI artifact. Historical
+  eval dashboards are not yet built.

@@ -7,6 +7,8 @@ span 仍可能是 `COMPLETED` 且带 `attributes.proposal=true`；用户拒绝�
 写入已执行但响应丢失时业务状态已经改变。因此评分器按每个 case 声明的真实业务结果判定，
 而不是信任 span 状态。核心模块：
 
+- `scripts/agent-eval-dataset.mjs` / `scripts/agent-eval-split.json`：冻结数据集版本、分层与 4 个 held-out 案例；
+- `scripts/agent-eval-contract.mjs`：校验 CI 报告的哈希、分母、延迟、成本完整度与未知值口径；
 - `scripts/agent-eval-assertions.mjs`：分层评分（`scoreCase`）；
 - `scripts/agent-eval-report.mjs`：报告与哈希、带分母的指标；
 - `scripts/agent-eval-diff.mjs`：历史 diff 与回归识别；
@@ -19,13 +21,18 @@ span 仍可能是 `COMPLETED` 且带 `attributes.proposal=true`；用户拒绝�
 
 - `tier=representative`：核心读写流程，应稳定通过；
 - `tier=challenge`：澄清、审批拒绝、取消、错误参数、资源归属、工具失败、写后响应丢失；
-- `heldOut=true`：少量留出案例（3 个），不计入日常调参，用于观察是否过拟合。
+- `heldOut=true`：少量留出案例（4 个），不计入日常调参，用于观察是否过拟合。
 
 每个 case 声明 `prompt`、期望/禁止工具、`requiredExecuted`（必须真正执行而非仅提案）、
 `forbiddenExecuted`（禁止真实副作用）、`expectProposed`/`allowProposalOnly`、
 `expectSafeRejection`/`expectClarification`、`expectInvalidParams`、`expectToolFailure`、
 `expectSingleExecutedWrite` 等。`fixture` 块声明合成业务初态、预期终态、禁止副作用与清理，
 供后续端到端驱动使用；评分器只依据录制轨迹，不自行修改数据。
+
+`agent-eval-split.json` 是独立 split manifest：固定 30 个案例、15/15 分层、4 个 held-out ID、
+dataset hash 与 split hash。案例 flag、版本或成员变化会使加载失败；变更必须提升
+`datasetVersion` 并记录原因。手动真实模型评测默认只选 26 个开发案例，设置
+`ARDOR_EVAL_INCLUDE_HELD_OUT=true` 才显式运行留出集。
 
 ## 零成本契约演示（CI）
 
@@ -58,14 +65,26 @@ node scripts/agent-eval-demo.mjs --out /tmp/ardor-agent-eval-demo
 | `toolExecuted` | 要求真实写入的 case | 是否真正执行，而非仅提案或被拒 |
 | `safeRejection` | 拒绝/澄清类 case | 禁止的写入是否都未执行 |
 | `environmentError` | 全部已尝试 case | 超时/传输/无轨迹，单列，不计入 taskSuccess 分母 |
+| `executionSuccess` | 全部已尝试 case | 取得可评分持久轨迹且无环境错误；不表示任务成功 |
+| `runCompleted` | 全部已尝试 case | 运行终态为 `COMPLETED`；与任务成功分开 |
+| `outcome` | 同 `taskSuccess` | 当前业务结果断言口径；E2E 子集另有真实读回 |
+| `trajectory` | 产生可评分轨迹的 case | 工具、计划、权限与运行状态合同是否遵守；答案断言不改写该项 |
+| `output` / `rubric` | 有 rubric 的 case | 确定性诊断分，不是校准后的语义正确率 |
+| `latency` | 已知时长的 case | 逐 case `durationMs`、known/missing、p50/p95；缺失不为 0 |
+| `cost` | 已知价格且用量完整的 case | 已知/缺失成本、总成本、成功/失败/环境错误成本、每成功任务成本 |
 
 `Unknown` Usage 保持为 `null`，绝不置零；报告统计 `usageMissingCount`。
+成本缺失同样保持 `null`：只有全部已尝试 case 成本已知时才发布 `totalCostUsd` 和
+`costPerSuccessfulTaskUsd`；失败任务与环境错误成本分开统计。缓存 token 若单独计价，
+必须同时提供缓存价格与供应商回报，否则该 case 成本为未知。
 
 ## 报告
 
-`buildReport` 保存：代码 SHA、dataset/prompt/tool-schema 哈希、模型与有效参数、样本数、
-`heldOut` 列表、每 case 结果（状态、五维、失败原因、运行状态、工具、Token/缺失标记）。
-哈希基于稳定序列化，key 顺序不影响结果。
+`buildReport` 保存：代码 SHA、dataset/split/prompt/tool-schema 哈希、模型与有效参数、样本数、
+`heldOut` 列表、每 case 结果（状态、Execution/Task/Trajectory 维度、失败原因、运行状态、工具、业务读回、
+Token/缺失标记、时长、成本、rubric）。哈希基于稳定序列化，key 顺序不影响结果。
+Golden Path 将 demo 的 baseline/current 与 E2E 报告上传为 `agent-evaluation-evidence` artifact，
+保留 90 天，并用 `agent-eval-contract.mjs` 校验哈希、分母、延迟与成本完整性。
 
 ## 手动真实模型评测
 
@@ -78,6 +97,8 @@ $env:ARDOR_EVAL_REPORT="C:\tmp\eval.json"
 $env:ARDOR_EVAL_BASELINE="C:\tmp\eval-baseline.json"   # 可选：与历史报告 diff
 $env:ARDOR_EVAL_TOOL_SCHEMA_FILE="C:\tmp\tool-schema.json" # 可选：工具 schema 哈希
 $env:ARDOR_EVAL_MAX_CASES="3"
+$env:ARDOR_EVAL_INCLUDE_HELD_OUT="false"
+$env:ARDOR_EVAL_CONCURRENCY=1
 node scripts/agent-eval.mjs
 ```
 
@@ -87,7 +108,9 @@ node scripts/agent-eval.mjs
 - **失败或超时也读取** `/api/agent/runs/{requestId}/trace`，部分执行可见；
 - 超时先 `POST /api/agent/runs/{requestId}/cancel`，再按实际轨迹判定；
 - 缺失 Usage 的 case 仍计入样本并标记，已知费用只累计有 Usage 的请求，
-  `budget.note` 明确说明真实花费可能更高；
+  `budget.note` 明确说明真实花费可能更高；报告同时给出 `costMissingCount`；
+- 可设置 `ARDOR_EVAL_CACHE_READ_PRICE_PER_M` / `ARDOR_EVAL_CACHE_CREATION_PRICE_PER_M`，
+  并用 `ARDOR_EVAL_PRICE_SOURCE` 记录价格表来源或版本；
 - 达到 Token/费用上限后停止调度**尚未开始**的 case，不谎报中断。
 
 失败分类：`EXPECTATION`（断言不满足）、`TIMEOUT`、`TRANSPORT`、服务端稳定错误码、`UNEXPECTED`。
@@ -116,7 +139,7 @@ safeRejection 2/2、环境错误 0/9。
 
 - 零成本演示使用合成轨迹，只验证框架与合同，不代表真实模型质量；
 - 端到端驱动当前只覆盖日历相关 9 个案例；记忆、面试、知识库等仍以轨迹评分为主，
-  尚未全部读回业务终态；
+  尚未全部读回业务终态；fake model 不产生真实费用，因此 E2E 报告的成本保持未知；
 - 轨迹接口按 `offset`/`limit` 分页（默认 128、单页上限 500）；两个评测驱动会跟随
   `nextOffset` 读取完整轨迹，页请求失败、缺少分页元数据、span 总数不一致或超过页数上限时
   按环境错误处理，不会用截断前缀评分。真实超过一页的评测运行尚未构造；
